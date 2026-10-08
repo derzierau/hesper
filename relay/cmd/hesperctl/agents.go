@@ -35,9 +35,16 @@ func init() {
 			Examples: []string{"hesperctl ls", "hesperctl ls --json | jq -r '.[] | select(.state==\"approval\") | .id'"}},
 		{Name: "new", Summary: "Start an agent with a task", Usage: "new [flags] TASK…",
 			Help: "Starts a Claude, Codex or shell agent in a project folder and prints its id. TASK is its first prompt; - reads it from stdin. " +
-				"--scratch starts it in a new scratch project named from the task (~/scratch/<date>-<slug>, a Git repository; see scratch) instead of a folder.",
-			Output:   "Agent",
-			Examples: []string{"hesperctl new --project ~/src/app fix the flaky login test", "hesperctl new --kind codex --branch fix-login fix the login", "echo 'review the diff' | hesperctl new --json -", "hesperctl new --scratch try the csv parser on the export"}},
+				"--scratch starts it in a new scratch project named from the task (~/scratch/<date>-<slug>, a Git repository; see scratch) instead of a folder. " +
+				"--bring (with --machine) brings --project, a folder on this Mac, to MACHINE first: a Git repository with its branch and " +
+				"uncommitted (and untracked, not ignored) files (--clean: the last commit only), cloned there from its remote when it has one " +
+				"(else carried whole); another folder copied without node_modules, .build, DerivedData, target, dist, .venv, __pycache__ " +
+				"(at most 100 MB). It lands at the same place under MACHINE's home (a repository with a remote outside ~/projects and ~/scratch: " +
+				"in its projects folder). Refused, nothing written: exists (MACHINE has that folder already: start there without --bring), " +
+				"too-large, tool-missing, offline. Progress: agents.bringing events (see events).",
+			Output: "Agent",
+			Examples: []string{"hesperctl new --project ~/src/app fix the flaky login test", "hesperctl new --kind codex --branch fix-login fix the login", "echo 'review the diff' | hesperctl new --json -", "hesperctl new --scratch try the csv parser on the export",
+				"hesperctl new --machine mini --bring --project ~/projects/app fix the flaky login test"}},
 		{Name: "send", Summary: "Type text into an agent and press Enter", Usage: "send ID TEXT… [--no-submit]",
 			Help:     idHelp + " TEXT - reads stdin. The text is pasted, then submitted unless --no-submit.",
 			Examples: []string{"hesperctl send a7f3k2 now run the tests", "git diff | hesperctl send mini/a7f3k2 -"}},
@@ -234,8 +241,11 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 	}
 	var to *string
 	var fork, interrupt, leave, scratch *bool
+	bring, clean := new(bool), new(bool)
 	if command == "new" {
 		scratch = f.Bool("scratch", false, "Start in a new scratch project named from the task (not --project)")
+		bring = f.Bool("bring", false, "Bring --project from this Mac to --machine first (with its uncommitted work)")
+		clean = f.Bool("clean", false, "With --bring: the last commit only, without the uncommitted work")
 	}
 	if command == "move" {
 		to = f.String("to", "", "Machine to move to (short name)")
@@ -248,8 +258,8 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		return err
 	}
 	limit := 2 * time.Minute
-	if command == "move" {
-		limit = 11 * time.Minute // a move takes up to 10
+	if command == "move" || *bring {
+		limit = 11 * time.Minute // a move or a bring takes up to 10
 	}
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
@@ -296,18 +306,24 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		if err != nil {
 			return err
 		}
+		if *clean && !*bring {
+			return usagef("--clean goes with --bring")
+		}
+		if *bring && (*scratch || *machine == "" || local) {
+			return usagef("--bring brings --project from this Mac to another: --machine MACHINE, no --scratch")
+		}
 		if *scratch {
 			if setFlags(f)["project"] || *worktree || *worktreePath != "" || *branch != "" {
 				return usagef("--scratch makes its own folder: no --project, --worktree or --branch")
 			}
 			*project = ""
-		} else if local {
+		} else if local || *bring {
 			// This Mac's folders: relative to here (hesperd wants
 			// absolute ones). Another Mac's: as given.
 			if *project, err = absPath(*project); err != nil {
 				return err
 			}
-			if *worktreePath != "" {
+			if *worktreePath != "" && local {
 				if *worktreePath, err = absPath(*worktreePath); err != nil {
 					return err
 				}
@@ -315,6 +331,13 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		}
 		p := wire.SpawnParams{Machine: *machine, Profile: *profile, Kind: *kind, Project: *project, Task: task, Name: *name, Branch: *branch,
 			LetParentAnswer: *tree.letParentAnswer, Track: *tree.track, Scratch: *scratch}
+		if *bring {
+			// bring the folder: from this Mac (the daemon's own).
+			p.Bring = &wire.Bring{Path: *project, Changes: wire.BringWith}
+			if *clean {
+				p.Bring.Changes = wire.BringClean
+			}
+		}
 		switch {
 		case *worktreePath != "":
 			p.Worktree, _ = json.Marshal(*worktreePath)

@@ -133,6 +133,64 @@ final class ComposerModel {
                                catalog: app.catalog, targetName: app.machineName(r.machine), hereName: app.machineName(app.localMachine))
     }
 
+    // MARK: Bringing the folder along
+
+    /// Why the last bring didn't start, per `targetKey` (said in the note).
+    var bringFailures: [String: BringFailure] = [:]
+
+    /// The target's hesperd brings folders (not known: assumed so).
+    var bringOffered: Bool {
+        targetKey != nil && app.bringOffered(on: resolution.machine)
+    }
+
+    var bringFailure: BringFailure? { targetKey.flatMap { bringFailures[$0] } }
+
+    /// The note's buttons, the default (⌘⏎) first.
+    var folderActions: [FolderAction] {
+        folderNote?.actions(bring: bringOffered, failure: bringFailure) ?? []
+    }
+
+    var folderNoteText: String? {
+        folderNote?.text(bring: bringOffered, failure: bringFailure)
+    }
+
+    /// What the start does when the folder isn't on the target: bring it
+    /// (`changes`: a note button's choice, else the default), start in
+    /// the target's folder ("exists"), or nil (the note says why).
+    func startAction(_ changes: BringChanges? = nil) -> FolderAction? {
+        guard let note = folderNote else { return nil }
+        let acts = note.actions(bring: bringOffered, failure: bringFailure)
+        if let changes, acts.contains(.bring(changes)) || acts.contains(.bring(.with)) { return .bring(changes) }
+        return note.startAction(bring: bringOffered, failure: bringFailure)
+    }
+
+    func bringFailed(_ f: BringFailure) {
+        guard let key = targetKey else { return }
+        bringFailures[key] = f
+        // "exists": the target has it after all.
+        if f == .exists { targetFolders[key] = false }
+        error = nil
+        folderCheck += 1
+    }
+
+    /// A note button.
+    func perform(_ a: FolderAction) {
+        switch a {
+        case .bring(let changes): start(bring: changes)
+        case .runHere: runHere()
+        case .useCopy: useTargetCopy()
+        case .useExisting: start(bring: nil)
+        }
+    }
+
+    private func start(bring: BringChanges?) {
+        if quick {
+            Task { _ = await app.startQuick(bring: bring) }
+        } else {
+            app.startDraft(id, bring: bring)
+        }
+    }
+
     /// "Run on laptop": this Mac, not chosen (the machine follows the
     /// folder again); an @machine token leaves the text.
     func runHere() {

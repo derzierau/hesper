@@ -34,6 +34,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-scratch"), i + 1 < Com
     MainActor.assumeIsolated { ScratchRender.run(CommandLine.arguments[i + 1]) }
     exit(0)
 }
+// Dev tool: bringing a draft's folder to another Mac (the note, the progress line) drawn offscreen into PNGs.
+if let i = CommandLine.arguments.firstIndex(of: "--render-bring"), i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated { BringRender.run(CommandLine.arguments[i + 1]) }
+    exit(0)
+}
 app.setActivationPolicy(.regular)
 let delegate = AppDelegate()
 app.delegate = delegate

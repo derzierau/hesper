@@ -184,6 +184,14 @@ type SpawnParams struct {
 	// a new scratch project named from its task (projects.scratch).
 	// Ignored when a project is given.
 	Scratch bool `json:"scratch,omitempty"`
+	// Bring (bring the folder, bring.go): when the machine lacks the
+	// folder, it is brought there from another machine first. Only a
+	// controller's daemon takes it; it never reaches a host.
+	Bring *Bring `json:"bring,omitempty"`
+	// Draft (bring the folder): the app's draft this spawn starts, echoed
+	// in agents.bringing (bring.draft says the same). Never sent on to a
+	// host.
+	Draft string `json:"draft,omitempty"`
 }
 
 // AgentResult is agents.result's (agent tree): the agent's last turn's
@@ -341,6 +349,9 @@ type Error struct {
 	AgentID string `json:"agentId,omitempty"`
 	// Processes (move work): error "processes" lists them.
 	Processes []Process `json:"processes,omitempty"`
+	// Path (bring the folder): with "exists", the folder the target
+	// already has.
+	Path string `json:"path,omitempty"`
 }
 
 func (e *Error) Error() string { return e.Message }

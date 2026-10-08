@@ -30,6 +30,8 @@ public enum DaemonEvent: Sendable, Equatable {
     /// agents.removed of a moved agent (reason "moved"): it continues as
     /// `to`. Comes right before its `.removed`.
     case moved(String, to: String)
+    /// agents.bringing: where bringing a draft's folder to another Mac is.
+    case bringing(BringProgress)
 }
 
 /// The app's one control connection to the local hesperd. It keeps
@@ -110,6 +112,8 @@ public final class DaemonClient: @unchecked Sendable {
                         }
                     case MoveRPC.progress:
                         if let p = MoveProgress(params: params) { cont.yield(.moving(p)) }
+                    case BringRPC.progress:
+                        if let p = BringProgress(params: params) { cont.yield(.bringing(p)) }
                     case "drafts.changed":
                         if let d = params["draft"], let draft = try? d.decode(Draft.self) { cont.yield(.draftChanged(draft)) }
                     case "drafts.removed":
@@ -204,7 +208,11 @@ public final class DaemonClient: @unchecked Sendable {
 
     public func list() async throws -> [Agent] { try await call("agents.list").decode([Agent].self) }
 
-    public func spawn(_ req: SpawnRequest) async throws -> Agent { try await call("agents.spawn", req.params).decode(Agent.self) }
+    /// A spawn that brings its folder first waits like a move (transfer).
+    public func spawn(_ req: SpawnRequest) async throws -> Agent {
+        if req.bring != nil { return try await call("agents.spawn", req.params, timeout: 600).decode(Agent.self) }
+        return try await call("agents.spawn", req.params).decode(Agent.self)
+    }
 
     /// `paste`: wrap in bracketed paste when the agent has it on; `submit`:
     /// press Enter after it (hesperd additions, see "As built — Part D").

@@ -277,7 +277,7 @@ func rpcError(err error) *wire.RPCError {
 	if we.Code == wire.CodeOffline {
 		code = wire.RPCOffline // closing agents: the app queues the call
 	}
-	return &wire.RPCError{Code: code, Message: we.Message, Data: &wire.ErrorData{Code: we.Code, AgentID: we.AgentID, Processes: we.Processes}}
+	return &wire.RPCError{Code: code, Message: we.Message, Data: &wire.ErrorData{Code: we.Code, AgentID: we.AgentID, Processes: we.Processes, Path: we.Path}}
 }
 
 type badParams struct{ err error }
@@ -360,6 +360,9 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 				case n.Moving != nil:
 					note.Method = wire.NoteMoving // move work
 					note.Params, _ = json.Marshal(n.Moving)
+				case n.Bringing != nil:
+					note.Method = wire.NoteBringing // bring the folder
+					note.Params, _ = json.Marshal(n.Bringing)
 				default:
 					note.Method = wire.NoteRemoved
 					rm := wire.Removed{ID: n.Removed, Reason: n.Reason}
@@ -502,6 +505,21 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		var p wire.SpawnParams
 		if err := decode(params, &p); err != nil {
 			return nil, err
+		}
+		if p.Bring != nil {
+			// bring the folder (bring.go): the folder made on the
+			// machine first, then the agent started there.
+			return s.bring(p)
+		}
+		if p.Draft != "" {
+			// The app's draft id is the controller's: hosts decode
+			// strictly.
+			p.Draft = ""
+			raw, err := json.Marshal(p)
+			if err != nil {
+				return nil, err
+			}
+			params = raw
 		}
 		if p.Machine != "" && p.Machine != reg.machine {
 			if remote == nil {

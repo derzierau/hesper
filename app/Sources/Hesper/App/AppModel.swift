@@ -120,6 +120,8 @@ final class AppModel {
     let closeBook: CloseBook
     /// Scratch projects (AppModel+Scratch): shared by every window's model.
     let scratchBook: ScratchBook
+    /// Bringing a draft's folder to another Mac (AppModel+Bring): shared.
+    let bringBook: BringBook
     /// Closed, not gone from hesperd's agents yet (or queued for an
     /// offline Mac): on no wall.
     var pendingRemoval: Set<String> { closeBook.closing }
@@ -240,6 +242,7 @@ final class AppModel {
         self.env = env
         closeBook = CloseBook()
         scratchBook = ScratchBook()
+        bringBook = BringBook()
         moveBook = MoveBook()
         client = DaemonClient(socketPath: env.socketPath, clientName: "Hesper.app", clientVersion: AppInfo.version)
         // Automated runs (tests, screenshots) take the layout from flags and
@@ -274,6 +277,7 @@ final class AppModel {
         client = primary.client
         closeBook = primary.closeBook
         scratchBook = primary.scratchBook
+        bringBook = primary.bringBook
         moveBook = primary.moveBook
         settings = primary.settings
         registry = primary.registry
@@ -384,6 +388,8 @@ final class AppModel {
             break // the registry's catalog; the views re-read it
         case .moving(let p):
             if !isMirror { moveProgressed(p) } // the shared book, once
+        case .bringing(let p):
+            if !isMirror { bringProgressed(p) } // the shared book, once
         case .moved(let from, let to):
             moved(from, to: to)
         }

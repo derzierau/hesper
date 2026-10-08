@@ -50,6 +50,8 @@ type ErrorData struct {
 	AgentID string `json:"agentId,omitempty"`
 	// Processes (move work): agents.move's error "processes".
 	Processes []Process `json:"processes,omitempty"`
+	// Path (bring the folder): with "exists", the folder the target has.
+	Path string `json:"path,omitempty"`
 }
 
 // JSON-RPC error numbers.
@@ -70,7 +72,11 @@ func (e *RPCError) Err() *Error {
 	if e.Data != nil && e.Data.Code != "" {
 		code, agent, procs = e.Data.Code, e.Data.AgentID, e.Data.Processes
 	}
-	return &Error{Code: code, Message: e.Message, AgentID: agent, Processes: procs}
+	path := ""
+	if e.Data != nil {
+		path = e.Data.Path
+	}
+	return &Error{Code: code, Message: e.Message, AgentID: agent, Processes: procs, Path: path}
 }
 
 // MaxLine bounds a control line (hook payloads carry tool output).

@@ -73,6 +73,8 @@ type Manifest struct {
 	// Move (move work; set by the controller before the import, older
 	// targets ignore it): how the target takes the agent.
 	Move *MoveInfo `json:"move,omitempty"`
+	// Bring (bring the folder, bring.go): a folder without an agent.
+	Bring *BringInfo `json:"bring,omitempty"`
 }
 
 // MoveInfo is agents.move's part of a manifest: the machines as the
@@ -380,10 +382,18 @@ func LoadManifest(dir string) (*Manifest, error) {
 	if m.Version != Version || !idRE.MatchString(m.ID) {
 		return nil, Errorf("manifest", "unsupported manifest version or id")
 	}
-	if m.Agent.Kind != wire.KindClaude && m.Agent.Kind != wire.KindCodex {
+	if b := m.Bring; b != nil {
+		// A brought folder: no agent.
+		if b.Kind != BringGit && b.Kind != BringFolder || m.Agent != (AgentInfo{}) || m.Move != nil {
+			return nil, Errorf("manifest", "a bring has a kind and no agent")
+		}
+		if b.Kind == BringGit && m.Project.Bundle == "" || b.Kind == BringFolder && m.Project.Bundle != "" {
+			return nil, Errorf("manifest", "a bring's bundle does not match its kind")
+		}
+	} else if m.Agent.Kind != wire.KindClaude && m.Agent.Kind != wire.KindCodex {
 		return nil, Errorf("manifest", "unknown agent kind")
 	}
-	if !localRE.MatchString(m.Agent.LocalID) {
+	if m.Bring == nil && !localRE.MatchString(m.Agent.LocalID) {
 		return nil, Errorf("manifest", "bad agent id")
 	}
 	if m.Agent.SessionID != "" && !sessionRE.MatchString(m.Agent.SessionID) {

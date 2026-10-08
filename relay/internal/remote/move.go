@@ -289,14 +289,34 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 		return wire.Agent{}, wireError(err)
 	}
 	progress(wire.Moving{Step: wire.MoveWorktree})
+	result, err := f.importUpload(ctx, dst, upload)
+	if err != nil {
+		return wire.Agent{}, err
+	}
+	var a wire.Agent
+	if err := json.Unmarshal(result, &a); err != nil {
+		return wire.Agent{}, wire.Errorf(wire.CodeRemote, "the import's result is not an agent")
+	}
+	f.mu.Lock()
+	a = dst.m.named(a)
+	dst.m.agents[localID(a.ID)] = a
+	f.emitChangedLocked(a)
+	f.mu.Unlock()
+	progress(wire.Moving{Step: wire.MoveResume, Agent: a.ID})
+	return a, nil
+}
+
+// importUpload has a remote target import a completed upload
+// (agents.import) and waits for the job's result.
+func (f *Fleet) importUpload(ctx context.Context, dst side, upload string) (json.RawMessage, error) {
 	job, err := dst.c.Spawn(client.RequireE2E(ctx), dst.m.id, upload)
 	if err != nil {
-		return wire.Agent{}, wireError(err)
+		return nil, wireError(err)
 	}
 	for {
 		j, err := dst.c.Job(client.RequireE2E(ctx), dst.m.id, job, false)
 		if err != nil {
-			return wire.Agent{}, wireError(err)
+			return nil, wireError(err)
 		}
 		if j.Finished() {
 			if j.State != "done" || j.Error != nil {
@@ -304,23 +324,13 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 				if j.Error != nil {
 					code, msg = j.Error.Code, j.Error.Message
 				}
-				return wire.Agent{}, wireError(&wire.Error{Code: code, Message: msg})
+				return nil, wireError(&wire.Error{Code: code, Message: msg})
 			}
-			var a wire.Agent
-			if err := json.Unmarshal(j.Result, &a); err != nil {
-				return wire.Agent{}, wire.Errorf(wire.CodeRemote, "the import's result is not an agent")
-			}
-			f.mu.Lock()
-			a = dst.m.named(a)
-			dst.m.agents[localID(a.ID)] = a
-			f.emitChangedLocked(a)
-			f.mu.Unlock()
-			progress(wire.Moving{Step: wire.MoveResume, Agent: a.ID})
-			return a, nil
+			return j.Result, nil
 		}
 		select {
 		case <-ctx.Done():
-			return wire.Agent{}, wire.Errorf(wire.CodeUnavailable, "the import did not finish in time")
+			return nil, wire.Errorf(wire.CodeUnavailable, "the import did not finish in time")
 		case <-time.After(100 * time.Millisecond):
 		}
 	}

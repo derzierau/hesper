@@ -21,6 +21,8 @@ type Subscriber struct {
 	// them (SubscribeMoves); at most maxMoves, the oldest dropped.
 	takesMoves bool
 	moves      []wire.Moving
+	// bringing (bring the folder): agents.bringing notes, as moves.
+	bringing []wire.Bringing
 }
 
 // maxMoves bounds a subscriber's queued agents.moving notes.
@@ -30,11 +32,12 @@ const maxMoves = 64
 // agents.moving, else Removed with its Reason (wire.ReasonClosed, …; may
 // be empty) and To (reason "moved").
 type Note struct {
-	Agent   *wire.Agent
-	Moving  *wire.Moving
-	Removed string
-	Reason  string
-	To      string
+	Agent    *wire.Agent
+	Moving   *wire.Moving
+	Bringing *wire.Bringing // bring the folder
+	Removed  string
+	Reason   string
+	To       string
 }
 
 func (s *Subscriber) push(id string, a *wire.Agent) {
@@ -63,6 +66,24 @@ func (s *Subscriber) pushMoving(m wire.Moving) {
 		s.moves = s.moves[1:]
 	}
 	s.moves = append(s.moves, m)
+	s.mu.Unlock()
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+// pushBringing queues a bring's progress (subscribers that take moves).
+func (s *Subscriber) pushBringing(b wire.Bringing) {
+	s.mu.Lock()
+	if s.closed || !s.takesMoves {
+		s.mu.Unlock()
+		return
+	}
+	if len(s.bringing) >= maxMoves {
+		s.bringing = s.bringing[1:]
+	}
+	s.bringing = append(s.bringing, b)
 	s.mu.Unlock()
 	select {
 	case s.wake <- struct{}{}:
@@ -115,10 +136,13 @@ func (s *Subscriber) Wait(done <-chan struct{}) []Note {
 			s.mu.Unlock()
 			return nil
 		}
-		if len(s.order) > 0 || len(s.moves) > 0 {
+		if len(s.order) > 0 || len(s.moves) > 0 || len(s.bringing) > 0 {
 			notes := make([]Note, 0, len(s.order)+len(s.moves))
 			for i := range s.moves {
 				notes = append(notes, Note{Moving: &s.moves[i]})
+			}
+			for i := range s.bringing {
+				notes = append(notes, Note{Bringing: &s.bringing[i]})
 			}
 			for _, id := range s.order {
 				if a := s.pending[id]; a != nil {
@@ -127,7 +151,7 @@ func (s *Subscriber) Wait(done <-chan struct{}) []Note {
 					notes = append(notes, Note{Removed: id, Reason: s.reasons[id], To: s.tos[id]})
 				}
 			}
-			s.order, s.pending, s.reasons, s.tos, s.moves = nil, map[string]*wire.Agent{}, map[string]string{}, map[string]string{}, nil
+			s.order, s.pending, s.reasons, s.tos, s.moves, s.bringing = nil, map[string]*wire.Agent{}, map[string]string{}, map[string]string{}, nil, nil
 			s.mu.Unlock()
 			return notes
 		}
@@ -158,6 +182,16 @@ func (r *Registry) NoteMoving(m wire.Moving) {
 	defer r.mu.Unlock()
 	for s := range r.subs {
 		s.pushMoving(m)
+	}
+}
+
+// NoteBringing tells the subscribers that take moves a bring's progress
+// (agents.bringing; the controller's internal/remote sends them).
+func (r *Registry) NoteBringing(b wire.Bringing) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for s := range r.subs {
+		s.pushBringing(b)
 	}
 }
 

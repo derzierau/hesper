@@ -40,7 +40,7 @@ const (
 var downloadGrace = time.Minute
 
 // uploadFiles are the files of a move bundle (internal/handoff).
-var uploadFiles = map[string]bool{"manifest.json": true, "transcript.jsonl": true, "code.bundle": true}
+var uploadFiles = map[string]bool{"manifest.json": true, "transcript.jsonl": true, "code.bundle": true, "folder.tar": true} // folder.tar: bring the folder
 var uploadID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 var jobID = regexp.MustCompile(`^job-[0-9a-f]{12}$`)
 var commitID = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
@@ -362,7 +362,7 @@ func (h *Handoff) Transfer(p transferParams) (json.RawMessage, error) {
 	case !uploadID.MatchString(p.Upload):
 		return nil, protocol.Err("invalid_request", "upload must be 1-64 letters, digits, - or _")
 	case !uploadFiles[p.Name]:
-		return nil, protocol.Err("invalid_request", "name must be manifest.json, transcript.jsonl or code.bundle")
+		return nil, protocol.Err("invalid_request", "name must be manifest.json, transcript.jsonl, code.bundle or folder.tar")
 	case p.Offset < 0 || p.Offset%transfer.ChunkSize != 0 || p.Offset >= MaxUploadBytes:
 		return nil, protocol.Err("invalid_request", "offset must be a multiple of the 512 KiB chunk size")
 	case len(p.Data) < transfer.Overhead || len(p.Data) > sealedChunk || (!p.Last && len(p.Data) != sealedChunk):
@@ -664,7 +664,7 @@ func (h *Handoff) pack(d *download, agent string, have []string) {
 // stage describes a packed bundle's files (manifest first).
 func stage(dir string) (string, []DownloadFile, error) {
 	var files []DownloadFile
-	for _, name := range []string{"manifest.json", "transcript.jsonl", "code.bundle"} {
+	for _, name := range []string{"manifest.json", "transcript.jsonl", "code.bundle", "folder.tar"} {
 		f, err := os.Open(filepath.Join(dir, name))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -737,7 +737,7 @@ func (h *Handoff) Download(p downloadParams) (json.RawMessage, error) {
 	case !downloadID.MatchString(p.Download):
 		return nil, protocol.Err("invalid_request", "Invalid download")
 	case !uploadFiles[p.Name]:
-		return nil, protocol.Err("invalid_request", "name must be manifest.json, transcript.jsonl or code.bundle")
+		return nil, protocol.Err("invalid_request", "name must be manifest.json, transcript.jsonl, code.bundle or folder.tar")
 	case p.Offset < 0 || p.Offset%transfer.ChunkSize != 0:
 		return nil, protocol.Err("invalid_request", "offset must be a multiple of the 512 KiB chunk size")
 	}

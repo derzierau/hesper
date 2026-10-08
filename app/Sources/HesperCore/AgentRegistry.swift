@@ -50,7 +50,7 @@ public struct AgentRegistry: Sendable {
                 agents.removeValue(forKey: id)
             }
             return []
-        case .draftChanged, .draftRemoved, .draftsListed, .moving, .moved:
+        case .draftChanged, .draftRemoved, .draftsListed, .moving, .moved, .bringing:
             return []
         case .projectsListed(let p, let g):
             catalog.listed(projects: p, groups: g)

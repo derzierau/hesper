@@ -163,7 +163,7 @@ type Export struct {
 }
 
 // downloadNames are the files an export may hold; nothing else is written.
-var downloadNames = map[string]bool{"manifest.json": true, "transcript.jsonl": true, "code.bundle": true}
+var downloadNames = map[string]bool{"manifest.json": true, "transcript.jsonl": true, "code.bundle": true, "folder.tar": true} // folder.tar: bring the folder
 
 // Export has a hesperd host pack agent id for a move (incremental from
 // have, commits the target has) for key (this side's ephemeral X25519
