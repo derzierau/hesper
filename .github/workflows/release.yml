@@ -239,15 +239,19 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" dist/* --clobber
           gh release edit "$RELEASE_TAG" --draft=false
+      # The main ruleset accepts changes only through pull requests, and a
+      # personal repository cannot exempt GitHub Actions from it. So the cask
+      # update goes to its own branch, and a maintainer opens and merges the
+      # pull request from the link in the job summary.
       - name: Update Homebrew cask
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
-          python3 scripts/update-homebrew.py "$RELEASE_TAG" dist "$RUNNER_TEMP/release.json"
+          python3 scripts/update-homebrew.py "$RELEASE_TAG" dist
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Casks/hesper.rb
           if ! git diff --cached --quiet; then
+            branch="brew/$RELEASE_TAG"
             git commit -m "brew: Hesper $RELEASE_TAG"
-            git pull --rebase origin main
-            git push origin HEAD:main
+            git push --force origin "HEAD:refs/heads/$branch"
+            echo "Homebrew cask for $RELEASE_TAG is on \`$branch\`: [open the pull request]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1)" >> "$GITHUB_STEP_SUMMARY"
           fi

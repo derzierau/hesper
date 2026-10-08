@@ -193,17 +193,16 @@ Requires macOS 14 or later. Signed releases include the app, daemon,
 `hesperctl` and the Secure Enclave helper; Xcode and Go are only needed for
 source builds. Install Claude Code or Codex separately to run those agents.
 
-The repository and downloads are private for now. Sign in with a GitHub
-account that has access to `derzierau/hesper`.
+The repository and signed release downloads are public. No GitHub account
+or token is needed to install.
 
 ### Homebrew
 
-With Homebrew, GitHub CLI and SSH access to this repository configured:
+With Homebrew installed:
 
 ```sh
-gh auth login
-brew tap derzierau/hesper git@github.com:derzierau/hesper.git
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install --cask derzierau/hesper/hesper
+brew tap derzierau/hesper https://github.com/derzierau/hesper.git
+brew install --cask derzierau/hesper/hesper
 /bin/sh /Applications/Hesper.app/Contents/Resources/hesper-setup.sh
 open /Applications/Hesper.app
 ```
@@ -214,16 +213,28 @@ another `--appdir`. To update:
 
 ```sh
 brew update
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew upgrade --cask derzierau/hesper/hesper
+brew upgrade --cask derzierau/hesper/hesper
 /bin/sh /Applications/Hesper.app/Contents/Resources/hesper-setup.sh
 ```
 
 Run setup after each update to restart the daemon with the new binary.
 
+### Homebrew tap and official catalog
+
+The current tap lives in this repository, so `brew tap` above includes its
+HTTPS URL. A separate public `derzierau/homebrew-hesper` repository would
+allow the shorter `brew tap derzierau/hesper` command; see
+[Homebrew's tap documentation](https://docs.brew.sh/Taps.html).
+
+Hesper is not yet in Homebrew's official catalog. Installation without
+adding a tap requires a separate submission and acceptance into
+`homebrew/cask` under its
+[package acceptance policy](https://docs.brew.sh/Package-Acceptance-Policy).
+
 ### Download a signed release
 
 Open [GitHub Releases](https://github.com/derzierau/hesper/releases/latest)
-while signed in, and download the archive for your Mac:
+and download the archive for your Mac:
 
 | Mac | Release archive |
 | --- | --- |
@@ -279,7 +290,7 @@ Codex only runs hooks it trusts: after installing, open Codex and run
 `/hooks` once.
 
 Maintainer instructions for signing credentials, release automation and the
-private Homebrew tap are in [docs/releases.md](docs/releases.md).
+Homebrew tap are in [docs/releases.md](docs/releases.md).
 
 **Signing.** Without configuration the app is signed ad-hoc, which works
 locally. `SIGN_IDENTITY="Developer ID Application: …" ./install.sh` signs
