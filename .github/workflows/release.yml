@@ -199,7 +199,8 @@ jobs:
           gh release edit "$RELEASE_TAG" --draft=false
       - name: Update Homebrew cask
         run: |
-          python3 scripts/update-homebrew.py "$RELEASE_TAG" dist
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          python3 scripts/update-homebrew.py "$RELEASE_TAG" dist "$RUNNER_TEMP/release.json"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Casks/hesper.rb
