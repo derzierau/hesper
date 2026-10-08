@@ -508,7 +508,8 @@ struct AttentionPanel: View {
                                 AttentionItem(entry: e, selected: i == sel, width: Self.width,
                                               onAnswer: { a in model.answerFromQueue(e, a) },
                                               onSelect: { model.selectAttention(e.id) },
-                                              onOpen: { model.openFromQueue(e.agent) })
+                                              onOpen: { model.openFromQueue(e.agent) },
+                                              onMove: { t in model.moveFromQueue(e.agent, to: t) })
                                     .id(e.id)
                             }
                         }
@@ -538,6 +539,8 @@ struct AttentionItem: View {
     var onAnswer: (InboxAnswer) -> Void
     var onSelect: () -> Void
     var onOpen: () -> Void
+    /// "Continue on mini" (M): the target's short name.
+    var onMove: (String) -> Void = { _ in }
 
     @State private var hover = false
 
@@ -584,6 +587,16 @@ struct AttentionItem: View {
                     }
                 }
                 .disabled(entry.answered)
+                if let t = entry.moveTo, !entry.answered {
+                    Button { onMove(t.short) } label: {
+                        Pill(MoveText.continueTitle(t.name), variant: .status, kbd: "M").contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .help("Continue \(entry.agent.name) on \(t.name) with its uncommitted work (M)")
+                    .accessibilityLabel("Continue on \(t.name), key M")
+                    .accessibilityIdentifier("attention.move.\(entry.agent.id)")
+                }
                 if entry.answered {
                     Text("Sent").font(.ds(.meta)).foregroundStyle(Theme.dim).fixedSize()
                         .accessibilityIdentifier("attention.sent")

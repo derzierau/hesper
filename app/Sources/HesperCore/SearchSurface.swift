@@ -22,6 +22,9 @@ public enum SearchKeyAction: Equatable, Sendable {
     case history(HistoryKeyAction)
     /// ⌘⏎: resume on the other Mac (moves ownership; `SearchPreview.continueTarget`).
     case continueOnOtherMac
+    /// R (the list) / the preview's button: a gone agent's checkpoint as a
+    /// worktree again (`SearchPreview.restoreOffered`).
+    case restoreCheckpoint
     /// ⇥: the other scope (⌘K's All), with the query.
     case switchScope
     /// ⇧⇥: the search field ↔ the list (where letters are actions).
@@ -43,6 +46,7 @@ public enum SearchKeys {
             }
         }
         if k.key == .tab && !k.command && !k.option && !k.control { return k.shift ? .toggleFocus : .switchScope }
+        if focus == .list, !k.command && !k.option && !k.control, k.key == .char("r") || k.key == .char("R") { return .restoreCheckpoint }
         return .history(HistoryKeys.route(k, keyCode: keyCode, characters: characters, focus: focus, fieldHasSelection: fieldHasSelection))
     }
 
@@ -164,16 +168,32 @@ public enum SearchPreview {
         return online.first { $0 != local && $0 != s.machine }
     }
 
+    /// ⌘⏎ on a live session: its agent moves (agents.move) to the first
+    /// Mac it can go to; nil: not live here, or it can't move.
+    public static func moveTarget(_ s: Session, agent: Agent?, machines: [Machine], supported: Bool?) -> String? {
+        guard s.isLive, let a = agent, a.id == s.liveAgentID else { return nil }
+        return MoveRules.targets(a, machines: machines, supported: supported).first?.short
+    }
+
+    /// "Restore checkpoint": the session has one, its agent is gone, and
+    /// its Mac's hesperd hasn't said it can't.
+    public static func restoreOffered(_ s: Session, supported: Bool?) -> Bool {
+        s.checkpoint != nil && !s.isLive && supported != false
+    }
+
     /// The preview's actions with their keys: ⏎ resume (as the card says
-    /// it), ⌥⏎ fork, ⌘⏎ continue on the other Mac, then C continue in the
-    /// other tool, A archive, ⌫ delete, ⌘C copy id.
-    public static func actions(_ s: Session, card: SessionCardText, local: String, online: [String], machines: [String: String]) -> [SessionCardText.Action] {
+    /// it), ⌥⏎ fork, ⌘⏎ continue on the other Mac (a live agent: moves it,
+    /// `moveTo`), then R restore checkpoint, C continue in the other tool,
+    /// A archive, ⌫ delete, ⌘C copy id.
+    public static func actions(_ s: Session, card: SessionCardText, local: String, online: [String], machines: [String: String],
+                               moveTo: String? = nil, restore: Bool = false) -> [SessionCardText.Action] {
         var out: [SessionCardText.Action] = []
         if let first = card.actions.first { out.append(first) }
         out.append(.init(key: "⌥⏎", title: "Fork", primary: false))
-        if let t = continueTarget(s, local: local, online: online) {
+        if let t = moveTo ?? continueTarget(s, local: local, online: online) {
             out.append(.init(key: "⌘⏎", title: "Continue on \(SessionFormat.machineName(t, machines))", primary: false))
         }
+        if restore { out.append(.init(key: "R", title: "Restore checkpoint", primary: false)) }
         out.append(.init(key: "C", title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
         out.append(.init(key: "A", title: s.archived ? "Unarchive" : "Archive", primary: false))
         out.append(.init(key: "⌫", title: "Delete", primary: false))
@@ -182,7 +202,11 @@ public enum SearchPreview {
     }
 
     /// ⌘⏎'s consequence, under the actions.
-    public static func continueNote(_ s: Session, local: String, online: [String], machines: [String: String]) -> String? {
+    public static func continueNote(_ s: Session, local: String, online: [String], machines: [String: String], moveTo: String? = nil) -> String? {
+        if let moveTo {
+            let to = SessionFormat.machineName(moveTo, machines)
+            return "⌘⏎ moves it to \(to) with its worktree, uncommitted changes and conversation; it closes here"
+        }
         guard let t = continueTarget(s, local: local, online: online) else { return nil }
         let from = SessionFormat.machineName(s.machine.isEmpty ? local : s.machine, machines)
         let to = SessionFormat.machineName(t, machines)

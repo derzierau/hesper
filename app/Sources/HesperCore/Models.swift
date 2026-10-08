@@ -61,6 +61,8 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
     public var background = false
     /// How it ended when hesperd says ("killed": ⌃⌘W).
     public var ended: String?
+    /// Its worktree's last checkpoint (hesperd, on done / close / move).
+    public var checkpoint: Checkpoint?
 
     /// The agent's process is alive (attach shows it live).
     public var isRunning: Bool { exit == nil && state != .exited }
@@ -85,7 +87,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, machine, kind, profile, name, task, project, projectId, worktree, branch, state, stateSince, attention, summary, activity, sessionId, size, created, pid, exit
-        case background, ended
+        case background, ended, checkpoint
     }
 
     public init(from decoder: any Decoder) throws {
@@ -112,6 +114,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
         exit = try? c.decodeIfPresent(ExitInfo.self, forKey: .exit)
         background = (try? c.decodeIfPresent(Bool.self, forKey: .background)) ?? false
         ended = (try? c.decodeIfPresent(String.self, forKey: .ended)).flatMap { $0.isEmpty ? nil : $0 }
+        checkpoint = (try? c.decodeIfPresent(Checkpoint.self, forKey: .checkpoint)).flatMap { $0 }.flatMap { $0.ref.isEmpty && $0.commit.isEmpty ? nil : $0 }
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -138,6 +141,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
         try c.encodeIfPresent(exit, forKey: .exit)
         if background { try c.encode(true, forKey: .background) }
         try c.encodeIfPresent(ended, forKey: .ended)
+        try c.encodeIfPresent(checkpoint, forKey: .checkpoint)
     }
 
     static func date(_ s: String?) -> Date? {

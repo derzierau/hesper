@@ -131,13 +131,19 @@ extension AppModel {
         switch kind {
         case .move(let id):
             guard let a = agent(id) else { return PopoverContent(title: nil, items: [], note: nil, hints: []) }
-            let items = machines.filter { $0.short != a.machine }.map { m in
-                OverlayItem(id: m.short, title: m.displayName, detail: ComposerCompletion.machineDetail(m, local: false), mark: m.short,
-                            enabled: m.online, run: { [weak self] in self?.move(a, to: m.short) })
+            // ⏎ continues there (closes it here), ⌘⏎ forks (keeps it here).
+            let movable = MoveRules.movable(a, supported: moveBook.supported[a.machine])
+            let items = !movable ? [] : machines.filter { $0.short != a.machine }.map { m in
+                OverlayItem(id: m.short, title: MoveText.continueTitle(m.displayName), detail: ComposerCompletion.machineDetail(m, local: false), mark: m.short,
+                            enabled: m.online, run: { [weak self] in self?.requestMove(a, to: m.short) },
+                            alternate: { [weak self] in self?.closePopover(); self?.requestMove(a, to: m.short, options: MoveOptions(fork: true)) })
             }
-            return PopoverContent(title: "Move \(a.name) to", items: items,
-                                  note: a.kind == "shell" ? "Shells do not move" : "with conversation + uncommitted work",
-                                  hints: [("⏎", "move"), ("esc", "close")], empty: "No other machines")
+            let note: String
+            if a.kind != "claude" && a.kind != "codex" { note = "Shells do not move" }
+            else if moveBook.supported[a.machine] == false { note = MoveText.needsUpdate(machine(a.machine)?.displayName ?? a.machine) }
+            else { note = "with its conversation and uncommitted work" }
+            return PopoverContent(title: "Move \(a.name) to", items: items, note: note,
+                                  hints: [("⏎", "continue"), ("⌘⏎", "fork"), ("esc", "close")], empty: movable ? "No other machines" : "Can't move")
         case .rename(let id):
             return PopoverContent(title: "Rename \(agent(id)?.name ?? "")", items: [], note: nil, hints: [("⏎", "rename"), ("esc", "close")], field: "Name")
         case .attention:
@@ -356,6 +362,8 @@ extension AppModel {
         var since: String
         /// Answered from here; waiting for the agent to move on.
         var answered: Bool
+        /// M: continue it on this Mac (short name, display name); nil: it can't move.
+        var moveTo: (short: String, name: String)? = nil
     }
 
     /// The queue (approval, question, error; oldest first) as inbox items.
@@ -371,7 +379,8 @@ extension AppModel {
                            whereabouts: (isBackground(a) ? ["background"] : [])
                                + AttentionInbox.whereabouts(machine: a.machine, local: local, onThisWall: here.contains(a.id)),
                            since: Theme.elapsed(since: a.stateSince) ?? "",
-                           answered: queueAnswered[a.id].map { $0.since == a.stateSince } ?? false)
+                           answered: queueAnswered[a.id].map { $0.since == a.stateSince } ?? false,
+                           moveTo: MoveRules.showsInInbox(a) ? moveTargets(a).first.map { ($0.short, $0.displayName) } : nil)
         }
     }
 
@@ -423,6 +432,8 @@ extension AppModel {
             if let sel { openFromQueue(entries[sel].agent) }
         case .close:
             closePopover()
+        case .moveElsewhere:
+            if let sel, let t = entries[sel].moveTo { moveFromQueue(entries[sel].agent, to: t.short) }
         case .none:
             if case .type = action { return true }
             return false
@@ -466,6 +477,14 @@ extension AppModel {
         case .open:
             break
         }
+    }
+
+    /// M / the item's "Continue on mini": the inbox closes, the agent's
+    /// tile shows the move (and any question it asks first).
+    func moveFromQueue(_ a: Agent, to m: String) {
+        closePopover()
+        bringBackIfNeeded(a.id)
+        requestMove(a, to: m)
     }
 
     /// The agent's tile (its own window when it has one), the inbox closed.
@@ -584,8 +603,7 @@ extension AppModel {
         } else {
             out.append(OverlayItem(id: "resume:\(a.id)", title: "Resume \(a.name)", detail: "⏎", run: { [weak self] in self?.showPalette = false; self?.resume(a) }))
         }
-        out.append(OverlayItem(id: "move:\(a.id)", title: "Move \(a.name) to another Mac", detail: "⌘⇧M",
-                               run: { [weak self] in self?.showPalette = false; self?.selectedID = a.id; self?.onModeChanged?(); self?.openPopover(.move(a.id)) }))
+        out += moveActions(a) // "Continue migrations on mini", "Fork migrations on mini"
         out.append(OverlayItem(id: "rename:\(a.id)", title: "Rename \(a.name)", run: { [weak self] in
             self?.showPalette = false
             self?.selectedID = a.id
@@ -657,33 +675,7 @@ extension AppModel {
         return true
     }
 
-    // MARK: Move: at once, with undo (closing: AppModel+Closing)
-
-    func move(_ a: Agent, to m: String, undoable: Bool = true) {
-        closePopover()
-        moving[a.id] = m
-        onAgentsChanged?()
-        let target = machine(m)?.displayName ?? m
-        Task { @MainActor in
-            do {
-                let n = try await self.client.move(a.id, to: m)
-                self.moving[a.id] = nil
-                if let p = self.placements.removeValue(forKey: a.id) { self.placements[n.id] = p }
-                if self.selectedID == a.id { self.selectedID = n.id }
-                if undoable { self.pushUndo(.moveBack(n.id, to: a.machine), label: "Moved \(a.name) to \(target)") }
-                self.onAgentsChanged?()
-                self.onModeChanged?()
-            } catch {
-                self.moving[a.id] = nil
-                self.onAgentsChanged?()
-                if let e = error as? RPCError, e.kind == .unavailable {
-                    self.showToast("Moving is not available: \(e.message)", error: true)
-                } else {
-                    self.showToast("Could not move \(a.name): \(self.describe(error))", error: true)
-                }
-            }
-        }
-    }
+    // Moving to another Mac: AppModel+Move.
 
     // MARK: Undo
 

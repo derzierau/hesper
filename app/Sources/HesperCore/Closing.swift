@@ -277,6 +277,8 @@ public enum RemovalReason: String, Sendable {
     case closed
     case finishedInBackground = "finished-in-background"
     case removed
+    /// Moved to another Mac (agents.move): it continues there.
+    case moved
 }
 
 public enum CloseText {

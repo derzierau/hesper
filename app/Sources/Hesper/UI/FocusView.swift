@@ -155,9 +155,13 @@ final class FocusView: NSView, TerminalDropTarget {
                                     onOpen: {}, onResume: { [weak model] in model?.resume(a) },
                                     deny: TileView.denyField(a, model: model),
                                     closeStrip: TileView.closeStrip(a, model: model),
-                                    killed: model.isKilled(a), onClose: { [weak model] in model?.requestClose(a) })
-        if barChanged || confirming != (model.closeConfirm?.id == a.id) { needsLayout = true }
-        confirming = model.closeConfirm?.id == a.id
+                                    killed: model.isKilled(a), onClose: { [weak model] in model?.requestClose(a) },
+                                    moveStrip: TileView.moveStrip(a, model: model, tight: AttentionBar.isTight(width: cardWidth)),
+                                    moveProgress: TileView.moveProgress(a, model: model),
+                                    moveOffer: TileView.moveOffer(a, model: model))
+        let asks = model.closeConfirm?.id == a.id || model.moveConfirm?.id == a.id
+        if barChanged || confirming != asks { needsLayout = true }
+        confirming = asks
     }
 
     /// The card's frame in `view` (the zoom transition).

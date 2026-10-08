@@ -84,6 +84,7 @@ enum SearchLook {
         if let o = SessionFormat.originLabel(s.origin) { parts[0] += " (\(o))" }
         if !s.cwd.isEmpty { parts.append(SessionFormat.abbreviate(s.cwd)) }
         if !s.machine.isEmpty { parts.append(SessionFormat.machineName(s.machine, machines)) }
+        if let cp = s.checkpoint { parts.append(cp.meta) } // "checkpoint · 3 files"
         return parts.joined(separator: " · ")
     }
 
