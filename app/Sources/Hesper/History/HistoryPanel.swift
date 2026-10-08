@@ -788,9 +788,12 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         let names = machineNames()
         var t = SearchLook.plain(SessionCardText(s, changes: changes, loadingChanges: changes == nil, local: model.localMachine, machines: names), s)
         t.subtitle = SearchLook.previewMeta(s, machines: names)
-        // The search surface's keys: ⏎ resume, ⌥⏎ fork, ⌘⏎ continue on the other Mac.
-        t.actions = SearchPreview.actions(s, card: t, local: model.localMachine, online: onlineMachines, machines: names)
-        t.resumeHereNote = SearchPreview.continueNote(s, local: model.localMachine, online: onlineMachines, machines: names)
+        // The search surface's keys: ⏎ resume, ⌥⏎ fork, ⌘⏎ continue on the
+        // other Mac (a live agent: moves it with its work), R restore checkpoint.
+        let moveTo = model.liveMoveTarget(s)?.to
+        t.actions = SearchPreview.actions(s, card: t, local: model.localMachine, online: onlineMachines, machines: names,
+                                          moveTo: moveTo, restore: model.restoreOffered(s))
+        t.resumeHereNote = SearchPreview.continueNote(s, local: model.localMachine, online: onlineMachines, machines: names, moveTo: moveTo)
         card.text = t
     }
 
@@ -856,6 +859,10 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         case .continueOnOtherMac:
             guard let s = selectedSession else { NSSound.beep(); return }
             continueOnOtherMac(s)
+        case .restoreCheckpoint:
+            // Nothing to restore: R types into the search, as before.
+            guard let s = selectedSession, model.restoreOffered(s) else { perform(HistoryKeyAction.focusSearch("r")); return }
+            model.restoreCheckpoint(s)
         }
     }
 
@@ -931,6 +938,13 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     /// ⌘⏎: resume on the other Mac (another Mac's session comes here; this
     /// Mac's goes to the other one). Moves ownership (sessions.resume {machine}).
     private func continueOnOtherMac(_ s: Session) {
+        if let m = model.liveMoveTarget(s) {
+            // A live agent moves with its worktree and conversation; its
+            // tile shows how far it got.
+            close()
+            model.requestMove(m.agent, to: m.to)
+            return
+        }
         if s.isLive || s.movedTo != nil {
             // Nothing to move: ⏎'s own behavior (open the live agent / its new home).
             return act(.resume, on: s)

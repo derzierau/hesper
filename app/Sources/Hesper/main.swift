@@ -19,6 +19,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-close"), i + 1 < Comma
     MainActor.assumeIsolated { CloseRender.run(CommandLine.arguments[i + 1]) }
     exit(0)
 }
+// Dev tool: moving work across Macs (progress line, preflight strips) drawn offscreen into PNGs.
+if let i = CommandLine.arguments.firstIndex(of: "--render-move"), i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated { MoveRender.run(CommandLine.arguments[i + 1]) }
+    exit(0)
+}
 // Dev tool: a draft tile (a project window's, project locked) drawn offscreen into PNGs.
 if let i = CommandLine.arguments.firstIndex(of: "--render-draft"), i + 1 < CommandLine.arguments.count {
     MainActor.assumeIsolated { DraftRender.run(CommandLine.arguments[i + 1]) }

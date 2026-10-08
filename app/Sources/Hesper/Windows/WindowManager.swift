@@ -667,7 +667,12 @@ final class WindowManager: NSObject {
         add(book.handle(for: id) == nil ? "Open in New Window" : "Show Window", "\r", [.command, .option]) { [weak self] in self?.openAgentWindow(id) }
         add("Open in New Tab") { [weak self] in self?.openAgentWindow(id, asTab: true) }
         menu.addItem(.separator())
-        add("Move to…", "M", [.command]) { [weak model] in model?.select(id); model?.openPopover(.move(id)) }
+        // Moving work across Macs: one item per Mac it can go to (none
+        // with an older hesperd there).
+        for t in model.moveTargets(a) {
+            add(MoveText.continueTitle(t.displayName)) { [weak model] in model?.requestMove(a, to: t.short) }
+            add(MoveText.forkTitle(t.displayName)) { [weak model] in model?.requestMove(a, to: t.short, options: MoveOptions(fork: true)) }
+        }
         add("Close", "w", [.command]) { [weak model] in model?.requestClose(a) }
         if a.isRunning {
             add("Send to Background", "w", [.command, .option]) { [weak model] in model?.sendToBackground(a) }

@@ -142,6 +142,8 @@ public enum InboxKeyAction: Equatable, Sendable {
     /// 0-based: the answer with number key `n + 1`.
     case answer(Int)
     case primary, open, close, none
+    /// M: continue the selected agent on the other Mac (agents.move).
+    case moveElsewhere
 }
 
 public enum InboxKeys {
@@ -156,6 +158,7 @@ public enum InboxKeys {
             switch s {
             case "j", "J": return .move(1)
             case "k", "K": return .move(-1)
+            case "m", "M": return .moveElsewhere
             default:
                 if s.count == 1, let n = Int(s), (1...9).contains(n) { return .answer(n - 1) }
                 return .none

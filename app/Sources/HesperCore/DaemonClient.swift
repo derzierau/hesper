@@ -25,6 +25,11 @@ public enum DaemonEvent: Sendable, Equatable {
     case projectRemoved(String)
     case groupChanged(ProjectGroup)
     case groupRemoved(String)
+    /// agents.moving: where a move to another Mac is.
+    case moving(MoveProgress)
+    /// agents.removed of a moved agent (reason "moved"): it continues as
+    /// `to`. Comes right before its `.removed`.
+    case moved(String, to: String)
 }
 
 /// The app's one control connection to the local hesperd. It keeps
@@ -99,7 +104,12 @@ public final class DaemonClient: @unchecked Sendable {
                     case "agents.changed":
                         if let a = params["agent"], let agent = try? a.decode(Agent.self) { cont.yield(.changed(agent)) }
                     case "agents.removed":
-                        if let id = params["id"]?.stringValue { cont.yield(.removed(id, reason: params["reason"]?.stringValue)) }
+                        if let id = params["id"]?.stringValue {
+                            if let to = MoveRemoval.newAgent(params) { cont.yield(.moved(id, to: to)) }
+                            cont.yield(.removed(id, reason: params["reason"]?.stringValue))
+                        }
+                    case MoveRPC.progress:
+                        if let p = MoveProgress(params: params) { cont.yield(.moving(p)) }
                     case "drafts.changed":
                         if let d = params["draft"], let draft = try? d.decode(Draft.self) { cont.yield(.draftChanged(draft)) }
                     case "drafts.removed":
@@ -257,7 +267,26 @@ public final class DaemonClient: @unchecked Sendable {
     public func resume(_ id: String) async throws -> Agent { try await call("agents.resume", ["id": .string(id)]).decode(Agent.self) }
     public func remove(_ id: String) async throws { _ = try await call("agents.remove", ["id": .string(id)]) }
     public func rename(_ id: String, name: String) async throws -> Agent { try await call("agents.rename", ["id": .string(id), "name": .string(name)]).decode(Agent.self) }
-    public func move(_ id: String, to machine: String) async throws -> Agent { try await call("agents.move", ["id": .string(id), "to": .string(machine)]).decode(Agent.self) }
+    /// agents.move: checkpoint, carry and resume on `machine` (hesperd
+    /// closes it here unless `fork`). Returns the new agent's id. Preflight
+    /// refusals carry `data.code` (`MovePreflight`); -32601: an older
+    /// hesperd. A move carries a bundle: up to 10 min.
+    @discardableResult
+    public func move(_ id: String, to machine: String, options: MoveOptions = MoveOptions()) async throws -> String? {
+        MoveRemoval.newAgent(result: try await call(MoveRPC.move, options.params(id: id, to: machine), timeout: 600))
+    }
+    /// agents.checkpoint: a checkpoint now (nil: not a git folder).
+    public func checkpoint(_ id: String) async throws -> Checkpoint? {
+        Checkpoint(json: try await call(MoveRPC.checkpoint, ["id": .string(id)], timeout: 60)["checkpoint"])
+    }
+    /// checkpoints.restore: a gone agent's checkpoint as a worktree on its
+    /// Mac (the session's). Returns the worktree's path when hesperd says.
+    public func restoreCheckpoint(session: String, checkpoint: Checkpoint, machine: String?) async throws -> String? {
+        var p: [String: JSONValue] = ["session": .string(session), "ref": .string(checkpoint.ref), "commit": .string(checkpoint.commit)]
+        if let machine, !machine.isEmpty { p["machine"] = .string(machine) }
+        let r = try await call(MoveRPC.restore, .object(p), timeout: 120)
+        return r["path"]?.stringValue ?? r["worktree"]?.stringValue
+    }
     public func recentProjects() async throws -> [RecentProject] { try await call("projects.recent").decode([RecentProject].self) }
     public func profiles() async throws -> ProfilesInfo { try await call("profiles.list").decode(ProfilesInfo.self) }
     public func saveDraft(_ d: Draft) async throws -> Draft { try await call("drafts.save", d.params).decode(Draft.self) }
