@@ -1,0 +1,131 @@
+name: Hesper release
+# Tag vX.Y.Z → Hesper.app (with hesperd, hesperctl, hesper-keys) signed with
+# the Developer ID, notarized, stapled, attached to a GitHub release.
+#
+# Inert until these repository secrets exist (the job then only says so):
+#   DEVELOPER_ID_P12        base64 of the "Developer ID Application" .p12
+#   P12_PASSWORD            its password
+#   NOTARY_API_KEY          base64 of the App Store Connect API key (.p8)
+#   NOTARY_API_KEY_ID       its key id
+#   NOTARY_API_ISSUER       its issuer id
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+# Nothing by default; the release job alone may write (gh release create).
+permissions: {}
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      HAVE_SECRETS: ${{ secrets.DEVELOPER_ID_P12 != '' && secrets.P12_PASSWORD != '' && secrets.NOTARY_API_KEY != '' && secrets.NOTARY_API_KEY_ID != '' && secrets.NOTARY_API_ISSUER != '' }}
+    steps:
+      - name: Signing secrets missing
+        if: env.HAVE_SECRETS != 'true'
+        run: echo "::notice::Release skipped; add DEVELOPER_ID_P12, P12_PASSWORD and the NOTARY_API_* secrets to enable it."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.HAVE_SECRETS == 'true'
+        with:
+          fetch-depth: 0 # the build number is the commit count
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: env.HAVE_SECRETS == 'true'
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: relay/go.sum
+      - name: Select Xcode 26
+        if: env.HAVE_SECRETS == 'true'
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+      - name: Import the Developer ID into a temporary keychain
+        if: env.HAVE_SECRETS == 'true'
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(uuidgen)
+          echo "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/id.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/id.p12"
+          identity=$(security find-identity -v -p codesigning "$keychain" | grep 'Developer ID Application' | head -1 | sed -E 's/.*"(.*)"/\1/')
+          test -n "$identity"
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+      # libghostty from source without GNU libintl (LGPL), so the released
+      # app contains no LGPL code: docs/licensing.md.
+      - uses: mlugg/setup-zig@v2
+        if: env.HAVE_SECRETS == 'true'
+        with:
+          version: 0.16.0
+      - name: Build libghostty without libintl
+        if: env.HAVE_SECRETS == 'true'
+        run: scripts/build-ghosttykit.sh
+      - name: Build
+        if: env.HAVE_SECRETS == 'true'
+        run: |
+          make -C relay build
+          make -C app build VERSION="${GITHUB_REF_NAME#v}"
+          scripts/build-ghosttykit.sh --check app/build/Hesper.app/Contents/MacOS/Hesper
+      - name: Bundle and sign (as install.sh does)
+        if: env.HAVE_SECRETS == 'true'
+        run: |
+          app=app/build/Hesper.app
+          for tool in hesperd hesperctl hesper-keys; do
+            cp relay/dist/$tool $app/Contents/MacOS/$tool
+          done
+          shasum -a 256 relay/dist/hesperd | cut -d' ' -f1 > $app/Contents/Resources/hesperd.sha256
+          codesign --force --options runtime --timestamp --entitlements packaging/hesperd.entitlements --sign "$SIGN_IDENTITY" $app/Contents/MacOS/hesperd
+          for tool in hesperctl hesper-keys; do
+            codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" $app/Contents/MacOS/$tool
+          done
+          codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" $app
+          codesign --verify --strict --deep $app
+      - name: Notarize and staple
+        if: env.HAVE_SECRETS == 'true'
+        env:
+          NOTARY_API_KEY: ${{ secrets.NOTARY_API_KEY }}
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER: ${{ secrets.NOTARY_API_ISSUER }}
+        run: |
+          echo "$NOTARY_API_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --keepParent app/build/Hesper.app "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER" --wait
+          rm "$RUNNER_TEMP/notary.p8"
+          xcrun stapler staple app/build/Hesper.app
+          spctl --assess --type execute --verbose app/build/Hesper.app
+      - name: Release assets
+        if: env.HAVE_SECRETS == 'true'
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent app/build/Hesper.app "dist/Hesper-$GITHUB_REF_NAME.zip"
+          (cd dist && shasum -a 256 *.zip > SHA256SUMS)
+          {
+            echo "Source: https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA"
+            echo
+            echo "libghostty built from source without GNU libintl (no LGPL code in this build; see docs/licensing.md and THIRD_PARTY_NOTICES.md):"
+            echo
+            echo '```'
+            cat app/Vendor/GhosttyKit.source
+            echo '```'
+          } > "$RUNNER_TEMP/notes.md"
+      - name: Upload
+        if: env.HAVE_SECRETS == 'true' && startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Hesper $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
+      - name: Remove the temporary keychain
+        if: always() && env.HAVE_SECRETS == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

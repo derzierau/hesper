@@ -1,0 +1,9 @@
+.state
+dist
+*.credentials.json
+*.db
+.git
+deploy/auth.json
+deploy/local.env
+deploy/secrets
+*.credentials.json.lock

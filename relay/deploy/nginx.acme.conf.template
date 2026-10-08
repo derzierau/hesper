@@ -1,0 +1,12 @@
+# Temporary HTTP-only vhost for the first certificate issuance.
+# Template: ${RELAY_DOMAIN} is your relay's domain. scripts/deploy.py fills it
+# in; by hand: RELAY_DOMAIN=relay.example.com envsubst '${RELAY_DOMAIN}' \
+#   < nginx.acme.conf.template > relay.conf
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${RELAY_DOMAIN};
+    access_log off;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 503; }
+}

@@ -1,0 +1,11 @@
+.state/
+dist/
+*.db
+*.credentials.json
+
+deploy/auth.json
+deploy/local.env
+deploy/secrets/
+*.credentials.json.lock
+
+__pycache__/

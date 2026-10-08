@@ -1,0 +1,61 @@
+name: Hesper relay
+on:
+  push:
+    paths: ["relay/**", ".github/workflows/relay.yml"]
+  pull_request:
+    paths: ["relay/**", ".github/workflows/relay.yml"]
+# Read-only token; no secrets are used, so pull requests from forks run
+# the same job safely.
+permissions:
+  contents: read
+concurrency:
+  group: relay-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  # The job id ("test") is what branch protection requires: keep it.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: relay/go.sum
+      # tmux is the ground truth of internal/vt's emulator tests, which need
+      # tmux 3.7 or newer (older ones are skipped): Ubuntu's apt has 3.4,
+      # so Linux builds the pinned release from source.
+      - name: Install tmux on Linux
+        if: runner.os == 'Linux'
+        working-directory: ${{ runner.temp }}
+        env:
+          TMUX_VERSION: 3.7c
+          TMUX_SHA256: 7c60cae9a0e25288e2e24750aafc9e8800fc7fd4555e447e1b29ee4201cfb3bf
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libevent-dev libncurses-dev bison pkg-config
+          curl -fsSL -o tmux.tar.gz "https://github.com/tmux/tmux/releases/download/$TMUX_VERSION/tmux-$TMUX_VERSION.tar.gz"
+          echo "$TMUX_SHA256  tmux.tar.gz" | sha256sum -c -
+          tar xzf tmux.tar.gz
+          cd "tmux-$TMUX_VERSION"
+          ./configure --prefix=/usr/local >/dev/null
+          make -j"$(nproc)" >/dev/null
+          sudo make install >/dev/null
+          tmux -V
+      - name: Install tmux on macOS
+        if: runner.os == 'macOS'
+        run: command -v tmux || brew install tmux
+      - run: test -z "$(gofmt -l .)"
+      - run: make build test check
+      - name: Build relay container
+        if: runner.os == 'Linux'
+        run: docker build -t hesper-relay:ci .

@@ -1,0 +1,9 @@
+  >_ OpenAI Codex (v0.160.0)
+     {dir}
+
+  {status}
+
+› Ask Codex to do anything
+
+  gpt-5 default · {dir}
+  ? for shortcuts                                                               ⚠ 2 warnings · f2 to view

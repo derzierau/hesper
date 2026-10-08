@@ -1,0 +1,28 @@
+# Join an existing nginx/certbot stack (scripts/deploy.py); publish no host
+# ports. RELAY_PROXY_NETWORK is that stack's Docker network.
+services:
+  relay:
+    build: ../.state/production
+    image: ${GHOSTY_IMAGE:-ghosty-relay:local}
+    restart: unless-stopped
+    command: ["--listen", "0.0.0.0:8787", "--data", "/data", "--auth-config", "/etc/ghosty/auth.json"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes:
+      - relay-data:/data
+      - ./auth.json:/etc/ghosty/auth.json:ro
+      - ./secrets/github-client-secret:/run/secrets/github-client-secret:ro
+    networks:
+      proxy:
+        aliases: [ghosty-relay]
+volumes:
+  relay-data:
+networks:
+  proxy:
+    external: true
+    name: ${RELAY_PROXY_NETWORK:?set RELAY_PROXY_NETWORK to the nginx stack's Docker network}

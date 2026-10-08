@@ -1,0 +1,7 @@
+{
+  "publicURL": "https://relay.example.com",
+  "githubClientId": "REPLACE_WITH_GITHUB_OAUTH_CLIENT_ID",
+  "githubSecretFile": "/run/secrets/github-client-secret",
+  "allowedGitHubIds": ["12345678"],
+  "appCallbacks": []
+}

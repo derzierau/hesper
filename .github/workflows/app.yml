@@ -1,0 +1,45 @@
+name: Hesper app
+on:
+  push:
+    paths: ["app/**", "relay/**", "install.sh", "scripts/**", "packaging/**", ".github/workflows/app.yml"]
+  pull_request:
+    paths: ["app/**", "relay/**", "install.sh", "scripts/**", "packaging/**", ".github/workflows/app.yml"]
+# Read-only token; no secrets are used, so pull requests from forks run
+# the same job safely.
+permissions:
+  contents: read
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  # The job id ("app") is what branch protection requires: keep it.
+  app:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: |
+            relay/go.sum
+            app/Tools/fake-hesperd/go.mod
+      - name: Select Xcode 26
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+      - name: Relay tools (hesperd, hesperctl, hesper-keys)
+        run: make -C relay build
+      - name: App unit tests and fake daemon
+        run: make -C app test-unit test-fake
+      - name: Build Hesper.app
+        run: make -C app build
+      # Launches the app against the fake daemon; needs a GPU-backed window
+      # server, which hosted runners do not always give libghostty.
+      - name: UI smoke test
+        continue-on-error: true
+        run: make -C app test-ui
+      - name: install.sh (dry runs in a temp HOME)
+        run: scripts/test-install.sh

@@ -1,0 +1,30 @@
+services:
+  relay:
+    build: ..
+    restart: unless-stopped
+    command: ["--listen", "0.0.0.0:8787", "--data", "/data", "--auth-config", "/etc/ghosty/auth.json"]
+    volumes:
+      - relay-data:/data
+      - ./auth.json:/etc/ghosty/auth.json:ro
+      - ./secrets/github-client-secret:/run/secrets/github-client-secret:ro
+    # The relay has no published port. Caddy is the only public entry point.
+    networks: [relay]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?set RELAY_DOMAIN to your relay domain, e.g. RELAY_DOMAIN=relay.example.com docker compose up -d}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [relay]
+volumes:
+  relay-data:
+  caddy-data:
+  caddy-config:
+networks:
+  relay:
