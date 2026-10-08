@@ -376,10 +376,15 @@ func (sc *scanner) loadThreads() {
 	}
 }
 
+// pauseEvery is how much readLines reads between pauses (the throttle's
+// rest and the check for Close).
+const pauseEvery = 1 << 20
+
 // readLines calls fn with every complete line of r (without its newline)
 // and returns the bytes those lines took; a last line without a newline
-// is left for later. pause, when set, runs after every 4 MiB (an error
-// stops the reading).
+// is left for later. pause, when set, runs after every pauseEvery bytes
+// read, also inside a long line (an error stops the reading: Close
+// interrupts a pass within about that much reading).
 func readLines(r io.Reader, fn func(line []byte), pause func() error) (int64, error) {
 	br := bufio.NewReaderSize(r, 1<<20)
 	var consumed, sincePause, pending int64
@@ -389,6 +394,13 @@ func readLines(r io.Reader, fn func(line []byte), pause func() error) (int64, er
 		chunk, err := br.ReadSlice('\n')
 		if errors.Is(err, bufio.ErrBufferFull) {
 			pending += int64(len(chunk))
+			// A line of up to maxLine: still a place to stop.
+			if sincePause += int64(len(chunk)); pause != nil && sincePause >= pauseEvery {
+				sincePause = 0
+				if err := pause(); err != nil {
+					return consumed, err
+				}
+			}
 			if !tooLong {
 				if len(long)+len(chunk) > maxLine {
 					tooLong, long = true, nil
@@ -415,8 +427,8 @@ func readLines(r io.Reader, fn func(line []byte), pause func() error) (int64, er
 		}
 		long, tooLong, pending = nil, false, 0
 		consumed += n
-		sincePause += n
-		if pause != nil && sincePause >= 4<<20 {
+		sincePause += int64(len(chunk)) // a long line's earlier chunks counted above
+		if pause != nil && sincePause >= pauseEvery {
 			sincePause = 0
 			if err := pause(); err != nil {
 				return consumed, err

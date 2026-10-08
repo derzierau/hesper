@@ -222,7 +222,7 @@ func (d *DB) write(fn func(tx *sql.Tx) error) (err error) {
 	done := make(chan error, 1)
 	defer func() {
 		if recover() != nil {
-			err = errors.New("history index is closed")
+			err = errClosed // Close went ahead of a slow reader (Service.Close)
 		}
 	}()
 	d.ops <- op{fn: fn, done: done}
