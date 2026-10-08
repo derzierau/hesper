@@ -4,7 +4,7 @@
 
 <h1 align="center">hesper.</h1>
 
-<p align="center"><b>Every agent on every Mac, in one calm window.</b></p>
+<p align="center"><b>Every Mac you own, running your agents. One fast window to steer them.</b></p>
 
 <p align="center">
   <a href="https://github.com/derzierau/hesper/actions/workflows/app.yml"><img src="https://github.com/derzierau/hesper/actions/workflows/app.yml/badge.svg" alt="app"></a>
@@ -13,12 +13,16 @@
   <img src="https://img.shields.io/badge/macOS-14%2B-171A2E" alt="macOS 14+">
 </p>
 
-Hesper is a native macOS app for people who run many Claude Code and Codex
-agents at once, often on more than one Mac. Every agent is a live terminal
-tile on one wall. The ones waiting for you (an approval, a question, an
-error) line up in a single queue, one key away. Agents outlive the window,
-survive reboots, and can move to another Mac with their conversation and
-their uncommitted work.
+Hesper turns all your Macs into one pool of compute for Claude Code and Codex
+agents. Start an agent on the laptop, the Mac mini under the desk or the
+Studio in the office, from any of them. Every agent shows up as a live
+terminal tile on one wall, wherever it runs. The ones waiting for you line up
+in a single queue, one key away.
+
+Every layer is trimmed for speed: a native AppKit app on libghostty, a small
+Go daemon per Mac, and a budget for every hop. Typing into an agent reaches
+the screen in about 3 ms, the wall holds 120 Hz with 16 live agents, and 30
+idle agents cost the daemon practically nothing.
 
 Hesper is named after Hesperos, the evening star: the first light after
 sunset. Your agents run quietly across your Macs; Hesper lights up the one
@@ -27,43 +31,81 @@ that needs you.
 > Hesper is built on [libghostty](https://ghostty.org). It is an independent
 > project and not affiliated with Ghostty.
 
-## Why Hesper
+## Every Mac is compute
 
-When agents do the typing, your attention is the scarce resource. Running six
-or sixteen agents in tmux panes, terminal tabs or separate windows means
-cycling through all of them to find the one that is stuck on a prompt, and
-an agent you start on one Mac stays on that Mac.
+One Mac runs out of cores, memory and battery long before you run out of
+tasks. Most people who run many agents have a second or third Mac sitting
+idle. Hesper uses all of them.
 
-**One wall for every agent, on every Mac.** Each agent is a live,
-GPU-rendered terminal tile, grouped in bands by project. A remote agent looks
-exactly like a local one: the machine is a badge on the agent, not a place
-you go to.
+**Start anywhere, run anywhere.** Pick the machine when you start an agent
+(`@mini` in the composer, `--machine mini` on the command line), or give a
+project a default machine. A remote agent looks and behaves exactly like a
+local one: the machine is a badge on the tile, not a place you go to.
 
-**One queue, one key.** Hesper knows each agent's state from Claude Code's
-and Codex's own hooks, not from guessing at the screen. ⌘J jumps to the next
-agent that needs you: approvals first, then questions, then errors. ⏎, A or
-N allows, always-allows or denies right on the tile. Tiles never jump around
-to get your attention.
+**Move work to where there is room.** ⌘⇧M moves a running agent to another
+Mac with its conversation and its uncommitted changes, and resumes it there.
+⌘Y searches every Claude and Codex session on all your Macs; resume one where
+it ran, continue it on another Mac, or hand it from Claude to Codex.
 
-**The real agents, natively.** Hesper runs the actual `claude` and `codex`
-TUIs, exactly as their makers designed them, in libghostty surfaces inside an
-AppKit app. There is no web view and no replacement chat UI, so every CLI
-feature works on day one.
+**Agents that use the whole pool.** `hesperctl`, the Hesper skill and the
+MCP server let Claude and Codex start their own helpers on any of your Macs,
+wait for them and collect their results. Each agent controls only the agents
+it started, and only within depth and count limits.
 
-**Agents belong to the Mac, not the window.** A small daemon, `hesperd`, owns
-every agent's terminal. Close the app, restart it or reboot: agents come back
-with their session. You get tmux-style persistence without a terminal inside
-a terminal.
-
-**Your machines, end to end encrypted.** Macs reach each other directly on
-the same network, or through a relay you run that forwards traffic it cannot
+**Your machines, end to end encrypted.** Macs on the same network talk
+directly; otherwise through a relay you run that forwards traffic it cannot
 read. Device keys live in the Secure Enclave, every device is approved per
-Mac, and opening a shell on another Mac needs Touch ID.
+Mac, and opening a shell on another Mac needs Touch ID. Macs with agents at
+work stay awake (on battery only above 20 %).
 
-**Conversations that move.** ⌘Y searches every Claude and Codex session on
-all your Macs. Resume one, fork it, continue on another Mac, or hand it from
-Claude to Codex with a brief. ⌘⇧M moves a running agent to another Mac,
-uncommitted changes included.
+## Built for speed
+
+Hesper is meant to sit open all day next to dozens of busy agents, so every
+part is measured against a budget and kept lean:
+
+| | Measured |
+|---|---|
+| Keystroke → frame on screen, focused agent | **2.7 ms** p50, 5.5 ms p90 |
+| Wall with 16 live agents | **120 fps, 0 dropped frames** (worst frame 8.4 ms) |
+| Agent state change → tile | 2.3 ms p50 |
+| Keystroke round trip through the daemon | 35 µs |
+| Full-screen redraw on attach (200×60, every cell colored) | 0.44 ms |
+| 30 idle agents | 0.15 ms of daemon CPU in 2 s |
+| Hook call from Claude or Codex | 78 µs; never blocks the agent |
+| Keystroke → echo, agent on another Mac (same network) | **0.4 ms** p50 |
+| Keystroke → echo, agent on another Mac (relay, 40 ms network floor) | 45 ms p50 |
+| State change on another Mac → your wall | 22 ms p50 |
+
+How it stays fast:
+
+- **Native, no web view.** AppKit and libghostty's GPU renderer, Swift 6 on
+  the app side, Go on the daemon side. The real `claude` and `codex` TUIs run
+  unchanged, so there is no chat UI to keep in sync.
+- **Draw only what is seen.** Tiles are vsync-paced and draw only the rows
+  they show; hidden and offscreen tiles render nothing. The focused agent
+  skips vsync for the lowest typing latency.
+- **The daemon is the terminal.** `hesperd` keeps one VT emulator per agent,
+  so attaching, switching or reconnecting starts with an exact redraw instead
+  of replaying output. Slow viewers get a fresh redraw instead of a growing
+  buffer.
+- **Pushed, not polled.** Claude's and Codex's own hooks tell the daemon
+  when an agent works, waits or finishes, and every change is pushed to the
+  app and to other Macs.
+- **Direct when possible.** Macs on the same network skip the relay; a link
+  moves to the direct path as soon as it is up.
+- **Background work stays in the background.** Session history is indexed
+  into SQLite FTS5 at background priority, and nothing runs for an agent that
+  is quiet.
+
+## One wall, one queue
+
+**One queue, one key.** ⌘J jumps to the next agent that needs you: approvals
+first, then questions, then errors. ⏎, A or N allows, always-allows or denies
+right on the tile. Tiles never jump around to get your attention.
+
+**Agents belong to the Mac, not the window.** `hesperd` owns every agent's
+terminal. Close the app, restart it or reboot: agents come back with their
+session. You get tmux-style persistence without a terminal inside a terminal.
 
 **Fast to start.** ⌘N opens a draft tile in the wall. Type the task, add
 `@machine`, `#project`, `/profile` or `~branch`, and ⌘↩ starts it; `~branch`
@@ -207,6 +249,7 @@ starts waiting for you.
 ```sh
 hesperctl ls                                  # every agent, with its state
 hesperctl new --project ~/projects/app "Fix the login redirect"
+hesperctl new --machine mini --worktree --project ~/projects/app "Add the export"
 hesperctl attach fix-the-login-redirect       # Ctrl-] detaches
 hesperctl send ID "yes, go ahead" ; hesperctl approve ID ; hesperctl deny ID
 hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl mv ID mini
