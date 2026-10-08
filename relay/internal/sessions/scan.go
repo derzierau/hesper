@@ -580,6 +580,9 @@ func (sc *scanner) store(key string, f fileInfo, meta Meta, offset int64, state 
 	changed := false
 	var rec Record
 	err := s.db.write(func(tx sqlTx) error {
+		// Ownership may have been claimed after meta was captured. Recheck
+		// inside the serialized write so a stale scan cannot undo a resume.
+		meta.External = !s.isOwned(f.kind, f.sid)
 		old, err := getTx(tx, key)
 		if err != nil {
 			return err
