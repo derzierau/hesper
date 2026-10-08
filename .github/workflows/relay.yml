@@ -1,6 +1,7 @@
 name: Hesper relay
 on:
   push:
+    branches: ["**"] # release tags have their own build and test jobs
     paths: ["relay/**", ".github/workflows/relay.yml"]
   # Every pull request runs it: branch protection requires this check, and a
   # path filter would leave it pending on pull requests outside relay/.

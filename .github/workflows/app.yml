@@ -1,6 +1,7 @@
 name: Hesper app
 on:
   push:
+    branches: ["**"] # release tags have their own build and test jobs
     paths: ["app/**", "relay/**", "install.sh", "scripts/**", "packaging/**", ".github/workflows/app.yml", ".github/workflows/release.yml"]
   # Every pull request runs it: branch protection requires this check, and a
   # path filter would leave it pending on pull requests that touch only docs.
