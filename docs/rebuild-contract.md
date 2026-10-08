@@ -96,7 +96,8 @@ directory 0700. Peer credentials checked: same uid only.
 | `hello` | `{client, version}` | `{daemon, version, machine, machines:[{short,name,online,rttMs,route}]}` |
 | `agents.list` | – | `[Agent]` |
 | `agents.subscribe` | – | result `{}` then notifications `agents.changed {agent}` / `agents.removed {id}` (first an `agents.changed` for every agent) |
-| `agents.spawn` | `{machine?, profile?, kind?, project, task, name?, worktree?: true\|path, branch?}` | `Agent` |
+| `agents.spawn` | `{machine?, profile?, kind?, project, task, name?, worktree?: true\|path, branch?, letParentAnswer?}` | `Agent` (inside an agent: its child, see "As built — agent tree") |
+| `agents.result` | `{id}` | `{id, state, message?, summary?, at?}` (added, see "As built — agent tree") |
 | `agents.input` | `{id, text}` (bytes as UTF-8; `\r` submits) | `{}` |
 | `agents.answer` | `{id, decision: allow\|always\|deny, message?}` | `{}`; maps to the agent kind's keys (port `APPROVAL_KEYS` from `bin/ghosty-cockpit`) |
 | `agents.stop` | `{id}` | `{}` (SIGHUP, then SIGKILL after 5 s; registry keeps it as `exited`) |
@@ -3177,6 +3178,92 @@ grace), not SIGTERM — SIGHUP is how Claude Code saves and exits cleanly;
 answers before a running agent has ended (the removal notification says
 when it is gone), so a slow tool never holds a remote host's serialized
 operations. A failed (`error`) background agent is not closed.
+
+### As built — agent tree (internal/agents/tree.go, pkg/wire, hesperctl tree.go)
+
+Agents start agents: `hesperctl new` run inside an agent makes a child.
+hesperd records the tree and lets an agent steer only what it started,
+so an agent can orchestrate others without being able to approve its
+own actions or touch the person's other agents.
+
+**Wire.** `Agent` gains `parent` (the starting agent's full id; empty
+for an agent a person started), `depth` (0 for a person's agent, parent's
++ 1) and `letParentAnswer` (bool). All omitempty, in `agents.list` and
+`agents.changed`, persisted in agents.json as part of the agent (so they
+survive daemon restarts and respawns), carried by moves (handoff
+manifest `agent.parent/depth/letParentAnswer`; after `agents.move` the
+controller re-points its local children at the moved agent's new id).
+`agents.spawn` gains `letParentAnswer` (ignored without a parent) and
+`caller`. Every `agents.*` call may carry `caller` (the calling agent's
+id; `wire.Client.Caller` adds it, hesperctl sets it from
+`HESPER_AGENT_ID`, completed with `HESPER_MACHINE`). hesperd drops
+`caller` before forwarding to another machine (hosts decode strictly);
+for a remote spawn it sends `parent` and `depth` instead, which a host
+takes from an approved controller, and which hesperd ignores from its
+local socket. New method `agents.result {id}` →
+`{id, state, message, summary, at}`: the final message of the agent's
+last turn (Claude's Stop `last_assistant_message`, else the transcript's
+last assistant text; Codex notify `last-assistant-message`; kept up to
+64 KiB, persisted as `lastMessage` in agents.json), and its summary.
+Forwarded to hosts (device right `observe`); a host without it answers
+with the summary from the controller's list.
+
+**Who calls.** The daemon takes the socket peer's PID (macOS
+`LOCAL_PEERPID`, Linux `SO_PEERCRED`) and walks its parents
+(`kern.proc.pid` sysctl, `/proc/PID/stat`); the nearest running agent
+process in that chain is the caller (verified). Without one it takes
+`caller` from the params (advisory). Both missing: a person (the app,
+hesperctl in an ordinary terminal). A verified caller beats a claimed
+one (a mismatch is audited as `agent.caller-mismatch`). A caller agent
+hesperd does not know is refused (`forbidden`). A person's own shell
+agent (kind shell, no parent) acts as the person; a shell an agent
+started is that agent's child. **This boundary stops accidents and
+prompt-injection chains, not a hostile process of the same user**: such
+a process can leave the agent's process tree (double fork, reparented to
+launchd) and unset `HESPER_AGENT_ID`, and is then a person.
+
+**Policy** (caller an agent; a person may do everything as before):
+
+| Method | Allowed when |
+|---|---|
+| read-only (`agents.list`, `agents.result`, `agents.subscribe`, ro attach, `hello`, …) | always |
+| `agents.spawn` | the child's depth (caller's + 1) ≤ `maxAgentDepth` (default 3) and the caller has < `maxAgentChildren` (default 8) live children (not exited; spawns under way count) |
+| `agents.answer`; `agents.input` to an agent in `approval` or `question` | the target is the caller's **own child** (not a grandchild, not itself) started with `letParentAnswer` |
+| `agents.input` (otherwise), `stop`, `resume`, `remove`, `rename`, `move`, `close`, `kill`, `background`; rw attach (verified callers only) | the target is a strict **descendant** of the caller (never itself, never its parent or another agent's) |
+
+Refusals are JSON-RPC errors with `data.code: "forbidden"` (hesperctl
+exit 5) and a message naming the rule. Limits come from settings.json in
+the config directory (`maxAgentDepth`, `maxAgentChildren`; 0 means agents
+start none; read at daemon start). An agent whose ancestor was closed is
+no longer that ancestor's descendant (the walk follows `parent` through
+listed agents). For remote targets the controller decides from its view
+of the other machine's agents before forwarding. Not covered: `sessions.*`
+starts (resume/fork from the history) and `files.put` are not checked.
+
+**Audit.** Every call of an agent to `agents.spawn` or a method above
+appends a JSON line to `audit.log` in the state directory (the host's
+file and format, plus `agent`, `target`, `route: "local"`): event
+`agent.request` (ok and the error) or `agent.refused` (the policy's
+reason). A person's local calls are not audited.
+
+**CLI.** `new --let-parent-answer`; `new --wait [--timeout D]` waits
+(subscription) until the child is done, idle, exited or needs you
+(approval, question, error), then prints its result (or what it waits
+for); `--json` prints `{agent, result}`; error exits 1, timeout 6.
+`ls --tree` indents children under parents; `ls --children [ID]` lists
+ID's children (default: the agent hesperctl runs in). `result ID [--json]`
+prints the last final message, else the summary (nothing yet: exit 1).
+
+Tests: internal/agents/tree_test.go (answer/steer matrix: person, parent,
+non-parent, self, grandparent, with and without letParentAnswer, input
+in approval, unknown caller, a person's shell and an agent's shell;
+limits; persistence of the tree and the result across a restart;
+reparent; verified caller beats a lying claim, rw attach; the policy as
+a table), cmd/hesperctl/tree_test.go (`new --let-parent-answer --wait`,
+`result`, `ls --children`, `ls --tree`, approve/stop exit codes,
+timeout), internal/transport `TestRemoteAgentTree` (a child on M of an
+agent on L: parent recorded, answer policy and rename enforced on L,
+result from M).
 
 ## Wire names kept from Ghosty
 

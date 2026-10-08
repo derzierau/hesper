@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -74,6 +75,11 @@ type Server struct {
 	ln    net.Listener
 
 	drafts *DraftStore // drafts.go
+
+	// agent tree (tree.go): child slots taken by spawns under way, by
+	// parent.
+	treeMu   sync.Mutex
+	spawning map[string]int
 }
 
 // NewServer serves reg.
@@ -158,6 +164,18 @@ func (s *Server) attach(conn net.Conn, r *bufio.Reader, line []byte) {
 		refuse(conn, wire.Errorf(wire.CodeInvalid, "bad attach request"))
 		return
 	}
+	if req.Mode == wire.ModeRW {
+		// agent tree: an agent types only into agents it started.
+		if a, ok := s.peerAgent(conn); ok && (a.Kind != wire.KindShell || a.Parent != "") {
+			target := s.fullID(req.Attach)
+			if !s.tree().descends(target, a.ID) {
+				err := wire.Errorf(wire.CodeForbidden, "agent %s may only attach read-write to agents it started; %s is not one of them (attach read-only)", a.ID, target)
+				s.auditCall(a.ID, "attach", target, err, nil)
+				refuse(conn, err)
+				return
+			}
+		}
+	}
 	if s.reg.IsRemote(req.Attach) {
 		if s.reg.opt.Remote != nil {
 			s.reg.opt.Remote.Attach(conn, r, req)
@@ -196,6 +214,9 @@ type ctrl struct {
 	done   chan struct{}
 	subbed bool
 	mu     sync.Mutex
+	// agent tree (tree.go): the peer process and its parents.
+	peerOnce sync.Once
+	peerPIDs []int
 }
 
 func (s *Server) control(conn net.Conn, r *bufio.Reader, first []byte) {
@@ -214,7 +235,7 @@ func (s *Server) control(conn net.Conn, r *bufio.Reader, first []byte) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				result, err := s.dispatch(req.Method, req.Params)
+				result, err := s.dispatch(c, req.Method, req.Params)
 				if len(req.ID) == 0 {
 					return // a notification: no answer
 				}
@@ -348,9 +369,83 @@ func decode(params json.RawMessage, v any) error {
 	return nil
 }
 
-// dispatch runs one method.
-func (s *Server) dispatch(method string, params json.RawMessage) (any, error) {
+// dispatch runs one method of control connection c: the agent tree's
+// policy (tree.go) first for the methods that start or change agents.
+func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, error) {
+	if method != "agents.spawn" && !treeMutating[method] {
+		return s.call(method, params)
+	}
+	caller, t, err := s.callerOf(c, method, params)
+	if err != nil {
+		return nil, err
+	}
+	params = withoutCaller(params)
+	if method == "agents.spawn" {
+		return s.spawn(caller, params, t)
+	}
+	if caller == "" {
+		return s.call(method, params)
+	}
+	var head wire.IDParams
+	if err := decode(params, &head); err != nil {
+		return nil, err
+	}
+	target := s.fullID(head.ID)
+	if refused := s.authorize(caller, method, target, t); refused != nil {
+		s.auditCall(caller, method, target, refused, nil)
+		return nil, refused
+	}
+	res, err := s.call(method, params)
+	s.auditCall(caller, method, target, nil, err)
+	if a, ok := res.(wire.Agent); ok && err == nil && method == "agents.move" {
+		s.reg.Reparent(target, a.ID)
+	}
+	return res, err
+}
+
+// spawn is agents.spawn: an agent's spawn gets its place in the tree
+// (parent, depth) within the limits; a person's has none.
+func (s *Server) spawn(caller string, params json.RawMessage, t treeView) (any, error) {
+	var p wire.SpawnParams
+	if err := decode(params, &p); err != nil {
+		return nil, err
+	}
+	p.Caller, p.Parent, p.Depth = "", "", 0
+	if caller != "" {
+		depth, release, err := s.spawnTree(caller, t)
+		if err != nil {
+			s.auditCall(caller, "agents.spawn", "", err, nil)
+			return nil, err
+		}
+		defer release()
+		p.Parent, p.Depth = caller, depth
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.call("agents.spawn", raw)
+	if caller != "" {
+		var child struct {
+			ID string `json:"id"`
+		}
+		switch v := res.(type) {
+		case wire.Agent:
+			child.ID = v.ID
+		case json.RawMessage:
+			json.Unmarshal(v, &child)
+		}
+		s.auditCall(caller, "agents.spawn", child.ID, nil, err)
+	}
+	return res, err
+}
+
+// call runs one method.
+func (s *Server) call(method string, params json.RawMessage) (any, error) {
 	reg := s.reg
+	if strings.HasPrefix(method, "agents.") {
+		params = withoutCaller(params) // hosts decode strictly
+	}
 	remote := reg.opt.Remote
 	// Methods about one agent go to its machine.
 	forward := func(id string) (bool, any, error) {
@@ -468,6 +563,27 @@ func (s *Server) dispatch(method string, params json.RawMessage) (any, error) {
 			}
 			return reg.Rename(p.ID, p.Name)
 		}
+	case "agents.result":
+		// agent tree: the last turn's final message
+		var p wire.IDParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		if p.ID == "" {
+			return nil, &badParams{errors.New("id is required")}
+		}
+		if ok, res, err := forward(p.ID); ok {
+			if err != nil && remote != nil {
+				// A host without agents.result: its summary.
+				for _, a := range remote.Agents() {
+					if a.ID == p.ID {
+						return wire.AgentResult{ID: a.ID, State: a.State, Summary: a.Summary}, nil
+					}
+				}
+			}
+			return res, err
+		}
+		return reg.Result(p.ID)
 	case "projects.recent":
 		return reg.Recent(), nil
 	case "projects.clone":

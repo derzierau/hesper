@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -74,6 +75,11 @@ const MaxLine = 8 << 20
 
 // Client is a control connection.
 type Client struct {
+	// Caller (agent tree): when set, Call adds "caller": Caller to the
+	// params object of every agents.* method, so hesperd knows which
+	// agent acts (hesperctl sets it from HESPER_AGENT_ID).
+	Caller string
+
 	conn  net.Conn
 	wmu   sync.Mutex
 	mu    sync.Mutex
@@ -188,7 +194,9 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 		if err != nil {
 			return err
 		}
-		req.Params = p
+		req.Params = withCaller(p, c.Caller, method)
+	} else if c.Caller != "" && strings.HasPrefix(method, "agents.") {
+		req.Params = withCaller(json.RawMessage("{}"), c.Caller, method)
 	}
 	line, err := json.Marshal(req)
 	if err != nil {
@@ -222,6 +230,27 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 		c.mu.Unlock()
 		return ctx.Err()
 	}
+}
+
+// withCaller adds "caller" to an agents.* method's params object (when it
+// has none).
+func withCaller(params json.RawMessage, caller, method string) json.RawMessage {
+	if caller == "" || !strings.HasPrefix(method, "agents.") {
+		return params
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(params, &m) != nil || m == nil {
+		return params
+	}
+	if _, ok := m["caller"]; ok {
+		return params
+	}
+	m["caller"], _ = json.Marshal(caller)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return params
+	}
+	return out
 }
 
 // Notifications are the daemon's notifications (agents.subscribe); the

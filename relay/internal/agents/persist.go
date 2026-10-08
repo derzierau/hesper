@@ -34,6 +34,10 @@ type record struct {
 	// Closing (closing agents): it was being closed (the reason) when the
 	// daemon stopped: it is not restored.
 	Closing string `json:"closing,omitempty"`
+	// LastMessage (agent tree): the final message of the agent's last
+	// turn, for agents.result.
+	LastMessage   string    `json:"lastMessage,omitempty"`
+	LastMessageAt time.Time `json:"lastMessageAt,omitzero"`
 }
 
 // engagedRecord: a saved agent got past starting. Files written before
@@ -90,7 +94,8 @@ func (r *Registry) restore(rec record) {
 		r.scheduleSave()
 		return
 	}
-	a := &agent{Agent: rec.Agent, local: rec.Local, endedTurn: rec.EndedTurn, sessionSeen: rec.SessionSeen, engaged: engagedRecord(rec)}
+	a := &agent{Agent: rec.Agent, local: rec.Local, endedTurn: rec.EndedTurn, sessionSeen: rec.SessionSeen, engaged: engagedRecord(rec),
+		lastMessage: rec.LastMessage, lastMessageAt: rec.LastMessageAt}
 	if projectID != "" {
 		a.ProjectID = projectID
 	}
@@ -181,7 +186,8 @@ func (r *Registry) writeState() error {
 	r.mu.Lock()
 	f := stateFile{Version: 1}
 	for _, a := range r.agents {
-		f.Agents = append(f.Agents, record{Agent: a.Agent, Local: a.local, Running: a.running, PendingTask: a.pendingTask, EndedTurn: a.endedTurn, SessionSeen: a.sessionSeen, Engaged: a.engaged, Respawn: a.respawn, Closing: a.closeReason})
+		f.Agents = append(f.Agents, record{Agent: a.Agent, Local: a.local, Running: a.running, PendingTask: a.pendingTask, EndedTurn: a.endedTurn, SessionSeen: a.sessionSeen, Engaged: a.engaged, Respawn: a.respawn, Closing: a.closeReason,
+			LastMessage: a.lastMessage, LastMessageAt: a.lastMessageAt})
 	}
 	r.mu.Unlock()
 	sort.Slice(f.Agents, func(i, j int) bool { return f.Agents[i].Created.Before(f.Agents[j].Created) })

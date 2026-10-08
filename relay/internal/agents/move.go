@@ -140,6 +140,7 @@ func (r *Registry) Import(ctx context.Context, dir string) (wire.Agent, error) {
 		ID: r.id(local), Machine: r.machine, Kind: m.Agent.Kind, Profile: profileName, Name: m.Agent.Name, Task: m.Agent.Task,
 		Project: placed.Project, ProjectID: projectID, Worktree: placed.Worktree, Branch: placed.Branch, State: wire.StateStarting, StateSince: now,
 		Created: created, Size: r.defaultSize(),
+		Parent: m.Agent.Parent, Depth: m.Agent.Depth, LetParentAnswer: m.Agent.LetParentAnswer && m.Agent.Parent != "", // agent tree
 	}}
 	// A moved agent took its task where it ran: it is never sent again.
 	a.engaged = true

@@ -166,6 +166,21 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 			return nil, publicError(err)
 		}
 		return protocol.JSON(plan), nil
+	case "agents.result":
+		// agent tree: the last turn's final message
+		var p wire.IDParams
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		a, err := s.agent(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		res, err := reg.Result(a.ID)
+		if err != nil {
+			return nil, publicError(err)
+		}
+		return protocol.JSON(res), nil
 	case "agents.probe":
 		var p struct {
 			Path    string   `json:"path"`

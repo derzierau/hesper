@@ -118,6 +118,7 @@ func dialDaemon(ctx context.Context, socket string) (*wire.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w (%s): %v", errNoDaemon, socket, err)
 	}
+	c.Caller = envAgentID() // agent tree (tree.go)
 	return c, nil
 }
 
@@ -193,6 +194,7 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		kind, profile, project, name, branch, machine, worktreePath *string
 		worktree, noSubmit, always, ro, owner                       *bool
 		message                                                     *string
+		tree                                                        newTreeFlags // agent tree (tree.go)
 	)
 	switch command {
 	case "new":
@@ -205,6 +207,7 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		worktreePath = f.String("worktree-path", "", "Run in this worktree (created when missing)")
 		branch = f.String("branch", "", "Branch of the worktree (implies --worktree)")
 		machine = f.String("machine", "", "Machine (short name; default this Mac)")
+		tree = addNewTreeFlags(f)
 	case "send":
 		noSubmit = f.Bool("no-submit", false, "Type the text without pressing Enter")
 	case "approve":
@@ -260,7 +263,8 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 			}
 			task = string(data)
 		}
-		p := wire.SpawnParams{Machine: *machine, Profile: *profile, Kind: *kind, Project: *project, Task: task, Name: *name, Branch: *branch}
+		p := wire.SpawnParams{Machine: *machine, Profile: *profile, Kind: *kind, Project: *project, Task: task, Name: *name, Branch: *branch,
+			LetParentAnswer: *tree.letParentAnswer}
 		switch {
 		case *worktreePath != "":
 			p.Worktree, _ = json.Marshal(*worktreePath)
@@ -270,6 +274,9 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		var a wire.Agent
 		if err := c.Call(ctx, "agents.spawn", p, &a); err != nil {
 			return err
+		}
+		if *tree.wait {
+			return waitAndPrint(context.WithoutCancel(ctx), *socket, a.ID, *tree.timeout, *asJSON)
 		}
 		return print(a)
 	case "send":

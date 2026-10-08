@@ -207,6 +207,10 @@ type agent struct {
 	// closeReason (closing agents, close.go): the agent is being closed;
 	// once its process ends it leaves the registry with this reason.
 	closeReason string
+	// lastMessage (agent tree): the final message of its last turn
+	// (Stop / notify hooks), for agents.result.
+	lastMessage   string
+	lastMessageAt time.Time
 }
 
 // Open loads the registry from the state directory and respawns the agents
@@ -464,7 +468,13 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 		ID: r.id(local), Machine: r.machine, Kind: profile.Kind, Profile: profileName, Name: name, Task: task,
 		Project: project, ProjectID: projectID, Worktree: worktree, Branch: branch, State: wire.StateStarting, StateSince: now, Created: now,
 		Size: wire.Size{Cols: ptyhost.DefaultCols, Rows: ptyhost.DefaultRows},
+		// agent tree (tree.go): set by the server from the caller, or by
+		// a controller for a host
+		Parent: p.Parent, Depth: p.Depth, LetParentAnswer: p.LetParentAnswer && p.Parent != "",
 	}}
+	if a.Parent == "" {
+		a.Depth = 0
+	}
 	if size != nil && size.Cols > 0 && size.Rows > 0 {
 		a.Size = *size
 	}
@@ -1020,9 +1030,10 @@ func (r *Registry) Hook(p wire.HookParams) error {
 	if p.Source != wire.KindClaude && p.Source != wire.KindCodex {
 		return wire.Errorf(wire.CodeInvalid, "source must be claude or codex")
 	}
-	summary := ""
-	if event == "Stop" || event == "notify" {
-		summary = summarize(lastMessage(data))
+	summary, message := "", ""
+	if event == "Stop" || (event == "notify" && str(data, "type") == "agent-turn-complete") {
+		message = lastMessage(data)
+		summary = summarize(message)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1036,6 +1047,9 @@ func (r *Registry) Hook(p wire.HookParams) error {
 		}
 	}
 	r.hookEvent(a, p.Source, event, data, summary)
+	if message = strings.TrimSpace(message); message != "" {
+		r.setLastMessage(a, message) // agent tree: agents.result
+	}
 	return nil
 }
 
