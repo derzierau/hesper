@@ -1,0 +1,5 @@
+{$RELAY_DOMAIN} {
+    reverse_proxy relay:8787 {
+        stream_close_delay 5m
+    }
+}

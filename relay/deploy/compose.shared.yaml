@@ -1,0 +1,27 @@
+# Reuse the Saphenion nginx/certbot stack; publish no additional host ports.
+services:
+  relay:
+    build: ../.state/production
+    image: ${GHOSTY_IMAGE:-ghosty-relay:local}
+    restart: unless-stopped
+    command: ["--listen", "0.0.0.0:8787", "--data", "/data", "--auth-config", "/etc/ghosty/auth.json"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    volumes:
+      - relay-data:/data
+      - ./auth.json:/etc/ghosty/auth.json:ro
+      - ./secrets/github-client-secret:/run/secrets/github-client-secret:ro
+    networks:
+      saphenion:
+        aliases: [ghosty-relay]
+volumes:
+  relay-data:
+networks:
+  saphenion:
+    external: true
+    name: ${SAPHENION_NETWORK:-saphenion_default}

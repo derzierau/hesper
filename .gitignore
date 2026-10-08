@@ -1,0 +1,26 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.log
+
+# Release and build outputs (the release workflow writes dist/ at the root)
+/dist/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Local state, credentials and signing material: never commit these
+.env
+.env.*
+*.credentials.json
+*.credentials.json.lock
+*.p8
+*.p12
+*.pem
+*.key
+*.cer
+
+# Editors
+.idea/
+.vscode/
+*.swp

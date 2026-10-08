@@ -1,0 +1,50 @@
+# Hesper relay on the existing Saphenion server.
+# HESPER_SERVER / HESPER_SSH_USER override the SSH destination.
+set shell := ["bash", "-euc"]
+
+default:
+    @just --list
+
+# Cross-build locally, upload protected config, deploy only the relay container.
+deploy:
+    python3 scripts/deploy.py deploy
+
+# One-time: install the HTTP ACME vhost (before obtaining the first certificate).
+bootstrap-tls:
+    python3 scripts/deploy.py bootstrap-tls
+
+# Obtain/keep the relay certificate, validate nginx, and hot-reload its config.
+tls:
+    python3 scripts/deploy.py tls
+
+# Upload, validate, and hot-reload the relay's nginx vhost.
+proxy:
+    python3 scripts/deploy.py proxy
+
+ps:
+    python3 scripts/deploy.py ps
+
+logs:
+    python3 scripts/deploy.py logs
+
+health:
+    python3 scripts/deploy.py health
+
+devices:
+    python3 scripts/deploy.py devices
+
+revoke device:
+    python3 scripts/deploy.py revoke {{quote(device)}}
+
+# Copy auth.json into its mounted inode and reload only the user allowlist.
+reload-auth:
+    python3 scripts/deploy.py reload-auth
+
+# Briefly pause the relay to take a consistent, protected database backup.
+backup:
+    python3 scripts/deploy.py backup
+
+# Two hesperd against an in-process relay (remote agents, attach, moves);
+# does not contact the deployed relay.
+test-remote:
+    go test -race ./internal/transport -run '^TestRemote' -count=1 -v

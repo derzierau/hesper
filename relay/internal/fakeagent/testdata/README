@@ -1,0 +1,27 @@
+Screens the fake agents draw, recorded from the real programs (never run
+by tests):
+
+claude-trust.txt   Claude Code 2.1.290/2.1.292, first start in a folder it
+                   does not trust (seen in a hesperd trial in
+                   ~/scratch/ghosty-trial: "Quick safety check: Is this a
+                   project you … trust?", the cursor on "No, exit"; text
+                   from the 2.1.292 binary). {dir} is the folder, {choices}
+                   the two choices with the cursor.
+claude-theme.txt   Claude Code's first-run theme screen (binary text).
+claude-permission.txt
+                   Claude Code 2.1.29x's Bash permission prompt (the trial:
+                   "Do you want to proceed? 1. Yes 2. Yes, and don't ask
+                   again for … 3. No, and tell Claude what to do
+                   differently (esc)"; wording from the 2.1.292 binary).
+                   {command}, {description}, {prefix}, {dir}.
+claude-permission-noalways.txt
+                   The same prompt when Claude offers no "don't ask again"
+                   (2 is "No" there).
+codex-update.txt   Codex 0.160's startup update screen (seen in the trial
+                   on `codex resume`, 0.160.0 → 0.160.1; recaptured from
+                   0.160.1 in a scratch CODEX_HOME whose version.json named
+                   a newer release, `--no-daemon`). Esc skips; it then
+                   leaves an "✨ Update available!" box in the history.
+codex-composer.txt Codex 0.160's idle composer (scratch CODEX_HOME, no
+                   prompt sent): "› Ask Codex to do anything" and the
+                   "? for shortcuts" footer. {dir}, {status}.
