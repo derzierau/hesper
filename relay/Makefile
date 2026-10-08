@@ -1,5 +1,7 @@
 .PHONY: build keys test check latency
 UNAME := $(shell uname -s)
+MACOS_MIN_VERSION ?= 14.0
+SWIFT_TARGET ?= $(shell uname -m)-apple-macosx$(MACOS_MIN_VERSION)
 
 build: keys
 	mkdir -p dist
@@ -9,7 +11,7 @@ build: keys
 keys:
 ifeq ($(UNAME),Darwin)
 	mkdir -p dist
-	swiftc -O -o dist/hesper-keys macos/hesper-keys/main.swift
+	swiftc -O -target $(SWIFT_TARGET) -o dist/hesper-keys macos/hesper-keys/main.swift
 else
 	@echo "hesper-keys: not macOS, skipped (controllers use software keys)"
 endif
