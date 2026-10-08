@@ -43,6 +43,17 @@ import Testing
         #expect(try AppOpenRequest.parse(["inbox": true]).target == .inbox)
     }
 
+    @Test func wallTargetsLeaveTheFocusView() throws {
+        // open wall (no args) after open agent: back to the wall, as ⌘Esc.
+        #expect(try AppOpenRequest.parse(.null).target.showsWall)
+        #expect(try AppOpenRequest.parse(["wall": "home"]).target.showsWall)
+        #expect(try AppOpenRequest.parse(["composer": ["task": "x"]]).target.showsWall)
+        #expect(try AppOpenRequest.parse(["agent": "a", "mode": "wall"]).target.showsWall)
+        #expect(try !AppOpenRequest.parse(["agent": "a"]).target.showsWall)
+        #expect(try !AppOpenRequest.parse(["agent": "a", "mode": "window"]).target.showsWall)
+        #expect(try !AppOpenRequest.parse(["inbox": true]).target.showsWall)
+    }
+
     @Test func agentNames() throws {
         let agents = [Agent(id: "L/a7f3k2", name: "push"), Agent(id: "M/b1", name: "push2"), Agent(id: "M/c1", name: "dup"), Agent(id: "L/c2", name: "dup")]
         #expect(try AgentRef.resolve("L/a7f3k2", agents: agents) == "L/a7f3k2")
