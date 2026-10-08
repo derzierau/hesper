@@ -39,7 +39,9 @@ git push origin v0.1.0
 ```
 
 The release workflow runs tests again, publishes both notarized zip files and
-SHA256SUMS, then commits `Casks/hesper.rb` to main with exact archive hashes.
+SHA256SUMS, then commits `Casks/hesper.rb` with exact archive hashes to the
+branch `brew/<tag>`. Changes reach main only through pull requests, so open
+and merge the pull request from the link in the run's summary.
 It can also be re-run through workflow_dispatch with an existing stable tag.
 Do not move an already released tag. Re-running replaces assets for that tag;
 release versions should normally be immutable, with fixes shipped as a new tag.
