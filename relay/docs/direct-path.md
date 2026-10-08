@@ -136,9 +136,17 @@ default) checks with the read-only queries of
 | --- | --- |
 | off (`--getglobalstate`: disabled) | listens |
 | on, hesperd listed as allowed (`--listapps`) | listens |
-| on, hesperd not listed, or blocked, or "block all" | does not listen; logs the fix once; controllers silently use the relay |
+| on, hesperd not listed, downloaded signed software automatically allowed, and its Developer ID signature verifies | listens without changing firewall settings or requiring admin rights |
+| on, unsigned/ad-hoc signed hesperd not listed, automatic allowance disabled, explicitly blocked, or "block all" | does not listen; logs the fix once; controllers silently use the relay |
 
-The fix, once per binary (again after an update that rebuilt it):
+Signed release installs need no administrator firewall change when
+“Automatically allow downloaded signed software” is enabled. The daemon
+verifies the executable's signature against Apple's Developer ID Application
+certificate requirement; an ad-hoc signature does not qualify. Explicit
+per-app blocks and “Block all incoming connections” still take precedence.
+
+If automatic allowance does not apply, an administrator can explicitly allow
+the daemon (repeat after an update of an ad-hoc signed build):
 
 ```sh
 sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add ~/Applications/Hesper.app/Contents/MacOS/hesperd

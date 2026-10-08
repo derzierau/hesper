@@ -334,3 +334,39 @@ func TestMacFirewallVerdicts(t *testing.T) {
 		}
 	}
 }
+
+func TestMacFirewallSignedAllowance(t *testing.T) {
+	for name, c := range map[string]struct {
+		setting, apps, block string
+		signed, allowed      bool
+	}{
+		"downloaded enabled":  {"Automatically allow downloaded signed software ENABLED.", "", "disabled", true, true},
+		"downloaded disabled": {"Automatically allow downloaded signed software DISABLED.", "", "disabled", true, false},
+		"built in only":       {"Automatically allow built-in signed software ENABLED.\nAutomatically allow downloaded signed software DISABLED.", "", "disabled", true, false},
+		"unsigned or invalid": {"Automatically allow downloaded signed software ENABLED.", "", "disabled", false, false},
+		"unknown setting":     {"", "", "disabled", true, false},
+		"explicit block":      {"Automatically allow downloaded signed software ENABLED.", "1 : /opt/test/hesperd\n (Block incoming connections)", "disabled", true, false},
+		"block all":           {"Automatically allow downloaded signed software ENABLED.", "", "enabled", true, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			run := func(args ...string) string {
+				switch args[0] {
+				case "--getglobalstate":
+					return "Firewall is enabled. (State = 1)"
+				case "--getblockall":
+					return "Firewall has block all state set to " + c.block + "."
+				case "--listapps":
+					return c.apps
+				case "--getallowsigned":
+					return c.setting
+				}
+				t.Fatalf("unexpected firewall query %v", args)
+				return ""
+			}
+			got := macFirewall("/opt/test/hesperd", run, func(string) bool { return c.signed })
+			if got.Allowed != c.allowed {
+				t.Fatalf("allowed=%v, want %v: %s", got.Allowed, c.allowed, got.Reason)
+			}
+		})
+	}
+}
