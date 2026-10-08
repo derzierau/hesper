@@ -736,3 +736,20 @@ func TestBadIDs(t *testing.T) {
 		t.Error("bad cursor")
 	}
 }
+
+func TestScannerKeepsOwnershipClaimedAfterMetadataRead(t *testing.T) {
+	e := newEnv(t)
+	s := e.open(Options{})
+	f := fileInfo{path: filepath.Join(e.codex, "stale.jsonl"), kind: wire.KindCodex, sid: codexSID, size: 1}
+	rec := Record{Node: s.db.node, Kind: f.kind, SID: f.sid}
+	// The scanner captured this before the resume path claimed the session.
+	stale := Meta{External: true, Cwd: e.work, Version: "1"}
+	s.own(f.kind, f.sid)
+	if err := s.scan.store(rec.Key(), f, stale, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := e.session("L:codex:" + codexSID)
+	if !ok || got.External {
+		t.Fatalf("owned session indexed as external: %+v", got)
+	}
+}
