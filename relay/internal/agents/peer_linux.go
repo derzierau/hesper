@@ -66,3 +66,13 @@ func parentPID(pid int) (int, error) {
 	}
 	return strconv.Atoi(fields[1])
 }
+
+// processName is a process's command name (/proc/PID/comm; a shell's
+// foreground job, shell.go).
+func processName(pid int) string {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}

@@ -28,9 +28,13 @@ Do not guess flags.
   (`worktree`, `branch`). **Machines:** the user's Macs (`hesperctl status`).
 - **Parent/child:** `hesperctl new` run inside an agent makes a child of it
   (`parent`, `depth`). `hesperctl ls --tree`, `ls --children`.
-- **Kinds:** `claude`, `codex`, `shell`. A shell agent ignores TASK (nothing
-  is typed for you) and stays `idle` while a command runs; see
+- **Kinds:** `claude`, `codex`, `shell`. A shell agent runs TASK as a
+  command once its prompt is ready; it is `working` while a command runs
+  and `idle` at its prompt; see
   [references/recipes.md](references/recipes.md#shell-agents).
+- **Settled:** done, idle, exited, approval, question or error: the agent
+  no longer works on its own. `wait --until settled` and `new --wait` stop
+  there.
 
 ## Rules for every call
 
@@ -41,8 +45,6 @@ Do not guess flags.
 - Exit 4: hesperd is not running (or the Mac is offline). Tell the user;
   do not try to start or restart it yourself.
 - Always give `wait` and `new --wait` a `--timeout`.
-- Pass absolute folders to `new --project` (`"$PWD"`, not `.`): hesperd
-  rejects relative ones.
 
 ## Inside or outside Hesper
 
@@ -56,7 +58,10 @@ Inside an agent hesperd enforces a policy (refusals exit 5, `forbidden`):
 - you may answer approvals/questions only of your **own children** started
   with `--let-parent-answer`;
 - at most 3 levels deep and 8 live children per agent;
-- reading (ls, show, screen, result, events, wait, history) is always allowed.
+- reading (ls, show, screen, result, events, wait, history) is always allowed;
+- `history resume|fork|continue-as` started by you make your children too
+  (same limits); `attach-file` only to your descendants;
+- closing one of your children gives its children to you.
 
 On exit 5, do not look for a way around it: report it to the user.
 
@@ -80,31 +85,32 @@ hesperctl ls --json | jq -r '.[] | "\(.id) \(.state) \(.name) \(.attention.title
 hesperctl ls --json | jq -r '.[] | select(.state=="approval" or .state=="question" or .state=="error") | .id'
 hesperctl show ID --json            # attention + numbered choices
 hesperctl screen ID --json | jq -r .text   # the terminal as plain text
-hesperctl result ID --json          # last final message
+hesperctl result ID --json          # last final message (message null: none yet)
 ```
 
 **Fan out N subtasks in worktrees, wait, collect, close**
 ```sh
 a=$(hesperctl new --json --project ~/src/app --worktree --name fix-a "Fix A; commit on the branch" | jq -r .id)
 b=$(hesperctl new --json --project ~/src/app --worktree --name fix-b "Fix B; commit on the branch" | jq -r .id)
-hesperctl wait "$a" "$b" --all --until state=done,idle,exited,approval,question,error --timeout 30m --json
+hesperctl wait "$a" "$b" --all --until settled --timeout 30m --json
 hesperctl result "$a" --json; hesperctl result "$b" --json   # review, then:
-hesperctl close "$a" "$b" --json
+hesperctl close "$a" "$b" --json      # returns once they are gone
 ```
-Use `--until state=…` with the waiting states included: `--until finished`
-never returns while one agent sits in `approval` or `error`.
+Use `--until settled`, not `finished`: `finished` never returns while one
+agent sits in `approval` or `error`.
 
 **Delegate and wait in one step**
 ```sh
-hesperctl new --json --project "$PWD" --let-parent-answer --wait --timeout 20m "Run the tests and fix failures"
+hesperctl new --json --let-parent-answer --wait --timeout 20m "Run the tests and fix failures"
 ```
+`--project` defaults to the current directory (relative paths work).
 Prints `{agent, result}`; exits 1 if the child ends in `error`, 6 on timeout.
 If `result.state` is `approval`/`question`, it needs an answer (see below).
 
 **Drive an agent**
 ```sh
 hesperctl screen ID --json | jq -r .text            # look first
-hesperctl send ID "now run the linter" && hesperctl wait ID --next --until state=done,idle,approval,question,error --timeout 15m
+hesperctl send ID "now run the linter" && hesperctl wait ID --next --until settled --timeout 15m
 hesperctl send ID --key esc                         # keys: esc, enter, up, down, tab, ctrl-c, …
 hesperctl show ID --json | jq .choices; hesperctl choose ID 2
 hesperctl answer ID deny --message "use a branch, not main"   # only when allowed (see Safety)

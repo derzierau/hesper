@@ -248,9 +248,43 @@ this Mac's agents get the path, another machine's an upload (files.put /
 files.chunk; `--upload` forces one), pasted the app's way (one paste per
 PNG/JPEG, the other paths in one, backslash-escaped). `events` prints
 agents.subscribe's notifications as `{method, params}` lines (`--agent`,
-`--kinds`); `wait ID… --until needs-you|done|idle|exited|working|finished|state=S`
+`--kinds`); `wait ID… --until settled|needs-you|done|idle|exited|working|finished|state=S`
 follows them (`--any`/`--all`, `--next` ignores the state at start,
-`--timeout` exits 6, an agent removed exits 3).
+`--timeout` exits 6, an agent removed exits 3). `settled` is done, idle,
+exited, approval, question or error (no longer working on its own),
+what `new --wait` waits for. `close` and `tidy` return once the agents
+are gone (agents.removed on a subscription opened first; at most 10 s,
+then a note on stderr; `--no-wait` returns at once). `screen --rows N`
+prints the last N rows with text: hesperctl asks for the whole screen
+(and scrollback), drops the blank rows at its end, then keeps N (the
+daemon's `rows` is the grid's last rows, blank below output at the top).
+`new --project` (and `--worktree-path`) relative to the current directory
+for this Mac (no `--machine`, or this Mac's), made absolute by hesperctl;
+for another Mac sent as given. `new --wait` without `--json` prints the
+id at once (first line), then the result. `result` with nothing yet
+exits 0: no stdout (a note on stderr); `--json` `{id, state, message:
+null, summary: null}` (both are always present, null when empty; also
+in `new --wait --json`'s `result`).
+**As built — shell agents** (`internal/agents/shell.go`): hesperd follows
+a shell's terminal. Prompt ready: the shell wrote output and then nothing
+for 400 ms while no job runs (the PTY's foreground process group,
+TIOCGPGRP on the master, is the shell's), or 10 s passed. A TASK given to
+`agents.spawn` for a shell (as the app's composer sends it) is typed
+then (bracketed paste when the shell has it on) with Enter; until then
+the shell is `starting` (without a task: `idle`). Only the spawn types it:
+a respawn or `agents.resume` starts the shell without it (not persisted;
+a restart before the prompt was ready drops it). `agents.input` to a
+shell waits (≤ 10 s) for its prompt, so text sent right after the start
+comes after the prompt. State: `working` while a job runs (foreground
+group not the shell's; `activity` the job's command name, p_comm or
+/proc/PID/comm), and from a command hesperd typed (the task, an
+`agents.input` with `submit`) until the shell is back at its prompt with
+no output for 400 ms (a builtin or a quick command counts as done then);
+else `idle` (activity cleared). Polled every 150 ms. Consequences: a
+full-screen or long-running program (vim, a dev server) keeps a shell
+`working` (the app's close confirmation for a running shell command now
+gets its activity); a background shell is closed when a command it ran
+ends (working → idle). No exit status is known (no shell integration).
 **agents.screen** `{id, rows?, scrollback?}` (rows: the screen's last
 rows, 0 all; scrollback: that many scrollback lines first, ≤ 10000)
 returns `{text, rows, cols, cursor?, alt?}` from the daemon's vt screen:
@@ -400,8 +434,10 @@ tracking (mouse, focus, kitty keyboard flags, cursor shape), `Resize` and
   `starting` through `SessionStart` until `UserPromptSubmit`, at most 5 s).
   Without installed hooks a Claude agent stays `starting`: part C must
   install them (`hesperd hooks install`); Codex agents bring their own
-  ("Codex hooks per agent" below). Shell agents are `idle` from the
-  start and have no other state until they exit.
+  ("Codex hooks per agent" below). Shell agents have no hooks: hesperd
+  watches their terminal (see "As built — shell agents" under the agent
+  lifecycle CLI): `starting` until a task is typed, `working` while a
+  command runs, else `idle`, until they exit.
   **Codex without a prompt** (after `codex resume`, or a fresh Codex with
   no task): Codex 0.160 sends no hook until the next prompt (seen in the
   trial: resumed Codex agents sat in `starting` while Claude's became
@@ -3250,11 +3286,33 @@ launchd) and unset `HESPER_AGENT_ID`, and is then a person.
 Refusals are JSON-RPC errors with `data.code: "forbidden"` (hesperctl
 exit 5) and a message naming the rule. Limits come from settings.json in
 the config directory (`maxAgentDepth`, `maxAgentChildren`; 0 means agents
-start none; read at daemon start). An agent whose ancestor was closed is
-no longer that ancestor's descendant (the walk follows `parent` through
-listed agents). For remote targets the controller decides from its view
-of the other machine's agents before forwarding. Not covered: `sessions.*`
-starts (resume/fork from the history) and `files.put` are not checked.
+start none; read at daemon start). For remote targets the controller
+decides from its view of the other machine's agents before forwarding.
+
+**Closing a parent** (agents.close, a background agent that finished):
+its children on this machine get its parent (the grandparent still
+steers them; a closed root's children become roots), depths are
+recomputed for the whole subtree, `letParentAnswer` is cleared (the new
+parent never chose to answer for them); `agents.changed` for each,
+persisted. `agents.remove` does not re-parent (a move removes the agent
+it moved; `Reparent` re-points the children at the moved one), and a
+child on another machine keeps the closed parent (it is then a root in
+`ls --tree`, steerable by a person only).
+
+**Session starts and uploads.** `sessions.resume`, `sessions.fork` and
+`sessions.continueAs` called by an agent start its child like
+`agents.spawn`: the same limits (a slot reserved while it starts),
+parent the caller, depth + 1, `letParentAnswer` off, audited
+(`agent.request` with the new agent as target, `agent.refused`). hesperd
+adds `parent`/`depth` to the params it hands the shared history (and
+drops any a client sent); the history passes them to `SpawnSession` /
+`Spawn`, or to the host that starts it (`hostParams.parent/depth`, taken
+from an approved controller; an older host ignores them and the agent
+has no parent). `files.put` with an `agent` from an agent caller needs a
+strict descendant; `files.chunk` of an upload for an agent too (hesperd
+remembers each upload's agent from `files.put`, an hour at most).
+Uploads for a machine or a draft are not restricted. `wire.Client`
+sends `caller` on these methods too (`wire.CarriesCaller`).
 
 **Audit.** Every call of an agent to `agents.spawn` or a method above
 appends a JSON line to `audit.log` in the state directory (the host's
@@ -3263,12 +3321,20 @@ file and format, plus `agent`, `target`, `route: "local"`): event
 reason). A person's local calls are not audited.
 
 **CLI.** `new --let-parent-answer`; `new --wait [--timeout D]` waits
-(subscription) until the child is done, idle, exited or needs you
-(approval, question, error), then prints its result (or what it waits
-for); `--json` prints `{agent, result}`; error exits 1, timeout 6.
+(subscription) until the child has settled (done, idle, exited, approval,
+question, error: `wait --until settled`), then prints its result (or
+what it waits for); without `--json` the id first (at once), then the
+result; `--json` prints `{agent, result}`; error exits 1, timeout 6.
 `ls --tree` indents children under parents; `ls --children [ID]` lists
 ID's children (default: the agent hesperctl runs in). `result ID [--json]`
-prints the last final message, else the summary (nothing yet: exit 1).
+prints the last final message, else the summary (nothing yet: exit 0,
+empty stdout, `message: null` in JSON). **Which daemon hears the
+caller:** hesperctl sends `caller` (HESPER_AGENT_ID) only to the agent's
+own hesperd: the socket it talks to is `HESPER_SOCKET` (hesperd sets it
+in every agent's environment; without it, the default socket), compared
+after cleaning and resolving links. Pointed at another hesperd
+(`--daemon-socket` elsewhere) it sends none and is a person there (that
+daemon does not know the agent and would refuse it, exit 5).
 
 Tests: internal/agents/tree_test.go (answer/steer matrix: person, parent,
 non-parent, self, grandparent, with and without letParentAnswer, input
@@ -3279,7 +3345,20 @@ a table), cmd/hesperctl/tree_test.go (`new --let-parent-answer --wait`,
 `result`, `ls --children`, `ls --tree`, approve/stop exit codes,
 timeout), internal/transport `TestRemoteAgentTree` (a child on M of an
 agent on L: parent recorded, answer policy and rename enforced on L,
-result from M).
+result from M). Polish: internal/agents/tree_more_test.go (session starts
+as children within the limits, a person's without a parent whatever the
+params say, audit; uploads only to descendants, chunks of a person's
+upload refused; closing a parent re-parents and re-depths the subtree,
+persisted), internal/agents/shell_test.go (a real `/bin/sh -i`: task
+typed after the prompt, starting → working (activity sleep) → idle;
+send makes it working until done, a builtin too; input before a late
+prompt waits; a resumed shell does not retype its task),
+cmd/hesperctl/polish_test.go (relative `--project`, local and another
+machine; `result` with nothing yet; caller only to the own daemon;
+`new --kind shell --wait` returns after the command), and in
+agents_more_test.go / tree_test.go: `close`/`tidy` return with the agents
+gone, `--no-wait`, `screen --rows`, `lastRows`, `wait --until settled`,
+`new --wait` text output.
 
 ### As built — MCP (hesperctl mcp: relay/cmd/hesperctl/mcp.go)
 

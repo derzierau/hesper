@@ -62,3 +62,13 @@ func parentPID(pid int) (int, error) {
 	}
 	return int(kp.Eproc.Ppid), nil
 }
+
+// processName is a process's command name (p_comm; a shell's foreground
+// job, shell.go).
+func processName(pid int) string {
+	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil || int(kp.Proc.P_pid) != pid {
+		return ""
+	}
+	return unix.ByteSliceToString(kp.Proc.P_comm[:])
+}

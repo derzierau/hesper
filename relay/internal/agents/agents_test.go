@@ -59,6 +59,9 @@ func newHarness(t *testing.T, env ...string) *harness {
 		"fake-claude": {Kind: wire.KindClaude, Argv: []string{exe, "claude", "--permission-mode", "auto", "--remote-control", "{name}"}},
 		"fake-codex":  {Kind: wire.KindCodex, Argv: []string{exe, "codex", "--dangerously-bypass-approvals-and-sandbox"}},
 		"fake-shell":  {Kind: wire.KindShell, Argv: []string{exe, "shell"}},
+		// shell.go: a real shell (job control), and one whose prompt comes late
+		"real-shell": {Kind: wire.KindShell, Argv: []string{"/bin/sh", "-i"}},
+		"slow-shell": {Kind: wire.KindShell, Argv: []string{"/bin/sh", "-c", "sleep 1; exec /bin/sh -i"}},
 	}
 	writeJSON(t, filepath.Join(h.config, "profiles.json"), profiles)
 	writeJSON(t, filepath.Join(h.config, "settings.json"), map[string]any{"defaults": map[string]any{"kind": "claude", "kinds": map[string]string{"claude": "fake-claude", "codex": "fake-codex", "shell": "fake-shell"}}})

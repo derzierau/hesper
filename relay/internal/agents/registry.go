@@ -211,6 +211,10 @@ type agent struct {
 	// (Stop / notify hooks), for agents.result.
 	lastMessage   string
 	lastMessageAt time.Time
+	// shell (shell.go): the shell process's watch; shellTask the command
+	// to type once its prompt is ready (spawns only, never persisted).
+	shell     *shellWatch
+	shellTask string
 }
 
 // Open loads the registry from the state directory and respawns the agents
@@ -481,6 +485,9 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 	if a.Kind == wire.KindClaude {
 		a.SessionID = newUUID() // --session-id: resumable from the start
 	}
+	if a.Kind == wire.KindShell {
+		a.shellTask = task // typed once the prompt is ready (shell.go)
+	}
 	r.agents[local] = a
 	if err := r.start(a, profile, false); err != nil {
 		delete(r.agents, local)
@@ -556,11 +563,14 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		OnResize: func(cols, rows int) { r.resized(local, gen, cols, rows) },
 		OnExit:   func(e *wire.Exit) { r.exited(local, gen, e) },
 	}
-	if a.Kind == wire.KindCodex {
+	a.watch, a.shell = nil, nil
+	switch a.Kind {
+	case wire.KindCodex:
 		a.watch = &codexWatch{}
 		cfg.OnOutput = func(p []byte) { r.codexOutput(local, gen, p) }
-	} else {
-		a.watch = nil
+	case wire.KindShell:
+		a.shell = newShellWatch()
+		cfg.OnOutput = a.shell.saw
 	}
 	term, err := ptyhost.Start(cfg)
 	if err != nil {
@@ -580,7 +590,13 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		go r.deliverLater(local, gen)
 	}
 	if a.Kind == wire.KindShell {
-		a.State, a.StateSince, a.Attention = wire.StateIdle, time.Now().UTC(), nil
+		go r.watchShell(local, gen, a.shell)
+		// starting until its task is typed (shell.go), else idle
+		state := wire.StateIdle
+		if a.shellTask != "" {
+			state = wire.StateStarting
+		}
+		a.State, a.StateSince, a.Attention, a.Activity = state, time.Now().UTC(), nil, ""
 	} else {
 		a.State, a.StateSince, a.Attention = wire.StateStarting, time.Now().UTC(), nil
 	}
@@ -609,6 +625,7 @@ func (r *Registry) exited(local string, gen int, e *wire.Exit) {
 	}
 	r.adoptCodexSession(a)
 	a.Exit = e
+	a.shellTask = ""
 	if r.closing {
 		// The daemon stops: the agent stays "running" for the respawn.
 		r.scheduleSave()
@@ -670,11 +687,22 @@ func (r *Registry) Input(p wire.InputParams) error {
 		r.mu.Unlock()
 		return err
 	}
-	term := a.term
+	term, shell := a.term, a.shell
 	alive := term != nil && a.Exit == nil
 	r.mu.Unlock()
 	if !alive {
 		return wire.Errorf(wire.CodeInvalid, "%s is not running", p.ID)
+	}
+	if shell != nil {
+		// A shell just started: its prompt first (shell.go).
+		shell.waitReady()
+		if p.Submit {
+			r.mu.Lock()
+			if a.term == term {
+				r.shellSubmitted(a, p.Text)
+			}
+			r.mu.Unlock()
+		}
 	}
 	return typeText(term, p.Text, p.Paste, p.Submit)
 }

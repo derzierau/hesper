@@ -2,6 +2,7 @@ package agents
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -281,6 +282,125 @@ func (s *Server) spawnTree(caller string, t treeView) (depth int, release func()
 			s.treeMu.Unlock()
 		})
 	}, nil
+}
+
+// treeStarting are the methods that start an agent from the shared
+// history: an agent's start makes its child, within the limits, like
+// agents.spawn.
+var treeStarting = map[string]bool{"sessions.resume": true, "sessions.fork": true, "sessions.continueAs": true}
+
+// treeFiles are the upload methods: an agent gives files only to its
+// descendants.
+var treeFiles = map[string]bool{"files.put": true, "files.chunk": true}
+
+// startSession runs a session start (treeStarting): an agent's makes its
+// child (parent the caller, depth the caller's + 1, within the limits,
+// letParentAnswer off); a person's has no parent. "parent" and "depth"
+// in the params come only from here.
+func (s *Server) startSession(caller, method string, params json.RawMessage, t treeView) (any, error) {
+	m := map[string]json.RawMessage{}
+	if len(params) > 0 && string(params) != "null" {
+		if err := json.Unmarshal(params, &m); err != nil || m == nil {
+			return nil, &badParams{errors.New("params must be an object")}
+		}
+	}
+	delete(m, "parent")
+	delete(m, "depth")
+	if caller != "" {
+		depth, release, err := s.spawnTree(caller, t)
+		if err != nil {
+			s.auditCall(caller, method, "", err, nil)
+			return nil, err
+		}
+		defer release()
+		m["parent"], _ = json.Marshal(caller)
+		m["depth"], _ = json.Marshal(depth)
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.call(method, raw)
+	if caller != "" {
+		s.auditCall(caller, method, resultID(res, "id"), nil, err)
+	}
+	return res, err
+}
+
+// resultID is a result's string field name (an agent's id, an upload).
+func resultID(res any, name string) string {
+	data, err := json.Marshal(res)
+	if err != nil {
+		return ""
+	}
+	var m map[string]json.RawMessage
+	var id string
+	if json.Unmarshal(data, &m) == nil {
+		json.Unmarshal(m[name], &id)
+	}
+	return id
+}
+
+// uploadTarget is the agent a files.put upload is for.
+type uploadTarget struct {
+	agent string
+	at    time.Time
+}
+
+// uploadTTL: an upload's target is forgotten after this long (an upload
+// left unfinished).
+const uploadTTL = time.Hour
+
+// files runs files.put and files.chunk: when an agent calls, the
+// upload's agent (files.put's "agent"; a machine's or a draft's uploads
+// have none) must be its descendant.
+func (s *Server) files(caller, method string, params json.RawMessage, t treeView) (any, error) {
+	var p struct {
+		Agent  string `json:"agent"`
+		Upload string `json:"upload"`
+		Last   bool   `json:"last"`
+	}
+	if err := decode(params, &p); err != nil {
+		return nil, err
+	}
+	target := ""
+	if method == "files.put" {
+		target = s.fullID(p.Agent)
+	} else {
+		s.treeMu.Lock()
+		target = s.uploads[p.Upload].agent
+		s.treeMu.Unlock()
+	}
+	if caller != "" && target != "" {
+		if _, known := t[target]; known && !t.descends(target, caller) {
+			err := wire.Errorf(wire.CodeForbidden, "agent %s may only give files to agents it started; %s is not one of them", caller, target)
+			s.auditCall(caller, method, target, err, nil)
+			return nil, err
+		}
+	}
+	res, err := s.call(method, params)
+	s.treeMu.Lock()
+	switch {
+	case method == "files.put" && err == nil && target != "":
+		if s.uploads == nil {
+			s.uploads = map[string]uploadTarget{}
+		}
+		for id, u := range s.uploads {
+			if time.Since(u.at) > uploadTTL {
+				delete(s.uploads, id)
+			}
+		}
+		if id := resultID(res, "upload"); id != "" {
+			s.uploads[id] = uploadTarget{agent: target, at: time.Now()}
+		}
+	case method == "files.chunk" && (p.Last || err != nil):
+		delete(s.uploads, p.Upload)
+	}
+	s.treeMu.Unlock()
+	if caller != "" && target != "" && method == "files.put" {
+		s.auditCall(caller, method, target, nil, err)
+	}
+	return res, err
 }
 
 // withoutCaller drops "caller" from params forwarded to another machine
