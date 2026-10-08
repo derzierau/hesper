@@ -59,6 +59,9 @@ type Session struct {
 	// Checkpoint (move work): the last checkpoint of the hesperd agent
 	// that ran it, on this Mac (its home's entries only).
 	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
+	// FolderRemoved (scratch projects): the session ran in a scratch
+	// project whose folder hesperd deleted.
+	FolderRemoved bool `json:"folderRemoved,omitempty"`
 }
 
 // SessionTodo is one item of the last todo list / plan.

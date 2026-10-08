@@ -123,6 +123,18 @@ type ProjectInfo struct {
 	// ProjectID (move work): the source's project id, for the target's
 	// folder of that project.
 	ProjectID string `json:"projectId,omitempty"`
+	// Scratch (scratch projects): the project is a scratch project,
+	// without a remote: the target makes its folder from the (full)
+	// bundle in its own scratch folder.
+	Scratch *ScratchInfo `json:"scratch,omitempty"`
+}
+
+// ScratchInfo is a moved scratch project: its identity (projects'
+// identity.local), name and creation.
+type ScratchInfo struct {
+	Local   string    `json:"local"`
+	Name    string    `json:"name"`
+	Created time.Time `json:"created,omitzero"`
 }
 
 // Plan is what the source tells the controller before a move: the
@@ -141,6 +153,9 @@ type Plan struct {
 	RemoteHead string         `json:"remoteHead,omitempty"`
 	Git        bool           `json:"git,omitempty"`
 	Processes  []wire.Process `json:"processes,omitempty"`
+	// Scratch (scratch projects): a scratch project moves without a
+	// remote (no "no-remote").
+	Scratch bool `json:"scratch,omitempty"`
 }
 
 // Probe is what a target reports about a project: whether the repository
@@ -274,11 +289,17 @@ func PackCheckpoint(ctx context.Context, a wire.Agent, machine string, have []st
 			m.Agent.SessionID, m.Agent.Transcript = a.SessionID, name
 		}
 	}
-	data, _ := json.MarshalIndent(m, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, ManifestFile), append(data, '\n'), 0o600); err != nil {
+	if err := WriteManifest(dir, m); err != nil {
 		return nil, err
 	}
 	return m, nil
+}
+
+// WriteManifest writes a bundle's manifest (again: the packer adds to
+// it).
+func WriteManifest(dir string, m *Manifest) error {
+	data, _ := json.MarshalIndent(m, "", "  ")
+	return os.WriteFile(filepath.Join(dir, ManifestFile), append(data, '\n'), 0o600)
 }
 
 func localPart(id string) string {

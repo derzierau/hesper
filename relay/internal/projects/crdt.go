@@ -111,6 +111,11 @@ type Record struct {
 	Paths    map[string]Field[string]    `json:"paths,omitempty"`
 	// LastUsed only grows (the newest wins).
 	LastUsed time.Time `json:"lastUsed,omitempty"`
+	// Created (scratch projects) only shrinks (the oldest wins).
+	Created time.Time `json:"created,omitzero"`
+	// Scratch is a scratch project's lifecycle (scratch.go); it stays
+	// when a promote makes the project a repository (Kind decides).
+	Scratch *ScratchRecord `json:"scratch,omitempty"`
 }
 
 func (r *Record) clone() *Record {
@@ -118,6 +123,10 @@ func (r *Record) clone() *Record {
 	c.Paths = make(map[string]Field[string], len(r.Paths))
 	for k, v := range r.Paths {
 		c.Paths[k] = v
+	}
+	if r.Scratch != nil {
+		sc := *r.Scratch
+		c.Scratch = &sc
 	}
 	return &c
 }
@@ -152,6 +161,17 @@ func (r *Record) merge(o *Record) (changed, paths bool) {
 	if o.LastUsed.After(r.LastUsed) {
 		r.LastUsed, changed = o.LastUsed, true
 	}
+	if !o.Created.IsZero() && (r.Created.IsZero() || o.Created.Before(r.Created)) {
+		r.Created, changed = o.Created, true
+	}
+	if o.Scratch != nil {
+		if r.Scratch == nil {
+			sc := *o.Scratch
+			r.Scratch, changed, paths = &sc, true, true
+		} else if r.Scratch.merge(o.Scratch) {
+			changed, paths = true, true
+		}
+	}
 	return changed, paths
 }
 
@@ -163,6 +183,9 @@ func (r *Record) stamps(fn func(Stamp)) {
 	fn(r.Deleted.S)
 	for _, f := range r.Paths {
 		fn(f.S)
+	}
+	if r.Scratch != nil {
+		r.Scratch.stamps(fn)
 	}
 }
 

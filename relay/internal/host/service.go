@@ -151,7 +151,8 @@ func (s *Service) Execute(ctx context.Context, m protocol.Message) (json.RawMess
 		return json.RawMessage(`{}`), nil
 	case "transfer", "job", "download", "agents.import", "agents.export":
 		return s.handoff(ctx, m)
-	case "projects.sync", "projects.promote":
+	case "projects.sync", "projects.promote",
+		"projects.scratch", "projects.scratchArchive", "projects.scratchRestore", "projects.scratchDelete": // scratch projects
 		return s.projects(ctx, m) // projects step 1
 	case "sessions.pull", "sessions.transcript", "sessions.plan", "sessions.changes", "sessions.resume", "sessions.fork", "sessions.continueAs",
 		"checkpoints.restore": // move work

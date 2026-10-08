@@ -34,9 +34,10 @@ func init() {
 			Output:   "[Agent]",
 			Examples: []string{"hesperctl ls", "hesperctl ls --json | jq -r '.[] | select(.state==\"approval\") | .id'"}},
 		{Name: "new", Summary: "Start an agent with a task", Usage: "new [flags] TASK…",
-			Help:     "Starts a Claude, Codex or shell agent in a project folder and prints its id. TASK is its first prompt; - reads it from stdin.",
+			Help: "Starts a Claude, Codex or shell agent in a project folder and prints its id. TASK is its first prompt; - reads it from stdin. " +
+				"--scratch starts it in a new scratch project named from the task (~/scratch/<date>-<slug>, a Git repository; see scratch) instead of a folder.",
 			Output:   "Agent",
-			Examples: []string{"hesperctl new --project ~/src/app fix the flaky login test", "hesperctl new --kind codex --branch fix-login fix the login", "echo 'review the diff' | hesperctl new --json -"}},
+			Examples: []string{"hesperctl new --project ~/src/app fix the flaky login test", "hesperctl new --kind codex --branch fix-login fix the login", "echo 'review the diff' | hesperctl new --json -", "hesperctl new --scratch try the csv parser on the export"}},
 		{Name: "send", Summary: "Type text into an agent and press Enter", Usage: "send ID TEXT… [--no-submit]",
 			Help:     idHelp + " TEXT - reads stdin. The text is pasted, then submitted unless --no-submit.",
 			Examples: []string{"hesperctl send a7f3k2 now run the tests", "git diff | hesperctl send mini/a7f3k2 -"}},
@@ -232,7 +233,10 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		owner = f.Bool("owner", true, "Resize the agent to this terminal")
 	}
 	var to *string
-	var fork, interrupt, leave *bool
+	var fork, interrupt, leave, scratch *bool
+	if command == "new" {
+		scratch = f.Bool("scratch", false, "Start in a new scratch project named from the task (not --project)")
+	}
 	if command == "move" {
 		to = f.String("to", "", "Machine to move to (short name)")
 		fork = f.Bool("fork", false, "Keep the agent here too (a copy continues there)")
@@ -292,7 +296,12 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		if err != nil {
 			return err
 		}
-		if local {
+		if *scratch {
+			if setFlags(f)["project"] || *worktree || *worktreePath != "" || *branch != "" {
+				return usagef("--scratch makes its own folder: no --project, --worktree or --branch")
+			}
+			*project = ""
+		} else if local {
 			// This Mac's folders: relative to here (hesperd wants
 			// absolute ones). Another Mac's: as given.
 			if *project, err = absPath(*project); err != nil {
@@ -305,7 +314,7 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 			}
 		}
 		p := wire.SpawnParams{Machine: *machine, Profile: *profile, Kind: *kind, Project: *project, Task: task, Name: *name, Branch: *branch,
-			LetParentAnswer: *tree.letParentAnswer, Track: *tree.track}
+			LetParentAnswer: *tree.letParentAnswer, Track: *tree.track, Scratch: *scratch}
 		switch {
 		case *worktreePath != "":
 			p.Worktree, _ = json.Marshal(*worktreePath)

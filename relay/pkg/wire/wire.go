@@ -180,6 +180,10 @@ type SpawnParams struct {
 	// from its local socket and derives them from the caller.
 	Parent string `json:"parent,omitempty"`
 	Depth  int    `json:"depth,omitempty"`
+	// Scratch (scratch projects): without a project, the agent starts in
+	// a new scratch project named from its task (projects.scratch).
+	// Ignored when a project is given.
+	Scratch bool `json:"scratch,omitempty"`
 }
 
 // AgentResult is agents.result's (agent tree): the agent's last turn's

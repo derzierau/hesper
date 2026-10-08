@@ -231,7 +231,7 @@ appends a line to `~/.local/state/hesper/audit.log`:
 | `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.screen`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat` (and the unsigned `snapshot`, `ping`) |
 | `answer` | `agents.answer` |
 | `type` | `agents.input`, `agents.attach` with mode `rw` |
-| `transfer` | `agents.spawn`, `agents.stop`, `agents.resume`, `agents.remove`, `agents.rename`, `agents.import`, `transfer`, `projects.clone` |
+| `transfer` | `agents.spawn`, `agents.stop`, `agents.resume`, `agents.remove`, `agents.rename`, `agents.import`, `transfer`, `projects.clone`, `projects.promote`, `projects.scratch`, `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete` |
 | `shell` | `agents.spawn` of a shell (kind `shell`, or no kind and a profile named like one; **strong key only**); every method and link event about a shell agent, in addition to its own right (and only on a host started with `--allow-shell`) |
 
 `snapshot` is never signed and stays open to every controller the relay
@@ -460,6 +460,8 @@ renames to its own machine naming.
 | `checkpoints.restore` | `{key, ref, commit}` | `{path, branch}`: a worktree from a session's checkpoint (right `transfer`) |
 | `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?, alt?}`: the terminal as plain text (right `observe`) |
 | `projects.clone` | `{url}` | `{path}` |
+| `projects.scratch` | `{name?, task?}` | `{id, path, state}`: a new scratch project on this host (its home) and the host's project state |
+| `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete` | `{id}` | `{id, state}`: done on the scratch's home (this host); `busy` while agents run in it |
 | `projects.recent`, `profiles.list` | `{}` | as locally |
 | `fs.stat` | `{path}` (clean absolute) | `{exists, isDir}` (a draft's folder on this machine; right `observe`) |
 

@@ -2,6 +2,7 @@ package agents
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -27,6 +28,36 @@ type Projects interface {
 	// Watch sends the projects/groups notifications of an agents.subscribe
 	// connection until done closes or send fails.
 	Watch(done <-chan struct{}, send func(method string, params any) error)
+}
+
+// scratchProjects is what agents use of the scratch projects
+// (internal/projects.Store, scratch.go): a new one for agents.spawn
+// {scratch: true}; a scratch's identity for a move's source; recording
+// its folder on a move's target.
+type scratchProjects interface {
+	CreateScratch(name, task string) (id, path string, err error)
+	ScratchOf(id string) (local, name string, created time.Time, ok bool)
+	ScratchArrived(local, name string, created time.Time, path string, home bool) string
+	ScratchRoot() string
+}
+
+func (r *Registry) scratch() scratchProjects {
+	sp, _ := r.opt.Projects.(scratchProjects)
+	return sp
+}
+
+// newScratch makes a scratch project for a spawn (named from its task,
+// else from the agent's name) and returns its folder.
+func (r *Registry) newScratch(name, task string) (string, error) {
+	sp := r.scratch()
+	if sp == nil {
+		return "", wire.Errorf(wire.CodeUnavailable, "scratch projects are not available")
+	}
+	if strings.TrimSpace(task) != "" {
+		name = ""
+	}
+	_, dir, err := sp.CreateScratch(name, task)
+	return dir, err
 }
 
 // projectOf is the project of an agent in dir ("" without Projects).

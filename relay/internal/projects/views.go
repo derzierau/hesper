@@ -61,6 +61,9 @@ func (s *Store) viewLocked(r *Record) wire.ProjectInfo {
 		}
 	}
 	sort.Strings(info.Groups)
+	if r.Kind.V == wire.ProjectScratch {
+		info.Created, info.Scratch = r.Created, s.scratchViewLocked(r)
+	}
 	if r.Identity.Package == "" {
 		if p := r.Paths[s.node].V; p != "" {
 			info.DetectedPackages = s.det.cachedPackages(p)

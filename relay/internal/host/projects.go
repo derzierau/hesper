@@ -53,6 +53,14 @@ func (s *Service) projects(ctx context.Context, m protocol.Message) (json.RawMes
 			return nil, publicError(err)
 		}
 		return protocol.JSON(res), nil
+	case "projects.scratch", "projects.scratchArchive", "projects.scratchRestore", "projects.scratchDelete":
+		// scratch projects: made, archived, restored and deleted on
+		// their home (this Mac).
+		res, err := s.Projects.ScratchForPeer(m.Method, m.Params)
+		if err != nil {
+			return nil, publicError(err)
+		}
+		return protocol.JSON(res), nil
 	}
 	return nil, protocol.Err("unsupported", "Unsupported operation: "+m.Method)
 }

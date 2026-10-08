@@ -42,6 +42,14 @@ type Options struct {
 	Logf   func(format string, args ...any)
 	// Now is the clock (tests).
 	Now func() time.Time
+
+	// Scratch projects (scratch.go). ScratchRoot (~/scratch) holds them;
+	// "": scratch projects are off (no creation, adoption or lifecycle).
+	// ProjectsRoot (~/projects, $HESPER_PROJECT_ROOT) is where promote
+	// moves them. ConfigDir holds settings.json ("scratch": archive and
+	// delete days). GH is the gh command for promote's createRepo
+	// (default: gh on PATH).
+	ScratchRoot, ProjectsRoot, ConfigDir, GH string
 }
 
 const (
@@ -75,6 +83,12 @@ type Store struct {
 	agents    func() []wire.Agent
 	forward   func(ctx context.Context, machine, method string, params any) (json.RawMessage, error)
 	reproject func()
+
+	// scratch.go: the scratch projects agents run in (as last looked),
+	// the lifecycle's settings, one folder operation at a time.
+	live       map[string]bool
+	scratchCfg wire.ScratchSettings
+	scratchMu  sync.Mutex
 
 	saveCh    chan struct{}
 	resolveCh chan struct{}
@@ -110,7 +124,16 @@ func Open(opt Options) *Store {
 	if opt.Home != "" {
 		opt.Home = canonical(opt.Home)
 	}
-	s := &Store{opt: opt, det: newDetector(opt.GitEnv, opt.Now), short: opt.Machine,
+	if opt.ScratchRoot != "" {
+		opt.ScratchRoot = canonical(opt.ScratchRoot)
+		if opt.ProjectsRoot == "" {
+			opt.ProjectsRoot = os.Getenv("HESPER_PROJECT_ROOT")
+		}
+		if opt.ProjectsRoot == "" && opt.Home != "" {
+			opt.ProjectsRoot = filepath.Join(opt.Home, "projects")
+		}
+	}
+	s := &Store{opt: opt, det: newDetector(opt.GitEnv, opt.Now), short: opt.Machine, live: map[string]bool{},
 		projects: map[string]*Record{}, groups: map[string]*GroupRecord{}, nodes: map[string]string{}, aliases: map[string]string{},
 		recent: map[string]wire.Project{}, views: map[string]json.RawMessage{}, watchers: map[*watcher]struct{}{},
 		shared: make(chan struct{}), saveCh: make(chan struct{}, 1), resolveCh: make(chan struct{}, 1), done: make(chan struct{})}
@@ -123,6 +146,7 @@ func Open(opt Options) *Store {
 		s.scheduleSave()
 	}
 	s.clock.node, s.clock.now = s.node, opt.Now
+	s.scratchCfg = loadScratchSettings(opt.ConfigDir, opt.Logf)
 	s.views = s.computeViewsLocked()
 	s.wg.Add(2)
 	go s.saver()
@@ -438,6 +462,10 @@ func (s *Store) resolveLocked(real string, gi gitInfo, pkgs []wire.DetectedPacka
 		if p != "" && (within(logical, p) || within(real, p)) {
 			consider(r, p)
 		}
+		// An archived scratch keeps the folders of its sessions.
+		if o := s.archivedOrigin(r); o != "" && (within(logical, o) || within(real, o)) {
+			consider(r, o)
+		}
 	}
 	if gi.OK {
 		consider(repo, gi.Root)
@@ -456,7 +484,14 @@ func packageIdentity(repo *Record, relp string) wire.ProjectIdentity {
 // folder here), nil when there is none.
 func (s *Store) repoRecordLocked(gi gitInfo) *Record {
 	if gi.Remote != "" {
-		return s.projects[ProjectID(wire.ProjectIdentity{Remote: gi.Remote})]
+		if r := s.projects[ProjectID(wire.ProjectIdentity{Remote: gi.Remote})]; r != nil {
+			return r
+		}
+		// A promoted scratch that got its remote (gh repo create) keeps
+		// its id.
+		return s.byLocalPathLocked(gi.Root, func(r *Record) bool {
+			return r.Identity.Remote == "" && r.Identity.Package == "" && r.Scratch != nil
+		})
 	}
 	return s.byLocalPathLocked(gi.Root, func(r *Record) bool { return r.Identity.Remote == "" && r.Identity.Package == "" })
 }
@@ -568,6 +603,9 @@ func (s *Store) Touch(path string, at time.Time) {
 	if r := s.projects[id]; r != nil && at.After(r.LastUsed) {
 		r.LastUsed, shared = at, true
 	}
+	if r := s.projects[id]; r != nil && r.Kind.V == wire.ProjectScratch {
+		s.live[id] = true // an agent started there
+	}
 	s.recent[path] = wire.Project{Path: path, Name: filepath.Base(path), LastUsed: at}
 	if len(s.recent) > recentLimit {
 		list := s.recentLocked()
@@ -596,7 +634,7 @@ func (s *Store) Recent() []wire.Project {
 	seen := map[string]bool{}
 	for _, r := range s.projects {
 		p := r.Paths[s.node].V
-		if r.Deleted.V || p == "" {
+		if r.Deleted.V || p == "" || s.archivedLocked(r) {
 			continue
 		}
 		projects = append(projects, wire.Project{Path: p, Name: r.Name.V, LastUsed: r.LastUsed, ProjectID: r.ID})
