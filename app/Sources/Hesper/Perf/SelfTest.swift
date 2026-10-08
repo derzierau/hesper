@@ -618,6 +618,10 @@ final class SelfTest {
             await Harness.sleep(1.0)
             check("⌘↩ with the folder not on the mini starts nothing and shows no raw error", model.wall.count == before && model.draft("d-mfpick") != nil
                   && c.error == nil && c.folderNote != nil && !c.busy, c.error ?? "")
+            // The fake mini ignores spawn's `bring` (an older hesperd): it
+            // gets today's note from now on.
+            check("a hesperd without bring falls back to today's note (Run on laptop first)", !c.bringOffered && c.folderActions.first == .runHere,
+                  "\(c.folderActions)")
             check("hesperd's \"no directory\" maps to the note", c.spawnFailed("no directory \(apiDir)") && c.error == nil)
             // A narrow tile: the chip row wraps, the machine chip first and
             // visible with the machine's name.

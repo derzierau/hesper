@@ -258,6 +258,9 @@ public struct SpawnRequest: Equatable, Sendable {
     /// No folder: hesperd makes a new scratch from the task and starts the
     /// agent in it (scratch contract; `project` is not sent).
     public var scratch = false
+    /// The folder isn't on `machine`: hesperd brings it from another Mac
+    /// first (`BringRequest`; agents.bringing reports how far).
+    public var bring: BringRequest?
 
     public enum Worktree: Equatable, Sendable { case auto, path(String) }
 
@@ -280,6 +283,7 @@ public struct SpawnRequest: Equatable, Sendable {
         case nil: break
         }
         if let branch, !branch.isEmpty { o["branch"] = .string(branch) }
+        if let bring, !scratch { o["bring"] = bring.params }
         return .object(o)
     }
 }

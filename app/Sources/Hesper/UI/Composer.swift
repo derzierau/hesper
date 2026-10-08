@@ -455,19 +455,28 @@ struct DraftChips: View {
     }
 
     /// Under the chips: the folder isn't on the machine it runs on, or
-    /// isn't there at all; each with its one-click fix.
+    /// isn't there at all; each with its one-click fix. A folder only this
+    /// Mac has: "Folder isn't on mini — Bring it to mini ⌘⏎ · Bring clean
+    /// (last commit) · Run on laptop · Use mini's copy" (wraps on narrow
+    /// tiles); a bring that didn't start says why here.
     @ViewBuilder private var note: some View {
-        if let note = composer.folderNote {
-            HStack(spacing: DS.Spacing.s) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.ds(.meta)).foregroundStyle(Theme.color(.question))
-                Text(note.text).font(.ds(.chrome)).foregroundStyle(Theme.color(.question)).lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                if note.kind == .elsewhere {
-                    fixButton("Run on \(note.here)", id: "draft.folder.runHere") { composer.runHere() }
+        if composer.app.bringProgress(draft: composer.id) != nil {
+            EmptyView() // the footer's progress line says it
+        } else if let note = composer.folderNote {
+            let actions = composer.folderActions
+            let bring = actions.contains { if case .bring = $0 { return true } else { return false } }
+            ChipFlow {
+                HStack(spacing: DS.Spacing.s) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.ds(.meta)).foregroundStyle(Theme.color(.question))
+                    Text(composer.folderNoteText ?? note.text).font(.ds(.chrome)).foregroundStyle(Theme.color(.question)).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                if let copy = note.copy {
-                    fixButton("Use \(note.target)'s copy", id: "draft.folder.useCopy") { composer.useTargetCopy() }
-                        .help(copy)
+                .frame(minHeight: Pill.height)
+                ForEach(Array(actions.enumerated()), id: \.element) { i, a in
+                    fixButton(a.title(target: note.target, here: note.here), id: a.id, key: i == 0 && bring && !compact ? "⌘⏎" : nil) {
+                        composer.perform(a)
+                    }
+                    .help(a.help(folder: ComposerCompletion.abbreviate(note.folder), target: note.target))
                 }
             }
             .help("\(note.folder) is not on \(note.target)")
@@ -487,9 +496,12 @@ struct DraftChips: View {
         }
     }
 
-    private func fixButton(_ title: String, id: String, action: @escaping () -> Void) -> some View {
+    private func fixButton(_ title: String, id: String, key: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).font(.ds(.chrome, .medium)).foregroundStyle(Theme.accent).lineLimit(1)
+            HStack(spacing: DS.Spacing.s) {
+                Text(title).font(.ds(.chrome, .medium)).foregroundStyle(Theme.accent).lineLimit(1)
+                if let key { Kbd(key) }
+            }
                 .padding(.horizontal, DS.Spacing.s).frame(height: Pill.height - DS.Spacing.xs)
                 .background(DS.Radius.shape(DS.Radius.control).fill(Theme.selection))
                 .contentShape(Rectangle())
@@ -505,8 +517,9 @@ struct DraftChips: View {
         return max(Pill.height, ceil(measure.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height))
     }
 
-    /// The tallest the row gets: three lines of chips and a two-line note.
-    static var maxHeight: CGFloat { 3 * Pill.height + 3 * DS.Spacing.xs + 2 * DS.chromeMaxHeight }
+    /// The tallest the row gets: three lines of chips and a two-line note
+    /// whose buttons wrap once.
+    static var maxHeight: CGFloat { 4 * Pill.height + 4 * DS.Spacing.xs + 2 * DS.chromeMaxHeight }
 
     private func chip(_ kind: TokenKind, on: Bool, title: String, mono: Bool, detail: String?, warn: Bool) -> some View {
         let tint: Theme.Token = warn ? .question : TokenStyle.token(kind)
@@ -539,8 +552,11 @@ struct DraftFooter: View {
     static let height = Pill.height + DS.Spacing.xs
 
     var body: some View {
+        let bringing = quick ? nil : composer.app.bringProgress(draft: composer.id)
         HStack(spacing: DS.Spacing.l) {
-            if let e = composer.error {
+            if let b = bringing {
+                BringProgressRow(progress: b.progress, changes: b.changes, target: composer.app.machineName(b.to))
+            } else if let e = composer.error {
                 Label(e, systemImage: "exclamationmark.triangle.fill").font(.ds(.chrome)).foregroundStyle(Theme.color(.question))
                     .lineLimit(1).accessibilityIdentifier("draft.error")
             } else {
@@ -556,7 +572,7 @@ struct DraftFooter: View {
             Button(action: onStart) {
                 HStack(spacing: DS.Spacing.s) {
                     if composer.busy { ProgressView().controlSize(.mini) }
-                    Text(composer.busy ? "Starting…" : "Start").font(.ds(.chrome, .semibold))
+                    Text(bringing != nil ? "Bringing…" : composer.busy ? "Starting…" : "Start").font(.ds(.chrome, .semibold))
                 }
                 .padding(.horizontal, DS.Spacing.l).frame(height: Self.height)
                 .background(DS.Radius.shape(DS.Radius.control).fill(Theme.accent))
@@ -719,7 +735,9 @@ final class DraftTileView: NSView {
         _ = composer.error
         _ = composer.folderCheck
         _ = composer.targetFolders
+        _ = composer.bringFailures
         guard let model else { return }
+        _ = model.bringProgress(draft: draft.id)
         _ = model.drafts.dirty[draft.id] == nil
         refresh()
     }

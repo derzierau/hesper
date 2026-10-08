@@ -302,8 +302,10 @@ extension AppModel {
     // MARK: Starting
 
     /// ⌘↩ (⌥↩: and a new draft right of it). The draft tile becomes the
-    /// agent in place: same slot, the first line names it.
-    func startDraft(_ id: String, openNext: Bool = false) {
+    /// agent in place: same slot, the first line names it. `bring`: the
+    /// note's "Bring clean" (else a folder only this Mac has comes along
+    /// with its changes, the note's default).
+    func startDraft(_ id: String, openNext: Bool = false, bring: BringChanges? = nil) {
         guard drafts[id] != nil, startingDrafts[id] == nil else { return }
         let c = composer(for: id)
         // No folder yet: ⌘↩ goes to the folder chip (Start is disabled).
@@ -343,11 +345,21 @@ extension AppModel {
                 }
             }
             // The folder on the machine it starts on (fs.stat): missing →
-            // the chip row's note ("This folder is on laptop, not on
-            // mini — Run on laptop"), nothing starts.
+            // brought from this Mac (the note's default, "Bring it to
+            // mini"), or the chip row's note says why ("Run on laptop"),
+            // nothing starts.
             if clone == nil, let m = req.machine, m != self.localMachine, !(await c.checkTarget(force: true)) {
-                self.startFailed(id, nil)
-                return
+                switch c.startAction(bring) {
+                case .bring(let changes):
+                    req.bring = BringRequest(from: self.localMachine, path: req.project, changes: changes)
+                    self.bringStarted(draft: id, to: m, changes: changes)
+                    self.onAgentsChanged?()
+                case .useExisting:
+                    break
+                default:
+                    self.startFailed(id, nil)
+                    return
+                }
             }
             if let m = req.machine, m != self.localMachine {
                 guard let task = await self.uploadDraftAttachments(id, machine: m, task: req.task) else {
@@ -369,6 +381,11 @@ extension AppModel {
                 self.startFailed(id, nil)
                 c.error = "\(self.machineName(m)) can't make scratches yet — choose a folder"
                 if self.popover == nil, self.drafts[id] != nil { self.openPopover(.chip(id, .project)) }
+            } catch let e as RPCError where req.bring != nil {
+                // Said under the chips (too large, offline, exists → "Use
+                // it"); an older hesperd: today's notes for that Mac.
+                self.bringFailed(e, request: req, composer: c)
+                self.startFailed(id, nil)
             } catch {
                 startFailed(id, describe(error))
             }
@@ -379,6 +396,7 @@ extension AppModel {
     /// directory …" becomes the chip row's folder note, never raw text.
     private func startFailed(_ id: String, _ message: String?) {
         startingDrafts[id] = nil
+        bringEnded(draft: id)
         let c = composer(for: id)
         c.busy = false
         if let message, !c.spawnFailed(message) { c.error = message }
@@ -414,6 +432,7 @@ extension AppModel {
         // A new scratch started here: its band opens on this wall (it starts collapsed).
         if startingDrafts[draftID]?.project.isEmpty == true { for k in ViewResolver.scratchKeys { openBand(k) } }
         startingDrafts[draftID] = nil
+        bringEnded(draft: draftID)
         removeDraft(draftID)
         if selectedID == draftID { selectedID = a.id }
         onAgentsChanged?()
@@ -447,7 +466,7 @@ extension AppModel {
 
     /// ⌘↩ in the quick launch panel: start it (the agent joins the wall),
     /// clear the text, keep the choices.
-    func startQuick() async -> String? {
+    func startQuick(bring: BringChanges? = nil) async -> String? {
         let c = composer(for: quickDraft.id)
         if c.needsFolder {
             c.complete(.project) // the # list: choose a folder first
@@ -464,7 +483,11 @@ extension AppModel {
             case .failure(let e): c.error = e; return e
             }
         } else if let m = r.machine, m != localMachine, !(await c.checkTarget(force: true)) {
-            return c.folderNote?.text ?? "The folder isn't on \(machineName(m))"
+            switch c.startAction(bring) {
+            case .bring(let changes): r.bring = BringRequest(from: localMachine, path: r.project, changes: changes)
+            case .useExisting: break
+            default: return c.folderNoteText ?? "The folder isn't on \(machineName(m))"
+            }
         }
         do {
             let a: Agent
@@ -476,6 +499,9 @@ extension AppModel {
                 c.complete(.project) // today's way: the # list
                 c.error = "\(machineName(m)) can't make scratches yet — choose a folder"
                 return c.error
+            } catch let e as RPCError where r.bring != nil {
+                bringFailed(e, request: r, composer: c)
+                return c.folderNoteText ?? describe(e)
             }
             var d = quickDraft
             d.text = ""
