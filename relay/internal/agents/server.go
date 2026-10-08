@@ -417,6 +417,8 @@ func (s *Server) dispatch(method string, params json.RawMessage) (any, error) {
 			return struct{}{}, reg.Kill(p.ID)
 		}
 		return struct{}{}, reg.SetBackground(p.ID, p.Background)
+	case "agents.screen":
+		return s.screen(params, forward) // screen.go
 	case "agents.input", "agents.answer", "agents.stop", "agents.resume", "agents.remove", "agents.rename", "agents.move":
 		var head wire.IDParams
 		if err := decode(params, &head); err != nil {

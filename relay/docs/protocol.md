@@ -227,7 +227,7 @@ appends a line to `~/.local/state/hesper/audit.log`:
 
 | Right | Methods |
 | --- | --- |
-| `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat` (and the unsigned `snapshot`, `ping`) |
+| `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.screen`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat` (and the unsigned `snapshot`, `ping`) |
 | `answer` | `agents.answer` |
 | `type` | `agents.input`, `agents.attach` with mode `rw` |
 | `transfer` | `agents.spawn`, `agents.stop`, `agents.resume`, `agents.remove`, `agents.rename`, `agents.import`, `transfer`, `projects.clone` |
@@ -424,7 +424,7 @@ closures as `direct.closed`.
 ping goes unanswered for 2 s or the connection fails; a request that may
 have reached the host is resent through the relay only when idempotent
 (`snapshot`, `ping`, `agents.list`, `agents.plan`, `agents.probe`,
-`download`, `projects.recent`, `profiles.list`, `fs.stat`; identical inner request), anything else fails `connection_lost`. Controllers fetch a new
+`agents.screen`, `download`, `projects.recent`, `profiles.list`, `fs.stat`; identical inner request), anything else fails `connection_lost`. Controllers fetch a new
 offer through the relay every 10 minutes; the host closes direct
 connections of a device that has not done so for 30 minutes, or that it no
 longer approves.
@@ -454,6 +454,7 @@ renames to its own machine naming.
 | `agents.attach` | `{link, ch, mode, request}`: `request` is the local attach request (every option of it, passed through), `mode` repeats its mode for the rights table | `{}`; the attach runs on channel `ch` of the caller's link |
 | `agents.plan` | `{id}` | `{project, home, commits}` (a move's source: commits the target may have) |
 | `agents.probe` | `{path, home, commits}` | `{exists, has}` (a move's target) |
+| `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?, alt?}`: the terminal as plain text (right `observe`) |
 | `projects.clone` | `{url}` | `{path}` |
 | `projects.recent`, `profiles.list` | `{}` | as locally |
 | `fs.stat` | `{path}` (clean absolute) | `{exists, isDir}` (a draft's folder on this machine; right `observe`) |
