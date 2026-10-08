@@ -113,12 +113,13 @@ func TestChangeEventsPublishAtOnceAndCoalesce(t *testing.T) {
 			t.Fatalf("change published after %v", took)
 		}
 	}
-	// A burst: a hook per agent, several agents at once.
+	// A burst: a hook per agent, several agents at once. Do not sleep
+	// between events: scheduler delays can stretch a nominal 1 ms sleep
+	// beyond PublishGap on loaded runners, turning this into multiple bursts.
 	time.Sleep(PublishGap)
 	for i := 0; i < 20; i++ {
 		provider.set([]int{90, 91}[i%2])
 		signal()
-		time.Sleep(time.Millisecond)
 	}
 	provider.set(99)
 	signal()
