@@ -99,9 +99,15 @@ jobs:
         with:
           path: app/Vendor
           key: ghosttykit-${{ matrix.arch }}-${{ hashFiles('app/Package.resolved', 'scripts/build-ghosttykit.sh', 'scripts/ghosttykit/**') }}
+          restore-keys: ghosttykit-arm64-${{ hashFiles('app/Package.resolved', 'scripts/build-ghosttykit.sh', 'scripts/ghosttykit/**') }}
       - name: Build libghostty without libintl
-        if: env.HAVE_SECRETS == 'true' && steps.ghosttykit-cache.outputs.cache-hit != 'true'
-        run: scripts/build-ghosttykit.sh
+        if: env.HAVE_SECRETS == 'true'
+        run: |
+          if test -f app/Vendor/GhosttyKit.xcframework/Info.plist; then
+            scripts/build-ghosttykit.sh --check app/Vendor/GhosttyKit.xcframework
+          else
+            scripts/build-ghosttykit.sh
+          fi
       - name: Release tests
         if: env.HAVE_SECRETS == 'true'
         run: |
