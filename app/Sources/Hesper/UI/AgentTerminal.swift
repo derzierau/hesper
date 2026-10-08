@@ -28,10 +28,13 @@ enum TerminalEngine {
 }
 
 /// One agent's terminal in a view: a surface running
-/// `hesperd attach <id> --view` (tiles: the agent's last rows that fit, at
-/// the font the wall picked) or `hesperd attach <id> --owner` (focus: the
-/// view's size becomes the PTY's). Reattaches when the attach process ends
-/// while the agent is still alive.
+/// `hesperd attach <id> --fit` (a view: the agent's last rows that fit, at
+/// the font the wall picked, rendered by the daemon at this grid) or
+/// `hesperd attach <id> --owner` (the size owner: the view's size becomes
+/// the PTY's). Never a read-write attach without owner: its raw stream is
+/// at the PTY's grid, which libghostty (sizing its grid from the frame)
+/// would wrap and garble (SizeOwner). Reattaches when the attach process
+/// ends while the agent is still alive.
 @MainActor
 final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     enum Role { case tile, focus }
@@ -59,12 +62,21 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// Window layer integration (docs: "As built — windows"): a read-write
     /// terminal (focus role, or the active tile) attaches as the PTY's size
     /// owner only while its window is the app's key window (SizeOwnership
-    /// decides, debounced); otherwise rw without owner, and the daemon
-    /// falls back to the views' fit. Changing it re-attaches seamlessly
-    /// (swapMode; the daemon has no "release owner" frame).
+    /// decides, debounced; one owner per agent); otherwise it is a view
+    /// (`--fit`) like a tile, and the daemon falls back to the views' fit.
+    /// Changing it re-attaches seamlessly (swapMode; the daemon has no
+    /// "release owner" frame).
     var ownsSize = true {
-        didSet { if oldValue != ownsSize && (role == .focus || interactive) && surface != nil { swapMode() } }
+        didSet { if oldValue != ownsSize && !resolvingOwnership && readWrite && surface != nil { swapMode() } }
     }
+    /// Whether this terminal would type: the focus role or the active tile.
+    var readWrite: Bool { role == .focus || interactive }
+    /// The window layer's answer to "does this terminal own its agent's
+    /// size now?" (SizeOwnership), asked whenever a surface is made, so a
+    /// new terminal in a window that is not key never attaches as a second
+    /// owner (nil: keep `ownsSize`).
+    static var ownershipResolver: ((AgentTerminal) -> Bool)?
+    private var resolvingOwnership = false
     /// The active wall tile: typing goes to the agent. Its surface is a
     /// read-write attach (size owner at the tile's own grid, which is the
     /// grid the tile's fit asked for, so nothing resizes) in the
@@ -146,6 +158,8 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
 
     /// Whether the shown surface is a read-write attach (tests).
     private(set) var surfaceIsInteractive = false
+    /// How the shown surface attached (tests, the window layer).
+    private(set) var surfaceAttach: SizeOwner.Attach = .view
 
     private func swapMode() {
         swapGeneration += 1
@@ -180,10 +194,14 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         let hadFocus = old.map { host.window?.firstResponder === $0.view } ?? false
         prewarm = nil
         surface = p
-        surfaceIsInteractive = interactive
-        p.acceptsInput = interactive || role == .focus
+        surfaceAttach = prewarmAttach
+        surfaceIsInteractive = interactive && prewarmAttach == .owner
+        p.acceptsInput = prewarmAttach == .owner
         old?.close()
-        if interactive || (role == .focus && hadFocus), let w = host.window { w.makeFirstResponder(p.view) }
+        // A focus view that just became the owner (its window became key)
+        // takes typing too: as a view it could not be first responder.
+        let takeFocus = surfaceIsInteractive || (role == .focus && p.acceptsInput && (hadFocus || host.window?.isKeyWindow == true))
+        if takeFocus, let w = host.window { w.makeFirstResponder(p.view) }
         surfaceMetricsDidChange(p)
     }
 
@@ -202,15 +220,19 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         guard host.window != nil else { return }
         prewarm?.close()
         prewarm = nil
-        surfaceIsInteractive = role == .tile && interactive
         scrollInfo = ScrollInfo(offset: 0, max: -1, new: 0)
         let s = makeSurface(interactive: role == .tile && interactive, below: nil, assign: true)
+        surfaceAttach = prewarmAttach
+        surfaceIsInteractive = role == .tile && interactive && prewarmAttach == .owner
         if surfaceIsInteractive { host.window?.makeFirstResponder(s.view) }
         _ = s
     }
 
-    /// A surface for this agent: tiles a read-only fit view, or (active
-    /// tile) a read-write owner attach; focus a read-write owner attach.
+    /// How the last surface made attached.
+    private var prewarmAttach: SizeOwner.Attach = .view
+
+    /// A surface for this agent: a read-write owner attach (the focus role
+    /// or the active tile, in the owner window), else a read-only fit view.
     @discardableResult
     private func makeSurface(interactive: Bool, below: NSView?, assign: Bool = false) -> any TerminalSurface {
         let s = TerminalEngine.makeSurface()
@@ -220,13 +242,19 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         // Drops on the terminal go to the tile / focus view (TerminalDrop).
         s.view.registerForDraggedTypes(TerminalDrop.types)
         if let below { host.addSubview(s.view, positioned: .below, relativeTo: below) } else { host.addSubview(s.view) }
-        let rw = role == .focus || interactive
-        s.acceptsInput = role == .focus || (interactive && assign)
+        if let resolve = Self.ownershipResolver {
+            resolvingOwnership = true
+            ownsSize = resolve(self)
+            resolvingOwnership = false
+        }
+        let mode = SizeOwner.attach(readWrite: role == .focus || interactive, owns: ownsSize)
+        prewarmAttach = mode
+        let rw = mode == .owner
+        s.acceptsInput = rw && (role == .focus || assign)
         s.prefersLowLatency = rw
         s.isRenderingVisible = visible
         let font = role == .tile ? tileFont : userFontSize
-        let argv = rw ? env.attachArgv(id: agent.id, readOnly: false, owner: ownsSize)
-                      : env.attachArgv(id: agent.id, readOnly: true, owner: false, view: true, fit: true)
+        let argv = env.attachArgv(id: agent.id, mode)
         // Assign first: libghostty reports the initial cell size from inside
         // surface creation, and the delegate must see this surface.
         if assign { surface = s }
@@ -236,7 +264,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
             guard let self, let s, s === self.surface else { return }
             self.surfaceMetricsDidChange(s)
         }
-        Self.log.debug("attach \(self.agent.id, privacy: .public) role=\(String(describing: self.role), privacy: .public) font=\(font)")
+        Self.log.debug("attach \(self.agent.id, privacy: .public) role=\(String(describing: self.role), privacy: .public) mode=\(String(describing: mode), privacy: .public) font=\(font)")
         return s
     }
 
