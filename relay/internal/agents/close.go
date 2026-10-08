@@ -31,6 +31,13 @@ var closeSettle = 200 * time.Millisecond
 // get agents.removed with reason "closed". The result names the session
 // to resume it with.
 func (r *Registry) CloseAgent(id string) (wire.CloseResult, error) {
+	return r.CloseAs(id, wire.ReasonClosed, "")
+}
+
+// CloseAs is CloseAgent with the removal's reason: "closed", or "moved"
+// (move work) with the agent it became (to). The folder is checkpointed
+// before the agent ends (checkpoint.go).
+func (r *Registry) CloseAs(id, reason, to string) (wire.CloseResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, err := r.find(id)
@@ -43,10 +50,12 @@ func (r *Registry) CloseAgent(id string) (wire.CloseResult, error) {
 		return res, nil // being closed already
 	}
 	if a.term == nil || a.Exit != nil {
-		r.removeLocked(a, wire.ReasonClosed)
+		a.closeTo = to
+		r.removeLocked(a, reason)
+		go r.closeCheckpoint(a.Agent)
 		return res, nil
 	}
-	a.closeReason, a.respawn = wire.ReasonClosed, false
+	a.closeReason, a.closeTo, a.respawn = reason, to, false
 	interrupted := false
 	switch a.State {
 	case wire.StateWorking, wire.StateApproval, wire.StateQuestion:
@@ -69,6 +78,7 @@ func (r *Registry) CloseAgent(id string) (wire.CloseResult, error) {
 // CloseWait), with the hangup agents.stop sends.
 func (r *Registry) endClosed(local string, gen int, interrupted bool) {
 	start := time.Now()
+	checkpointed := false
 	for {
 		r.mu.Lock()
 		a := r.agents[local]
@@ -79,6 +89,15 @@ func (r *Registry) endClosed(local string, gen int, interrupted bool) {
 		waited := time.Since(start)
 		settled := !interrupted || waited >= closeSettle
 		if settled && a.State != wire.StateWorking || waited >= r.opt.CloseWait {
+			if !checkpointed {
+				// The folder as the agent leaves it (checkpoint.go),
+				// before its process ends.
+				checkpointed = true
+				snap := a.Agent
+				r.mu.Unlock()
+				r.closeCheckpoint(snap)
+				continue
+			}
 			a.stopping, a.running = true, false
 			a.term.Stop(r.opt.StopGrace)
 			r.scheduleSave()
@@ -162,8 +181,12 @@ func (r *Registry) removeLocked(a *agent, reason string) {
 	if reason == wire.ReasonClosed || reason == wire.ReasonFinishedInBackground {
 		r.adoptChildren(a)
 	}
+	to := ""
+	if reason == wire.ReasonMoved {
+		to = a.closeTo // a moved agent's children follow it (Reparent)
+	}
 	for s := range r.subs {
-		s.pushRemoved(a.ID, reason)
+		s.pushRemovedTo(a.ID, reason, to)
 	}
 	r.scheduleSave()
 }

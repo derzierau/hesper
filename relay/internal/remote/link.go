@@ -225,7 +225,7 @@ func (f *Fleet) event(l *link, e agentlink.Event) {
 		local := localID(e.Removed)
 		if a, ok := m.agents[local]; ok {
 			delete(m.agents, local)
-			f.emitRemovedReasonLocked(a.ID, e.Reason)
+			f.emitRemovedToLocked(a.ID, e.Reason, e.To)
 		}
 	}
 }

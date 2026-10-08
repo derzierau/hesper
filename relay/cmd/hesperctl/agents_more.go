@@ -62,7 +62,7 @@ func init() {
 			Output: "{text, rows, cols, cursor?:{col, row}, alt?}", Examples: []string{"hesperctl screen a7f3k2", "hesperctl screen a7f3k2 --rows 10 --scrollback 200"},
 			Run: screenCommand},
 		{Name: "events", NoMCP: true, Summary: "Stream agent, draft, project and history changes as JSON lines", Usage: "events [--agent ID]… [--kinds K,…]",
-			Help:   "One JSON object per line, {\"method\", \"params\"}, until interrupted: agents.changed {agent} and agents.removed {id, reason} (first one agents.changed per agent), drafts.*, projects.*, groups.*, sessions.*. --kinds keeps only agents, drafts, projects, groups or sessions; --agent only those agents' events.",
+			Help:   "One JSON object per line, {\"method\", \"params\"}, until interrupted: agents.changed {agent}, agents.removed {id, reason, data?: {to}} (first one agents.changed per agent) and agents.moving {id, step, to, percent?, agent?} (a move's progress), drafts.*, projects.*, groups.*, sessions.*. --kinds keeps only agents, drafts, projects, groups or sessions; --agent only those agents' events.",
 			Output: "a stream of {method, params}", Examples: []string{"hesperctl events --kinds agents", "hesperctl events --agent a7f3k2 | jq -r '.params.agent.state'"},
 			Run: eventsCommand},
 		{Name: "wait", ReadOnly: true, Summary: "Wait until agents reach a state", Usage: "wait ID… --until COND [--any|--all] [--next] [--timeout D] [--json]",
@@ -916,6 +916,10 @@ func noteAgent(n wire.Notification) string {
 		var r wire.Removed
 		json.Unmarshal(n.Params, &r)
 		return r.ID
+	case wire.NoteMoving:
+		var m wire.Moving
+		json.Unmarshal(n.Params, &m)
+		return m.ID
 	}
 	return ""
 }

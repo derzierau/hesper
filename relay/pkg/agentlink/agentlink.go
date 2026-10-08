@@ -51,6 +51,9 @@ type Event struct {
 	Removed string       `json:"removed,omitempty"`
 	// Reason (closing agents) is why Removed left: wire.ReasonClosed, …
 	Reason string `json:"reason,omitempty"`
+	// To (move work): with reason "moved", the agent Removed became (as
+	// the controller that moved it named it).
+	To string `json:"to,omitempty"`
 	// Projects (projects step 1) is the host's shared project state
 	// (internal/projects.State): sent when the link opens and after each
 	// change; an event with Projects carries nothing else.

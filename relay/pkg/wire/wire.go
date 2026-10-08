@@ -95,6 +95,9 @@ type Agent struct {
 	// Track (shells only): hesperd follows the shell's commands, working
 	// while one runs (hesperctl new --kind shell --track). Persisted.
 	Track bool `json:"track,omitempty"`
+	// Checkpoint (move work) is the agent's last checkpoint (Git folders
+	// only; omitted before the first and for other folders). Persisted.
+	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
 }
 
 // EndedKilled is Agent.Ended after agents.kill.
@@ -234,6 +237,12 @@ type CloseResult struct {
 type MoveParams struct {
 	ID string `json:"id"`
 	To string `json:"to"`
+	// Fork (move work): the source agent stays; Interrupt: a working
+	// agent is interrupted first (else error "busy"); LeaveProcesses:
+	// processes it started stay behind (else error "processes").
+	Fork           bool `json:"fork,omitempty"`
+	Interrupt      bool `json:"interrupt,omitempty"`
+	LeaveProcesses bool `json:"leaveProcesses,omitempty"`
 }
 
 // HookParams are hook's: what `hesperd hook` sends. Agent is the hook
@@ -294,6 +303,8 @@ type Removed struct {
 	// "removed" (agents.remove); empty when the daemon dropped it (its
 	// machine gone, a machine renamed).
 	Reason string `json:"reason,omitempty"`
+	// Data (move work): with reason "moved", the agent it became.
+	Data *RemovedData `json:"data,omitempty"`
 }
 
 // Removal reasons.
@@ -324,6 +335,8 @@ type Error struct {
 	Message string `json:"message"`
 	// AgentID (shared history): the agent a "live" session runs in.
 	AgentID string `json:"agentId,omitempty"`
+	// Processes (move work): error "processes" lists them.
+	Processes []Process `json:"processes,omitempty"`
 }
 
 func (e *Error) Error() string { return e.Message }

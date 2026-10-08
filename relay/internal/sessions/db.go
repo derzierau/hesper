@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, size INTEGER NOT NULL, 
 CREATE TABLE IF NOT EXISTS peers (node TEXT PRIMARY KEY, epoch TEXT NOT NULL, seq INTEGER NOT NULL, short TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS mirror (key TEXT PRIMARY KEY, version TEXT NOT NULL, raw INTEGER NOT NULL, bytes INTEGER NOT NULL, path TEXT NOT NULL, complete INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS owned (kind TEXT NOT NULL, sid TEXT NOT NULL, PRIMARY KEY (kind, sid)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS checkpoints (kind TEXT NOT NULL, sid TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (kind, sid)) WITHOUT ROWID;
 `
 
 const cols = `rowid, key, node, home, kind, sid, cwd, project, branch, title, first, last_user, last_assistant, todos, turns, tokens, started, last,

@@ -167,6 +167,14 @@ type Registry struct {
 	closing   bool
 	saveCh    chan struct{}
 	saverEnd  chan struct{}
+	quit      chan struct{} // closed by Close (pruneLoop)
+
+	// checkpoints (checkpoint.go): hooks, one checkpoint at a time, the
+	// list of repositories with checkpoints.
+	cpMu    sync.Mutex
+	cpHooks []func(wire.Agent)
+	cpRun   sync.Mutex
+	cpFile  sync.Mutex
 }
 
 type agent struct {
@@ -215,6 +223,11 @@ type agent struct {
 	// to type once its prompt is ready (spawns only, never persisted).
 	shell     *shellWatch
 	shellTask string
+	// checkpoint.go: a turn's checkpoint is scheduled; the last one ran.
+	cpPending bool
+	cpLast    time.Time
+	// closeTo (move work): the agent a moved one became (reason "moved").
+	closeTo string
 }
 
 // Open loads the registry from the state directory and respawns the agents
@@ -225,7 +238,7 @@ func Open(opt Options) (*Registry, error) {
 		return nil, err
 	}
 	r := &Registry{opt: opt, agents: map[string]*agent{}, subs: map[*Subscriber]struct{}{}, projects: map[string]wire.Project{},
-		saveCh: make(chan struct{}, 1), saverEnd: make(chan struct{})}
+		saveCh: make(chan struct{}, 1), saverEnd: make(chan struct{}), quit: make(chan struct{})}
 	var err error
 	if r.settings, err = loadSettings(opt.ConfigDir); err != nil {
 		opt.Logf("hesperd: %v (defaults used)", err)
@@ -255,6 +268,7 @@ func Open(opt Options) (*Registry, error) {
 	for _, rec := range records {
 		r.restore(rec)
 	}
+	go r.pruneLoop() // checkpoint.go
 	return r, nil
 }
 
@@ -376,6 +390,9 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 		a.StateSince = time.Now().UTC()
 	}
 	finished := a.Background && turnEnded(a.State, state)
+	if state == wire.StateDone && a.State != state {
+		r.turnCheckpoint(a) // checkpoint.go
+	}
 	a.State, a.Attention = state, att
 	r.changed(a)
 	if finished {
@@ -1167,6 +1184,7 @@ func (r *Registry) Close() {
 		return
 	}
 	r.closing = true
+	close(r.quit)
 	var terms []*ptyhost.Term
 	for _, a := range r.agents {
 		if a.term != nil && a.Exit == nil {

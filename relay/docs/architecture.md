@@ -170,11 +170,14 @@ the link moved to the direct path; input typed meanwhile is dropped, never
 replayed. A machine that cannot be reached keeps its agents listed for a
 minute.
 
-Moves (`agents.move`) stop the agent on the source, carry its conversation
-file and its code (Git bundle with the uncommitted work as a handoff
-commit, incremental from what the target has) sealed with the transfer
-crypto, import it on the target (resume with the session) and remove the
-source's; any failure after the stop resumes the source.
+Moves (`agents.move`) check the agent and both machines first (preflight
+errors leave it untouched), checkpoint its folder on the source, carry its
+conversation file and its code (Git bundle with the checkpoint as the
+handoff commit, incremental from what the target has) sealed with the
+transfer crypto, import it on the target (the project found or cloned from
+its remote, a worktree on its branch, resume with the session and a
+handover note) and close the source's agent (reason `moved`) unless it
+forks. The orchestrating daemon reports progress as `agents.moving`.
 
 ## Metadata performance
 

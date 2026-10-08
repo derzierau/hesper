@@ -19,15 +19,17 @@ type Remote interface {
 	// Agents are the other machines' agents, for agents.list.
 	Agents() []wire.Agent
 	// Watch reports remote agents' changes (agent) and removals (removed,
-	// with the host's reason when it gave one) until ctx ends.
-	Watch(ctx context.Context, changed func(wire.Agent), removed func(id, reason string))
+	// with the host's reason when it gave one, and for reason "moved" the
+	// agent it became) until ctx ends.
+	Watch(ctx context.Context, changed func(wire.Agent), removed func(id, reason, to string))
 	// Call runs a method for a remote agent or machine (agents.input,
 	// answer, stop, resume, remove, rename, spawn with machine).
 	Call(ctx context.Context, machine, method string, params json.RawMessage) (json.RawMessage, error)
 	// Attach serves an attach connection to a remote agent.
 	Attach(conn net.Conn, r *bufio.Reader, req wire.AttachRequest)
-	// Move hands an agent over to another machine (agents.move).
-	Move(ctx context.Context, id, to string) (wire.Agent, error)
+	// Move hands an agent over to another machine (agents.move), telling
+	// this daemon's subscribers its progress (Registry.NoteMoving).
+	Move(ctx context.Context, p wire.MoveParams) (wire.MoveResult, error)
 	// FilePut starts an attachment upload to machine (files.put with the
 	// agent's local id or a draft); FileChunk sends one chunk of an upload
 	// it started. Found reports whether the upload is the Remote's.

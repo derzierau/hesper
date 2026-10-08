@@ -170,10 +170,14 @@ in [docs/remote-shell-contract.md](docs/remote-shell-contract.md) and
   keys. Terminal streams get per-direction keys; a tampered, dropped or
   reordered frame ends the stream. Pairing codes are compared on both screens,
   so a relay that swaps keys is caught.
-- **Moving agents between Macs.** `hesperctl mv` packs the transcript and an
-  incremental git bundle (with a handoff commit for uncommitted work), sends
-  it sealed, and resumes on the target. Any failure resumes the agent where
-  it was.
+- **Moving agents between Macs.** `hesperctl move ID --to mini` checkpoints
+  the agent's folder, packs the transcript and an incremental git bundle
+  (the checkpoint carries the uncommitted and untracked work, never ignored
+  files), sends it sealed, and resumes the agent on the target in a worktree
+  on the same branch (cloning the project from its remote when the target
+  lacks it), with a handover note; `--fork` keeps the original. A move that
+  fails leaves the agent where it was. Checkpoints are also taken when a
+  turn ends and at close (`hesperctl checkpoint ID`), kept 14 days.
 - **Shared history.** Claude and Codex transcripts from every Mac are indexed
   into SQLite FTS5 (pure Go, no cgo) at background priority. Project data
   shared between Macs is a CRDT, so every Mac converges.
@@ -330,7 +334,7 @@ hesperctl new --project ~/projects/app "Fix the login redirect"
 hesperctl new --machine mini --worktree --project ~/projects/app "Add the export"
 hesperctl attach fix-the-login-redirect       # Ctrl-] detaches
 hesperctl send ID "yes, go ahead" ; hesperctl approve ID ; hesperctl deny ID
-hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl mv ID mini
+hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl move ID --to mini
 ```
 
 Agents are addressed by id (`L/a7f3k2`), local id or unique name.

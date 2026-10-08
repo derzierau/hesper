@@ -2452,6 +2452,9 @@ its local id when free (`L/a7f3k2` → `M/a7f3k2`). Then the source's agent
 is removed. Any failure after the stop resumes the source's agent; the
 error keeps handoff codes (`branch_diverged`, `dirty_target`,
 `missing_project`, `conflicts`, …). Shells do not move.
+(Superseded in part by "As built — move work" below: no stop first, a
+preflight, checkpoints, worktrees, clone from the remote, close with
+reason `moved`, fork.)
 
 **Additions for part A** (local and remote): `activity` on Agent (claude
 and codex PreToolUse: `"<tool>: <detail>"`, ≤ 80 chars; cleared at
@@ -3547,6 +3550,151 @@ parameter errors, resources (needs-you after a PermissionRequest),
 subscription notifications, cancelling a wait, and an agent whose process
 runs `hesperctl mcp` with HESPER_AGENT_ID unset: the agent it starts is
 its child (verified caller).
+
+### As built — move work (checkpoints, agents.move; daemon)
+
+Code: `internal/handoff/checkpoint.go` (checkpoints, restore, prune),
+`internal/agents/checkpoint.go` (when they are taken, pruning,
+`agents.checkpoint`, `checkpoints.restore`'s worktree),
+`internal/agents/processes.go`, `internal/agents/move.go` (plan, probe,
+pack, import, handover note), `internal/remote/move.go` (the
+orchestration), `internal/sessions/checkpoints.go` (history),
+`pkg/wire/move.go`, `cmd/hesperctl` (`move`, `checkpoint`). Tests:
+`internal/handoff/checkpoint_test.go`, `internal/agents/checkpoint_test.go`,
+`internal/sessions/checkpoints_test.go`, `internal/transport/remote_move_test.go`
+(`TestRemoteMoveWork`, `TestRemoteMovePreflightAndFork`), hesperctl
+`TestAgentCommands`.
+
+**Checkpoint.** A Claude or Codex agent's Git folder (a repository with a
+commit) as two commits on no branch, the shape `git stash create` has for
+the index: `base (HEAD) <- staged (the index's tree) <- files (every file:
+tracked, untracked; ignored ones left out, as git add -A)`, built through a
+copy of the index (`GIT_INDEX_FILE`), `commit-tree --no-gpg-sign`, at
+`refs/hesper/checkpoints/<local id>`; the one it replaces moves to
+`…/<local id>-prev`. The user's index, branches, stash and files are never
+touched (tested by hashing the index file and comparing refs, HEAD and
+status). Unchanged (same files tree, staged tree and base): not taken
+again, the existing one is reported. A folder outside Git, or a repository
+without a commit: none (`checkpoint` stays absent; agents.checkpoint
+answers `{checkpoint: null}`). Shells are never checkpointed (a shell may
+sit in the home folder): `agents.checkpoint` of one is `invalid`.
+- Taken: when the agent enters `done` (debounced: at most one per 60 s per
+  agent, `CheckpointEvery`; a later turn end inside the window is
+  checkpointed when it closes), on `agents.close` (once the agent left
+  `working`, right before its process is ended; an ended agent: just after
+  its removal), on `agents.move` (the source's pack), and on
+  `agents.checkpoint {id}` → `{checkpoint}`. One at a time per daemon.
+- `Agent.checkpoint {ref, commit, at, changed, branch?}` (omitempty; in
+  agents.list / agents.changed; persisted in agents.json). `changed` is the
+  number of files that differ from HEAD (staged, unstaged, untracked).
+- History: `Session.checkpoint` (same object) for this Mac's sessions
+  whose hesperd agent had one, also after the agent is gone. Kept in the
+  history index's new `checkpoints` table (kind, sid → JSON), local only
+  (the refs live in this Mac's repositories), not replicated;
+  sessions.changed follows an update.
+- Pruned: refs older than 14 days (`CheckpointKeep`, by committer date) on
+  daemon start and daily, in every repository listed in
+  `$STATE/checkpoints.json` (`{"repos": {path: last}}`, written when a
+  checkpoint is made); a repository left without any leaves the list.
+
+**`checkpoints.restore {session, ref, commit, machine?}` → `{path,
+branch}`** (added for the app's "Restore checkpoint"): on the session's
+home (another Mac's session goes there as the host method
+`checkpoints.restore {key, ref, commit}`, right `transfer`; `machine`, when
+given, must be that home), checks that `commit` is the checkpoint `ref`
+(or `ref-prev`) names in the repository of the session's folder (its
+project's folder there when the folder is gone), then makes a new worktree
+at `<worktree root>/<project key>/<branch slug>-restored[-N]`: on the
+checkpoint's branch when that branch is free and at the checkpoint's base
+(or missing: then made there), else on a new branch
+`<branch>-restored[-N]` from the base; the checkpoint's work restored as
+uncommitted changes (staged ones staged, untracked ones untracked). Not
+found: `not_found` (e.g. pruned).
+
+**agents.move `{id, to, fork?, interrupt?, leaveProcesses?}`** →
+`{agent: "<new id>", …the new Agent's fields}` (the Agent fields stay at
+the top level: older clients decode the result as an Agent). The daemon
+that gets the call orchestrates (the gateway's Fleet, as before: any two
+machines, this one included); the agent's own Mac does its part through
+host methods. Steps:
+1. Preflight (the agent untouched on failure, error `data.code`):
+   `offline` (-32010) when either machine cannot be reached; `busy` when
+   the agent is `starting` or `working` — with `interrupt: true` it gets
+   Esc and up to 15 s to settle (done/idle/question/approval/error/exited
+   are settled), else still `busy`; `processes` with `data.processes:
+   [{pid, command}]` unless `leaveProcesses: true` — the processes running
+   under the command shells the tool started (Claude Code's Bash tool,
+   Codex's exec: `sh`/`bash`/`zsh`/… children of the tool and what runs
+   under them; the tool's other children such as MCP servers and
+   `hesperd hook` calls are not counted; through a login-shell wrapper);
+   `tool-missing` when the target's profile command for the kind is not on
+   its agents' PATH; `no-remote` when the target does not have the project
+   and it has no Git remote. A shell does not move (`invalid`).
+2. Checkpoint: the source takes a fresh checkpoint; it is the bundle's
+   handoff commit (same shape as before, so older daemons read it).
+3. Transfer: as before (incremental from the target's commits; when the
+   target will clone, from the source's last known remote head), at most
+   200 MB (`too-large`, `agents.MaxMoveBytes`), over the E2E transfer
+   channel. The controller adds `move: {from, to, fork, note}` to the
+   manifest (older targets ignore it).
+4. Target: the project is the project's folder there (shared projects,
+   `PathOn`), else the source's path mapped to this home; missing (or an
+   empty folder): `git clone` of the remote into it (a taken path:
+   `projects.clone` into the projects root). The agent lands where its
+   branch is checked out already (that checkout must be clean, as before),
+   else in the source's worktree path mapped to this home, else — the
+   source ran in its main checkout — a new worktree
+   `<worktree root>/<project key>/<branch slug>`; never over a checkout
+   with local changes (`dirty_target`). The uncommitted work is restored
+   as before. The conversation is placed for the new folder (its `cwd`s
+   mapped to it). The folder is pretrusted as a spawn's is (setting
+   `trustProjects`). The agent resumes (`--resume` / `codex resume`) with
+   its kind, profile, name, task, tree place; its local id kept when free.
+   Then the handover note is typed in once its screen settles: "You were
+   moved from <src> to <dst>. Your worktree is now <path> on branch <b>,
+   with the same uncommitted changes. Processes you started on <src> did
+   not move." (fork: "forked …", plus "The original agent keeps running
+   on <src>."; outside Git: "Your folder is now <path>.") Only when the
+   conversation was resumed; not yet configurable.
+5. The source is closed (agents.close semantics: interrupt if needed,
+   checkpoint, hangup) with reason `moved`: `agents.removed {id, reason:
+   "moved", data: {to: "<new id>"}}` (through links too:
+   `agentlink.Event.to`; a host without it is closed plainly). `fork:
+   true` keeps it. Its children follow the new id (Reparent), not with fork.
+
+Events: `agents.moving {id, step, to, percent?, agent?, fork?, error?}` on
+the orchestrating daemon's subscriptions: `checkpoint`, `transfer`
+(`percent` 0–100: download and/or upload progress), `worktree`, `resume`
+(`agent`: the new id), then `done` (`agent`) or `failed` (`error {code,
+message}`). Undo is a move back.
+
+hesperctl: `move ID --to MACHINE [--fork] [--interrupt]
+[--leave-processes] [--json]` (alias `mv`, `move ID MACHINE` still works;
+prints the new id, the processes on stderr), `checkpoint ID [--json]`;
+exit 7 for `busy` and `processes`. `hesperctl reference` and `events` help
+list the new codes and `agents.moving`.
+
+**Deviations from the shared contract:** the move runs on the daemon
+that gets agents.move (it reaches both Macs), not necessarily the agent's
+Mac — same result, and the progress events reach the caller's
+subscribers. The agent is no longer stopped before the move: it must be
+settled, so its conversation is complete, and nothing needs undoing on
+failure. The checkpoint commit has the staged tree in between (base <-
+staged <- files) so the index state is restored too; `-prev` is kept. The
+bundle carries the checkpoint as the existing handoff ref
+(`refs/ghosty/handoff/<id>`, wire name kept) with the branch, not the
+checkpoint ref. `agents.move`'s result keeps the Agent fields next to
+`agent`. `agents.moving` adds `done`/`failed` steps and `agent`, `fork`,
+`error`. Moves of history sessions (`sessions.resume` to another Mac)
+keep creating a missing repository from a full bundle; `agents.move`
+answers `no-remote` there instead (as specified). The per-project carry
+list is not built yet.
+
+**Needs a live two-Mac check:** clone from a real (ssh/https) remote with
+credentials on the target; trust prompts of the real Claude Code / Codex
+in the new worktree and the timing of the handover note on their real
+screens; `processes` detection with real Claude Code Bash tool shells and
+MCP servers; transfer progress over the relay for large bundles.
 
 ## Wire names kept from Ghosty
 

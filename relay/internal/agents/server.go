@@ -277,7 +277,7 @@ func rpcError(err error) *wire.RPCError {
 	if we.Code == wire.CodeOffline {
 		code = wire.RPCOffline // closing agents: the app queues the call
 	}
-	return &wire.RPCError{Code: code, Message: we.Message, Data: &wire.ErrorData{Code: we.Code, AgentID: we.AgentID}}
+	return &wire.RPCError{Code: code, Message: we.Message, Data: &wire.ErrorData{Code: we.Code, AgentID: we.AgentID, Processes: we.Processes}}
 }
 
 type badParams struct{ err error }
@@ -330,7 +330,7 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 	if already {
 		return
 	}
-	sub := c.s.reg.Subscribe()
+	sub := c.s.reg.SubscribeMoves()
 	c.subscribeDrafts(wg)
 	wg.Add(1)
 	go func() { defer wg.Done(); c.watchProjects() }() // projects step 1
@@ -338,7 +338,7 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 	go func() { defer wg.Done(); c.watchSessions() }() // shared history
 	ctx, cancel := context.WithCancel(context.Background())
 	if remote := c.s.reg.opt.Remote; remote != nil {
-		go remote.Watch(ctx, func(a wire.Agent) { sub.push(a.ID, &a) }, func(rid, reason string) { sub.pushRemoved(rid, reason) })
+		go remote.Watch(ctx, func(a wire.Agent) { sub.push(a.ID, &a) }, func(rid, reason, to string) { sub.pushRemovedTo(rid, reason, to) })
 	}
 	wg.Add(1)
 	go func() {
@@ -353,12 +353,20 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 			for _, n := range notes {
 				var note wire.Notification
 				note.JSONRPC = "2.0"
-				if n.Agent != nil {
+				switch {
+				case n.Agent != nil:
 					note.Method = wire.NoteChanged
 					note.Params, _ = json.Marshal(wire.Changed{Agent: *n.Agent})
-				} else {
+				case n.Moving != nil:
+					note.Method = wire.NoteMoving // move work
+					note.Params, _ = json.Marshal(n.Moving)
+				default:
 					note.Method = wire.NoteRemoved
-					note.Params, _ = json.Marshal(wire.Removed{ID: n.Removed, Reason: n.Reason})
+					rm := wire.Removed{ID: n.Removed, Reason: n.Reason}
+					if n.To != "" {
+						rm.Data = &wire.RemovedData{To: n.To}
+					}
+					note.Params, _ = json.Marshal(rm)
 				}
 				if c.write(note) != nil {
 					return
@@ -411,9 +419,6 @@ func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, 
 	}
 	res, err := s.call(method, params)
 	s.auditCall(caller, method, target, nil, err)
-	if a, ok := res.(wire.Agent); ok && err == nil && method == "agents.move" {
-		s.reg.Reparent(target, a.ID)
-	}
 	return res, err
 }
 
@@ -528,6 +533,23 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return struct{}{}, reg.SetBackground(p.ID, p.Background)
 	case "agents.screen":
 		return s.screen(params, forward) // screen.go
+	case "agents.checkpoint":
+		// move work (checkpoint.go)
+		var p wire.IDParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		if p.ID == "" {
+			return nil, &badParams{errors.New("id is required")}
+		}
+		if ok, res, err := forward(p.ID); ok {
+			return res, err
+		}
+		cp, err := reg.Checkpoint(p.ID)
+		if err != nil {
+			return nil, err
+		}
+		return wire.CheckpointResult{Checkpoint: cp}, nil
 	case "agents.input", "agents.answer", "agents.stop", "agents.resume", "agents.remove", "agents.rename", "agents.move":
 		var head wire.IDParams
 		if err := decode(params, &head); err != nil {
@@ -546,7 +568,13 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 			defer cancel()
-			return remote.Move(ctx, p.ID, p.To)
+			res, err := remote.Move(ctx, p)
+			if err == nil && !p.Fork {
+				// The moved agent's children (this Mac's) follow it.
+				m, local := reg.split(p.ID)
+				reg.Reparent(m+"/"+local, res.Agent)
+			}
+			return res, err
 		}
 		if ok, res, err := forward(head.ID); ok {
 			return res, err
@@ -680,7 +708,7 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		}
 		return nil, wire.Errorf(wire.CodeUnavailable, "projects are not available")
 	case "sessions.search", "sessions.show", "sessions.resume", "sessions.fork", "sessions.brief", "sessions.continueAs",
-		"sessions.archive", "sessions.delete", "sessions.stats":
+		"sessions.archive", "sessions.delete", "sessions.stats", "checkpoints.restore":
 		// shared history (sessionhook.go)
 		if reg.opt.Sessions != nil {
 			res, err, _ := reg.opt.Sessions.Call(method, params)

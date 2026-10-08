@@ -153,7 +153,8 @@ func (s *Service) Execute(ctx context.Context, m protocol.Message) (json.RawMess
 		return s.handoff(ctx, m)
 	case "projects.sync", "projects.promote":
 		return s.projects(ctx, m) // projects step 1
-	case "sessions.pull", "sessions.transcript", "sessions.plan", "sessions.changes", "sessions.resume", "sessions.fork", "sessions.continueAs":
+	case "sessions.pull", "sessions.transcript", "sessions.plan", "sessions.changes", "sessions.resume", "sessions.fork", "sessions.continueAs",
+		"checkpoints.restore": // move work
 		return s.sessions(ctx, m) // shared history
 	}
 	if s.Agents == nil {

@@ -453,8 +453,11 @@ renames to its own machine naming.
 | `agents.remove` | `{id}` | `{}` |
 | `agents.link` | `{}` | a terminal ticket: the [link](#links) |
 | `agents.attach` | `{link, ch, mode, request}`: `request` is the local attach request (every option of it, passed through), `mode` repeats its mode for the rights table | `{}`; the attach runs on channel `ch` of the caller's link |
-| `agents.plan` | `{id}` | `{project, home, commits}` (a move's source: commits the target may have) |
-| `agents.probe` | `{path, home, commits}` | `{exists, has}` (a move's target) |
+| `agents.plan` | `{id}` | `{project, home, commits, projectId?, remote?, remoteHead?, git?, processes?}` (a move's source: commits the target may have; its Git remote; processes the agent started) |
+| `agents.probe` | `{path, home, commits, projectId?, kind?}` | `{exists, has, path?, tool?}` (a move's target: where the project is there, whether it has the tool) |
+| `agents.checkpoint` | `{id}` | `{checkpoint}` (null outside Git; right `transfer`) |
+| `agents.close` | `{id, reason?: "moved", to?}` | as locally (a move closes its source with reason `moved`) |
+| `checkpoints.restore` | `{key, ref, commit}` | `{path, branch}`: a worktree from a session's checkpoint (right `transfer`) |
 | `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?, alt?}`: the terminal as plain text (right `observe`) |
 | `projects.clone` | `{url}` | `{path}` |
 | `projects.recent`, `profiles.list` | `{}` | as locally |
@@ -488,13 +491,17 @@ channels per link.
 ## Moves
 
 `agents.move` on the controlling hesperd moves an agent with its
-conversation and code between any two machines: it stops the agent on the
-source (`agents.stop {wait: true}`), asks the source's plan and the
-target's probe, has the source pack a bundle (`manifest.json`,
-`transcript.jsonl`, `code.bundle`; see `internal/handoff`), carries it
-(a remote source: `agents.export` + `download`; a remote target:
-`transfer` + `agents.import`, polled with `job`), and removes the source's
-agent once the target resumed it (on failure the source is resumed).
+conversation and code between any two machines: it checks the agent is
+settled and asks the source's plan (with the agent's processes) and the
+target's probe (project, tool) — preflight errors leave the agent as it
+is —, has the source pack a bundle (`manifest.json`, `transcript.jsonl`,
+`code.bundle`; see `internal/handoff`; a fresh checkpoint is the handoff
+commit; at most 200 MB), adds the move's part to the manifest (`move:
+{from, to, fork, note}`), carries it (a remote source: `agents.export` +
+`download`; a remote target: `transfer` + `agents.import`, polled with
+`job`), and closes the source's agent (`agents.close` with reason
+`moved`) once the target resumed it, unless it forks. Details: the
+rebuild contract, "As built — move work".
 
 `machine` describes the host: `agents` (live agents), `memoryUsed` and
 `battery` (0 to 1), `onBattery`, `lidClosed`. Values the host cannot read

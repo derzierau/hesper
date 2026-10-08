@@ -36,9 +36,10 @@ func ValidRight(name string) bool {
 var methodRights = map[string]string{
 	"snapshot": Observe, "ping": Observe, "agents.list": Observe, "agents.link": Observe,
 	"agents.plan": Observe, "agents.probe": Observe, "agents.screen": Observe, "agents.export": Observe, "download": Observe, "job": Observe,
-	"agents.result": Observe, // agent tree: an agent's last final message
-	"agents.answer": Answer,
-	"agents.input":  Type, "files.put": Type, "files.chunk": Type,
+	"agents.result":     Observe,  // agent tree: an agent's last final message
+	"agents.checkpoint": Transfer, // move work: writes a ref in the agent's repository
+	"agents.answer":     Answer,
+	"agents.input":      Type, "files.put": Type, "files.chunk": Type,
 	"agents.spawn": Transfer, "agents.stop": Transfer, "agents.resume": Transfer, "agents.remove": Transfer,
 	"agents.rename": Transfer, "agents.import": Transfer,
 	// closing agents: ending an agent, or hiding it, as stop and remove.
@@ -53,7 +54,8 @@ var methodRights = map[string]string{
 	// shared history: reading the index, transcripts, a session's plan
 	// or changes observes; starting a session there needs transfer.
 	"sessions.pull": Observe, "sessions.transcript": Observe, "sessions.plan": Observe, "sessions.changes": Observe,
-	"sessions.resume": Transfer, "sessions.fork": Transfer, "sessions.continueAs": Transfer,
+	"checkpoints.restore": Transfer, // move work: a worktree from a checkpoint
+	"sessions.resume":     Transfer, "sessions.fork": Transfer, "sessions.continueAs": Transfer,
 }
 
 // Unsigned reports the methods controllers send without a signature and

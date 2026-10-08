@@ -104,6 +104,14 @@ func (s *Service) Call(method string, params json.RawMessage) (any, error, bool)
 	case "sessions.stats":
 		res, err := s.Stats()
 		return res, err, true
+	case "checkpoints.restore":
+		// move work (checkpoints.go)
+		var p RestoreParams
+		if err := decode(params, &p); err != nil {
+			return nil, err, true
+		}
+		res, err := s.restoreCheckpoint(p)
+		return res, err, true
 	}
 	return nil, nil, false
 }
@@ -162,6 +170,20 @@ func (s *Service) HostCall(ctx context.Context, method string, params json.RawMe
 			return nil, err
 		}
 		return s.transcriptChunk(p)
+	case "checkpoints.restore":
+		// move work (checkpoints.go)
+		var p hostRestoreParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		rw, err := s.db.get(p.Key)
+		if err != nil {
+			return nil, err
+		}
+		if rw == nil || rw.rec.Deleted {
+			return nil, wire.Errorf(wire.CodeNotFound, "no session %s", p.Key)
+		}
+		return s.restoreHere(&rw.rec, p.Ref, p.Commit)
 	}
 	var p hostParams
 	if err := decode(params, &p); err != nil {
