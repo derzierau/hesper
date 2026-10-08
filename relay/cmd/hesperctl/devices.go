@@ -70,15 +70,15 @@ func pairHostCommand(ctx context.Context, f *flag.FlagSet, args []string) error 
 	rights := f.String("rights", "observe,answer,type,transfer", "Rights to ask for: "+strings.Join(devicekey.AllRights, ","))
 	name := f.String("name", defaultDeviceName(), "This device's name on the host")
 	wait := f.Duration("wait", 0, "Wait this long for the approval (0: print the code and return)")
-	asJSON := f.Bool("json", false, "Print JSON")
+	asJSON := jsonFlag(f)
 	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if *machine == "" {
-		return fmt.Errorf("--machine is required")
+		return usagef("--machine is required")
 	}
 	if !host.ValidName(*name) {
-		return fmt.Errorf("--name must be 1 to 40 printable characters")
+		return usagef("--name must be 1 to 40 printable characters")
 	}
 	signer := deviceSigner()
 	if signer == nil {
@@ -208,13 +208,13 @@ func approveCommand(f *flag.FlagSet, args []string) error {
 	name := f.String("name", "", "Name the device differently")
 	softwareShell := f.Bool("allow-software-shell", false, "Grant shell to a device without hardware (Secure Enclave) keys")
 	dir := f.String("state-dir", devicekey.StateDir(), "Host state directory")
-	asJSON := f.Bool("json", false, "Print JSON")
+	asJSON := jsonFlag(f)
 	positional, err := parseInterspersed(f, args)
 	if err != nil {
 		return err
 	}
 	if len(positional) != 1 {
-		return fmt.Errorf("usage: hesperctl approve [--deny] [--rights R,…] [--name N] NAME|CODE")
+		return usagef("usage: hesperctl approve [--deny] [--rights R,…] [--name N] NAME|CODE")
 	}
 	store := hostStore(*dir)
 	if *deny {
@@ -251,7 +251,7 @@ func approveCommand(f *flag.FlagSet, args []string) error {
 func devicesLocalCommand(f *flag.FlagSet, args []string) error {
 	revoke := f.String("revoke", "", "Revoke this approved controller (name or device ID)")
 	dir := f.String("state-dir", devicekey.StateDir(), "Host state directory")
-	asJSON := f.Bool("json", false, "Print JSON")
+	asJSON := jsonFlag(f)
 	if err := f.Parse(args); err != nil {
 		return err
 	}

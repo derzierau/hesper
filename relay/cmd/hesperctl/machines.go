@@ -19,6 +19,7 @@ import (
 	"github.com/derzierau/hesper/relay/pkg/e2e"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 	"github.com/derzierau/hesper/relay/pkg/session"
+	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
 func home() string {
@@ -159,9 +160,9 @@ func resolveMachine(list []machineInfo, query string) (machineInfo, error) {
 	case 1:
 		return found[0], nil
 	case 0:
-		return machineInfo{}, fmt.Errorf("no machine %q (see hesperctl machines)", query)
+		return machineInfo{}, failf(wire.CodeNotFound, "no machine %q (see hesperctl machines)", query)
 	}
-	return machineInfo{}, fmt.Errorf("%q names several machines; use the machine ID", query)
+	return machineInfo{}, failf(codeAmbiguous, "%q names several machines; use the machine ID", query)
 }
 
 // machinesCommand lists the inventory with machineIdentity; --save writes the
@@ -169,7 +170,7 @@ func resolveMachine(list []machineInfo, query string) (machineInfo, error) {
 func machinesCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	credentials := f.String("credentials", defaultCredentials(), "Controller credentials file")
 	save := f.Bool("save", false, "Write the identities to ~/.config/hesper/machines.json")
-	asJSON := f.Bool("json", false, "Print JSON")
+	asJSON := jsonFlag(f)
 	if err := f.Parse(args); err != nil {
 		return err
 	}
@@ -287,7 +288,7 @@ func loadTrust(path string) (trustFile, error) { return e2e.LoadTrust(path) }
 // trustCommand shows pinned host keys or forgets one.
 func trustCommand(f *flag.FlagSet, args []string) error {
 	reset := f.String("reset", "", "Forget the pinned key of this machine (ID, short or full name)")
-	asJSON := f.Bool("json", false, "Print JSON")
+	asJSON := jsonFlag(f)
 	if err := f.Parse(args); err != nil {
 		return err
 	}

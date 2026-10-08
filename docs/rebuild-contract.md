@@ -184,6 +184,16 @@ unchanged.
 plus the existing relay commands (login, pair-host, approve-device, devices,
 trust).
 
+**As built — CLI foundation**: commands live in a registry
+(`relay/cmd/hesperctl/commands.go`; each file registers its own in
+`init`). `hesperctl help [CMD]`, `CMD --help` and `hesperctl reference`
+(Markdown for LLM agents, `--json` too) are generated from it. Every
+command takes `--json`; errors then go to stderr as
+`{"error":{"code","message"}}`. Exit codes: 0 ok, 1 error, 2 usage,
+3 not_found, 4 unavailable (no hesperd; codes unavailable, offline,
+remote), 5 forbidden, 6 timeout, 7 exists (exists, live). `hesperctl
+self` is the agent it runs in (`HESPER_AGENT_ID`).
+
 ## Persistence
 
 `$HESPER_STATE_DIR/agents.json` (atomic writes) holds the registry. Agents

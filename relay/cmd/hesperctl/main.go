@@ -25,9 +25,51 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	code := execute(ctx, os.Args[1:], os.Stderr)
+	stop()
+	os.Exit(code)
+}
+
+// The relay and device commands (the commands are in commands.go).
+func init() {
+	route := "Requests go through a running hesperd's connection (--socket); --direct connects to the relay itself, replacing hesperd's connection meanwhile."
+	for _, c := range []Command{
+		{Name: "machines", Summary: "List the owner's machines (relay inventory)", Usage: "machines [--save] [--json]",
+			Help:     "Short name, name, online state, route (direct or relay) and load of every machine. --save writes their names and glyphs to ~/.config/hesper/machines.json. " + route,
+			Output:   "[{id, name, online, snapshot, short, glyph, color, local, route}]",
+			Examples: []string{"hesperctl machines", "hesperctl machines --json | jq -r '.[] | select(.online) | .short'"}},
+		{Name: "trust", Summary: "Show pinned host keys, or forget one", Usage: "trust [--reset MACHINE] [--json]",
+			Output: "{machineId: {name, key, pinned, e2e, direct}}, with --reset {reset: machineId}"},
+		{Name: "pair-host", Summary: "Ask a host to approve this device's keys", Usage: "pair-host --machine M [--rights R,…] [--wait D] [--json]",
+			Help:   "Prints the code to compare on the host, where approve CODE (or C-a A in Hesper) approves it. " + route,
+			Output: "{machine, short, status, code, rights, name}"},
+		{Name: "approve-device", Summary: "Approve or deny a device waiting on this host", Usage: "approve-device [--deny] [--rights R,…] [--name N] NAME|CODE [--json]",
+			Help:   "Works on this host's files only. approve with these flags, or with a code no agent has, does the same.",
+			Output: "{approved, note} or {denied}"},
+		{Name: "devices-local", Summary: "List or revoke the controllers this host approved", Usage: "devices-local [--revoke NAME] [--json]",
+			Output: "{controllers, pending, enforcing}, with --revoke {revoked}"},
+		{Name: "login", Summary: "Enroll this device with the relay (GitHub sign-in)", Usage: "login --name NAME --out FILE [--role R] [--relay URL]",
+			Output: "{deviceId, role, credentialsFile}"},
+		{Name: "pair", Summary: "Enroll with an invitation (development relays)", Usage: "pair --relay URL --name NAME --out FILE [--invitation-file F]",
+			Output: "{deviceId, role, credentialsFile}"},
+		{Name: "invite", Summary: "Create an invitation (relay admin socket)", Usage: "invite [--owner O] [--role R] [--admin-socket S]"},
+		{Name: "devices", Summary: "List the relay's devices (relay admin socket)", Usage: "devices [--admin-socket S]"},
+		{Name: "revoke", Summary: "Revoke a device (relay admin socket)", Usage: "revoke --device ID [--admin-socket S]"},
+		{Name: "watch", Summary: "Print the machine inventory as it changes", Usage: "watch [--credentials F]",
+			Help: "One JSON inventory per change, until interrupted. " + route, Output: "a stream of machine inventories"},
+		{Name: "request", Summary: "Send one host operation through the relay", Usage: "request --machine ID [--method M] [--params FILE|-]",
+			Help: route, Output: "the host's result"},
+	} {
+		c.Group = groupRelay
+		c.Run = relayRun(c.Name)
+		register(c)
+	}
+}
+
+// relayRun is the Run of the relay command `command`.
+func relayRun(command string) func(context.Context, *flag.FlagSet, []string) error {
+	return func(ctx context.Context, f *flag.FlagSet, args []string) error {
+		return relayCommand(ctx, f, command, args)
 	}
 }
 func output(value any) error {
@@ -41,22 +83,9 @@ func read(path string) ([]byte, error) {
 	}
 	return os.ReadFile(path)
 }
-func run(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: hesperctl ls|new|send|approve|deny|stop|resume|attach|mv|rm|rename (agents, on hesperd)\n       hesperctl login|invite|devices|revoke|pair|machines|watch|request|trust|pair-host|approve-device|devices-local [flags] (relay)")
-	}
-	if isAgentCommand(args) {
-		if args[0] == "approve" {
-			return approveOrDevice(ctx, flag.NewFlagSet("approve", flag.ContinueOnError), args)
-		}
-		return agentCommand(ctx, args)
-	}
-	// The relay command an agent command took the name of.
-	if args[0] == "approve-device" {
-		args = append([]string{"approve"}, args[1:]...)
-	}
-	command := args[0]
-	f := flag.NewFlagSet(command, flag.ContinueOnError)
+func relayCommand(ctx context.Context, f *flag.FlagSet, command string, args []string) error {
+	// The cases below take args with the command first.
+	args = append([]string{command}, args...)
 	switch command {
 	case "machines", "watch", "request", "pair-host":
 		ctx = addRouteFlags(ctx, f)
@@ -68,7 +97,7 @@ func run(ctx context.Context, args []string) error {
 		return trustCommand(f, args[1:])
 	case "pair-host":
 		return pairHostCommand(ctx, f, args[1:])
-	case "approve":
+	case "approve-device":
 		return approveCommand(f, args[1:])
 	case "devices-local":
 		return devicesLocalCommand(f, args[1:])
@@ -88,7 +117,7 @@ func run(ctx context.Context, args []string) error {
 		}
 		if command == "revoke" {
 			if *device == "" {
-				return fmt.Errorf("--device is required")
+				return usagef("--device is required")
 			}
 			method, path = http.MethodDelete, "/v1/devices/"+url.PathEscape(*device)
 		}
@@ -123,7 +152,7 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 		if *name == "" || *out == "" {
-			return fmt.Errorf("--name and --out are required")
+			return usagef("--name and --out are required")
 		}
 		if _, err := os.Lstat(*out); !os.IsNotExist(err) {
 			return fmt.Errorf("credentials destination must not exist")
@@ -165,7 +194,7 @@ func run(ctx context.Context, args []string) error {
 			return err
 		}
 		if *out == "" || *name == "" {
-			return fmt.Errorf("--name and --out are required")
+			return usagef("--name and --out are required")
 		}
 		if _, err := os.Lstat(*out); err == nil {
 			return fmt.Errorf("credentials file already exists")
@@ -213,7 +242,7 @@ func run(ctx context.Context, args []string) error {
 		requestCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		defer cancel()
 		if *machine == "" {
-			return fmt.Errorf("--machine is required")
+			return usagef("--machine is required")
 		}
 		var payload json.RawMessage = []byte("{}")
 		if *params != "" {

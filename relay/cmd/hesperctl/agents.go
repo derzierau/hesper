@@ -18,19 +18,61 @@ import (
 
 // Agent commands: hesperctl on hesperd's socket.
 //
-//	ls | new | send | approve | deny | stop | resume | attach | mv | rm | rename
+//	ls | new | send | approve | deny | stop | resume | attach | mv | rm | rename | self
 //
 // approve was a relay command before (approving a device); with its
 // device flags (--rights, --deny, …), or as approve-device, it still is.
 // Agents of other machines are reached through hesperd (part R).
 
-var agentCommands = map[string]bool{
-	"ls": true, "new": true, "send": true, "approve": true, "deny": true, "stop": true,
-	"resume": true, "attach": true, "mv": true, "rm": true, "rename": true,
+const idHelp = "ID is the agent's full id (mini/a7f3k2), its local id (a7f3k2) or its name when unique."
+
+func init() {
+	for _, c := range []Command{
+		{Name: "ls", Summary: "List the agents of every machine", Usage: "ls [--json]",
+			Help:     "A table of id, state, kind, name, folder and what the agent waits for (attention) or last said (summary).",
+			Output:   "[Agent]",
+			Examples: []string{"hesperctl ls", "hesperctl ls --json | jq -r '.[] | select(.state==\"approval\") | .id'"}},
+		{Name: "new", Summary: "Start an agent with a task", Usage: "new [flags] TASK…",
+			Help:     "Starts a Claude, Codex or shell agent in a project folder and prints its id. TASK is its first prompt; - reads it from stdin.",
+			Output:   "Agent",
+			Examples: []string{"hesperctl new --project ~/src/app fix the flaky login test", "hesperctl new --kind codex --branch fix-login fix the login", "echo 'review the diff' | hesperctl new --json -"}},
+		{Name: "send", Summary: "Type text into an agent and press Enter", Usage: "send ID TEXT… [--no-submit]",
+			Help:     idHelp + " TEXT - reads stdin. The text is pasted, then submitted unless --no-submit.",
+			Examples: []string{"hesperctl send a7f3k2 now run the tests", "git diff | hesperctl send mini/a7f3k2 -"}},
+		{Name: "approve", Summary: "Allow what an agent waits for (approval)", Usage: "approve ID [--always]",
+			Help:     idHelp + " Answers an agent in state approval with allow (always: and don't ask again). Without an agent of that id, or with device flags, approves a device instead (see approve-device).",
+			Examples: []string{"hesperctl approve a7f3k2", "hesperctl approve push-provider --always"}},
+		{Name: "deny", Summary: "Deny what an agent waits for (approval)", Usage: "deny ID [--message TEXT]",
+			Help:     idHelp + " Without --message the agent goes idle; with it, the message tells the agent what to do instead.",
+			Examples: []string{"hesperctl deny a7f3k2 --message 'push to a branch, not main'"}},
+		{Name: "stop", Summary: "Stop an agent (it stays, exited, and can be resumed)", Usage: "stop ID",
+			Help: idHelp + " Sends SIGHUP, then SIGKILL after 5 seconds."},
+		{Name: "resume", Summary: "Restart an exited agent with its conversation", Usage: "resume ID [--json]",
+			Help: idHelp, Output: "Agent"},
+		{Name: "attach", Summary: "Attach this terminal to an agent", Usage: "attach ID [--ro] [--owner=false]",
+			Help: idHelp + " Ctrl-] detaches. Needs a terminal; not for scripts."},
+		{Name: "mv", Summary: "Move an agent with its conversation to another machine", Usage: "mv ID MACHINE [--json]",
+			Help: idHelp + " MACHINE is a short name (see machines).", Output: "Agent",
+			Examples: []string{"hesperctl mv a7f3k2 mini"}},
+		{Name: "rm", Summary: "Forget an exited agent", Usage: "rm ID", Help: idHelp},
+		{Name: "rename", Summary: "Rename an agent", Usage: "rename ID NAME… [--json]", Help: idHelp, Output: "Agent"},
+	} {
+		c.Group, c.Run = groupAgents, agentRun(c.Name)
+		if c.Name == "approve" {
+			c.Run = approveOrDevice
+		}
+		register(c)
+	}
+	register(Command{Name: "self", Group: groupAgents, Summary: "Show the agent this command runs in",
+		Usage:    "self [--json]",
+		Help:     "Inside a Hesper agent (HESPER_AGENT_ID set, with HESPER_MACHINE when the id has no machine) prints the agent's id. Elsewhere, or when hesperd does not know the agent, exits 3.",
+		Output:   "Agent",
+		Examples: []string{"me=$(hesperctl self)", "hesperctl self --json | jq -r .project"},
+		Run:      selfCommand})
 }
 
 // deviceFlags mark the old `approve` (a device waiting for approval).
-var deviceFlags = []string{"rights", "name", "state-dir", "allow-software-shell", "json", "deny"}
+var deviceFlags = []string{"rights", "name", "state-dir", "allow-software-shell", "deny"}
 
 func hasFlag(args []string, names []string) bool {
 	for _, a := range args {
@@ -53,7 +95,10 @@ func hasFlag(args []string, names []string) bool {
 
 // isAgentCommand decides whether args run an agent command.
 func isAgentCommand(args []string) bool {
-	if len(args) == 0 || !agentCommands[args[0]] {
+	if len(args) == 0 {
+		return false
+	}
+	if c := findCommand(args[0]); c == nil || c.Group != groupAgents {
 		return false
 	}
 	if args[0] == "approve" {
@@ -101,14 +146,49 @@ func resolveAgent(ctx context.Context, c *wire.Client, ref string) (string, erro
 	case 0:
 		return "", &wire.Error{Code: wire.CodeNotFound, Message: "no agent " + ref}
 	}
-	return "", fmt.Errorf("%q names %d agents: use an id (%s)", ref, len(byName), strings.Join(byName, ", "))
+	return "", failf(codeAmbiguous, "%q names %d agents: use an id (%s)", ref, len(byName), strings.Join(byName, ", "))
 }
 
-func agentCommand(ctx context.Context, args []string) error {
-	command := args[0]
-	f := flag.NewFlagSet(command, flag.ContinueOnError)
+// selfCommand finds the agent it runs in: HESPER_AGENT_ID (a full id, or
+// a local id completed with HESPER_MACHINE).
+func selfCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
+	asJSON := jsonFlag(f)
+	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, _ []string) error {
+		id := os.Getenv("HESPER_AGENT_ID")
+		if id == "" {
+			return failf(wire.CodeNotFound, "not inside a Hesper agent (HESPER_AGENT_ID is not set)")
+		}
+		if m := os.Getenv("HESPER_MACHINE"); m != "" && !strings.Contains(id, "/") {
+			id = m + "/" + id
+		}
+		var list []wire.Agent
+		if err := c.Call(ctx, "agents.list", nil, &list); err != nil {
+			return err
+		}
+		for _, a := range list {
+			_, local, _ := strings.Cut(a.ID, "/")
+			if a.ID == id || (!strings.Contains(id, "/") && local == id) {
+				if *asJSON {
+					return output(a)
+				}
+				fmt.Println(a.ID)
+				return nil
+			}
+		}
+		return failf(wire.CodeNotFound, "hesperd has no agent %s (HESPER_AGENT_ID)", id)
+	})
+}
+
+// agentRun is the Run of the agent command `command`.
+func agentRun(command string) func(context.Context, *flag.FlagSet, []string) error {
+	return func(ctx context.Context, f *flag.FlagSet, args []string) error {
+		return agentCommand(ctx, f, command, args)
+	}
+}
+
+func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []string) error {
 	socket := daemonSocket(f)
-	asJSON := f.Bool("json", false, "Print JSON")
+	asJSON := jsonFlag(f)
 	var (
 		kind, profile, project, name, branch, machine, worktreePath *string
 		worktree, noSubmit, always, ro, owner                       *bool
@@ -135,7 +215,7 @@ func agentCommand(ctx context.Context, args []string) error {
 		ro = f.Bool("ro", false, "Read only")
 		owner = f.Bool("owner", true, "Resize the agent to this terminal")
 	}
-	positional, err := parseInterspersed(f, args[1:])
+	positional, err := parseInterspersed(f, args)
 	if err != nil {
 		return err
 	}
@@ -155,7 +235,7 @@ func agentCommand(ctx context.Context, args []string) error {
 	}
 	need := func(n int, use string) error {
 		if len(positional) < n {
-			return fmt.Errorf("usage: hesperctl %s", use)
+			return usagef("usage: hesperctl %s", use)
 		}
 		return nil
 	}
@@ -320,12 +400,15 @@ func printAgents(w io.Writer, list []wire.Agent) error {
 // approveOrDevice runs `hesperctl approve X`: an agent's approval, else
 // (no such agent) a device waiting for approval, as before.
 func approveOrDevice(ctx context.Context, f *flag.FlagSet, args []string) error {
-	err := agentCommand(ctx, args)
+	if hasFlag(args, deviceFlags) {
+		return approveCommand(f, args)
+	}
+	err := agentCommand(ctx, f, "approve", args)
 	var we *wire.Error
 	notAgent := (errors.As(err, &we) && we.Code == wire.CodeNotFound) || errors.Is(err, errNoDaemon)
-	if len(args) > 1 && notAgent && !strings.Contains(args[len(args)-1], "/") {
+	if len(args) > 0 && notAgent && !strings.Contains(args[len(args)-1], "/") {
 		var rest []string
-		for i := 1; i < len(args); i++ {
+		for i := 0; i < len(args); i++ {
 			switch a := args[i]; {
 			case a == "--daemon-socket" || a == "-daemon-socket":
 				i++
@@ -334,7 +417,9 @@ func approveOrDevice(ctx context.Context, f *flag.FlagSet, args []string) error 
 				rest = append(rest, a)
 			}
 		}
-		return approveCommand(f, rest)
+		device := newFlagSet("approve")
+		device.Usage = f.Usage
+		return approveCommand(device, rest)
 	}
 	return err
 }
