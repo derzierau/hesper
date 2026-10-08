@@ -38,13 +38,18 @@ public struct BringRequest: Equatable, Sendable, Hashable {
     public var from: String
     public var path: String
     public var changes: BringChanges
+    /// The draft being started: hesperd echoes it in agents.bringing, so
+    /// two brings to the same Mac each get their own progress line.
+    public var draft: String?
 
-    public init(from: String, path: String, changes: BringChanges = .with) {
-        self.from = from; self.path = path; self.changes = changes
+    public init(from: String, path: String, changes: BringChanges = .with, draft: String? = nil) {
+        self.from = from; self.path = path; self.changes = changes; self.draft = draft
     }
 
     public var params: JSONValue {
-        .object(["from": .string(from), "path": .string(path), "changes": .string(changes.rawValue)])
+        var o: [String: JSONValue] = ["from": .string(from), "path": .string(path), "changes": .string(changes.rawValue)]
+        if let draft { o["draft"] = .string(draft) }
+        return .object(o)
     }
 }
 

@@ -351,7 +351,7 @@ extension AppModel {
             if clone == nil, let m = req.machine, m != self.localMachine, !(await c.checkTarget(force: true)) {
                 switch c.startAction(bring) {
                 case .bring(let changes):
-                    req.bring = BringRequest(from: self.localMachine, path: req.project, changes: changes)
+                    req.bring = BringRequest(from: self.localMachine, path: req.project, changes: changes, draft: id)
                     self.bringStarted(draft: id, to: m, changes: changes)
                     self.onAgentsChanged?()
                 case .useExisting:
