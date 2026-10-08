@@ -129,6 +129,11 @@ final class LineSocket: @unchecked Sendable {
 
 /// JSON-RPC 2.0 over a LineSocket.
 public final class RPCConnection: @unchecked Sendable {
+    /// A request the peer sends (app control: hesperd forwards hesperctl's
+    /// app.* calls). `reply` answers it, once.
+    public typealias RequestHandler = @Sendable (_ method: String, _ params: JSONValue,
+                                                 _ reply: @escaping @Sendable (Result<JSONValue, RPCError>) -> Void) -> Void
+
     private let socket: LineSocket
     private let lock = NSLock()
     private var nextID = 1
@@ -136,12 +141,15 @@ public final class RPCConnection: @unchecked Sendable {
     private var isClosed = false
     private let onNotification: @Sendable (String, JSONValue) -> Void
     private let onClose: @Sendable () -> Void
+    private let onRequest: RequestHandler?
 
     public init(path: String,
                 onNotification: @escaping @Sendable (String, JSONValue) -> Void,
+                onRequest: RequestHandler? = nil,
                 onClose: @escaping @Sendable () -> Void) throws {
         socket = try LineSocket(path: path)
         self.onNotification = onNotification
+        self.onRequest = onRequest
         self.onClose = onClose
         socket.start(onLine: { [weak self] line in self?.handle(line) },
                      onClose: { [weak self] in self?.closedByPeer() })
@@ -201,9 +209,31 @@ public final class RPCConnection: @unchecked Sendable {
             } else {
                 cont.resume(returning: msg["result"] ?? .null)
             }
+        } else if let method = msg["method"]?.stringValue, let id = msg["id"], id != .null {
+            // A request from the peer (its ids are strings, never ours).
+            let params = msg["params"] ?? .null
+            guard let onRequest else {
+                respond(id, .failure(RPCError(code: -32601, message: "no method \(method)", kind: .notFound, data: ["code": "not_found"])))
+                return
+            }
+            onRequest(method, params) { [weak self] result in self?.respond(id, result) }
         } else if let method = msg["method"]?.stringValue {
             onNotification(method, msg["params"] ?? .null)
         }
+    }
+
+    /// The answer to a request from the peer.
+    private func respond(_ id: JSONValue, _ result: Result<JSONValue, RPCError>) {
+        var msg: [String: JSONValue] = ["jsonrpc": "2.0", "id": id]
+        switch result {
+        case .success(let v): msg["result"] = v
+        case .failure(let e):
+            var err: [String: JSONValue] = ["code": .number(Double(e.code)), "message": .string(e.message)]
+            err["data"] = e.data ?? ["code": .string(e.kind.rawValue)]
+            msg["error"] = .object(err)
+        }
+        guard let data = try? JSONEncoder().encode(JSONValue.object(msg)) else { return }
+        try? socket.send(data)
     }
 
     static func rpcError(_ v: JSONValue) -> RPCError {
