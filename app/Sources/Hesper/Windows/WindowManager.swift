@@ -48,6 +48,9 @@ final class WindowManager: NSObject {
         ScopePill.onClick = { [weak self] m in self?.showScopePopover(for: m) }
         ownership.isOurs = { [weak self] w in self?.isOurs(w) ?? false }
         ownership.terminals = { [weak self] in self?.focusTerminals() ?? [] }
+        // Every surface asks: a terminal in a window that isn't key never
+        // attaches as a second owner (SizeOwner).
+        AgentTerminal.ownershipResolver = { [weak self] t in self?.ownership.wouldOwn(t) ?? t.ownsSize }
         restorer.manager = self
         observeChanges { [weak self] in
             guard let self else { return }
