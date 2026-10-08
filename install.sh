@@ -428,10 +428,15 @@ relay_plist_args() {
 # enrollment names). hesperd uses the relay each credentials file records,
 # so the setting never changes an enrolled role.
 settings_file="$config_dir/settings.json"
-settings_relay() { plutil -extract relay raw -o - "$settings_file" 2>/dev/null || true; }
-credentials_relay() { # ROLE
-  plutil -extract relay raw -o - "$state_dir/$1.credentials.json" 2>/dev/null || true
+# json_relay FILE: its "relay" string, or nothing. Uses plutil's exit status:
+# some macOS versions print plutil's errors on stdout.
+json_relay() {
+  [ -f "$1" ] || return 0
+  _v=$(plutil -extract relay raw -o - "$1" 2>/dev/null) && printf '%s' "$_v"
+  return 0
 }
+settings_relay() { json_relay "$settings_file"; }
+credentials_relay() { json_relay "$state_dir/$1.credentials.json"; } # ROLE
 _set_relay() { # settings.json with "relay" set, the other settings kept
   cp -p "$settings_file" "$settings_file.new"
   plutil -replace relay -string "$relay" "$settings_file.new"
@@ -687,7 +692,7 @@ machines_step() {
   machines_file="$config_dir/machines.json"
   host_id=''
   if [ -f "$state_dir/host.credentials.json" ]; then
-    host_id=$(plutil -extract deviceId raw -o - "$state_dir/host.credentials.json" 2>/dev/null || true)
+    host_id=$(plutil -extract deviceId raw -o - "$state_dir/host.credentials.json" 2>/dev/null) || host_id=''
   fi
   if [ -f "$machines_file" ]; then
     if [ -n "$host_id" ] && short=$(plutil -extract "machines.$host_id.short" raw -o - "$machines_file" 2>/dev/null); then
@@ -902,9 +907,10 @@ mcp_step() {
   else
     current=''
     if [ -f "$claude_json" ]; then
-      current=$(plutil -extract mcpServers.hesper.command raw -o - "$claude_json" 2>/dev/null || true)
+      current=$(plutil -extract mcpServers.hesper.command raw -o - "$claude_json" 2>/dev/null) || current=''
       if [ -n "$current" ]; then
-        current="$current $(plutil -extract mcpServers.hesper.args.0 raw -o - "$claude_json" 2>/dev/null || true)"
+        arg=$(plutil -extract mcpServers.hesper.args.0 raw -o - "$claude_json" 2>/dev/null) || arg=''
+        current="$current $arg"
       fi
     fi
     if [ "$current" = "$ctl mcp" ]; then
