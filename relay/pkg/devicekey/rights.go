@@ -35,7 +35,7 @@ func ValidRight(name string) bool {
 // it starts a shell.
 var methodRights = map[string]string{
 	"snapshot": Observe, "ping": Observe, "agents.list": Observe, "agents.link": Observe,
-	"agents.plan": Observe, "agents.probe": Observe, "agents.export": Observe, "download": Observe, "job": Observe,
+	"agents.plan": Observe, "agents.probe": Observe, "agents.screen": Observe, "agents.export": Observe, "download": Observe, "job": Observe,
 	"agents.answer": Answer,
 	"agents.input":  Type, "files.put": Type, "files.chunk": Type,
 	"agents.spawn": Transfer, "agents.stop": Transfer, "agents.resume": Transfer, "agents.remove": Transfer,

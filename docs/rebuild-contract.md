@@ -104,6 +104,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `agents.remove` | `{id}` | `{}` (forget an exited agent) |
 | `agents.rename` | `{id, name}` | `Agent` |
 | `agents.move` | `{id, to}` | `Agent` (handoff with conversation; part R) |
+| `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?:{col,row}, alt?}`: the terminal as plain text (added, see "As built — agent lifecycle CLI") |
 | `projects.recent` | – | `[{path, name, lastUsed}]` |
 | `projects.clone` | `{url, machine?}` | `{path}` (git clone into the projects root `<repo>`; on `machine` through the gateway) |
 | `profiles.list` | – | `{profiles, defaults}` |
@@ -227,6 +228,36 @@ the full `machine:kind:sessionId`. Tests (`history_test.go`,
 `projects_test.go`, `drafts_test.go`) run hesperd as the gateway wires it
 (registry, project store, shared history with internal/sessions'
 synthetic transcripts; cat as claude and codex).
+
+**As built — agent lifecycle CLI** (`relay/cmd/hesperctl/agents_more.go`):
+`close`, `kill`, `background [--off]` take several ids (agents.close /
+kill / background); `tidy` closes what ⇧⌘W closes (state done, idle or
+exited; background agents close themselves and are left out; `--project`,
+`--dry-run`). `answer ID DECISION [--message]` takes every agents.answer
+decision (allow, always, deny, trust, exit, skip, update); `show ID` lists
+an agent's numbered choices and `choose ID N` picks one as the app's ⌘J
+inbox does: an approval's offered decisions, a question's decision
+options (trust/exit, skip/update), else the numbered options in its
+detail ("1. A 2. B", at most 9), whose number is typed (agents.input, no
+paste, no Enter). `send` gains `--raw` (text unpasted, no Enter) and
+repeatable `--key` (esc, enter, tab, shift-tab, arrows, home, end,
+pageup, pagedown, backspace, delete, space, ctrl-A…Z, one character; one
+agents.input each, 50 ms apart). `attach-file` does what a drop does:
+this Mac's agents get the path, another machine's an upload (files.put /
+files.chunk; `--upload` forces one), pasted the app's way (one paste per
+PNG/JPEG, the other paths in one, backslash-escaped). `events` prints
+agents.subscribe's notifications as `{method, params}` lines (`--agent`,
+`--kinds`); `wait ID… --until needs-you|done|idle|exited|working|finished|state=S`
+follows them (`--any`/`--all`, `--next` ignores the state at start,
+`--timeout` exits 6, an agent removed exits 3).
+**agents.screen** `{id, rows?, scrollback?}` (rows: the screen's last
+rows, 0 all; scrollback: that many scrollback lines first, ≤ 10000)
+returns `{text, rows, cols, cursor?, alt?}` from the daemon's vt screen:
+lines without escape codes or trailing blanks joined by `\n`; rows/cols
+the screen's size; cursor (0-based, on the screen) when visible; alt
+when the alternate screen is on (the scrollback is the main screen's).
+Another machine's agent: forwarded like agents.input; the host method
+needs the `observe` right and hides shells as agents.list does.
 
 ## Persistence
 

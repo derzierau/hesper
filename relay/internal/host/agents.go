@@ -189,6 +189,8 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 		return protocol.JSON(reg.Probe(ctx, p.Path, p.Home, p.Commits)), nil
 	case "agents.attach":
 		return s.attach(ctx, m)
+	case "agents.screen":
+		return s.screen(ctx, m) // screen.go
 	case "projects.clone":
 		var p agents.CloneParams
 		if err := params(m.Params, &p); err != nil {

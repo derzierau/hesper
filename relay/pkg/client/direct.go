@@ -622,7 +622,7 @@ func (c *Controller) noteDirect(machineID string) {
 // direct connection failed with them on the way.
 func idempotent(method string) bool {
 	switch method {
-	case "snapshot", "ping", "agents.list", "agents.plan", "agents.probe", "download", "projects.recent", "profiles.list", "fs.stat":
+	case "snapshot", "ping", "agents.list", "agents.plan", "agents.probe", "agents.screen", "download", "projects.recent", "profiles.list", "fs.stat":
 		return true
 	}
 	return false
