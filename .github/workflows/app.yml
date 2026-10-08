@@ -1,9 +1,9 @@
 name: Hesper app
 on:
   push:
-    paths: ["app/**", "relay/**", "install.sh", "scripts/**", "packaging/**", ".github/workflows/app.yml"]
+    paths: ["app/**", "relay/**", "install.sh", "scripts/**", "packaging/**", ".github/workflows/app.yml", ".github/workflows/release.yml"]
   pull_request:
-    paths: ["app/**", "relay/**", "install.sh", "scripts/**", "packaging/**", ".github/workflows/app.yml"]
+    paths: ["app/**", "relay/**", "install.sh", "scripts/**", "packaging/**", ".github/workflows/app.yml", ".github/workflows/release.yml"]
 # Read-only token; no secrets are used, so pull requests from forks run
 # the same job safely.
 permissions:
@@ -28,7 +28,8 @@ jobs:
             app/Tools/fake-hesperd/go.mod
       - name: Select Xcode 26
         run: |
-          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          xcode=$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' -print | sort -V | tail -1)
+          test -n "$xcode"
           echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
       - name: Relay tools (hesperd, hesperctl, hesper-keys)
         run: make -C relay build
@@ -43,3 +44,5 @@ jobs:
         run: make -C app test-ui
       - name: install.sh (dry runs in a temp HOME)
         run: scripts/test-install.sh
+      - name: Release packaging checks
+        run: python3 scripts/test-release.py

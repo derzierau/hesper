@@ -214,6 +214,10 @@ replaces is backed up first. See `./install.sh --help` for `--login-item`,
 Codex only runs hooks it trusts: after installing, open Codex and run
 `/hooks` once.
 
+Signed release automation and Homebrew installation are documented in
+[docs/releases.md](docs/releases.md). The first binary release requires the
+Apple signing and notarization credentials described there.
+
 **Signing.** Without configuration the app is signed ad-hoc, which works
 locally. `SIGN_IDENTITY="Developer ID Application: …" ./install.sh` signs
 with the hardened runtime, and `NOTARY_PROFILE=<profile>` also notarizes.
