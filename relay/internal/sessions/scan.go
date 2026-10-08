@@ -197,6 +197,10 @@ func (sc *scanner) list(full bool) []fileInfo {
 	return out
 }
 
+// afterTranscript, when set (tests), runs on a pass's worker after each
+// transcript it read.
+var afterTranscript func(*Service)
+
 // pass looks at the transcripts and reads what changed.
 func (sc *scanner) pass(full bool) {
 	start := time.Now()
@@ -265,6 +269,9 @@ func (sc *scanner) pass(full bool) {
 				bytesRead.Add(n)
 				done.Add(1)
 				report(false)
+				if afterTranscript != nil {
+					afterTranscript(sc.s)
+				}
 				th.slice()
 			}
 		}(i)

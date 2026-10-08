@@ -255,7 +255,10 @@ func TestAgentTreeVerifiedCaller(t *testing.T) {
 	if _, err := parentPID(os.Getpid()); err != nil {
 		t.Skipf("no process parents here: %v", err)
 	}
-	if got := processAncestors(os.Getpid()); len(got) < 2 || got[0] != os.Getpid() || got[1] != os.Getppid() {
+	// The walk stops before init: run as a container's PID 1, `go test`
+	// leaves the test binary with no ancestor but itself.
+	if got := processAncestors(os.Getpid()); len(got) < 1 || got[0] != os.Getpid() ||
+		os.Getppid() > 1 && (len(got) < 2 || got[1] != os.Getppid()) {
 		t.Fatalf("ancestors %v (ppid %d)", got, os.Getppid())
 	}
 	h := newHarness(t)

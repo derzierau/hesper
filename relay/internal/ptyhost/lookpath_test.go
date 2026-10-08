@@ -37,9 +37,14 @@ func TestLookPathUsesAgentPath(t *testing.T) {
 	if !errors.As(err, &nf) || !errors.Is(err, exec.ErrNotFound) || !strings.Contains(err.Error(), `"fakeagent" not found on the agent's PATH (:/usr/bin)`) {
 		t.Fatalf("err %v", err)
 	}
-	// No PATH in env: the daemon's.
-	if got, err := LookPath("sh", nil); err != nil || got != "/bin/sh" {
-		t.Fatalf("LookPath(sh, nil) = %q, %v", got, err)
+	// No PATH in env: the daemon's. (A command of our own, not sh: on a
+	// merged-/usr Linux /usr/bin/sh comes first.)
+	daemonBin := filepath.Join(dir, "daemon-bin")
+	os.MkdirAll(daemonBin, 0o755)
+	os.WriteFile(filepath.Join(daemonBin, "daemon-only"), []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("PATH", "/nonexistent:"+daemonBin+":/usr/bin:/bin")
+	if got, err := LookPath("daemon-only", nil); err != nil || got != filepath.Join(daemonBin, "daemon-only") {
+		t.Fatalf("LookPath(daemon-only, nil) = %q, %v", got, err)
 	}
 
 	// Start runs it from the agent's PATH.

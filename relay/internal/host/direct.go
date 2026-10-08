@@ -398,7 +398,6 @@ func (d *Direct) admit(ip netip.Addr) bool {
 // refuse closes a handshake without an answer, counts the failure against
 // the peer and audits it (once a minute per peer).
 func (d *Direct) refuse(raw net.Conn, ip netip.Addr, device, name, detail string) {
-	raw.Close()
 	now := d.now()
 	d.mu.Lock()
 	p := d.peers[ip]
@@ -418,6 +417,9 @@ func (d *Direct) refuse(raw net.Conn, ip netip.Addr, device, name, detail string
 		}
 	}
 	d.mu.Unlock()
+	// Closed once the failure counts: a peer that sees the close and dials
+	// again at once already meets its ban.
+	raw.Close()
 	if audit {
 		d.E2E.Auth.Audit("direct.refused", map[string]any{"device": device, "name": name, "ok": false, "e2e": true, "route": "direct",
 			"detail": detail + " (from " + ip.String() + ")"})

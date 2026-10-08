@@ -8,6 +8,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -86,23 +87,42 @@ func TestCloseMidPassThenResume(t *testing.T) {
 	}
 	opt := Options{StateDir: e.state, ConfigDir: e.config, ClaudeHome: e.claude, CodexHome: e.codex, UserHome: e.home,
 		Machine: "L", ScanEvery: time.Hour, FullScanEvery: time.Hour, Logf: t.Logf, Busy: func() bool { return true }}
+	// The pass is held after a few transcripts until Close: mid-pass
+	// however fast or loaded the machine (no race with the pass).
+	const before = 3
+	var read atomic.Int32
+	var gate atomic.Bool // the first service only; the restart runs free
+	gate.Store(true)
+	reached := make(chan struct{})
+	afterTranscript = func(s *Service) {
+		if !gate.Load() {
+			return
+		}
+		if read.Add(1) == before {
+			close(reached)
+		}
+		if read.Load() >= before {
+			<-s.stop
+		}
+	}
+	t.Cleanup(func() { afterTranscript = nil })
 	s, err := Open(opt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, "indexing under way", func() bool {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		return s.indexing.Total > 0 && s.indexing.Done > 0
-	})
-	s.mu.Lock()
-	done := s.indexing.Done
-	s.mu.Unlock()
-	if done >= n {
-		t.Fatalf("pass finished before Close (%d of %d): make it slower", done, n)
+	select {
+	case <-reached:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the pass never read a transcript")
 	}
-	d := closeWithin(t, s, 2*time.Second)
-	t.Logf("closed after %d of %d transcripts in %v", done, n, d.Round(time.Millisecond))
+	// closeWait (for a reader mid-transcript) and the index's own close,
+	// with room for a loaded machine; a Close that hangs fails.
+	d := closeWithin(t, s, closeWait+3*time.Second)
+	gate.Store(false)
+	if got := read.Load(); got >= n {
+		t.Fatalf("the pass finished (%d of %d) before Close", got, n)
+	}
+	t.Logf("closed after %d of %d transcripts in %v", read.Load(), n, d.Round(time.Millisecond))
 
 	opt.Busy, opt.Foreground, opt.ScanEvery, opt.FullScanEvery = nil, true, 30*time.Millisecond, 100*time.Millisecond
 	s2, err := Open(opt)
@@ -110,7 +130,9 @@ func TestCloseMidPassThenResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s2.Close()
-	waitFor(t, "every transcript indexed after the restart", func() bool {
+	// 80 MiB to read again (6 s under -race on an idle Mac): room for a
+	// loaded machine.
+	waitForWithin(t, "every transcript indexed after the restart", 90*time.Second, func() bool {
 		res, err := s2.Search(wire.SessionSearchParams{Limit: 200})
 		return err == nil && len(res.Items) == n
 	})

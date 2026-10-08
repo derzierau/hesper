@@ -220,11 +220,16 @@ func TestDirectStrangersLearnNothingAndAreThrottled(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw.Write([]byte("GHOSTYD1\x00\x30" + strings.Repeat("x", 48)))
-		raw.SetReadDeadline(time.Now().Add(2 * time.Second))
-		n, _ := raw.Read(make([]byte, 64))
+		// Wait for the host's close (it counts the failure first), not a
+		// timeout: the next attempt must meet the count.
+		raw.SetReadDeadline(time.Now().Add(10 * time.Second))
+		n, err := raw.Read(make([]byte, 64))
 		raw.Close()
 		if n != 0 {
 			t.Fatalf("a stranger got %d bytes", n)
+		}
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			t.Fatal("the host did not close a stranger's connection")
 		}
 	}
 	token := w.d.Offer("laptop").Token

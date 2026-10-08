@@ -26,6 +26,11 @@ func newTmux(t *testing.T) *tmuxServer {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux unavailable")
 	}
+	if v, ok := tmuxTooOld(); ok {
+		t.Skipf("%s is older than 3.6, the tmux these cases are checked against (older ones "+
+			"lack bracket_paste_flag and differ on invalid UTF-8, VS16 widths and wide characters "+
+			"overwritten at the edge)", v)
+	}
 	dir, err := os.MkdirTemp("/tmp", "hesper-vt-")
 	if err != nil {
 		t.Fatal(err)
@@ -37,6 +42,22 @@ func newTmux(t *testing.T) *tmuxServer {
 		os.RemoveAll(dir)
 	})
 	return s
+}
+
+// tmuxTooOld reports tmux -V when it names a release before 3.6 (Ubuntu
+// 24.04 has 3.4, Debian 13 3.5a). Development builds ("tmux master",
+// "tmux next-3.7") count as new.
+func tmuxTooOld() (string, bool) {
+	out, err := exec.Command("tmux", "-V").Output()
+	if err != nil {
+		return "", false
+	}
+	v := strings.TrimSpace(string(out))
+	var major, minor int
+	if _, err := fmt.Sscanf(strings.TrimPrefix(v, "tmux "), "%d.%d", &major, &minor); err != nil {
+		return v, false
+	}
+	return v, major < 3 || major == 3 && minor < 6
 }
 
 func (s *tmuxServer) run(t *testing.T, args ...string) string {

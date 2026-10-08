@@ -176,7 +176,8 @@ func Exited(cols, rows int, exit *wire.Exit) *Term {
 // PID is the program's process ID (0 for an Exited Term).
 func (t *Term) PID() int { return t.pid }
 
-// Done is closed when the program ended and its output is in.
+// Done is closed when the program ended, its output is in and OnExit
+// returned.
 func (t *Term) Done() <-chan struct{} { return t.done }
 
 // Exit is how the program ended, nil while it runs.
@@ -277,7 +278,7 @@ func (t *Term) resizeLocked(cols, rows int) (bool, error) {
 	if t.exit != nil || t.ptmx == nil {
 		return false, errExited
 	}
-	if err := pty.Setsize(t.ptmx, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)}); err != nil {
+	if err := setSize(t.ptmx, cols, rows); err != nil {
 		return false, err
 	}
 	t.cols, t.rows = cols, rows
@@ -290,6 +291,24 @@ func (t *Term) resizeLocked(cols, rows int) (bool, error) {
 		v.kick()
 	}
 	return true, nil
+}
+
+// setSize sets the PTY's window size through the file's raw connection,
+// which holds a reference on the descriptor for the ioctl: wait() may close
+// the master at any time, and pty.Setsize (File.Fd) would race that close
+// and could hit a descriptor number already reused by something else. It
+// also leaves the master non-blocking, so Close still interrupts read().
+func setSize(f *os.File, cols, rows int) error {
+	rc, err := f.SyscallConn()
+	if err != nil {
+		return err
+	}
+	ws := &unix.Winsize{Col: uint16(cols), Row: uint16(rows)}
+	var ioErr error
+	if err := rc.Control(func(fd uintptr) { ioErr = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, ws) }); err != nil {
+		return err
+	}
+	return ioErr
 }
 
 // Signal sends sig to the program's process group.
@@ -426,10 +445,12 @@ func (t *Term) wait(readerDone chan struct{}) {
 		v.kick()
 	}
 	t.mu.Unlock()
-	close(t.done)
+	// OnExit before Done: whoever waits for Done (hesperd shutting down
+	// and saving its state) sees the exit recorded.
 	if t.cfg.OnExit != nil {
 		t.cfg.OnExit(exit)
 	}
+	close(t.done)
 }
 
 func exitOf(ps *os.ProcessState, err error) *wire.Exit {

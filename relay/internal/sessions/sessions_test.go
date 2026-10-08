@@ -146,7 +146,12 @@ func (e *env) install(name, cwd string) string {
 
 func waitFor(t *testing.T, what string, ok func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(15 * time.Second)
+	waitForWithin(t, what, 15*time.Second, ok)
+}
+
+func waitForWithin(t *testing.T, what string, limit time.Duration, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(limit)
 	for !ok() {
 		if time.Now().After(deadline) {
 			t.Fatalf("never: %s", what)

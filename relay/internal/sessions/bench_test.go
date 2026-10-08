@@ -98,8 +98,8 @@ func measureSearch(t testing.TB, s *Service, rounds int) (p50, p99 time.Duration
 	return percentile(lat, 0.5), percentile(lat, 0.99)
 }
 
-// Search over 2,000 sessions: p50 ≤ 5 ms, p99 ≤ 20 ms (budget; the race
-// detector and loaded CI machines get 5× slack).
+// Search over 2,000 sessions: p50 ≤ 5 ms, p99 ≤ 20 ms (budgets: enforced
+// with HESPER_BUDGETS=1, budget_test.go).
 func TestSearchBudget(t *testing.T) {
 	e := newEnv(t)
 	s := e.open(Options{ScanEvery: time.Hour, FullScanEvery: time.Hour})
@@ -108,9 +108,8 @@ func TestSearchBudget(t *testing.T) {
 	st, _ := s.Stats()
 	t.Logf("search over %d sessions: p50 %v, p99 %v; index %.1f MB (%.2f MB per 1,000)", st.Count, p50, p99,
 		float64(st.IndexBytes)/(1<<20), float64(st.IndexBytes)/(1<<20)/2)
-	slack := budgetSlack()
-	if p50 > 5*time.Millisecond*slack || p99 > 20*time.Millisecond*slack {
-		t.Errorf("search p50 %v / p99 %v over budget", p50, p99)
+	if p50 > 5*time.Millisecond || p99 > 20*time.Millisecond {
+		overBudget(t, "search p50 %v / p99 %v over 5 ms / 20 ms", p50, p99)
 	}
 	// sessions.show of another Mac's session (no git here): ≤ 2 ms.
 	var lat []time.Duration
@@ -125,8 +124,8 @@ func TestSearchBudget(t *testing.T) {
 		lat = append(lat, time.Since(t0))
 	}
 	t.Logf("show without git: p50 %v, p99 %v", percentile(lat, 0.5), percentile(lat, 0.99))
-	if percentile(lat, 0.5) > 2*time.Millisecond*slack {
-		t.Errorf("show p50 %v over 2 ms", percentile(lat, 0.5))
+	if percentile(lat, 0.5) > 2*time.Millisecond {
+		overBudget(t, "show p50 %v over 2 ms", percentile(lat, 0.5))
 	}
 }
 
@@ -164,9 +163,8 @@ func TestIncrementalBudget(t *testing.T) {
 	}
 	st, _ := os.Stat(path)
 	t.Logf("append to a %.1f MB transcript indexed in p50 %v, p99 %v", float64(st.Size())/(1<<20), percentile(lat, 0.5), percentile(lat, 0.99))
-	slack := budgetSlack()
-	if percentile(lat, 0.5) > 10*time.Millisecond*slack {
-		t.Errorf("incremental p50 %v over 10 ms", percentile(lat, 0.5))
+	if percentile(lat, 0.5) > 10*time.Millisecond {
+		overBudget(t, "incremental p50 %v over 10 ms", percentile(lat, 0.5))
 	}
 }
 

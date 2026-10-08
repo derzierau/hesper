@@ -128,8 +128,19 @@ func TestHookWhenDaemonDownExitsFast(t *testing.T) {
 	if err != nil || len(out) != 0 {
 		t.Fatalf("hook: %v %q", err, out)
 	}
-	if took > 50*time.Millisecond {
+	// Wall-clock of a process on a loaded machine says little: the bound
+	// only catches a hook that waits out its stdin or delivery timeout.
+	if took >= stdinTimeout {
 		t.Fatalf("hook took %v", took)
+	}
+	// The point itself, without process start-up in the measure: a down
+	// daemon fails the delivery at once, long before its timeout.
+	start := time.Now()
+	if err := wire.SendHook("/tmp/hesperd-test-nonexistent.sock", wire.HookParams{Agent: "L/abcdef", Source: "claude", Event: "Stop", Payload: []byte("{}")}, time.Minute); err == nil {
+		t.Fatal("delivered to a daemon that is down")
+	}
+	if d := time.Since(start); d > 10*time.Second {
+		t.Fatalf("delivery to a down daemon took %v: it waits for the timeout", d)
 	}
 }
 
@@ -202,7 +213,7 @@ func TestAttachBridge(t *testing.T) {
 	for _, b := range []*bridged{owner, ro} {
 		// The master side reads the terminal's modes (the slave is
 		// revoked with its session leader gone).
-		tio, err := unix.IoctlGetTermios(int(b.master.Fd()), unix.TIOCGETA)
+		tio, err := unix.IoctlGetTermios(int(b.master.Fd()), ioctlGetTermios)
 		if err != nil {
 			t.Fatal(err)
 		}

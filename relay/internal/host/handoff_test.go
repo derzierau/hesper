@@ -23,11 +23,11 @@ import (
 )
 
 // startHandoff runs a Handoff whose Pack writes a fake bundle (manifest
-// and a 1.2 MB code.bundle; packDelay slows it, packErr fails it) and whose
+// and a 1.2 MB code.bundle; packGate holds it until closed, packErr fails it) and whose
 // Import reads the upload's manifest (importErr fails it).
 type fakeMoves struct {
 	mu        sync.Mutex
-	packDelay time.Duration
+	packGate  chan struct{}
 	packErr   error
 	importErr error
 	imported  []string
@@ -43,12 +43,14 @@ func startHandoff(t *testing.T, dir string, now func() time.Time) (*Handoff, *fa
 	h := &Handoff{Dir: filepath.Join(dir, "uploads"), Key: key, Now: now,
 		Pack: func(ctx context.Context, id string, have []string, out string) error {
 			f.mu.Lock()
-			delay, perr := f.packDelay, f.packErr
+			gate, perr := f.packGate, f.packErr
 			f.mu.Unlock()
-			select {
-			case <-time.After(delay):
-			case <-ctx.Done():
-				return ctx.Err()
+			if gate != nil {
+				select {
+				case <-gate:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 			}
 			if perr != nil {
 				return perr
@@ -298,12 +300,20 @@ func TestExportStagesAndDownloadsSealedChunks(t *testing.T) {
 	if !strings.Contains(string(got["manifest.json"]), "mini/abc123") || len(got["code.bundle"]) != 1200000 {
 		t.Fatalf("export content %d bytes", len(got["code.bundle"]))
 	}
-	time.Sleep(20 * time.Millisecond)
-	if entries, _ := os.ReadDir(filepath.Join(h.Dir, ".downloads")); len(entries) != 0 {
-		t.Fatal("a downloaded export stays")
+	// Deleted after the (zero) grace, on a timer of its own.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if entries, _ := os.ReadDir(filepath.Join(h.Dir, ".downloads")); len(entries) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a downloaded export stays")
+		}
 	}
 	// Packing that outlasts the request: "packing", then the download id.
-	f.packDelay = 300 * time.Millisecond
+	gate := make(chan struct{})
+	f.mu.Lock()
+	f.packGate = gate
+	f.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 2100*time.Millisecond)
 	raw, err = h.Export(ctx, exportParams{ID: "mini/abc123", Key: key})
 	cancel()
@@ -311,14 +321,17 @@ func TestExportStagesAndDownloadsSealedChunks(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &e) != nil || e.State != "packing" {
 		t.Fatalf("slow export %s %v", raw, err)
 	}
-	time.Sleep(400 * time.Millisecond)
+	// Packing ends; asking again with the download id waits for it.
+	close(gate)
 	raw, err = call(s, "agents.export", map[string]any{"download": e.Download})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fetchExport(t, s, h, requester, raw)
 	// A packing error keeps its code and forgets the export.
-	f.packDelay, f.packErr = 0, protocol.Err("conflicts", "the checkout has unresolved merge conflicts")
+	f.mu.Lock()
+	f.packGate, f.packErr = nil, protocol.Err("conflicts", "the checkout has unresolved merge conflicts")
+	f.mu.Unlock()
 	if _, err := h.Export(context.Background(), exportParams{ID: "mini/abc123", Key: key}); code(err) != "conflicts" {
 		t.Fatalf("pack error: %v", err)
 	}

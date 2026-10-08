@@ -111,11 +111,18 @@ func TestRemoteSlowViewerIsResynced(t *testing.T) {
 	w := newWorld(t, worldOptions{shell: true})
 	a := spawnShell(t, w)
 	slow := attach(t, w.L, wire.AttachRequest{Attach: a.ID, Mode: wire.ModeRO})
-	rw := attach(t, w.L, wire.AttachRequest{Attach: a.ID, Mode: wire.ModeRW})
+	// The typing goes in on M itself: a bridged rw viewer that the test
+	// does not read while it types would be resynced too, and what is
+	// typed during its reattach is dropped (LAST-LINE with it).
+	rw := attach(t, w.M, wire.AttachRequest{Attach: localOn(a.ID, "M"), Mode: wire.ModeRW})
 	readUntil(t, rw, "$")
-	// Lots of output while the slow viewer reads nothing.
-	for i := 0; i < 400; i++ {
-		rw.Input([]byte(strings.Repeat("x", 100) + "\r"))
+	// Lots of output while the slow viewer reads nothing: ~1 MB, past
+	// what the kernel buffers on the slow viewer's socket (Linux takes
+	// ~200 KB before a write blocks, macOS far less) plus the bridge's
+	// queue, so the queue overflows on every OS.
+	line := []byte(strings.Repeat("x", 2000) + "\r")
+	for range 250 {
+		rw.Input(line)
 	}
 	rw.Input([]byte("LAST-LINE\r"))
 	readUntil(t, rw, "ran LAST-LINE")

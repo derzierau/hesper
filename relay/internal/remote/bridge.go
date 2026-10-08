@@ -56,6 +56,7 @@ type bridge struct {
 	exited   bool
 	closed   bool
 	resyncs  int
+	resync   bool // the queue overflowed: reattach once the client read what it has
 	resizing bool // a reattach is under way
 	wake     chan struct{}
 	writer   chan struct{} // closed when the writer ended
@@ -217,16 +218,20 @@ func (b *bridge) enqueueLocked(item []byte) {
 	}
 }
 
-// resyncLocked reattaches on the current link: the old channel ends, a
-// new one starts with a reply (turned into SIZE) and a redraw.
+// resyncLocked ends the current channel; the writer reattaches (a new
+// channel, its reply turned into SIZE, a redraw) when the client has read
+// what was already written to it. Reattaching at once would let a client
+// that reads nothing make the bridge reattach over and over, each time
+// with a request through the relay and a full redraw over the link.
 func (b *bridge) resyncLocked() {
 	l, ch := b.link, b.ch
 	b.link = nil
 	b.resyncs++
+	b.resync = true
 	if l != nil {
 		go l.remove(ch, true)
 	}
-	go b.reattach(l)
+	b.wakeLocked()
 }
 
 // hostClosed: the host ended the channel. After EXIT that is the end;
@@ -302,6 +307,7 @@ func (b *bridge) reattachOn(l *link) bool {
 		return true
 	}
 	req := b.req
+	b.resync = false // this attach is the fresh screen a pending resync wants
 	b.mu.Unlock()
 	// A reattach only resyncs: the client's terminal already has the
 	// scrollback (and a big one could overflow the queue again).
@@ -360,7 +366,14 @@ func (b *bridge) write() {
 			queue := b.queue
 			b.queue, b.queued = nil, 0
 			closed, exited := b.closed, b.exited
+			resync := len(queue) == 0 && b.resync && !closed
+			if resync {
+				b.resync = false
+			}
 			b.mu.Unlock()
+			if resync {
+				go b.reattach(nil)
+			}
 			if len(queue) == 0 {
 				if closed || exited && b.drained() {
 					b.conn.Close()
