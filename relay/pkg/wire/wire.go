@@ -92,6 +92,9 @@ type Agent struct {
 	Parent          string `json:"parent,omitempty"`
 	Depth           int    `json:"depth,omitempty"`
 	LetParentAnswer bool   `json:"letParentAnswer,omitempty"`
+	// Track (shells only): hesperd follows the shell's commands, working
+	// while one runs (hesperctl new --kind shell --track). Persisted.
+	Track bool `json:"track,omitempty"`
 }
 
 // EndedKilled is Agent.Ended after agents.kill.
@@ -162,6 +165,9 @@ type SpawnParams struct {
 	// LetParentAnswer (agent tree): when an agent spawns this one, it may
 	// answer its approvals and questions.
 	LetParentAnswer bool `json:"letParentAnswer,omitempty"`
+	// Track (shells only): working while a command runs, idle at the
+	// prompt; without it a shell is always idle. Other kinds ignore it.
+	Track bool `json:"track,omitempty"`
 	// Caller (agent tree): the agent making the call (HESPER_AGENT_ID;
 	// see Client.Caller). Advisory: hesperd prefers the agent it finds
 	// the caller's process in.

@@ -18,10 +18,13 @@ import (
 //     Input (agents.input) to a shell whose prompt is not ready yet waits
 //     for it, so text sent right after the start comes after the prompt.
 //   - TASK: a shell spawned with a task gets it typed (pasted when the
-//     shell has bracketed paste on) and Enter once its prompt is ready;
-//     until then it is starting. Only the spawn types it: a respawn or a
-//     resume starts the shell without it (a command must never run twice).
-//   - State: working while a job runs (the terminal's foreground process
+//     shell has bracketed paste on) and Enter once its prompt is ready.
+//     Only the spawn types it: a respawn or a resume starts the shell
+//     without it (a command must never run twice).
+//   - State, without Track (the default): idle until it exits, as
+//     always. With Track (agents.spawn track; hesperctl new --track): a
+//     shell with a task is starting until it is typed, then working
+//     while a job runs (the terminal's foreground process
 //     group is not the shell's; activity: the job's command name), and
 //     from a command hesperd typed (the task, agents.input with submit)
 //     until the shell is back at its prompt and quiet for ShellQuiet;
@@ -124,18 +127,28 @@ func (r *Registry) watchShell(local string, gen int, w *shellWatch) {
 			r.mu.Unlock()
 			return
 		}
+		track := a.Track
 		if task := a.shellTask; task != "" {
 			a.shellTask = ""
 			w.typed()
-			a.Activity = firstLine(task, 80)
-			r.setState(a, wire.StateWorking, nil)
+			if track {
+				a.Activity = firstLine(task, 80)
+				r.setState(a, wire.StateWorking, nil)
+			}
 			r.mu.Unlock()
 			typeCommand(term, task)
 			w.typed()
 			w.markReady() // input waiting for the prompt comes after the task
+			if !track {
+				return // an untracked shell: idle, nothing more to follow
+			}
 			continue
 		}
 		w.markReady()
+		if !track {
+			r.mu.Unlock()
+			return
+		}
 		switch {
 		case busy:
 			newJob := job != "" && a.Activity != job
@@ -173,7 +186,7 @@ func typeCommand(term *ptyhost.Term, text string) {
 // shellSubmitted: a command was typed into shell a with Enter
 // (agents.input): it works on it (the lock is held).
 func (r *Registry) shellSubmitted(a *agent, text string) {
-	if a.shell == nil || a.closeReason != "" {
+	if a.shell == nil || !a.Track || a.closeReason != "" {
 		return
 	}
 	a.shell.typed()
