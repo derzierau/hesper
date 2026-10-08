@@ -137,7 +137,7 @@ extension AppModel {
             d.band = home
             d.projectLocked = DraftPreset.locks(projectID: home, scope: scope, catalog: catalog)
             if let b, let last = b.members.last { d.after = last }
-            if let k = b?.key, collapsedBands.contains(k) { collapsedBands.remove(k) }
+            if let k = b?.key, isCollapsed(key: k) { openBand(k) }
         } else {
             d.machine = machine == localMachine ? nil : machine
         }
@@ -362,6 +362,13 @@ extension AppModel {
                 adopt(draftID: id, agent: a)
                 onDraftStarted?(a)
                 Task { await refreshLists() }
+            } catch let e as RPCError where req.scratch && ScratchSupport.missing(e) {
+                // That Mac's hesperd makes no scratches: today's way, choose a folder.
+                let m = req.machine ?? self.localMachine
+                self.scratchMissing(on: m)
+                self.startFailed(id, nil)
+                c.error = "\(self.machineName(m)) can't make scratches yet — choose a folder"
+                if self.popover == nil, self.drafts[id] != nil { self.openPopover(.chip(id, .project)) }
             } catch {
                 startFailed(id, describe(error))
             }
@@ -381,7 +388,9 @@ extension AppModel {
     /// The agent of a draft being started showed up before spawn's reply.
     func adoptIfStarting(_ a: Agent) {
         guard adoptions[a.id] == nil else { return }
-        if let (id, _) = startingDrafts.first(where: { $0.value.task == (a.task ?? "") && $0.value.project == (a.project ?? "") && $0.value.machine == a.machine }) {
+        // A new scratch's folder isn't known before the reply: task and machine.
+        if let (id, _) = startingDrafts.first(where: { $0.value.task == (a.task ?? "") && ($0.value.project.isEmpty || $0.value.project == (a.project ?? ""))
+                                                       && $0.value.machine == a.machine }) {
             adopt(draftID: id, agent: a)
         }
     }
@@ -402,6 +411,8 @@ extension AppModel {
             editDraftContent(n)
         }
         for (k, v) in placements where v == draftID { placements[k] = a.id }
+        // A new scratch started here: its band opens on this wall (it starts collapsed).
+        if startingDrafts[draftID]?.project.isEmpty == true { for k in ViewResolver.scratchKeys { openBand(k) } }
         startingDrafts[draftID] = nil
         removeDraft(draftID)
         if selectedID == draftID { selectedID = a.id }
@@ -456,7 +467,16 @@ extension AppModel {
             return c.folderNote?.text ?? "The folder isn't on \(machineName(m))"
         }
         do {
-            let a = try await client.spawn(r)
+            let a: Agent
+            do {
+                a = try await client.spawn(r)
+            } catch let e as RPCError where r.scratch && ScratchSupport.missing(e) {
+                let m = r.machine ?? localMachine
+                scratchMissing(on: m)
+                c.complete(.project) // today's way: the # list
+                c.error = "\(machineName(m)) can't make scratches yet — choose a folder"
+                return c.error
+            }
             var d = quickDraft
             d.text = ""
             d.attachments = []

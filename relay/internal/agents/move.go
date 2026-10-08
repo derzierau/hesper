@@ -43,6 +43,9 @@ func (r *Registry) Plan(ctx context.Context, id string) (handoff.Plan, error) {
 		return handoff.Plan{}, err
 	}
 	plan := handoff.PlanFor(ctx, a, r.HandoffPaths())
+	if sp := r.scratch(); sp != nil && plan.Git {
+		_, _, _, plan.Scratch = sp.ScratchOf(a.ProjectID)
+	}
 	if procs, err := r.Processes(id); err != nil {
 		r.opt.Logf("hesperd: processes of %s: %v", id, err)
 	} else {
@@ -134,6 +137,15 @@ func (r *Registry) Pack(ctx context.Context, id string, have []string, dir strin
 	if err != nil {
 		return nil, asMoveError(err)
 	}
+	if sp := r.scratch(); sp != nil && m.Project.Bundle != "" {
+		// A scratch project: the target makes it from the bundle.
+		if local, name, created, ok := sp.ScratchOf(snap.ProjectID); ok {
+			m.Project.Scratch = &handoff.ScratchInfo{Local: local, Name: name, Created: created}
+			if err := handoff.WriteManifest(dir, m); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if size := dirSize(dir); size > MaxMoveBytes {
 		for _, name := range []string{handoff.ManifestFile, handoff.TranscriptFile, handoff.BundleFile} {
 			os.Remove(filepath.Join(dir, name))
@@ -213,6 +225,13 @@ func (r *Registry) moveOptions(ctx context.Context, m *handoff.Manifest) (handof
 	}
 	paths := r.HandoffPaths()
 	path := r.movePath(m.Project.Path, m.Source.Home, m.Project.ProjectID)
+	scratch := m.Project.Scratch != nil && r.scratch() != nil
+	if scratch && !handoff.ProbeAt(ctx, path, nil, paths).Exists {
+		// A scratch project: its folder made here from the full bundle,
+		// in this Mac's scratch folder under the same name.
+		opt.Project = r.scratchMovePath(path, m.Project.Path)
+		return opt, nil
+	}
 	if !handoff.ProbeAt(ctx, path, nil, paths).Exists {
 		if m.Project.Remote == "" {
 			return opt, wire.Errorf(wire.CodeNoRemote, "%s is not on %s and has no Git remote to clone it from", filepath.Base(m.Project.Path), r.machine)
@@ -224,10 +243,31 @@ func (r *Registry) moveOptions(ctx context.Context, m *handoff.Manifest) (handof
 		path = cloned
 	}
 	opt.Project = path
-	if m.Project.Branch != "" {
+	if m.Project.Branch != "" && !scratch {
 		opt.NewWorktree = filepath.Join(r.opt.WorktreeRoot, projectKey(path, r.opt.ProjectsRoot), Slugify(m.Project.Branch, 60))
 	}
 	return opt, nil
+}
+
+// scratchMovePath is where a moved scratch project's folder is made
+// here: <scratch root>/<its folder's name> (-2, -3, … when taken by
+// something else), else mapped (the path the move found).
+func (r *Registry) scratchMovePath(mapped, source string) string {
+	root := r.scratch().ScratchRoot()
+	if root == "" {
+		return mapped
+	}
+	base := filepath.Base(source)
+	for i := 1; i < 1000; i++ {
+		p := filepath.Join(root, base)
+		if i > 1 {
+			p = filepath.Join(root, fmt.Sprintf("%s-%d", base, i))
+		}
+		if entries, err := os.ReadDir(p); errors.Is(err, os.ErrNotExist) || err == nil && len(entries) == 0 {
+			return p
+		}
+	}
+	return mapped
 }
 
 // cloneForMove clones a moved agent's repository: into path when that is
@@ -284,6 +324,11 @@ func (r *Registry) Import(ctx context.Context, dir string) (wire.Agent, error) {
 		return wire.Agent{}, asMoveError(err)
 	}
 	workdir := dirOf(placed.Project, placed.Worktree)
+	if sc := m.Project.Scratch; sc != nil && m.Move != nil && r.scratch() != nil {
+		// A scratch project's folder here; a move (not a fork) makes this
+		// Mac its home.
+		r.scratch().ScratchArrived(sc.Local, sc.Name, sc.Created, placed.Project, !m.Move.Fork)
+	}
 	projectID := r.projectOf(workdir) // projects step 1
 	r.mu.Lock()
 	settings := r.settings

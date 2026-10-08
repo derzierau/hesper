@@ -29,6 +29,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-draft"), i + 1 < Comma
     MainActor.assumeIsolated { DraftRender.run(CommandLine.arguments[i + 1]) }
     exit(0)
 }
+// Dev tool: scratch projects (the draft's "New scratch", the sidebar's Scratch, the promote sheet) drawn offscreen into PNGs.
+if let i = CommandLine.arguments.firstIndex(of: "--render-scratch"), i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated { ScratchRender.run(CommandLine.arguments[i + 1]) }
+    exit(0)
+}
 app.setActivationPolicy(.regular)
 let delegate = AppDelegate()
 app.delegate = delegate

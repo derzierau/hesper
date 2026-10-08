@@ -69,7 +69,9 @@ func fullDaemon(t *testing.T) *fullEnv {
 	install("claude.jsonl", "/work/rail", filepath.Join(claude, "projects", strings.ReplaceAll(e.project, "/", "-"), fixtureClaude+".jsonl"))
 	install("codex.jsonl", "/work/push", filepath.Join(codex, "sessions", "2026", "10", "02", "rollout-2026-10-02T09-00-00-"+fixtureCodex+".jsonl"))
 
-	store := projects.Open(projects.Options{StateDir: state, Machine: "L", Home: home, Logf: t.Logf})
+	store := projects.Open(projects.Options{StateDir: state, Machine: "L", Home: home, Logf: t.Logf,
+		ScratchRoot: filepath.Join(home, "scratch"), ProjectsRoot: e.root, ConfigDir: config, GH: filepath.Join(dir, "no-gh"),
+		GitEnv: append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")})
 	hist, err := sessions.Open(sessions.Options{StateDir: state, ConfigDir: config, ClaudeHome: claude, CodexHome: codex, UserHome: home, Machine: "L",
 		Foreground: true, ScanEvery: 30 * time.Millisecond, FullScanEvery: 100 * time.Millisecond, Logf: t.Logf})
 	if err != nil {

@@ -26,7 +26,28 @@ func (s *Store) Call(method string, params json.RawMessage) (result any, err err
 	}
 	switch method {
 	case "projects.list":
-		return s.List(), nil, true
+		var p wire.ProjectListParams
+		if err := decode(&p); err != nil {
+			return nil, err, true
+		}
+		return s.ListArchived(p.Archived), nil, true
+	case "projects.scratch", "projects.scratchKeep", "projects.scratchArchive", "projects.scratchRestore", "projects.scratchDelete",
+		"projects.scratchSettings":
+		res, err := s.callScratch(method, params) // scratch.go
+		return res, err, true
+	case "settings.get":
+		var p wire.SettingsGetParams
+		if err := decode(&p); err != nil {
+			return nil, err, true
+		}
+		return s.SettingsGet(p.Keys), nil, true
+	case "settings.set":
+		var p wire.SettingsValues
+		if err := decode(&p); err != nil {
+			return nil, err, true
+		}
+		res, err := s.SettingsSet(p.Values)
+		return res, err, true
 	case "projects.update":
 		var p wire.ProjectUpdateParams
 		if err := decode(&p); err != nil {
@@ -67,9 +88,13 @@ func (s *Store) Call(method string, params json.RawMessage) (result any, err err
 }
 
 // List is projects.list: every project (repositories with their detected
-// packages, looked at again when their manifests changed), most recently
-// used first, then the scratch projects of the agents there are.
-func (s *Store) List() []wire.ProjectInfo {
+// packages, looked at again when their manifests changed; archived
+// scratch projects left out), most recently used first, then the scratch
+// projects of the agents there are.
+func (s *Store) List() []wire.ProjectInfo { return s.ListArchived(false) }
+
+// ListArchived is List, with archived scratch projects when archived.
+func (s *Store) ListArchived(archived bool) []wire.ProjectInfo {
 	s.mu.Lock()
 	agentsFn := s.agents
 	var roots []string
@@ -87,10 +112,11 @@ func (s *Store) List() []wire.ProjectInfo {
 		agents = agentsFn()
 	}
 	s.mu.Lock()
-	s.emitLocked() // detected packages may have changed
+	s.setLiveLocked(agents) // scratch.go
+	s.emitLocked()          // detected packages, scratch states may have changed
 	out := []wire.ProjectInfo{}
 	for _, r := range s.projects {
-		if !r.Deleted.V {
+		if !r.Deleted.V && (archived || !s.archivedLocked(r)) {
 			out = append(out, s.viewLocked(r))
 		}
 	}
@@ -194,6 +220,8 @@ func (s *Store) Update(p wire.ProjectUpdateParams) (wire.ProjectInfo, error) {
 type PromoteResult struct {
 	ID    string `json:"id"`
 	State *State `json:"state"`
+	// Path (projects.scratch): the new scratch project's folder there.
+	Path string `json:"path,omitempty"`
 }
 
 // Promote is projects.promote: the folder becomes a project (or the
@@ -205,6 +233,15 @@ type PromoteResult struct {
 func (s *Store) Promote(p wire.ProjectPromoteParams) (wire.ProjectInfo, error) {
 	s.mu.Lock()
 	short, forward := s.short, s.forward
+	if p.ID != "" {
+		// A scratch project: promoted on its home (scratch.go).
+		home, err := s.scratchHomeLocked(p.ID)
+		if err != nil {
+			s.mu.Unlock()
+			return wire.ProjectInfo{}, err
+		}
+		p.Machine = home
+	}
 	s.mu.Unlock()
 	if p.Machine != "" && p.Machine != short {
 		if forward == nil {
@@ -243,6 +280,9 @@ func (s *Store) PromoteForPeer(p wire.ProjectPromoteParams) (PromoteResult, erro
 }
 
 func (s *Store) promoteLocal(p wire.ProjectPromoteParams) (string, error) {
+	if p.ID != "" {
+		return s.promoteScratch(p) // scratch.go
+	}
 	dir := filepath.Clean(p.Path)
 	if p.Path == "" || !filepath.IsAbs(dir) {
 		return "", wire.Errorf(wire.CodeInvalid, "path must be an absolute path")

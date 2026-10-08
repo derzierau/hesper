@@ -29,6 +29,7 @@ final class SessionCardModel {
         case "⌥⏎": return .history(.fork)
         case "⌘⏎": return .continueOnOtherMac
         case "R": return .restoreCheckpoint
+        case SearchPreview.restoreScratchKey: return .restoreScratch
         case "F": return .history(.fork)
         case "C": return .history(.continueOther)
         case "A": return .history(.archive)

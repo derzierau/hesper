@@ -157,7 +157,7 @@ func (f *Fleet) move(ctx context.Context, p wire.MoveParams, fromShort, local st
 	if probe.Tool != nil && !*probe.Tool {
 		return wire.MoveResult{}, wire.Errorf(wire.CodeToolMissing, "%s has no %s", p.To, agent.Kind)
 	}
-	if plan.Git && !probe.Exists && plan.Remote == "" {
+	if plan.Git && !probe.Exists && plan.Remote == "" && !plan.Scratch { // a scratch project travels whole
 		return wire.MoveResult{}, wire.Errorf(wire.CodeNoRemote, "%s is not on %s and has no Git remote to clone it from", filepath.Base(plan.Project), p.To)
 	}
 	var have []string

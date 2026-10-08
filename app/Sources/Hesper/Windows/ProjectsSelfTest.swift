@@ -80,9 +80,14 @@ final class ProjectsSelfTest {
         _ = await Harness.wait(20) { self.wall.tiles.values.allSatisfy { $0.onShelf || ($0.terminal.surface?.readScreen()?.contains("fake agent") ?? false) } }
         await settle()
 
-        // 1. Bands render: one per group, then scratch; headers and frames.
+        // 1. Bands render: one per group, then Scratch (collapsed until
+        // opened); headers and frames.
         let titles = wall.view.bands.map(\.title)
-        check("All groups by group: acme apps, tools, scratch", titles == ["acme apps", "tools", "scratch"], titles.joined(separator: ", "))
+        check("All groups by group: acme apps, tools, Scratch", titles == ["acme apps", "tools", "Scratch"], titles.joined(separator: ", "))
+        check("the Scratch band starts collapsed", model.isCollapsed(key: "g:~scratch") && model.collapsedBands.isEmpty)
+        model.toggleCollapse("g:~scratch")
+        await Harness.sleep(0.6)
+        check("a click opens it", !model.isCollapsed(key: "g:~scratch") && model.collapsedBands.isEmpty)
         let headersOK = wall.layoutResult.bands.count == 3 && wall.layoutResult.bands.allSatisfy { f in
             guard let h = self.wall.bandHeaders[f.key] else { return false }
             return !h.isHidden && h.frame.height > 20 && f.style == .band

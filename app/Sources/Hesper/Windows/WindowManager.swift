@@ -226,7 +226,7 @@ final class WindowManager: NSObject {
                 continue
             }
             let v = m.resolvedView
-            let collapsed = v.showsBands ? v.bands.filter { m.collapsedBands.contains($0.key) }.count : 0
+            let collapsed = v.showsBands ? v.bands.filter { m.isCollapsed(key: $0.key) }.count : 0
             let reserved = HomeWall.reservesStrip(scope: w.scope, collapsedBands: collapsed, pointers: m.pointers.count)
             let visible = Set(m.wall.map(\.id)).subtracting(m.hiddenIDs)
             let needs = reserved ? HomeWall.needsYou(m.unscopedWall, visible: visible) : []
@@ -684,6 +684,15 @@ final class WindowManager: NSObject {
             model?.select(id)
             model?.renameText[id] = a.name
             model?.openPopover(.rename(id))
+        }
+        // Its scratch: rename, keep, promote, archive, delete.
+        if let pid = model.scratchID(of: a), !model.scratchActions(pid).isEmpty {
+            menu.addItem(.separator())
+            let item = NSMenuItem(title: "Scratch “\(model.scratchName(pid))”", action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: item.title)
+            model.addScratchItems(pid, to: sub, window: wall(for: model)?.window)
+            item.submenu = sub
+            menu.addItem(item)
         }
         return menu
     }

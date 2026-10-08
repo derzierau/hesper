@@ -249,7 +249,14 @@ extension AppModel {
             }
             let pick = OverlayItem(id: "pick", title: "Choose folder…", detail: "Finder", mark: "…",
                                    run: { [weak self] in self?.closePopover(); self?.pickFolder(for: c) })
-            return PopoverContent(title: "Folder", items: typed + filter(Array(items)) + [pick], note: "Type a path, or paste a git URL to clone it",
+            // No folder: a new scratch where this Mac's hesperd makes them.
+            var scratch: [OverlayItem] = []
+            if !c.projectLocked, scratchAvailable(on: r.machine) {
+                scratch.append(OverlayItem(id: "scratch", title: ScratchDraft.chipTitle, detail: ScratchDraft.detail(task: r.task) ?? "a folder in ~/scratch",
+                                           mark: "+", checked: c.startsScratch,
+                                           run: { [weak self] in c.useScratch(); self?.closePopover() }))
+            }
+            return PopoverContent(title: "Folder", items: typed + filter(scratch) + filter(Array(items)) + [pick], note: "Type a path, or paste a git URL to clone it",
                                   hints: hints, empty: "No folder matches")
         case .profile:
             let items = ctx.profiles.keys.sorted().map { name in
@@ -559,6 +566,7 @@ extension AppModel {
         }
         for a in named.prefix(3) { actions += agentActions(a) }
         for var a in actions { a.section = "Actions"; out.append(a) }
+        out += scratchPaletteItems(query: q) // the selected agent's scratch; every scratch while searching
         for p in lists.recentProjects {
             out.append(OverlayItem(id: "project:\(p.path)", section: "Projects", title: p.name, detail: ComposerCompletion.abbreviate(p.path),
                                    run: { [weak self] in self?.showPalette = false; self?.newDraft(project: p.path) }))
@@ -635,7 +643,7 @@ extension AppModel {
         switch s {
         case "Agents": return 0
         case "Drafts": return 1
-        case "Actions": return 2
+        case "Actions", "Scratch": return 2
         case "Projects": return 3
         case "History": return 4 // shared history
         case "Machines": return 5

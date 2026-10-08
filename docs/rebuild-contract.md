@@ -3696,6 +3696,135 @@ in the new worktree and the timing of the handover note on their real
 screens; `processes` detection with real Claude Code Bash tool shells and
 MCP servers; transfer progress over the relay for large bundles.
 
+### As built — scratch projects (daemon)
+
+Code: `internal/projects/scratch.go` (model, creation, adoption,
+lifecycle, archive/restore/delete/promote, moves, history), `crdt.go`
+(`Record.created`, `Record.scratch`), `internal/agents` (`registry.go`
+spawn, `projecthook.go`, `move.go`), `internal/remote/move.go`,
+`internal/handoff` (`Plan.scratch`, `ProjectInfo.scratch`,
+`WriteManifest`), `internal/sessions/service.go` (`folderRemoved`),
+`internal/host/projects.go` and `pkg/devicekey/rights.go` (host
+methods), `pkg/wire/projects.go`, `cmd/hesperctl/scratch.go`,
+`cmd/hesperd` (`$HESPER_SCRATCH_ROOT`). Tests:
+`internal/projects/scratch_test.go`, `internal/sessions`
+`TestFolderRemoved`, `internal/transport/remote_scratch_test.go`
+(`TestRemoteMoveScratch`), hesperctl `TestScratchCommands`. Every test
+uses temporary homes, never `~/scratch` or `~/projects`.
+
+**Model.** A catalog project of kind `scratch` (a generated
+`identity.local`, so a `p-…` id like any project): `ProjectInfo` gains
+`created` (omitzero) and `scratch: {state: "active"|"resting"|"archived",
+keep, archivedAt?, home: "<machine short>", git}` (only for kind
+scratch). Replicated as `Record.scratch {home (node), keep, archivedAt
+(Unix ms, 0: not), git, adoptedAt}`, each field a last-writer-wins
+register like the others, and `Record.created` (the oldest wins).
+`state` is derived: `archived` when `archivedAt` is set, else `active`
+when a live agent (not exited) has its project id or (this Mac's) runs
+inside its folder, else `resting`; it follows the agents on
+projects.list, every 30 s and on an agent's start. The per-folder
+`"scratch:<folder>"` ids stay for agents outside every project.
+- The scratch root is `~/scratch` (`$HESPER_SCRATCH_ROOT`; tests: the
+  gateway's `Registry.Home/scratch`, or `projects.Options.ScratchRoot`);
+  without one, scratch projects are off (`unavailable`).
+
+**Creation.** `projects.scratch {name?, task?, machine?}` →
+`{project, path}`: the name given, else the first words of the task's
+first line slugged (`[a-z0-9]+`, whole words up to 40 characters; name
+= the slug's words, "csv cleanup"); folder
+`<root>/<yyyy-mm-dd>-<slug>`, `-2`, `-3`… when that folder, the archive's
+folder of that name or a catalog entry has it; `git init -b main` and
+an empty first commit "Start scratch: <name>" (not signed, hooks
+skipped: hesperd's own commit; `user.name/email` Hesper /
+hesper@localhost only when git has none); the catalog entry (home: this
+Mac, created/lastUsed now). Another `machine`: done there (host method
+`projects.scratch`, its state merged here). `agents.spawn {scratch:
+true}` without a project makes one from the task (else the agent's
+name) and spawns into it; `scratch` is ignored when `project` is given.
+Several agents may run in one scratch.
+
+**Adoption** (on start and with the daily lifecycle): every
+`<root>/<yyyy-mm-dd>[-rest]` folder (not hidden) becomes a scratch
+project of this Mac (name: the rest with `-` → space, else the date;
+created: the date): a new entry, or the project the folder already is
+(repo or folder kind, no remote) turned kind scratch with its id kept.
+A folder with content and no `.git` stays as it is (`git: false`, no
+checkpoints); an empty one gets its repository. Clones (a Git remote)
+and removed projects (`projects.remove`) are left alone. Projects of
+kind scratch without a lifecycle get one.
+
+**Lifecycle** (this Mac's scratches only, i.e. `home` is this Mac; on
+start and every 24 h): `keep` skips; live agents bump `lastUsed`;
+resting since `max(lastUsed, created, adoptedAt)` ≥ `archiveAfterDays`
+(default 14) → archived: the folder moves to `<root>/.archive/<folder>`
+(`-2`… if taken), `archivedAt` set, the project's path follows; archived
+≥ `deleteAfterDays` (default 30) → deleted: the folder removed
+(`RemoveAll`, only ever a direct child of the root or its archive), the
+catalog entry tombstoned. Archived projects are left out of
+projects.list (`{archived: true}` includes them) and projects.recent,
+but stay in the `projects.changed` notifications (the app filters on
+`scratch.state`); sessions in an archived scratch keep its id (its
+original folder still resolves to it).
+- `projects.scratchKeep {id, keep}` → ProjectInfo (any Mac; replicated).
+- `projects.scratchArchive {id}` → ProjectInfo; `projects.scratchRestore
+  {id}` → ProjectInfo (back to `<root>/<folder>`, resting, `lastUsed`
+  now); `projects.scratchDelete {id}` → `{}`. Archive, delete and
+  promote are refused with `busy` while agents run in it. They run on
+  the scratch's home: another Mac forwards them there (host methods of
+  the same names, right `transfer`) and merges the answer's state.
+- `projects.promote {id, name?, createRepo?: "github"}` (the existing
+  method; `path` is optional now): on the home, `busy` while agents run
+  in it; the folder moves to `<projects root>/<slug of name>` (`exists`
+  when taken), kind `repo` (`folder` for a `git: false` scratch), the
+  same id (sessions and agents stay linked), name set, `lastUsed` now.
+  `createRepo: "github"` runs `gh repo create <slug> --private --source .
+  --push` there; without gh (`unavailable`) nothing moves; a failing gh
+  answers `remote` ("promoted to …, but gh repo create failed"). A
+  promoted scratch that got a remote keeps its local id (repository
+  resolution falls back to it).
+- Settings: settings.json `"scratch": {"archiveAfterDays",
+  "deleteAfterDays"}`, read on start; `projects.scratchSettings
+  {archiveAfterDays?, deleteAfterDays?}` → the current values (1–3650;
+  `{}` only reads), written back into settings.json with its other keys
+  kept. The app's names for the same: `settings.get {keys?:
+  ["scratch.archiveAfterDays", "scratch.deleteAfterDays"]}` → `{values:
+  {key: n}}` (no keys: both; unknown keys left out) and `settings.set
+  {values: {key: n}}` → `{values}` (another key, or a value outside
+  1–3650: `invalid`). Per Mac (each runs its own scratches' lifecycle).
+- `projects.scratchKeep` (and every scratch method) of an unknown id is
+  `not_found`; of a project that is not a scratch `invalid`.
+
+**Moves.** `agents.move` of an agent in a scratch project: the source's
+plan says `scratch: true`, so a target without the repository is not
+`no-remote`; the bundle is full; the manifest's `project.scratch
+{local, name, created}` lets the target make the folder at its own
+`<scratch root>/<same folder name>` (`-2`… when taken by something
+else) from the bundle (no worktree: the agent runs in the scratch
+folder), record it as the same project (made from the manifest when the
+state did not arrive yet) and, for a move (not a fork), make itself the
+scratch's home. The source's folder stays on the source (as with any
+move); it no longer archives or deletes it.
+
+**History.** `Session.folderRemoved` (omitempty): the session ran in a
+scratch project whose folder hesperd deleted (by its project id while
+the tombstone lasts, 180 days, or its folder).
+
+**hesperctl:** `new --scratch TASK` (not with --project, --worktree,
+--branch), `scratch ls [--all]`, `scratch new NAME… [--machine M]`
+(prints the folder), `scratch keep SCRATCH [--off]`, `scratch archive`,
+`scratch restore`, `scratch promote SCRATCH [--name N] [--github]`,
+`scratch rm` (SCRATCH: id, unique name, folder name or folder); in the
+reference and MCP tools.
+
+**Deviations from the shared contract (additive):** `projects.scratch`
+answers `{project, path}`; `projects.scratchDelete`,
+`projects.scratchSettings`, `settings.get` and `settings.set` are new
+methods (the app's Delete and the Settings fields); `projects.list` takes `{archived}`; `adoptedAt` makes
+adopted folders rest from their adoption, so the first start does not
+archive every old folder at once; clones in the scratch root are not
+adopted; a scratch without Git promotes to kind `folder`; the per-folder
+`scratch:<folder>` projects remain for agents outside every project.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

@@ -300,7 +300,7 @@ private func agentWin(_ id: String, group: Int? = nil, selected: Bool = false, s
         let pitems = p.map { ptr in (pointer: ptr, items: items(all.filter { ptr.agents.contains($0.id) })) }
         // By project: the pointer where acme-apps' band was (acme apps first).
         let byProject = ViewResolver.resolve(items(shown), level: .project, catalog: c, pointers: pitems)
-        #expect(byProject.bands.map(\.key) == ["ptr:w-as", "p:ed", "p:gh", "p:tr"])
+        #expect(byProject.bands.map(\.key) == ["ptr:w-as", "p:ed", "p:gh", "p:~scratch"], "the scratch tr in the one Scratch band")
         let ptr = byProject.bands[0]
         #expect(ptr.title == "acme-apps" && ptr.members.isEmpty && ptr.counted == ["L/1", "L/2", "L/5"] && ptr.colorHex == "#7aa2f7")
         #expect(byProject.showsBands && !byProject.order.contains("L/1"))

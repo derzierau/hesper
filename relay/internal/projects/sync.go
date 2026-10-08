@@ -102,7 +102,10 @@ func (s *Store) Merge(st *State, from string) bool {
 // validRecord: what a peer sends is sane (absolute paths, a known kind,
 // bounded strings).
 func validRecord(r *Record) bool {
-	if len(r.Name.V) > 200 || r.Kind.V != "" && !validKind(r.Kind.V) || r.Color.V != "" && !validColor(r.Color.V) {
+	if len(r.Name.V) > 200 || r.Kind.V != "" && !validKind(r.Kind.V) && r.Kind.V != wire.ProjectScratch || r.Color.V != "" && !validColor(r.Color.V) {
+		return false
+	}
+	if r.Scratch != nil && len(r.Scratch.Home.V) > 64 {
 		return false
 	}
 	if len(r.Paths) > 64 {

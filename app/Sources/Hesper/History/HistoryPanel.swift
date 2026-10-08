@@ -792,7 +792,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         // other Mac (a live agent: moves it with its work), R restore checkpoint.
         let moveTo = model.liveMoveTarget(s)?.to
         t.actions = SearchPreview.actions(s, card: t, local: model.localMachine, online: onlineMachines, machines: names,
-                                          moveTo: moveTo, restore: model.restoreOffered(s))
+                                          moveTo: moveTo, restore: model.restoreOffered(s), restoreScratch: model.archivedScratch(for: s) != nil)
         t.resumeHereNote = SearchPreview.continueNote(s, local: model.localMachine, online: onlineMachines, machines: names, moveTo: moveTo)
         card.text = t
     }
@@ -863,6 +863,9 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
             // Nothing to restore: R types into the search, as before.
             guard let s = selectedSession, model.restoreOffered(s) else { perform(HistoryKeyAction.focusSearch("r")); return }
             model.restoreCheckpoint(s)
+        case .restoreScratch:
+            guard let s = selectedSession, let pid = model.archivedScratch(for: s) else { NSSound.beep(); return }
+            model.perform(.restore, scratch: pid)
         }
     }
 

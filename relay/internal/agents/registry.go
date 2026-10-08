@@ -421,6 +421,14 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 	if p.Machine != "" && p.Machine != r.machine {
 		return wire.Agent{}, wire.Errorf(wire.CodeUnavailable, "machine %s is not connected", p.Machine)
 	}
+	if p.Scratch && strings.TrimSpace(p.Project) == "" {
+		// scratch projects: a new one, named from the task.
+		dir, err := r.newScratch(p.Name, p.Task)
+		if err != nil {
+			return wire.Agent{}, err
+		}
+		p.Project = dir
+	}
 	project := cleanPath(p.Project)
 	if project == "" || !filepath.IsAbs(project) {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "project must be an absolute path")

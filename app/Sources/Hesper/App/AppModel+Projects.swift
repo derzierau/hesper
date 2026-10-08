@@ -65,17 +65,26 @@ extension AppModel {
     }
 
     /// Collapsed bands and pointer lines are one header line.
-    func isCollapsed(_ b: Band) -> Bool { b.pointer != nil || collapsedBands.contains(b.key) }
+    func isCollapsed(_ b: Band) -> Bool { b.pointer != nil || isCollapsed(key: b.key) }
+
+    /// The user's collapsed bands, plus Scratch until this wall opens it.
+    func isCollapsed(key: String) -> Bool { BandCollapse.isCollapsed(key, collapsed: collapsedBands, expanded: expandedBands) }
+
+    /// A band opens (a draft in it, a card revealed).
+    func openBand(_ key: String) {
+        let r = BandCollapse.open(key, collapsed: collapsedBands, expanded: expandedBands)
+        if r.collapsed != collapsedBands { collapsedBands = r.collapsed }
+        if r.expanded != expandedBands { expandedBands = r.expanded }
+    }
 
     /// The bands of this wall now.
     var resolvedView: ResolvedView { resolveView(scopedWallItems) }
 
     /// Cards in collapsed bands (not shown, skipped by Tab).
     var hiddenIDs: Set<String> {
-        guard !collapsedBands.isEmpty else { return [] }
         let v = resolvedView
         guard v.showsBands else { return [] }
-        return Set(v.bands.filter { collapsedBands.contains($0.key) }.flatMap(\.members))
+        return Set(v.bands.filter { isCollapsed(key: $0.key) }.flatMap(\.members))
     }
 
     // MARK: Band actions
@@ -83,8 +92,8 @@ extension AppModel {
     /// A card in a collapsed band becomes visible (⌘J, a click in the
     /// sidebar's attention, a needs-you card).
     func reveal(_ id: String) {
-        guard !collapsedBands.isEmpty, let b = resolvedView.band(of: id), collapsedBands.contains(b.key) else { return }
-        collapsedBands.remove(b.key)
+        guard let b = resolvedView.band(of: id), isCollapsed(key: b.key) else { return }
+        openBand(b.key)
     }
 
     /// Click: collapse / expand; ⌥-click: this one open, every other collapsed.
@@ -92,13 +101,16 @@ extension AppModel {
         if others {
             let keys = Set(resolvedView.bands.map(\.key))
             collapsedBands = keys.subtracting([key])
-        } else if collapsedBands.contains(key) {
-            collapsedBands.remove(key)
+            if ViewResolver.collapsedByDefault(key) { expandedBands.insert(key) }
+        } else if isCollapsed(key: key) {
+            openBand(key)
         } else {
-            collapsedBands.insert(key)
+            let r = BandCollapse.toggle(key, collapsed: collapsedBands, expanded: expandedBands)
+            collapsedBands = r.collapsed
+            expandedBands = r.expanded
             if let sel = selectedID, resolvedView.band(of: sel)?.key == key {
                 activeTileID = nil
-                selectedID = resolvedView.bands.first { !collapsedBands.contains($0.key) }?.members.first ?? selectedID
+                selectedID = resolvedView.bands.first { !isCollapsed(key: $0.key) }?.members.first ?? selectedID
                 onModeChanged?()
             }
         }
@@ -118,7 +130,7 @@ extension AppModel {
     func jumpBand(_ d: Int) {
         let v = resolvedView
         guard v.showsBands else { return }
-        let bands = v.bands.map { (key: $0.key, members: collapsedBands.contains($0.key) ? [] : $0.members) }
+        let bands = v.bands.map { (key: $0.key, members: isCollapsed(key: $0.key) ? [] : $0.members) }
         guard let id = BandNavigation.target(bands: bands, current: selectedID, delta: d) else { return }
         if activeTileID != nil { activeTileID = nil }
         if editingDraftID != nil && editingDraftID != id { leaveComposer() }
@@ -139,6 +151,8 @@ extension AppModel {
     /// A tile's project: name and color (headers, D's tint).
     func projectLabel(_ a: Agent) -> (name: String, colorHex: String)? {
         guard let pid = catalog.projectID(for: a) else { return nil }
+        // A scratch: its name (the Scratch band holds them all).
+        if let p = catalog.project(pid), p.isScratch { return (ScratchName.display(p), catalog.colorHex(project: pid)) }
         return (catalog.name(project: pid), catalog.colorHex(project: pid))
     }
 

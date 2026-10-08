@@ -700,7 +700,9 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return reg.Files().Chunk(p, false)
 	case "drafts.list", "drafts.save", "drafts.remove":
 		return s.drafts.call(method, params)
-	case "projects.list", "projects.update", "projects.promote", "projects.remove", "groups.list", "groups.save", "groups.remove":
+	case "projects.list", "projects.update", "projects.promote", "projects.remove", "groups.list", "groups.save", "groups.remove",
+		"projects.scratch", "projects.scratchKeep", "projects.scratchArchive", "projects.scratchRestore", "projects.scratchDelete",
+		"projects.scratchSettings", "settings.get", "settings.set": // scratch projects
 		// projects step 1 (projecthook.go)
 		if reg.opt.Projects != nil {
 			res, err, _ := reg.opt.Projects.Call(method, params)

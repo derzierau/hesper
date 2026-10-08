@@ -424,6 +424,30 @@ func TestProjectMapping(t *testing.T) {
 	}
 }
 
+// removedProjects: the scratch project at gone was deleted.
+type removedProjects struct {
+	fakeProjects
+	gone string
+}
+
+func (p *removedProjects) FolderRemoved(id, cwd string) bool { return cwd == p.gone }
+
+// Scratch projects: a session whose scratch folder was deleted is marked
+// folder removed.
+func TestFolderRemoved(t *testing.T) {
+	e := newEnv(t)
+	e.install("claude.jsonl", e.work)
+	e.install("codex.jsonl", filepath.Join(e.home, "push"))
+	s := e.open(Options{})
+	s.SetProjects(&removedProjects{fakeProjects: fakeProjects{ch: make(chan struct{})}, gone: filepath.Join(e.home, "push")})
+	waitFor(t, "indexed", func() bool { return len(e.search(wire.SessionSearchParams{})) == 2 })
+	cx, _ := e.session("L:codex:" + codexSID)
+	cl, _ := e.session("L:claude:" + claudeSID)
+	if !cx.FolderRemoved || cl.FolderRemoved {
+		t.Fatalf("folder removed: codex %v, claude %v", cx.FolderRemoved, cl.FolderRemoved)
+	}
+}
+
 func TestLiveDetection(t *testing.T) {
 	e := newEnv(t)
 	cpath := e.install("claude.jsonl", e.work)

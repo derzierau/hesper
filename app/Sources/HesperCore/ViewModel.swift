@@ -122,6 +122,17 @@ public struct ResolvedView: Equatable, Sendable {
 
 public enum ViewResolver {
     static let other = "~other", scratch = "~scratch", none = "~none"
+    /// Scratch projects' agents: one "Scratch" band (by group or by
+    /// project), at the end, collapsed until opened.
+    public static let scratchKeys: Set<String> = ["g:" + scratch, "p:" + scratch]
+    public static let scratchTitle = "Scratch"
+
+    /// Bands that start collapsed on every wall (scratch).
+    public static func collapsedByDefault(_ key: String) -> Bool { scratchKeys.contains(key) }
+
+    static func isScratch(_ pid: String?, catalog: ProjectCatalog) -> Bool {
+        catalog.project(catalog.root(pid))?.isScratch == true
+    }
     /// The band of drafts without a project ("New"), at every level.
     public static let newKey = "new"
     /// Its neutral color (no project's).
@@ -139,9 +150,10 @@ public enum ViewResolver {
             if case .group(let g) = scope, gids.contains(g) { gids = [g] }
             if let g = gids.first { return "g:" + g }
             guard let pid else { return "g:" + none }
-            return "g:" + (catalog.project(catalog.root(pid))?.isScratch == true ? scratch : other)
+            return "g:" + (isScratch(pid, catalog: catalog) ? scratch : other)
         case .project:
             guard let pid else { return "p:" + none }
+            if isScratch(pid, catalog: catalog) { return "p:" + scratch }
             return "p:" + (catalog.root(pid) ?? pid)
         case .branch:
             guard let pid else { return "b:" + none }
@@ -183,7 +195,7 @@ public enum ViewResolver {
                 seen.append(k)
             }
             bands[k]!.members.append(it.id)
-            if bands[k]!.projectID == nil { bands[k]!.projectID = it.projectID.map { level == .project ? (catalog.root($0) ?? $0) : $0 } }
+            if bands[k]!.projectID == nil, !scratchKeys.contains(k) { bands[k]!.projectID = it.projectID.map { level == .project ? (catalog.root($0) ?? $0) : $0 } }
         }
         let subtitleItems = Dictionary(grouping: items) { key($0, level: level, catalog: catalog, scope: scope) }
         for k in seen {
@@ -241,7 +253,7 @@ public enum ViewResolver {
         case .group:
             switch rest {
             case other: b.title = "Other projects"
-            case scratch: b.title = "scratch"; b.colorHex = "#73daca"
+            case scratch: b.title = scratchTitle; b.colorHex = "#73daca"
             case none: b.title = "No project"
             default:
                 b.groupID = rest
@@ -250,7 +262,7 @@ public enum ViewResolver {
                 if let first = catalog.groups[rest]?.projectIds.first { b.projectID = first }
             }
         case .project:
-            if rest == none { b.title = "No project" } else {
+            if rest == none { b.title = "No project" } else if rest == scratch { b.title = scratchTitle; b.colorHex = "#73daca" } else {
                 b.projectID = rest
                 b.title = catalog.name(project: rest)
                 b.colorHex = catalog.colorHex(project: rest)
@@ -287,6 +299,13 @@ public enum ViewResolver {
             for x in xs where !x.isEmpty && !seen.contains(x) { seen.append(x) }
             if seen.count <= 3 { return seen.joined(separator: ", ") }
             return seen.prefix(2).joined(separator: ", ") + " +\(seen.count - 2)"
+        }
+        if scratchKeys.contains(b.key) {
+            // The scratches' names, without their folder dates.
+            return list(items.map { it in
+                let id = catalog.root(it.projectID) ?? it.projectID
+                return catalog.project(id).map(ScratchName.display) ?? catalog.name(project: id)
+            })
         }
         switch b.level {
         case .group:
@@ -332,6 +351,7 @@ public enum ViewResolver {
                 return (10_000 + ([other, scratch, none].firstIndex(of: rest) ?? 3), rest)
             case .project:
                 if rest == none { return (30_000, "") }
+                if rest == scratch { return (25_000, "") }
                 let p = catalog.project(rest)
                 if p?.isScratch == true { return (20_000, (p?.name ?? rest).lowercased()) }
                 let g = catalog.groupIDs(of: rest).compactMap { groupRank[$0] }.min() ?? 10_000

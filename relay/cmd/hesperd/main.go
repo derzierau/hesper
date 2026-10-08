@@ -74,6 +74,19 @@ func run(args []string) int {
 	return 2
 }
 
+// scratchRoot is where scratch projects live: $HESPER_SCRATCH_ROOT, else
+// ~/scratch.
+func scratchRoot() string {
+	if dir := os.Getenv("HESPER_SCRATCH_ROOT"); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, "scratch")
+}
+
 func serve(args []string) int {
 	f := flag.NewFlagSet("serve", flag.ContinueOnError)
 	stateDir := f.String("state-dir", wire.StateDir(), "State directory (agents.json, the socket, relay credentials, device keys)")
@@ -116,7 +129,7 @@ func serve(args []string) int {
 		Registry:        agents.Options{StateDir: *stateDir, ConfigDir: *configDir, Socket: *socket},
 		HostCredentials: *hostCreds, ControllerCredentials: *controllerCreds, KeysDir: *stateDir,
 		AllowShell: *allowShell, RequireDeviceKeys: *requireKeys, Direct: *directMode, DirectPort: *directPort,
-		ControlSocket: *controlSocket, KeepAwake: *keepAwake, MinBattery: *minBattery,
+		ControlSocket: *controlSocket, KeepAwake: *keepAwake, MinBattery: *minBattery, ScratchRoot: scratchRoot(),
 	})
 	if err != nil {
 		log.Print(err)

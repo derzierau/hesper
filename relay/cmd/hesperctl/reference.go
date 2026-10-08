@@ -100,7 +100,11 @@ trust, exit; skip, update).
 **Projects**: an agent works in a project folder (` + "`project`" + `), possibly in a
 git worktree of it (` + "`worktree`" + `, ` + "`branch`" + `). ` + "`projectId`" + ` is the project's identity
 (its repository, shared between machines); folders outside every project
-are "scratch:<folder>".
+are "scratch:<folder>". **Scratch projects** (kind scratch) are throwaway
+projects in ~/scratch/<date>-<slug> on the Mac that made them (their home),
+each a Git repository: ` + "`new --scratch TASK`" + ` starts an agent in a new one;
+they are archived after 14 days without agents and deleted 30 days later,
+unless kept (see the scratch commands); promote one to keep it as a project.
 
 **Machines**: the owner's Macs, connected through the relay. A machine has
 an id, a short name (used in agent ids and --machine) and a full name.

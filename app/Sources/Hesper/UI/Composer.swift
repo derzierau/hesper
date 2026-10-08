@@ -377,8 +377,13 @@ struct DraftChips: View {
             ChipFlow {
                 chip(.machine, on: true, title: ComposerCompletion.machineChip(m, short: r.machine, local: r.machine == app.localMachine),
                      mono: true, detail: nil, warn: m.map { !$0.online } ?? false)
-                chip(.project, on: r.project != nil || r.cloneURL != nil, title: folderTitle(r), mono: r.project != nil && r.cloneURL == nil,
-                     detail: nil, warn: (r.project == nil && r.cloneURL == nil) || composer.folderNote != nil || composer.missingFolder != nil)
+                if composer.startsScratch {
+                    // No folder: a new scratch (scratch contract); # replaces it.
+                    chip(.project, on: true, title: ScratchDraft.chipTitle, mono: false, detail: ScratchDraft.detail(task: r.task), warn: false)
+                } else {
+                    chip(.project, on: r.project != nil || r.cloneURL != nil, title: folderTitle(r), mono: r.project != nil && r.cloneURL == nil,
+                         detail: nil, warn: (r.project == nil && r.cloneURL == nil) || composer.folderNote != nil || composer.missingFolder != nil)
+                }
                 chip(.profile, on: r.profile != nil, title: r.profile.map { Theme.kindLabel(app.composerContext.profiles[$0] ?? $0) } ?? "Tool",
                      mono: false, detail: r.profile, warn: false)
                 if !compact || r.worktree {
@@ -561,7 +566,7 @@ struct DraftFooter: View {
             .buttonStyle(.plain)
             .disabled(composer.busy || composer.needsFolder)
             .opacity(composer.needsFolder ? OverlayLook.disabledOpacity : 1)
-            .help(composer.needsFolder ? "Choose a folder first (⌘⏎ opens the list)" : "Start (⌘⏎)")
+            .help(composer.needsFolder ? "Choose a folder first (⌘⏎ opens the list)" : composer.startsScratch ? "Start in a new scratch (⌘⏎)" : "Start (⌘⏎)")
             .accessibilityIdentifier("draft.start")
         }
     }

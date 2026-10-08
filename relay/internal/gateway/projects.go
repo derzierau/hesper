@@ -33,4 +33,7 @@ func (d *Daemon) wireProjects() {
 	// Agents restored before the store knew this Mac's name keep their
 	// project; anything resolved meanwhile is settled once more.
 	go reg.Reproject()
+	// Scratch projects: adoption and the lifecycle, once the agents are
+	// known (a scratch with agents is never archived).
+	store.StartScratch()
 }

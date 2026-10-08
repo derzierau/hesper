@@ -49,7 +49,89 @@ type ProjectInfo struct {
 	// at (projects.list).
 	DetectedPackages []DetectedPackage `json:"detectedPackages,omitempty"`
 	LastUsed         time.Time         `json:"lastUsed"`
+	// Created (scratch projects): when it was made (adopted folders: the
+	// date in their name).
+	Created time.Time `json:"created,omitzero"`
+	// Scratch is a scratch project's lifecycle (kind "scratch" from the
+	// catalog; nil for every other kind and for the per-folder
+	// "scratch:<folder>" ids).
+	Scratch *ScratchInfo `json:"scratch,omitempty"`
 }
+
+// Scratch states (ScratchInfo.State).
+const (
+	ScratchActive   = "active"   // agents run in it
+	ScratchResting  = "resting"  // no agents
+	ScratchArchived = "archived" // its folder is in <scratch root>/.archive
+)
+
+// ScratchInfo is a scratch project's lifecycle: State (active while
+// agents run in it, as far as hesperd last looked), Keep (never archived
+// or deleted), ArchivedAt, Home (the machine whose folder is the scratch:
+// it archives and deletes it) and Git (its folder is a Git repository:
+// false for adopted folders with content and no .git; no checkpoints).
+type ScratchInfo struct {
+	State      string     `json:"state"`
+	Keep       bool       `json:"keep"`
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+	Home       string     `json:"home"`
+	Git        bool       `json:"git"`
+}
+
+// ProjectListParams are projects.list's (optional): Archived includes
+// archived scratch projects.
+type ProjectListParams struct {
+	Archived bool `json:"archived,omitempty"`
+}
+
+// ScratchParams are projects.scratch's: a new scratch project on Machine
+// (default this Mac), named Name, else from Task.
+type ScratchParams struct {
+	Name    string `json:"name,omitempty"`
+	Task    string `json:"task,omitempty"`
+	Machine string `json:"machine,omitempty"`
+}
+
+// ScratchResult is projects.scratch's result: the project and its new
+// folder (on its machine).
+type ScratchResult struct {
+	Project ProjectInfo `json:"project"`
+	Path    string      `json:"path"`
+}
+
+// ScratchKeepParams are projects.scratchKeep's.
+type ScratchKeepParams struct {
+	ID   string `json:"id"`
+	Keep bool   `json:"keep"`
+}
+
+// ScratchSettings are projects.scratchSettings's result, and its params
+// with the fields to change (settings.json "scratch").
+type ScratchSettings struct {
+	ArchiveAfterDays int `json:"archiveAfterDays,omitempty"`
+	DeleteAfterDays  int `json:"deleteAfterDays,omitempty"`
+}
+
+// Settings keys of settings.get / settings.set (scratch projects).
+const (
+	SettingScratchArchiveDays = "scratch.archiveAfterDays"
+	SettingScratchDeleteDays  = "scratch.deleteAfterDays"
+)
+
+// SettingsGetParams are settings.get's: the keys asked (none: all).
+type SettingsGetParams struct {
+	Keys []string `json:"keys,omitempty"`
+}
+
+// SettingsValues are settings.get's result and settings.set's params and
+// result: key → value.
+type SettingsValues struct {
+	Values map[string]int `json:"values"`
+}
+
+// CreateRepoGitHub is ProjectPromoteParams.CreateRepo for a private
+// GitHub repository (gh repo create).
+const CreateRepoGitHub = "github"
 
 // ProjectIdentity is what makes two folders the same project: Remote (the
 // normalized git remote, "github.com/owner/repo"), Package (a package's
@@ -97,12 +179,16 @@ type ProjectUpdateParams struct {
 }
 
 // ProjectPromoteParams are projects.promote's: make a folder on machine a
-// project (identity detected).
+// project (identity detected), or (ID) a scratch project a repository in
+// the projects root; CreateRepo "github" also makes it a private GitHub
+// repository.
 type ProjectPromoteParams struct {
-	Machine string `json:"machine,omitempty"`
-	Path    string `json:"path"`
-	Name    string `json:"name,omitempty"`
-	Kind    string `json:"kind,omitempty"`
+	Machine    string `json:"machine,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	ID         string `json:"id,omitempty"`
+	CreateRepo string `json:"createRepo,omitempty"`
 }
 
 // GroupSaveParams are groups.save's.

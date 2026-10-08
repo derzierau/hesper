@@ -78,6 +78,10 @@ type Config struct {
 	History sessions.Options
 	// NoHistory runs without the shared history.
 	NoHistory bool
+	// ScratchRoot holds the scratch projects (internal/projects,
+	// scratch.go); default Registry.Home/scratch when Home is set, else
+	// scratch projects are off.
+	ScratchRoot string
 }
 
 // Daemon is a running hesperd.
@@ -136,7 +140,12 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	d := &Daemon{cancel: cancel, Err: make(chan error, 2)}
 	// projects step 1: the project registry, before the agents (restored
 	// agents get their project).
-	d.Projects = projects.Open(projects.Options{StateDir: opt.StateDir, Machine: opt.Machine, Home: opt.Home, Logf: opt.Logf})
+	scratch := cfg.ScratchRoot
+	if scratch == "" && opt.Home != "" {
+		scratch = filepath.Join(opt.Home, "scratch")
+	}
+	d.Projects = projects.Open(projects.Options{StateDir: opt.StateDir, Machine: opt.Machine, Home: opt.Home, Logf: opt.Logf,
+		ScratchRoot: scratch, ProjectsRoot: opt.ProjectsRoot, ConfigDir: opt.ConfigDir})
 	opt.Projects = d.Projects
 	// shared history: before the agents (the socket serves sessions.*).
 	if !cfg.NoHistory {

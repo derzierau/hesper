@@ -51,6 +51,9 @@ var methodRights = map[string]string{
 	// changes (projects.sync with a state) or promoting a folder needs
 	// transfer.
 	"projects.sync": Observe, "projects.promote": Transfer,
+	// scratch projects: their folders made, archived, restored, deleted
+	// on their home.
+	"projects.scratch": Transfer, "projects.scratchArchive": Transfer, "projects.scratchRestore": Transfer, "projects.scratchDelete": Transfer,
 	// shared history: reading the index, transcripts, a session's plan
 	// or changes observes; starting a session there needs transfer.
 	"sessions.pull": Observe, "sessions.transcript": Observe, "sessions.plan": Observe, "sessions.changes": Observe,

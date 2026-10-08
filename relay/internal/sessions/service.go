@@ -377,6 +377,10 @@ func (s *Service) toWire(r *Record) wire.Session {
 	if r.Node == s.db.node {
 		out.Checkpoint = s.checkpointOf(r.Kind, r.SID) // checkpoints.go
 	}
+	// scratch projects: its folder was deleted.
+	if fr, ok := s.projectReg().(interface{ FolderRemoved(id, cwd string) bool }); ok {
+		out.FolderRemoved = fr.FolderRemoved(m.ProjectID, m.Cwd)
+	}
 	for node, mk := range r.Mirrors {
 		if mk.At > 0 && node != r.Node {
 			out.Mirrored = append(out.Mirrored, s.nameOf(node, ""))

@@ -118,6 +118,8 @@ final class AppModel {
     @ObservationIgnored var moveFollow: [String: Bool] = [:]
     /// Closing agents (AppModel+Closing): shared by every window's model.
     let closeBook: CloseBook
+    /// Scratch projects (AppModel+Scratch): shared by every window's model.
+    let scratchBook: ScratchBook
     /// Closed, not gone from hesperd's agents yet (or queued for an
     /// offline Mac): on no wall.
     var pendingRemoval: Set<String> { closeBook.closing }
@@ -165,6 +167,8 @@ final class AppModel {
     var grouping: Grouping = .auto { didSet { if oldValue != grouping { onLayoutSettingsChanged?(); onViewChanged?() } } }
     /// Collapsed bands (one header line each), by band key.
     var collapsedBands: Set<String> = [] { didSet { if oldValue != collapsedBands { onLayoutSettingsChanged?(); onViewChanged?() } } }
+    /// Bands that start collapsed (Scratch) this wall opened.
+    var expandedBands: Set<String> = [] { didSet { if oldValue != expandedBands { onLayoutSettingsChanged?(); onViewChanged?() } } }
     /// This wall's band order (header drag), band keys first in this order.
     var bandOrder: [String] = [] { didSet { if oldValue != bandOrder { onLayoutSettingsChanged?(); onViewChanged?() } } }
     /// The project sidebar (⌘0), per wall.
@@ -235,6 +239,7 @@ final class AppModel {
     init(env: AppEnvironment, userFontSize: Double? = nil) {
         self.env = env
         closeBook = CloseBook()
+        scratchBook = ScratchBook()
         moveBook = MoveBook()
         client = DaemonClient(socketPath: env.socketPath, clientName: "Hesper.app", clientVersion: AppInfo.version)
         // Automated runs (tests, screenshots) take the layout from flags and
@@ -268,6 +273,7 @@ final class AppModel {
         listSource = primary
         client = primary.client
         closeBook = primary.closeBook
+        scratchBook = primary.scratchBook
         moveBook = primary.moveBook
         settings = primary.settings
         registry = primary.registry
@@ -341,7 +347,7 @@ final class AppModel {
         switch e {
         case .connected:
             connectionMessage = nil
-            if !isMirror { Task { await refreshLists() } }
+            if !isMirror { Task { await refreshLists(); await probeScratch() } }
             onReconnected?()
         case .helloRefreshed:
             break // the registry keeps the fresh hello (machines online)
