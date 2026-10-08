@@ -3265,6 +3265,93 @@ timeout), internal/transport `TestRemoteAgentTree` (a child on M of an
 agent on L: parent recorded, answer policy and rename enforced on L,
 result from M).
 
+### As built — MCP (hesperctl mcp: relay/cmd/hesperctl/mcp.go)
+
+`hesperctl mcp [--daemon-socket S]` is a Model Context Protocol server on
+stdio, so Claude Code and Codex use Hesper as tools. Hand-rolled (no SDK,
+no new dependency): newline-delimited JSON-RPC 2.0 on stdin/stdout, logs
+on stderr only, the server exits when stdin ends (after the calls under
+way). **Protocol**: the initialize handshake ("legacy" era), revisions
+2025-11-25 (newest), 2025-06-18, 2025-03-26, 2024-11-05: the client's
+version if served, else the newest. A dual-era client's `server/discover`
+probe (revision 2026-07-28) gets -32601, on which the spec has it fall
+back to initialize. Methods: `initialize`, `ping`, `tools/list`,
+`tools/call`, `resources/list`, `resources/templates/list` (empty),
+`resources/read`, `resources/subscribe`/`unsubscribe`, `prompts/list`
+(empty); notifications `initialized`, `cancelled`. No batches.
+
+**Tools come from the command registry**, never a list: one per command
+not marked `NoMCP`, so commands added later (open, wall, desk, …) appear
+by themselves. Name: `hesper_` + the name in snake case, one-word commands
+of group Agents with `agents_` (`hesper_agents_new`, `hesper_agents_ls`,
+`hesper_history_search`, `hesper_projects_update`). Description: summary,
+help, usage, `--json` output, examples. `inputSchema` (JSON Schema object,
+`additionalProperties: false`): every flag but `--json` and
+`--daemon-socket` by its value's type (bool → boolean, int → integer,
+duration → string "90s/5m", string → string, repeatable list flags →
+array of strings), with usage and default; positional arguments from
+`Usage` (upper-case words; `[X]` optional, `X…` an array, `A|B` →
+`a_or_b`, a name a flag has gets `_arg`; `TASK…|-` drops stdin); a Usage
+that cannot be read gets an `args` array instead. Registry fields
+(Command): `ReadOnly` → `readOnlyHint` (ls, self, show, screen, wait,
+result, status, profiles, drafts/projects/groups ls, projects recent,
+history search/show/brief/stats, devices, reference), `Destructive` →
+`destructiveHint` (stop, kill, close, rm, tidy, drafts/projects/groups
+rm, history delete, revoke; others false), `NoMCP` (attach, events,
+watch, login, pair, help, mcp). `openWorldHint` false.
+
+**A call** runs the command as a child process of the server (hesperctl
+itself: `NAME --json --flag=value… [--] ARGS…`, stdin empty), not in the
+server's process: calls run concurrently, a cancelled call can be
+interrupted, and commands write to stdout as they always did (no writer
+refactor of every command). Exit 0: the stdout JSON as one text content
+(`{"ok":true}` when the command prints nothing). Non-zero:
+`isError: true` with the command's `--json` error plus `exitCode`:
+`{"error":{"code","message"[,"agentId"]},"exitCode":N}` (exit codes as
+"CLI foundation"). Bad parameters (unknown, wrong type, missing
+required) are `isError` with code usage, exit 2; an unknown tool is
+JSON-RPC -32602. Waiting: a command with a duration `--timeout` (wait;
+new with `wait: true`) always gets one: the parameter, at most 10 m, by
+default 10 m. Every call is bounded at 11 m; output at 4 MiB.
+`notifications/cancelled` cancels the call: the child gets SIGINT (SIGKILL
+3 s later) and the request no response.
+
+**Resources**: `hesper://agents` (ls --json), `hesper://needs-you` (the
+agents in approval or question, as `wait --until needs-you`),
+`hesper://reference` (the Markdown reference, generated in process).
+Subscribing to agents or needs-you subscribes once to hesperd
+(agents.subscribe); an `agents.*` notification sends
+`notifications/resources/updated` for each subscribed URI (at most every
+250 ms).
+
+**Caller**: the server inherits its parent's environment and passes it to
+every call, so HESPER_AGENT_ID and HESPER_SOCKET (or `--daemon-socket`,
+set as HESPER_SOCKET) reach the command; and since the call's process is
+the server's child, which is the agent's descendant (Claude Code or Codex
+starts MCP servers as children), hesperd's process-tree walk finds the
+agent and the call is verified as the agent's: the agent tree policy
+applies, an agent starting an agent through MCP makes its child.
+
+**install.sh --mcp** (opt-in, function `mcp_step`): `claude mcp add
+--scope user hesper -- ~/.local/bin/hesperctl mcp` (an existing user-scope
+hesper running another command is removed first; `~/.claude.json` backed
+up) and `[mcp_servers.hesper] command = "~/.local/bin/hesperctl" (full
+path), args = ["mcp"]` in `$CODEX_HOME/config.toml` (default ~/.codex;
+an old table replaced, the file backed up). Already registered: nothing
+changes. `--dry-run` says what it would do; `CLAUDE` replaces the claude
+binary (tests).
+
+Tests (`mcp_test.go`, over pipes against the test daemon; the calls run
+the test binary as hesperctl via HESPERCTL_TEST_MAIN): handshake and
+version negotiation, tools/list against the registry (NoMCP left out,
+schemas checked, annotations), a synthetic command's schema and argv,
+calls (ls, new with a shell agent, send, screen, show not found → exit 3,
+wait timeout → exit 6, approve, close), unreachable hesperd (exit 4),
+parameter errors, resources (needs-you after a PermissionRequest),
+subscription notifications, cancelling a wait, and an agent whose process
+runs `hesperctl mcp` with HESPER_AGENT_ID unset: the agent it starts is
+its child (verified caller).
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

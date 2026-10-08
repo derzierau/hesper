@@ -170,7 +170,7 @@ func referenceCommand(ctx context.Context, f *flag.FlagSet, args []string) error
 
 func init() {
 	register(Command{
-		Name: "reference", Group: groupHelp,
+		Name: "reference", ReadOnly: true, Group: groupHelp,
 		Summary: "Print the whole CLI as Markdown, for LLM agents",
 		Usage:   "reference [--json]",
 		Help:    "Concepts (agents, ids, states, attention, projects, machines), the exit codes and every command with its flags, output and examples. Generated from the commands themselves.",

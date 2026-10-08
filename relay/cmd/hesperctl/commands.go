@@ -43,6 +43,11 @@ type Command struct {
 	// Output is what the command prints on stdout with --json.
 	Output   string
 	Examples []string
+	// How hesperctl mcp offers the command as a tool (mcp.go): ReadOnly
+	// commands only read (readOnlyHint), Destructive ones end, forget or
+	// delete something (destructiveHint); NoMCP leaves the command out
+	// (it needs a terminal or a person, streams forever, or is help).
+	ReadOnly, Destructive, NoMCP bool
 	// Run runs the command with the arguments after its name. It defines
 	// its flags on f (which has --json already; read it with jsonFlag)
 	// and parses them before it does anything else: help calls it with
@@ -296,12 +301,8 @@ type flagDoc struct {
 // commandFlags runs c with -h to collect its flags (--json is global and
 // left out).
 func commandFlags(c *Command) []flagDoc {
-	f := newFlagSet(c.Name)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := c.Run(ctx, f, []string{"-h"}); !errors.Is(err, flag.ErrHelp) {
-		// A command that does not parse first lists no flags (a test
-		// catches it).
+	f := commandFlagSet(c)
+	if f == nil {
 		return nil
 	}
 	var list []flagDoc
@@ -317,6 +318,19 @@ func commandFlags(c *Command) []flagDoc {
 		list = append(list, d)
 	})
 	return list
+}
+
+// commandFlagSet is c's flag set with its flags defined (c run with -h
+// and a cancelled context); nil when c does not parse first (a test
+// catches it).
+func commandFlagSet(c *Command) *flag.FlagSet {
+	f := newFlagSet(c.Name)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := c.Run(ctx, f, []string{"-h"}); !errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	return f
 }
 
 // portableDefault shows a default that depends on where hesperctl runs
@@ -422,7 +436,7 @@ func helpCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 
 func init() {
 	register(Command{
-		Name: "help", Group: groupHelp,
+		Name: "help", NoMCP: true, Group: groupHelp,
 		Summary: "Show the commands, or one command's flags and examples",
 		Usage:   "help [COMMAND] [--json]",
 		Help:    "Without a command: the commands by group. hesperctl COMMAND --help shows the same as hesperctl help COMMAND.",

@@ -39,7 +39,7 @@ func init() {
 		c.Examples = append(c.Examples, "hesperctl ls --tree", "hesperctl ls --children --json | jq -r '.[] | select(.state==\"done\") | .id'")
 		c.Run = lsCommand
 	}
-	register(Command{Name: "result", Group: groupAgents, Summary: "Print an agent's last result (its final message)",
+	register(Command{Name: "result", ReadOnly: true, Group: groupAgents, Summary: "Print an agent's last result (its final message)",
 		Usage:    "result ID [--json]",
 		Help:     idHelp + " Prints the final message of the agent's last turn (from its Stop or notify hook), else its summary. Nothing yet exits 1.",
 		Output:   "{id, state, message, summary, at}",

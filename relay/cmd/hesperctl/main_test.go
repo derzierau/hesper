@@ -10,6 +10,10 @@ import (
 // Tests never use this Mac's Secure Enclave keys or the user's state
 // directory: commands sign with software keys in a temporary directory.
 func TestMain(m *testing.M) {
+	// hesperctl mcp's tests run the test binary as hesperctl.
+	if os.Getenv("HESPERCTL_TEST_MAIN") == "1" {
+		main()
+	}
 	dir, err := os.MkdirTemp("", "hesperctl-keys-")
 	if err != nil {
 		panic(err)

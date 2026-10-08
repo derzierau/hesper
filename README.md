@@ -214,6 +214,15 @@ hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl mv ID mini
 
 Agents are addressed by id (`L/a7f3k2`), local id or unique name.
 
+`hesperctl mcp` serves the same commands as MCP tools on stdio, so Claude
+Code and Codex can start, watch and answer agents themselves
+(`hesper_agents_new`, `hesper_agents_wait`, `hesper_history_search`, …,
+plus the resources `hesper://agents`, `hesper://needs-you` and
+`hesper://reference`). `./install.sh --mcp` registers it with both
+(`claude mcp add --scope user hesper -- ~/.local/bin/hesperctl mcp`, and
+`[mcp_servers.hesper]` in `~/.codex/config.toml`). Inside a Hesper agent the
+agent-tree rules apply to its calls: what it starts are its children.
+
 ### Hesper for agents (skill)
 
 `skills/hesper` is an [Agent Skill](https://agentskills.io) that teaches
