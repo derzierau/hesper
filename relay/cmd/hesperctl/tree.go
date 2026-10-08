@@ -30,9 +30,9 @@ import (
 
 func init() {
 	if c := findCommand("new"); c != nil {
-		c.Usage = "new [flags] TASK… [--let-parent-answer] [--wait [--timeout D]]"
-		c.Help += "\n\nInside an agent the new agent is its child (at most 3 deep, at most 8 live children; settings.json maxAgentDepth, maxAgentChildren). --let-parent-answer lets the parent answer the child's approvals and questions (hesperctl approve/deny, or send while it waits); otherwise a person does. --wait waits until the child has settled (done, idle, exited, approval, question or error: wait --until settled) and prints its id (the first line, at once) and then its result as hesperctl result does; with --json {agent: Agent, result: {id, state, message, summary, at}} instead of the Agent. A child in error exits 1, --timeout running out exits 6. A shell with a TASK settles when the command is done (idle) or the shell exits."
-		c.Examples = append(c.Examples, "hesperctl new --let-parent-answer --wait --timeout 30m run the test suite and fix failures")
+		c.Usage = "new [flags] TASK… [--let-parent-answer] [--track] [--wait [--timeout D]]"
+		c.Help += "\n\nInside an agent the new agent is its child (at most 3 deep, at most 8 live children; settings.json maxAgentDepth, maxAgentChildren). --let-parent-answer lets the parent answer the child's approvals and questions (hesperctl approve/deny, or send while it waits); otherwise a person does. --wait waits until the child has settled (done, idle, exited, approval, question or error: wait --until settled) and prints its id (the first line, at once) and then its result as hesperctl result does; with --json {agent: Agent, result: {id, state, message, summary, at}} instead of the Agent. A child in error exits 1, --timeout running out exits 6. A shell (--kind shell) types TASK once its prompt is ready; it is always idle unless started with --track (then working while a command runs, idle at the prompt), so --wait on a shell without --track waits until it exits: end TASK with ; exit, or pass --track."
+		c.Examples = append(c.Examples, "hesperctl new --let-parent-answer --wait --timeout 30m run the test suite and fix failures", "hesperctl new --kind shell --track --wait --timeout 10m make test")
 	}
 	if c := findCommand("ls"); c != nil {
 		c.Usage = "ls [--tree | --children [ID]] [--json]"
@@ -96,8 +96,8 @@ func samePath(a, b string) bool {
 
 // newTreeFlags are new's agent tree flags.
 type newTreeFlags struct {
-	letParentAnswer, wait *bool
-	timeout               *time.Duration
+	letParentAnswer, wait, track *bool
+	timeout                      *time.Duration
 }
 
 func addNewTreeFlags(f *flag.FlagSet) newTreeFlags {
@@ -105,6 +105,7 @@ func addNewTreeFlags(f *flag.FlagSet) newTreeFlags {
 		letParentAnswer: f.Bool("let-parent-answer", false, "Let the agent that starts this one answer its approvals and questions"),
 		wait:            f.Bool("wait", false, "Wait until the agent has settled (wait --until settled), then print its id and result"),
 		timeout:         f.Duration("timeout", 0, "With --wait: give up after this long (exit 6); 0 waits forever"),
+		track:           f.Bool("track", false, "A shell: follow its commands (working while one runs, idle at the prompt); without it a shell is always idle"),
 	}
 }
 
@@ -115,8 +116,17 @@ var settledStates = []string{wire.StateDone, wire.StateIdle, wire.StateExited, w
 
 func settled(state string) bool { return contains(settledStates, state) }
 
-// waitAgent waits until agent id has settled (timeout 0: no limit).
-func waitAgent(ctx context.Context, socket, id string, timeout time.Duration) (wire.Agent, error) {
+// untrackedShell: a shell whose commands hesperd does not follow (no
+// --track): always idle, so only its exit tells it is done.
+func untrackedShell(a wire.Agent) bool { return a.Kind == wire.KindShell && !a.Track }
+
+// waitAgent waits until agent id has settled (timeout 0: no limit); an
+// untracked shell until it exited (or errs).
+func waitAgent(ctx context.Context, socket, id string, timeout time.Duration, untracked bool) (wire.Agent, error) {
+	done := settled
+	if untracked {
+		done = func(s string) bool { return s == wire.StateExited || s == wire.StateError }
+	}
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -144,7 +154,7 @@ func waitAgent(ctx context.Context, socket, id string, timeout time.Duration) (w
 					continue
 				}
 				last = ch.Agent
-				if settled(last.State) {
+				if done(last.State) {
 					return last, nil
 				}
 			case wire.NoteRemoved:
@@ -163,8 +173,9 @@ func waitAgent(ctx context.Context, socket, id string, timeout time.Duration) (w
 }
 
 // waitAndPrint is new --wait: wait, then print the result.
-func waitAndPrint(ctx context.Context, socket, id string, timeout time.Duration, asJSON bool) error {
-	a, err := waitAgent(ctx, socket, id, timeout)
+func waitAndPrint(ctx context.Context, socket string, spawned wire.Agent, timeout time.Duration, asJSON bool) error {
+	id := spawned.ID
+	a, err := waitAgent(ctx, socket, id, timeout, untrackedShell(spawned))
 	if err != nil {
 		return err
 	}

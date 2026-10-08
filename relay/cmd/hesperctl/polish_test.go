@@ -84,20 +84,37 @@ func TestCallerOnlyToOwnDaemon(t *testing.T) {
 	}
 }
 
-// A shell started with a TASK runs it; new --wait returns once it is done.
+// A shell started with a TASK runs it. new --track --wait returns once
+// the command is done (idle); without --track new --wait waits for the
+// shell to exit (TASK; exit).
 func TestNewShellTaskWait(t *testing.T) {
 	reg, sock, project := daemonWith(t, map[string]wire.Profile{"sh": {Kind: wire.KindShell, Argv: []string{"/bin/sh", "-i"}}})
 	w := &moreWorld{t, reg, sock, project}
 	var res struct {
 		Agent wire.Agent `json:"agent"`
 	}
-	if err := json.Unmarshal([]byte(w.out("new", "--json", "--profile", "sh", "--project", project, "--wait", "--timeout", "20s", "sleep 1; echo polish-$((2+3))")), &res); err != nil {
+	if err := json.Unmarshal([]byte(w.out("new", "--json", "--profile", "sh", "--track", "--project", project, "--wait", "--timeout", "20s", "sleep 1; echo polish-$((2+3))")), &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.Agent.State != wire.StateIdle {
-		t.Fatalf("settled as %q", res.Agent.State)
+	if res.Agent.State != wire.StateIdle || !res.Agent.Track {
+		t.Fatalf("settled as %+v", res.Agent)
 	}
 	if out := w.out("screen", res.Agent.ID); !strings.Contains(out, "polish-5") {
-		t.Fatalf("new --wait returned before the command was done:\n%s", out)
+		t.Fatalf("new --track --wait returned before the command was done:\n%s", out)
+	}
+	// Untracked: idle all along, so --wait waits for the exit.
+	res.Agent = wire.Agent{}
+	if err := json.Unmarshal([]byte(w.out("new", "--json", "--profile", "sh", "--project", project, "--wait", "--timeout", "20s", "sleep 1; echo plain-$((2+3)); exit")), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Agent.State != wire.StateExited || res.Agent.Track {
+		t.Fatalf("untracked shell settled as %+v", res.Agent)
+	}
+	if out := w.out("screen", res.Agent.ID); !strings.Contains(out, "plain-5") {
+		t.Fatalf("untracked new --wait:\n%s", out)
+	}
+	// Without exit it waits on: the timeout ends it.
+	if code := w.code("new", "--profile", "sh", "--project", project, "--wait", "--timeout", "1500ms", "echo hi"); code != exitTimeout {
+		t.Fatalf("untracked shell that stays: exit %d", code)
 	}
 }

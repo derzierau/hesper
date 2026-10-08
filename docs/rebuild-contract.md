@@ -270,21 +270,33 @@ a shell's terminal. Prompt ready: the shell wrote output and then nothing
 for 400 ms while no job runs (the PTY's foreground process group,
 TIOCGPGRP on the master, is the shell's), or 10 s passed. A TASK given to
 `agents.spawn` for a shell (as the app's composer sends it) is typed
-then (bracketed paste when the shell has it on) with Enter; until then
-the shell is `starting` (without a task: `idle`). Only the spawn types it:
+then (bracketed paste when the shell has it on) with Enter, for every
+shell. Only the spawn types it:
 a respawn or `agents.resume` starts the shell without it (not persisted;
 a restart before the prompt was ready drops it). `agents.input` to a
 shell waits (≤ 10 s) for its prompt, so text sent right after the start
-comes after the prompt. State: `working` while a job runs (foreground
+comes after the prompt (every shell). **State, opt-in per spawn:**
+`agents.spawn` `track` (bool; `Agent.track`, omitempty, persisted, kept
+by resume, respawn and moves (handoff manifest `agent.track`), sent to
+hosts like `letParentAnswer` (a host older than this rejects a spawn
+that sets it); ignored for other kinds; hesperctl `new --kind shell
+--track`; not in drafts or the app). Without `track` (the default) a
+shell behaves as before: `idle` until it exits, no `activity`, a
+background shell is not closed when a command ends; the watch stops
+once the prompt is ready and the task typed. With `track`: `starting`
+until the task is typed, then `working` while a job runs (foreground
 group not the shell's; `activity` the job's command name, p_comm or
 /proc/PID/comm), and from a command hesperd typed (the task, an
 `agents.input` with `submit`) until the shell is back at its prompt with
 no output for 400 ms (a builtin or a quick command counts as done then);
-else `idle` (activity cleared). Polled every 150 ms. Consequences: a
-full-screen or long-running program (vim, a dev server) keeps a shell
-`working` (the app's close confirmation for a running shell command now
-gets its activity); a background shell is closed when a command it ran
+else `idle` (activity cleared). Polled every 150 ms. For a tracked
+shell: a full-screen or long-running program (vim, a dev server) keeps
+it `working` (the app's close confirmation for a running shell command
+gets its activity); in the background it is closed when a command it ran
 ends (working → idle). No exit status is known (no shell integration).
+hesperctl `new --wait` waits for a tracked shell to settle and for an
+untracked one to exit (or err): `TASK; exit`, or `--track`. `wait
+--until settled` matches an untracked shell at once (always idle).
 **agents.screen** `{id, rows?, scrollback?}` (rows: the screen's last
 rows, 0 all; scrollback: that many scrollback lines first, ≤ 10000)
 returns `{text, rows, cols, cursor?, alt?}` from the daemon's vt screen:
@@ -436,8 +448,9 @@ tracking (mouse, focus, kitty keyboard flags, cursor shape), `Resize` and
   install them (`hesperd hooks install`); Codex agents bring their own
   ("Codex hooks per agent" below). Shell agents have no hooks: hesperd
   watches their terminal (see "As built — shell agents" under the agent
-  lifecycle CLI): `starting` until a task is typed, `working` while a
-  command runs, else `idle`, until they exit.
+  lifecycle CLI). By default they are `idle` from the start until they
+  exit; one spawned with `track` is `starting` until its task is typed,
+  `working` while a command runs, else `idle`.
   **Codex without a prompt** (after `codex resume`, or a fresh Codex with
   no task): Codex 0.160 sends no hook until the next prompt (seen in the
   trial: resumed Codex agents sat in `starting` while Claude's became
@@ -3350,12 +3363,14 @@ as children within the limits, a person's without a parent whatever the
 params say, audit; uploads only to descendants, chunks of a person's
 upload refused; closing a parent re-parents and re-depths the subtree,
 persisted), internal/agents/shell_test.go (a real `/bin/sh -i`: task
-typed after the prompt, starting → working (activity sleep) → idle;
-send makes it working until done, a builtin too; input before a late
-prompt waits; a resumed shell does not retype its task),
+typed after the prompt; tracked: starting → working (activity sleep) →
+idle, send makes it working until done, a builtin too, a background one
+closes when its command ends; untracked: idle throughout, no activity,
+not closed in the background; input before a late prompt waits; a resumed shell does not retype its task),
 cmd/hesperctl/polish_test.go (relative `--project`, local and another
 machine; `result` with nothing yet; caller only to the own daemon;
-`new --kind shell --wait` returns after the command), and in
+`new --kind shell --track --wait` returns after the command, without
+`--track` after the exit, or times out), and in
 agents_more_test.go / tree_test.go: `close`/`tidy` return with the agents
 gone, `--no-wait`, `screen --rows`, `lastRows`, `wait --until settled`,
 `new --wait` text output.

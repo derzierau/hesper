@@ -29,8 +29,9 @@ Do not guess flags.
 - **Parent/child:** `hesperctl new` run inside an agent makes a child of it
   (`parent`, `depth`). `hesperctl ls --tree`, `ls --children`.
 - **Kinds:** `claude`, `codex`, `shell`. A shell agent runs TASK as a
-  command once its prompt is ready; it is `working` while a command runs
-  and `idle` at its prompt; see
+  command once its prompt is ready. It is always `idle` unless started with
+  `--track` (then `working` while a command runs, `idle` at its prompt):
+  run commands in shells with `--track`; see
   [references/recipes.md](references/recipes.md#shell-agents).
 - **Settled:** done, idle, exited, approval, question or error: the agent
   no longer works on its own. `wait --until settled` and `new --wait` stop

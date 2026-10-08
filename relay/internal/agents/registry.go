@@ -475,6 +475,7 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 		// agent tree (tree.go): set by the server from the caller, or by
 		// a controller for a host
 		Parent: p.Parent, Depth: p.Depth, LetParentAnswer: p.LetParentAnswer && p.Parent != "",
+		Track: p.Track && profile.Kind == wire.KindShell, // shell.go
 	}}
 	if a.Parent == "" {
 		a.Depth = 0
@@ -593,7 +594,7 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		go r.watchShell(local, gen, a.shell)
 		// starting until its task is typed (shell.go), else idle
 		state := wire.StateIdle
-		if a.shellTask != "" {
+		if a.shellTask != "" && a.Track {
 			state = wire.StateStarting
 		}
 		a.State, a.StateSince, a.Attention, a.Activity = state, time.Now().UTC(), nil, ""

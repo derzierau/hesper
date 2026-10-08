@@ -48,12 +48,15 @@ func (s *states) get() ([]string, []string) {
 	return append([]string(nil), s.seen...), append([]string(nil), s.acts...)
 }
 
-// A shell started with a task: starting until its prompt is ready, then
+// A tracked shell started with a task: starting until its prompt is ready, then
 // the task is typed after the prompt; working while the command runs
 // (activity: the job), idle when it is done.
 func TestShellTask(t *testing.T) {
 	h := newHarness(t, "PS1=P> ", "ENV=")
-	a := h.spawn(wire.SpawnParams{Profile: "real-shell", Task: "sleep 1; echo hesper-$((6*7))"})
+	a := h.spawn(wire.SpawnParams{Profile: "real-shell", Task: "sleep 1; echo hesper-$((6*7))", Track: true})
+	if !a.Track {
+		t.Fatal("track not kept")
+	}
 	if a.State != wire.StateStarting {
 		t.Fatalf("a shell with a task starts %q, want starting", a.State)
 	}
@@ -80,11 +83,11 @@ func TestShellTask(t *testing.T) {
 	}
 }
 
-// Without a task a shell is idle; a command sent with Enter makes it
-// working until the shell is back at its prompt.
+// Without a task a tracked shell is idle; a command sent with Enter
+// makes it working until the shell is back at its prompt.
 func TestShellSendWorking(t *testing.T) {
 	h := newHarness(t, "PS1=P> ", "ENV=")
-	a := h.spawn(wire.SpawnParams{Profile: "real-shell"})
+	a := h.spawn(wire.SpawnParams{Profile: "real-shell", Track: true})
 	if a.State != wire.StateIdle {
 		t.Fatalf("a shell without a task starts %q, want idle", a.State)
 	}
@@ -103,6 +106,44 @@ func TestShellSendWorking(t *testing.T) {
 	// A builtin with no job: done once the shell is quiet.
 	h.call("agents.input", wire.InputParams{ID: a.ID, Text: "cd /", Submit: true}, nil)
 	h.waitState(a.ID, wire.StateIdle)
+	// In the background, a command that ends closes it.
+	c := h.subscribed()
+	if err := h.call("agents.background", wire.BackgroundParams{ID: a.ID, Background: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.call("agents.input", wire.InputParams{ID: a.ID, Text: "sleep 0.5", Submit: true}, nil)
+	if reason := waitRemoved(t, c, a.ID, nil); reason != wire.ReasonFinishedInBackground {
+		t.Fatalf("removed %q", reason)
+	}
+}
+
+// Without track (the default) a shell stays idle as before: its task is
+// typed after the prompt, but no command makes it working, it gets no
+// activity, and in the background a finished command does not close it.
+func TestShellUntracked(t *testing.T) {
+	h := newHarness(t, "PS1=P> ", "ENV=")
+	a := h.spawn(wire.SpawnParams{Profile: "real-shell", Task: "sleep 1; echo plain-$((6*7))"})
+	if a.State != wire.StateIdle || a.Track {
+		t.Fatalf("untracked shell starts %+v", a)
+	}
+	rec := h.recordStates(a.ID)
+	if err := h.call("agents.background", wire.BackgroundParams{ID: a.ID, Background: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.waitScreen(a.ID, "plain-42")
+	if screen := h.screen(a.ID); !strings.Contains(screen, "P> sleep 1; echo") {
+		t.Fatalf("the task is not typed after the prompt: %s", screen)
+	}
+	h.call("agents.input", wire.InputParams{ID: a.ID, Text: "sleep 0.5", Submit: true}, nil)
+	time.Sleep(time.Second + shellQuiet)
+	got, err := h.reg.Get(a.ID)
+	if err != nil || got.State != wire.StateIdle || got.Activity != "" {
+		t.Fatalf("untracked shell %+v %v", got, err)
+	}
+	seen, acts := rec.get()
+	if contains(seen, wire.StateWorking) || len(acts) > 0 {
+		t.Fatalf("untracked shell went %v / %v", seen, acts)
+	}
 }
 
 // Text sent right after a shell starts comes after its prompt.

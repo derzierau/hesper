@@ -107,20 +107,30 @@ Decisions: `approve ID [--always]`, `deny ID [--message M]`,
 ## Shell agents
 
 `--kind shell` starts a login shell. TASK is a command: hesperd types it
-(and Enter) once the shell's prompt is ready. The shell is `starting` until
-then, `working` while a command runs (`activity`: the running program), and
-`idle` back at its prompt; so `new --wait` and `wait --until settled` work:
+(and Enter) once the shell's prompt is ready; text sent right after the
+start also waits for the prompt.
+
+Pass `--track` whenever you run commands in a shell: hesperd then follows
+them (`starting` until TASK is typed, `working` while a command runs,
+`activity` the running program, `idle` back at its prompt), so `new --wait`
+and `wait --until settled` work:
 
 ```sh
-out=$(hesperctl new --json --kind shell --name build --wait --timeout 10m "make test")
+out=$(hesperctl new --json --kind shell --track --name build --wait --timeout 10m "make test")
 id=$(echo "$out" | jq -r .agent.id)
 hesperctl screen "$id" --json | jq -r .text     # the output
 hesperctl send "$id" "make lint" && hesperctl wait "$id" --next --until settled --timeout 10m
 ```
 
+Without `--track` (the default) a shell is always `idle`: `wait --until
+settled` returns at once, and `new --wait` waits until the shell exits, so
+end the task with `; exit` (`"make test; exit"`; a non-zero status makes it
+`error`, exit 1). In the background a tracked shell is closed when its
+command ends; an untracked one only when it exits.
+
 The shell gives no exit status: print one (`make test; echo "exit=$?"`) and
-read the screen. Text sent right after the start waits for the prompt. A
-full-screen or never-ending program (vim, a dev server) keeps it `working`.
+read the screen. A full-screen or never-ending program (vim, a dev server)
+keeps a tracked shell `working`.
 
 A shell the user started (no parent) acts as the user: hesperctl run
 inside it is not restricted by the agent policy.

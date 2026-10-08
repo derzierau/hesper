@@ -281,7 +281,7 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 			}
 		}
 		p := wire.SpawnParams{Machine: *machine, Profile: *profile, Kind: *kind, Project: *project, Task: task, Name: *name, Branch: *branch,
-			LetParentAnswer: *tree.letParentAnswer}
+			LetParentAnswer: *tree.letParentAnswer, Track: *tree.track}
 		switch {
 		case *worktreePath != "":
 			p.Worktree, _ = json.Marshal(*worktreePath)
@@ -296,7 +296,7 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 			if !*asJSON {
 				fmt.Println(a.ID) // the id first, then (once settled) the result
 			}
-			return waitAndPrint(context.WithoutCancel(ctx), *socket, a.ID, *tree.timeout, *asJSON)
+			return waitAndPrint(context.WithoutCancel(ctx), *socket, a, *tree.timeout, *asJSON)
 		}
 		return print(a)
 	case "send":
