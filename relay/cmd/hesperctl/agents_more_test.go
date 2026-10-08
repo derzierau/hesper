@@ -109,8 +109,12 @@ func TestSendKeysScreenShow(t *testing.T) {
 	if err := json.Unmarshal([]byte(w.out("screen", a.ID, "--rows", "3", "--json")), &res); err != nil {
 		t.Fatal(err)
 	}
-	if res.Cols == 0 || res.Rows == 0 || strings.Count(res.Text, "\n") != 2 || res.Cursor == nil {
+	// --rows: the last rows with text (the blank screen below is dropped).
+	if res.Cols == 0 || res.Rows == 0 || !strings.HasSuffix(res.Text, "abx\nabx") || strings.Count(res.Text, "\n") > 2 || res.Cursor == nil {
 		t.Fatalf("screen --json %+v", res)
+	}
+	if out := w.out("screen", a.ID, "--rows", "1"); out != "abx\n" {
+		t.Fatalf("screen --rows 1: %q", out)
 	}
 	if code := w.code("screen", "nope00"); code != exitNotFound {
 		t.Fatalf("unknown agent: exit %d", code)
@@ -258,16 +262,46 @@ func TestCloseKillBackgroundTidy(t *testing.T) {
 	if err := json.Unmarshal([]byte(w.out("tidy", "--json")), &list); err != nil || len(list) != 2 {
 		t.Fatalf("tidy --json %v %+v", err, list)
 	}
-	eventually(t, "tidied", func() bool { return w.state(b.ID) == "gone" && w.state(c.ID) == "gone" })
+	// tidy returns once they are gone.
+	if w.state(b.ID) != "gone" || w.state(c.ID) != "gone" {
+		t.Fatalf("tidy returned before the agents left: b %s, c %s", w.state(b.ID), w.state(c.ID))
+	}
 	if w.state(a.ID) == "gone" || w.state(d.ID) == "gone" {
 		t.Fatal("tidy closed a working or waiting agent")
 	}
 	if err := json.Unmarshal([]byte(w.out("close", a.ID, d.ID, "--json")), &list); err != nil || len(list) != 2 || list[0].ID != a.ID {
 		t.Fatalf("close --json %v %+v", err, list)
 	}
-	eventually(t, "closed", func() bool { return len(w.reg.List()) == 0 })
+	// close returns once they are gone (a running one is interrupted and
+	// ended first).
+	if n := len(w.reg.List()); n != 0 {
+		t.Fatalf("close returned with %d agents listed", n)
+	}
+	e := w.spawn("five")
+	if err := w.ctl("close", "--no-wait", e.ID); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "closed --no-wait", func() bool { return len(w.reg.List()) == 0 })
 	if code := w.code("close", a.ID); code != exitNotFound {
 		t.Fatalf("close a closed agent: exit %d", code)
+	}
+}
+
+func TestLastRows(t *testing.T) {
+	for _, c := range []struct {
+		text string
+		n    int
+		want string
+	}{
+		{"a\nb\n\n\n", 0, "a\nb"},
+		{"a\nb\n\n\n", 1, "b"},
+		{"a\nb\n  \n", 5, "a\nb"},
+		{"x\n\ny\n\n", 2, "\ny"},
+		{"\n\n", 3, ""},
+	} {
+		if got := lastRows(c.text, c.n); got != c.want {
+			t.Errorf("lastRows(%q, %d) = %q, want %q", c.text, c.n, got, c.want)
+		}
 	}
 }
 
@@ -331,6 +365,13 @@ func TestWait(t *testing.T) {
 	}
 	if code := <-codes; code != exitNotFound {
 		t.Fatalf("gone: exit %d", code)
+	}
+	// settled: what new --wait waits for (b is idle now).
+	if out := w.out("wait", b.ID, "--until", "settled", "--timeout", "5s"); !strings.Contains(out, b.ID+"\t") {
+		t.Fatalf("wait --until settled: %q", out)
+	}
+	if states, _ := waitStates("settled"); !slices.Equal(states, settledStates) {
+		t.Fatalf("settled %v", states)
 	}
 	if code := w.code("wait", b.ID, "--until", "sleepy"); code != exitUsage {
 		t.Fatalf("bad condition: exit %d", code)

@@ -85,8 +85,9 @@ func TestTreeCommands(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &parent); err != nil || parent.Parent != "" {
 		t.Fatalf("parent %v %s", err, out)
 	}
-	// hesperctl now runs inside the parent.
+	// hesperctl now runs inside the parent (hesperd sets HESPER_SOCKET).
 	t.Setenv("HESPER_AGENT_ID", parent.ID)
+	t.Setenv("HESPER_SOCKET", sock)
 	type waited struct {
 		out string
 		err error
@@ -121,8 +122,10 @@ func TestTreeCommands(t *testing.T) {
 		t.Fatal("new --wait did not return")
 	}
 	var res struct {
-		Agent  wire.Agent       `json:"agent"`
-		Result wire.AgentResult `json:"result"`
+		Agent  wire.Agent `json:"agent"`
+		Result struct {
+			Message, Summary string
+		} `json:"result"`
 	}
 	if w.err != nil || json.Unmarshal([]byte(w.out), &res) != nil || res.Agent.ID != child.ID || res.Agent.State != wire.StateDone ||
 		res.Result.Message != "All tests pass.\n\nFixed 2 flaky tests" || res.Result.Summary != "Fixed 2 flaky tests" {
@@ -161,6 +164,24 @@ func TestTreeCommands(t *testing.T) {
 	}
 	if code := execute(ctx, []string{"stop", "--daemon-socket", sock, parent.ID}, io.Discard); code != exitForbidden {
 		t.Fatalf("an agent stopping itself: exit %d", code)
+	}
+	// new --wait in text: the id first, then the result.
+	go func() {
+		eventually(t, "second child", func() bool { return len(childrenOf(reg.List(), parent.ID)) == 2 })
+		for _, a := range childrenOf(reg.List(), parent.ID) {
+			if a.ID != child.ID {
+				time.Sleep(100 * time.Millisecond)
+				reg.Hook(wire.HookParams{Agent: a.ID, Source: "claude", Event: "Stop", Payload: json.RawMessage(`{"last_assistant_message":"Done here."}`)})
+			}
+		}
+	}()
+	out = capture(t, func() {
+		if err := ctl("new", "--project", project, "--wait", "--timeout", "20s", "second"); err != nil {
+			t.Error(err)
+		}
+	})
+	if lines := strings.Split(strings.TrimSpace(out), "\n"); len(lines) != 2 || !strings.HasPrefix(lines[0], "L/") || lines[1] != "Done here." {
+		t.Fatalf("new --wait (text): %q", out)
 	}
 	// --wait running out of time exits 6.
 	if code := execute(ctx, []string{"new", "--daemon-socket", sock, "--project", project, "--wait", "--timeout", "300ms", "slow"}, io.Discard); code != exitTimeout {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -20,8 +21,8 @@ import (
 // agent that runs hesperctl new starts a child; hesperd records its
 // parent and depth and lets an agent steer only its descendants. hesperctl
 // tells hesperd who calls with "caller" (HESPER_AGENT_ID) on every
-// agents.* call (dialDaemon); hesperd prefers the agent it finds the
-// caller's process in.
+// agents.* call (dialDaemon) to the agent's own hesperd (callerFor);
+// hesperd prefers the agent it finds the caller's process in.
 //
 //	new … --let-parent-answer --wait [--timeout D]
 //	ls --tree | ls --children [ID]
@@ -30,7 +31,7 @@ import (
 func init() {
 	if c := findCommand("new"); c != nil {
 		c.Usage = "new [flags] TASK… [--let-parent-answer] [--wait [--timeout D]]"
-		c.Help += "\n\nInside an agent the new agent is its child (at most 3 deep, at most 8 live children; settings.json maxAgentDepth, maxAgentChildren). --let-parent-answer lets the parent answer the child's approvals and questions (hesperctl approve/deny, or send while it waits); otherwise a person does. --wait waits until the child is done, idle, exited or needs you (approval, question, error) and prints its result as hesperctl result does; with --json {agent: Agent, result: {id, state, message, summary, at}} instead of the Agent. A child in error exits 1, --timeout running out exits 6."
+		c.Help += "\n\nInside an agent the new agent is its child (at most 3 deep, at most 8 live children; settings.json maxAgentDepth, maxAgentChildren). --let-parent-answer lets the parent answer the child's approvals and questions (hesperctl approve/deny, or send while it waits); otherwise a person does. --wait waits until the child has settled (done, idle, exited, approval, question or error: wait --until settled) and prints its id (the first line, at once) and then its result as hesperctl result does; with --json {agent: Agent, result: {id, state, message, summary, at}} instead of the Agent. A child in error exits 1, --timeout running out exits 6. A shell with a TASK settles when the command is done (idle) or the shell exits."
 		c.Examples = append(c.Examples, "hesperctl new --let-parent-answer --wait --timeout 30m run the test suite and fix failures")
 	}
 	if c := findCommand("ls"); c != nil {
@@ -41,8 +42,8 @@ func init() {
 	}
 	register(Command{Name: "result", ReadOnly: true, Group: groupAgents, Summary: "Print an agent's last result (its final message)",
 		Usage:    "result ID [--json]",
-		Help:     idHelp + " Prints the final message of the agent's last turn (from its Stop or notify hook), else its summary. Nothing yet exits 1.",
-		Output:   "{id, state, message, summary, at}",
+		Help:     idHelp + " Prints the final message of the agent's last turn (from its Stop or notify hook), else its summary. Nothing yet is no error (exit 0): the text output is empty (a note goes to stderr); --json has message null (and summary null when there is none).",
+		Output:   "{id, state, message: string|null, summary: string|null, at?}",
 		Examples: []string{"hesperctl result a7f3k2", "hesperctl result a7f3k2 --json | jq -r .message"},
 		Run:      resultCommand})
 }
@@ -57,6 +58,42 @@ func envAgentID() string {
 	return id
 }
 
+// callerFor is the caller hesperctl names to the hesperd on socket: the
+// agent it runs in (envAgentID) when that is the agent's own hesperd
+// (HESPER_SOCKET, which hesperd sets for its agents; else the default
+// socket), else none: to another hesperd (--daemon-socket elsewhere)
+// hesperctl acts as a person, as that hesperd does not know the agent.
+func callerFor(socket string) string {
+	id := envAgentID()
+	if id == "" {
+		return ""
+	}
+	own := os.Getenv("HESPER_SOCKET")
+	if own == "" {
+		own = wire.SocketPath()
+	}
+	if !samePath(socket, own) {
+		return ""
+	}
+	return id
+}
+
+// samePath: a and b name the same file (cleaned, links resolved when
+// they exist).
+func samePath(a, b string) bool {
+	norm := func(p string) string {
+		p = filepath.Clean(p)
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			p = real
+		}
+		return p
+	}
+	return norm(a) == norm(b)
+}
+
 // newTreeFlags are new's agent tree flags.
 type newTreeFlags struct {
 	letParentAnswer, wait *bool
@@ -66,19 +103,17 @@ type newTreeFlags struct {
 func addNewTreeFlags(f *flag.FlagSet) newTreeFlags {
 	return newTreeFlags{
 		letParentAnswer: f.Bool("let-parent-answer", false, "Let the agent that starts this one answer its approvals and questions"),
-		wait:            f.Bool("wait", false, "Wait until the agent is done, idle, exited or needs you, then print its result"),
+		wait:            f.Bool("wait", false, "Wait until the agent has settled (wait --until settled), then print its id and result"),
 		timeout:         f.Duration("timeout", 0, "With --wait: give up after this long (exit 6); 0 waits forever"),
 	}
 }
 
-// settled: states in which an agent no longer works on its own.
-func settled(state string) bool {
-	switch state {
-	case wire.StateDone, wire.StateIdle, wire.StateExited, wire.StateError, wire.StateApproval, wire.StateQuestion:
-		return true
-	}
-	return false
-}
+// settledStates: the states in which an agent no longer works on its
+// own: finished (done, idle, exited) or needing someone (approval,
+// question, error). wait --until settled and new --wait.
+var settledStates = []string{wire.StateDone, wire.StateIdle, wire.StateExited, wire.StateApproval, wire.StateQuestion, wire.StateError}
+
+func settled(state string) bool { return contains(settledStates, state) }
 
 // waitAgent waits until agent id has settled (timeout 0: no limit).
 func waitAgent(ctx context.Context, socket, id string, timeout time.Duration) (wire.Agent, error) {
@@ -139,9 +174,9 @@ func waitAndPrint(ctx context.Context, socket, id string, timeout time.Duration,
 	}
 	if asJSON {
 		if err := output(struct {
-			Agent  wire.Agent       `json:"agent"`
-			Result wire.AgentResult `json:"result"`
-		}{a, res}); err != nil {
+			Agent  wire.Agent `json:"agent"`
+			Result resultOut  `json:"result"`
+		}{a, resultJSON(res)}); err != nil {
 			return err
 		}
 	} else {
@@ -186,6 +221,26 @@ func fetchResult(ctx context.Context, socket, id string) (wire.AgentResult, erro
 	return res, err
 }
 
+// resultOut is result's --json: message and summary always present,
+// null when there is none.
+type resultOut struct {
+	ID      string    `json:"id"`
+	State   string    `json:"state"`
+	Message *string   `json:"message"`
+	Summary *string   `json:"summary"`
+	At      time.Time `json:"at,omitzero"`
+}
+
+func resultJSON(res wire.AgentResult) resultOut {
+	opt := func(s string) *string {
+		if strings.TrimSpace(s) == "" {
+			return nil
+		}
+		return &s
+	}
+	return resultOut{ID: res.ID, State: res.State, Message: opt(res.Message), Summary: opt(res.Summary), At: res.At}
+}
+
 func resultCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	asJSON := jsonFlag(f)
 	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, positional []string) error {
@@ -201,10 +256,11 @@ func resultCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 			return err
 		}
 		if *asJSON {
-			return output(res)
+			return output(resultJSON(res))
 		}
 		if strings.TrimSpace(res.Message) == "" && strings.TrimSpace(res.Summary) == "" {
-			return failf(codeError, "%s has no result yet (%s)", id, res.State)
+			fmt.Fprintf(os.Stderr, "%s has no result yet (%s)\n", id, res.State)
+			return nil
 		}
 		printResult(os.Stdout, wire.Agent{ID: res.ID, State: res.State}, res)
 		return nil

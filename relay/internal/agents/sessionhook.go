@@ -33,6 +33,10 @@ type SessionSpawn struct {
 	// Fork: a new conversation with the same history (claude --resume
 	// <id> --fork-session, codex fork <id>); the original stays.
 	Fork bool
+	// Parent and Depth (agent tree): set by the server when an agent
+	// resumes or forks a session (its child), or by a controller.
+	Parent string
+	Depth  int
 }
 
 // SpawnSession starts an agent that resumes (or forks) a conversation.
@@ -83,8 +87,11 @@ func (r *Registry) SpawnSession(p SessionSpawn) (wire.Agent, error) {
 	a := &agent{local: local, Agent: wire.Agent{
 		ID: r.id(local), Machine: r.machine, Kind: p.Kind, Profile: profileName, Name: name, Task: p.Task,
 		Project: dir, ProjectID: projectID, Branch: p.Branch, State: wire.StateStarting, StateSince: now, Created: now,
-		Size: r.defaultSize(),
+		Size: r.defaultSize(), Parent: p.Parent,
 	}}
+	if p.Parent != "" {
+		a.Depth = p.Depth
+	}
 	// The conversation took its task long ago: never sent again.
 	a.engaged = true
 	resume := true

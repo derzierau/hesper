@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 	"unicode/utf8"
@@ -30,8 +31,8 @@ import (
 
 func init() {
 	for _, c := range []Command{
-		{Name: "close", Destructive: true, Summary: "Close agents (gone from the wall; the conversation stays in History)", Usage: "close ID… [--json]",
-			Help:   idHelp + " A running agent is interrupted, then ended; it leaves the agent list. Prints each id and the session to resume it with (hesperctl history / sessions.resume).",
+		{Name: "close", Destructive: true, Summary: "Close agents (gone from the wall; the conversation stays in History)", Usage: "close ID… [--no-wait] [--json]",
+			Help:   idHelp + " A running agent is interrupted, then ended; it leaves the agent list. Waits (at most 10 s) until the agents are gone from the list, unless --no-wait. Prints each id and the session to resume it with (hesperctl history / sessions.resume). Closing an agent gives its children to its parent.",
 			Output: "[{id, session}]", Examples: []string{"hesperctl close a7f3k2", "hesperctl close a7f3k2 b8c9d0 --json"},
 			Run: closeCommand},
 		{Name: "kill", Destructive: true, Summary: "End agents now (they stay, exited, killed)", Usage: "kill ID…",
@@ -40,8 +41,8 @@ func init() {
 		{Name: "background", Summary: "Hide agents from the walls while they run, or bring them back", Usage: "background ID… [--off]",
 			Help:     idHelp + " A background agent keeps running; once it finishes (done, idle, exited) hesperd closes it. --off brings it back to the wall.",
 			Examples: []string{"hesperctl background a7f3k2", "hesperctl background a7f3k2 --off"}, Run: backgroundCommand},
-		{Name: "tidy", Destructive: true, Summary: "Close every finished agent (done, idle, exited)", Usage: "tidy [--project DIR] [--dry-run] [--json]",
-			Help:   "What ⇧⌘W does in the app: closes the agents in state done, idle or exited, never working or waiting for you. Background agents close themselves and are left out. Prints the ids closed.",
+		{Name: "tidy", Destructive: true, Summary: "Close every finished agent (done, idle, exited)", Usage: "tidy [--project DIR] [--dry-run] [--no-wait] [--json]",
+			Help:   "What ⇧⌘W does in the app: closes the agents in state done, idle or exited, never working or waiting for you. Background agents close themselves and are left out. Waits (at most 10 s) until they are gone from the list, unless --no-wait. Prints the ids closed.",
 			Output: "[{id, name, state, session}]", Examples: []string{"hesperctl tidy --dry-run", "hesperctl tidy --project ~/src/app"},
 			Run: tidyCommand},
 		{Name: "answer", Summary: "Answer what an agent waits for with a decision", Usage: "answer ID DECISION [--message M]",
@@ -57,7 +58,7 @@ func init() {
 			Examples: []string{"hesperctl attach-file a7f3k2 shot.png", "hesperctl attach-file mini/a7f3k2 spec.pdf notes.txt && hesperctl send mini/a7f3k2 read these"},
 			Run:      attachFileCommand},
 		{Name: "screen", ReadOnly: true, Summary: "Print an agent's terminal as plain text", Usage: "screen ID [--rows N] [--scrollback N] [--json]",
-			Help:   idHelp + " The screen hesperd keeps for the agent (as a person sees it, no colors or escape codes); --rows only its last rows, --scrollback that many lines from above the screen first. Works for agents of every machine.",
+			Help:   idHelp + " The screen hesperd keeps for the agent (as a person sees it, no colors or escape codes); --rows N only its last N rows with text (blank rows below the output are dropped first, so a mostly empty screen still shows its output); --scrollback that many lines from above the screen first. Works for agents of every machine.",
 			Output: "{text, rows, cols, cursor?:{col, row}, alt?}", Examples: []string{"hesperctl screen a7f3k2", "hesperctl screen a7f3k2 --rows 10 --scrollback 200"},
 			Run: screenCommand},
 		{Name: "events", NoMCP: true, Summary: "Stream agent, draft, project and history changes as JSON lines", Usage: "events [--agent ID]… [--kinds K,…]",
@@ -65,8 +66,8 @@ func init() {
 			Output: "a stream of {method, params}", Examples: []string{"hesperctl events --kinds agents", "hesperctl events --agent a7f3k2 | jq -r '.params.agent.state'"},
 			Run: eventsCommand},
 		{Name: "wait", ReadOnly: true, Summary: "Wait until agents reach a state", Usage: "wait ID… --until COND [--any|--all] [--next] [--timeout D] [--json]",
-			Help:   idHelp + " COND: needs-you (approval or question), done, idle, exited, working, finished (done, idle or exited), or state=S[,S…]. --all (default): every agent reached it once; --any: one did. --next ignores the state an agent is in when wait starts (after send, wait for the turn it starts). Prints the agents that matched. Exits 6 on --timeout, 3 when an agent goes away.",
-			Output: "[Agent]", Examples: []string{"hesperctl wait a7f3k2 --until needs-you --timeout 10m", "hesperctl send a7f3k2 run the tests && hesperctl wait a7f3k2 --next --until finished", "hesperctl wait a b c --any --until state=error,done"},
+			Help:   idHelp + " COND: settled (done, idle, exited, approval, question or error: no longer working on its own, what new --wait waits for), needs-you (approval or question), done, idle, exited, working, finished (done, idle or exited), or state=S[,S…]. --all (default): every agent reached it once; --any: one did. --next ignores the state an agent is in when wait starts (after send, wait for the turn it starts). Prints the agents that matched. Exits 6 on --timeout, 3 when an agent goes away.",
+			Output: "[Agent]", Examples: []string{"hesperctl wait a7f3k2 --until needs-you --timeout 10m", "hesperctl send a7f3k2 run the tests && hesperctl wait a7f3k2 --next --until settled --timeout 15m", "hesperctl wait a b c --any --until state=error,done"},
 			Run: waitCommand},
 		{Name: "show", ReadOnly: true, Summary: "Show one agent in full, with the choices it offers", Usage: "show ID [--json]",
 			Help:   idHelp + " Every field of the agent; for an agent waiting for you also its question and numbered choices (for choose).",
@@ -169,9 +170,93 @@ func printClosed(list []closed, asJSON bool) error {
 	return nil
 }
 
+// closeWait bounds how long close and tidy wait for the agents to leave
+// the list.
+var closeWait = 10 * time.Second
+
+// removals follows agents.removed on a subscription of its own, so close
+// and tidy can return once the agents are gone.
+type removals struct {
+	sub  *wire.Client
+	mu   sync.Mutex
+	gone map[string]bool
+	news chan struct{}
+}
+
+func watchRemovals(ctx context.Context, f *flag.FlagSet) (*removals, error) {
+	socket := wire.SocketPath()
+	if fl := f.Lookup("daemon-socket"); fl != nil {
+		socket = fl.Value.String()
+	}
+	sub, err := subscribe(ctx, socket)
+	if err != nil {
+		return nil, err
+	}
+	r := &removals{sub: sub, gone: map[string]bool{}, news: make(chan struct{}, 1)}
+	go func() {
+		for n := range sub.Notifications() {
+			if n.Method != wire.NoteRemoved {
+				continue
+			}
+			var rm wire.Removed
+			if json.Unmarshal(n.Params, &rm) != nil {
+				continue
+			}
+			r.mu.Lock()
+			r.gone[rm.ID] = true
+			r.mu.Unlock()
+			select {
+			case r.news <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	return r, nil
+}
+
+// wait waits (at most closeWait) until every id is removed; a note on
+// stderr names those still there.
+func (r *removals) wait(ctx context.Context, ids []string) {
+	if r == nil {
+		return
+	}
+	defer r.sub.Close()
+	timer := time.NewTimer(closeWait)
+	defer timer.Stop()
+	for {
+		var left []string
+		r.mu.Lock()
+		for _, id := range ids {
+			if !r.gone[id] {
+				left = append(left, id)
+			}
+		}
+		r.mu.Unlock()
+		if len(left) == 0 {
+			return
+		}
+		select {
+		case <-r.news:
+		case <-timer.C:
+			fmt.Fprintf(os.Stderr, "still closing after %s: %s\n", closeWait, strings.Join(left, ", "))
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
 func closeCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	asJSON := jsonFlag(f)
+	noWait := f.Bool("no-wait", false, "Return at once, before the agents have left the list")
 	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, refs []string) error {
+		var gone *removals
+		if !*noWait && len(refs) > 0 {
+			var err error
+			if gone, err = watchRemovals(ctx, f); err != nil {
+				return err
+			}
+		}
 		var out []closed
 		err := eachAgent(ctx, c, "close ID…", refs, func(id string) error {
 			var res wire.CloseResult
@@ -181,6 +266,11 @@ func closeCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 			out = append(out, closed{ID: id, Session: res.Session})
 			return nil
 		})
+		var ids []string
+		for _, c := range out {
+			ids = append(ids, c.ID)
+		}
+		gone.wait(ctx, ids)
 		if len(out) > 0 || err == nil {
 			if perr := printClosed(out, *asJSON); err == nil {
 				err = perr
@@ -216,9 +306,17 @@ func tidyCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	asJSON := jsonFlag(f)
 	project := f.String("project", "", "Only agents working in this folder (or below it)")
 	dry := f.Bool("dry-run", false, "List what would be closed, close nothing")
+	noWait := f.Bool("no-wait", false, "Return at once, before the agents have left the list")
 	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, positional []string) error {
 		if len(positional) > 0 {
-			return usagef("usage: hesperctl tidy [--project DIR] [--dry-run]")
+			return usagef("usage: hesperctl tidy [--project DIR] [--dry-run] [--no-wait]")
+		}
+		var gone *removals
+		if !*dry && !*noWait {
+			var err error
+			if gone, err = watchRemovals(ctx, f); err != nil {
+				return err
+			}
 		}
 		dir := ""
 		if *project != "" {
@@ -251,6 +349,13 @@ func tidyCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 				rec.Session = res.Session
 			}
 			out = append(out, rec)
+		}
+		if gone != nil {
+			var ids []string
+			for _, c := range out {
+				ids = append(ids, c.ID)
+			}
+			gone.wait(ctx, ids)
 		}
 		if !*asJSON && len(out) == 0 && first == nil {
 			fmt.Fprintln(os.Stderr, "Nothing finished to tidy up")
@@ -754,7 +859,7 @@ func attachFileCommand(ctx context.Context, f *flag.FlagSet, args []string) erro
 
 func screenCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	asJSON := jsonFlag(f)
-	rows := f.Int("rows", 0, "Only the screen's last N rows (default all)")
+	rows := f.Int("rows", 0, "Only the last N rows with text: blank rows at the bottom dropped first (default all)")
 	scrollback := f.Int("scrollback", 0, "First N lines of scrollback from above the screen")
 	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, positional []string) error {
 		if len(positional) != 1 {
@@ -768,9 +873,10 @@ func screenCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 			return err
 		}
 		var res wire.ScreenResult
-		if err := c.Call(ctx, "agents.screen", wire.ScreenParams{ID: id, Rows: *rows, Scrollback: *scrollback}, &res); err != nil {
+		if err := c.Call(ctx, "agents.screen", wire.ScreenParams{ID: id, Scrollback: *scrollback}, &res); err != nil {
 			return err
 		}
+		res.Text = lastRows(res.Text, *rows)
 		if *asJSON {
 			return output(res)
 		}
@@ -779,6 +885,21 @@ func screenCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 		}
 		return nil
 	})
+}
+
+// lastRows is text's last n lines once the blank lines at its end are
+// dropped (n 0: all of it, the blank end dropped too): screen --rows.
+// hesperd's rows are the grid's last rows, blank below output that
+// stays at the top; this is what the agent shows last.
+func lastRows(text string, n int) string {
+	lines := strings.Split(text, "\n")
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // eventKinds are events --kinds' names: a notification's method prefix.
@@ -885,6 +1006,8 @@ func waitStates(until string) ([]string, error) {
 		return []string{wire.StateApproval, wire.StateQuestion}, nil
 	case "finished":
 		return []string{wire.StateDone, wire.StateIdle, wire.StateExited}, nil
+	case "settled":
+		return settledStates, nil
 	case wire.StateDone, wire.StateIdle, wire.StateExited, wire.StateWorking:
 		return []string{until}, nil
 	}
@@ -899,12 +1022,12 @@ func waitStates(until string) ([]string, error) {
 		}
 		return out, nil
 	}
-	return nil, usagef("--until: needs-you, done, idle, exited, working, finished or state=S[,S…]")
+	return nil, usagef("--until: settled, needs-you, done, idle, exited, working, finished or state=S[,S…]")
 }
 
 func waitCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	asJSON := jsonFlag(f)
-	until := f.String("until", "", "needs-you, done, idle, exited, working, finished or state=S[,S…]")
+	until := f.String("until", "", "settled, needs-you, done, idle, exited, working, finished or state=S[,S…]")
 	anyOf := f.Bool("any", false, "Done when one agent matched")
 	allOf := f.Bool("all", false, "Done when every agent matched (the default)")
 	next := f.Bool("next", false, "Ignore the state each agent is in now")

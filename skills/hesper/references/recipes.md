@@ -18,11 +18,11 @@ Group by state when reporting: first `approval` / `question` / `error`
 ```sh
 hesperctl show ID --json      # every field; choices:[{n, title, decision?, keys?}] when it waits
 hesperctl screen ID --json    # {text, rows, cols, cursor}; --scrollback 200 for history above
-hesperctl result ID --json    # {id, state, message, summary, at}; exit 1 when nothing yet
+hesperctl result ID --json    # {id, state, message, summary, at}; message null when nothing yet (exit 0)
 ```
 
-`screen --rows N` gives the screen's *last* N rows: on a mostly empty screen
-those are blank. Prefer the whole screen and strip blank lines.
+`screen --rows N` gives the last N rows with text (blank rows below the
+output are dropped first).
 
 To follow changes live: `hesperctl events --kinds agents` (JSON lines; runs
 until interrupted, so only with a time limit, e.g. `timeout 60 hesperctl events …`).
@@ -30,8 +30,9 @@ until interrupted, so only with a time limit, e.g. `timeout 60 hesperctl events 
 ## Fan out work
 
 1. Pick the project folder (`hesperctl projects recent --json` lists folders
-   agents used; `--project` defaults to the current directory and must be
-   absolute when given).
+   agents used; `--project` defaults to the current directory; relative
+   paths are taken from it, except with `--machine` of another Mac, where
+   the path is one on that Mac, as given).
 2. Start one agent per subtask, each in its own worktree so they do not
    collide:
    ```sh
@@ -45,7 +46,7 @@ until interrupted, so only with a time limit, e.g. `timeout 60 hesperctl events 
    if you are expected to handle the child's permission prompts.
 3. Wait for all of them to settle (finished or needing someone):
    ```sh
-   hesperctl wait ID1 ID2 ID3 --all --until state=done,idle,exited,approval,question,error --timeout 45m --json
+   hesperctl wait ID1 ID2 ID3 --all --until settled --timeout 45m --json
    ```
    `--any` returns as soon as one settles (then handle it and wait on the
    rest). Exit 6 = timeout (the message says who is still in which state);
@@ -54,8 +55,9 @@ until interrupted, so only with a time limit, e.g. `timeout 60 hesperctl events 
    `branch` from `hesperctl show ID --json` to review the diff
    (`git -C WORKTREE diff main...`).
 5. Close the ones you started and are done with: `hesperctl close ID… --json`
-   (prints the session to resume each with). `close` answers before the
-   agent is fully gone; it disappears from `ls` a moment later.
+   (prints the session to resume each with). `close` returns once the
+   agents are gone from `ls` (at most 10 s; `--no-wait` returns at once).
+   Closing an agent that has children gives them to its parent.
    `hesperctl tidy --dry-run --json` shows what `tidy` would close (every
    finished agent, also the user's own: only run it when asked).
    Alternative: `hesperctl background ID` hides an agent and closes it
@@ -64,17 +66,17 @@ until interrupted, so only with a time limit, e.g. `timeout 60 hesperctl events 
 ## Delegate and wait (one child)
 
 ```sh
-out=$(hesperctl new --json --project "$PWD" --let-parent-answer --wait --timeout 20m "…task…")
+out=$(hesperctl new --json --let-parent-answer --wait --timeout 20m "…task…")
 echo "$out" | jq -r .result.message
 ```
 
-`--wait` returns when the child is done, idle, exited or needs someone
-(approval, question, error). Without `--json` it prints only the result text,
-not the id: use `--json` to keep the id (`.agent.id`). Then:
+`--wait` returns when the child has settled (done, idle, exited, approval,
+question or error; `wait --until settled`). Without `--json` the first line
+is the id (printed at once), then the result text. Then:
 
 - `result.state == "approval"`: with `--let-parent-answer` (and the user's
   consent for this kind of action) `hesperctl answer ID allow|deny`, else tell
-  the user; then wait again with `hesperctl wait ID --next --until state=…`.
+  the user; then wait again with `hesperctl wait ID --next --until settled`.
 - `result.state == "question"`: `hesperctl show ID --json` for the choices,
   `hesperctl choose ID N`.
 
@@ -93,8 +95,8 @@ hesperctl send ID --raw y             # typed as is (no paste, no Enter)
 hesperctl attach-file ID shot.png     # like dropping a file on it (pasted, no Enter)
 ```
 
-After `send`, `wait ID --next --until …` waits for the turn the send starts
-(`--next` ignores the state the agent is in when wait starts).
+After `send`, `wait ID --next --until settled` waits for the turn the send
+starts (`--next` ignores the state the agent is in when wait starts).
 
 Decisions: `approve ID [--always]`, `deny ID [--message M]`,
 `answer ID DECISION [--message M]` (DECISION from `attention.options`),
@@ -104,21 +106,23 @@ Decisions: `approve ID [--always]`, `deny ID [--message M]`,
 
 ## Shell agents
 
-`--kind shell` starts a login shell. It does **not** run TASK (TASK only
-names it), and its state stays `idle` while commands run, so `wait` cannot
-tell when a command finished. Two patterns:
+`--kind shell` starts a login shell. TASK is a command: hesperd types it
+(and Enter) once the shell's prompt is ready. The shell is `starting` until
+then, `working` while a command runs (`activity`: the running program), and
+`idle` back at its prompt; so `new --wait` and `wait --until settled` work:
 
 ```sh
-id=$(hesperctl new --json --kind shell --project "$PWD" --name build "build" | jq -r .id)
-# a) one-shot: end the shell with the command, then wait for exited
-hesperctl send "$id" 'make test; exit'
-hesperctl wait "$id" --until exited --timeout 10m --json
-hesperctl screen "$id" --json | jq -r .text    # still readable after exit
-# b) long-lived: print a marker and poll the screen for it
-hesperctl send "$id" 'make test; echo __DONE__$?'
+out=$(hesperctl new --json --kind shell --name build --wait --timeout 10m "make test")
+id=$(echo "$out" | jq -r .agent.id)
+hesperctl screen "$id" --json | jq -r .text     # the output
+hesperctl send "$id" "make lint" && hesperctl wait "$id" --next --until settled --timeout 10m
 ```
 
-A shell agent the user started (no parent) acts as the user: hesperctl run
+The shell gives no exit status: print one (`make test; echo "exit=$?"`) and
+read the screen. Text sent right after the start waits for the prompt. A
+full-screen or never-ending program (vim, a dev server) keeps it `working`.
+
+A shell the user started (no parent) acts as the user: hesperctl run
 inside it is not restricted by the agent policy.
 
 ## History (every Claude and Codex session of every Mac)

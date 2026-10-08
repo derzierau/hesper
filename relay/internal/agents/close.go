@@ -159,8 +159,53 @@ func (r *Registry) finishedInBackground(a *agent) {
 // held).
 func (r *Registry) removeLocked(a *agent, reason string) {
 	delete(r.agents, a.local)
+	if reason == wire.ReasonClosed || reason == wire.ReasonFinishedInBackground {
+		r.adoptChildren(a)
+	}
 	for s := range r.subs {
 		s.pushRemoved(a.ID, reason)
 	}
 	r.scheduleSave()
+}
+
+// adoptChildren gives the children of a closed agent to its parent (the
+// lock is held): the grandparent still controls them (agent tree).
+// Depths follow (a closed root's children become roots, depth 0);
+// letParentAnswer is cleared, as the new parent never chose to answer
+// for them. Only this machine's agents: a child on another machine keeps
+// the closed parent. agents.remove does not re-parent: a move removes
+// the agent it moved, and Reparent points its children at the moved one.
+func (r *Registry) adoptChildren(gone *agent) {
+	depth := 0
+	if gone.Parent != "" {
+		depth = gone.Depth
+	}
+	for _, c := range r.agents {
+		if c.Parent != gone.ID {
+			continue
+		}
+		c.Parent, c.LetParentAnswer = gone.Parent, false
+		r.shiftDepth(c, depth-c.Depth)
+	}
+}
+
+// shiftDepth moves an agent and its descendants (this machine's) by delta
+// levels (the lock is held).
+func (r *Registry) shiftDepth(a *agent, delta int) {
+	seen := map[string]bool{}
+	var walk func(a *agent)
+	walk = func(a *agent) {
+		if seen[a.ID] {
+			return
+		}
+		seen[a.ID] = true
+		a.Depth = max(a.Depth+delta, 0)
+		r.changed(a)
+		for _, c := range r.agents {
+			if c.Parent == a.ID {
+				walk(c)
+			}
+		}
+	}
+	walk(a)
 }

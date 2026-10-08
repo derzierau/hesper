@@ -80,6 +80,8 @@ type Server struct {
 	// parent.
 	treeMu   sync.Mutex
 	spawning map[string]int
+	// uploads: the agent each files.put upload is for (tree.go).
+	uploads map[string]uploadTarget
 }
 
 // NewServer serves reg.
@@ -372,7 +374,7 @@ func decode(params json.RawMessage, v any) error {
 // dispatch runs one method of control connection c: the agent tree's
 // policy (tree.go) first for the methods that start or change agents.
 func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, error) {
-	if method != "agents.spawn" && !treeMutating[method] {
+	if method != "agents.spawn" && !treeMutating[method] && !treeStarting[method] && !treeFiles[method] {
 		return s.call(method, params)
 	}
 	caller, t, err := s.callerOf(c, method, params)
@@ -380,8 +382,13 @@ func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, 
 		return nil, err
 	}
 	params = withoutCaller(params)
-	if method == "agents.spawn" {
+	switch {
+	case method == "agents.spawn":
 		return s.spawn(caller, params, t)
+	case treeStarting[method]:
+		return s.startSession(caller, method, params, t) // tree.go
+	case treeFiles[method]:
+		return s.files(caller, method, params, t) // tree.go
 	}
 	if caller == "" {
 		return s.call(method, params)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -118,7 +119,7 @@ func dialDaemon(ctx context.Context, socket string) (*wire.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w (%s): %v", errNoDaemon, socket, err)
 	}
-	c.Caller = envAgentID() // agent tree (tree.go)
+	c.Caller = callerFor(socket) // agent tree (tree.go)
 	return c, nil
 }
 
@@ -201,10 +202,10 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		kind = f.String("kind", "", "claude, codex or shell (default: the project's or settings' default)")
 		profile = f.String("profile", "", "Launch profile")
 		cwd, _ := os.Getwd()
-		project = f.String("project", cwd, "Project directory")
+		project = f.String("project", cwd, "Project directory; relative to the current directory (with --machine of another Mac: a path there, as given)")
 		name = f.String("name", "", "Display name (default: from the task)")
 		worktree = f.Bool("worktree", false, "Run in a new worktree on a new branch")
-		worktreePath = f.String("worktree-path", "", "Run in this worktree (created when missing)")
+		worktreePath = f.String("worktree-path", "", "Run in this worktree (created when missing; relative as --project)")
 		branch = f.String("branch", "", "Branch of the worktree (implies --worktree)")
 		machine = f.String("machine", "", "Machine (short name; default this Mac)")
 		tree = addNewTreeFlags(f)
@@ -263,6 +264,22 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 			}
 			task = string(data)
 		}
+		local, err := isLocalMachine(ctx, c, *machine)
+		if err != nil {
+			return err
+		}
+		if local {
+			// This Mac's folders: relative to here (hesperd wants
+			// absolute ones). Another Mac's: as given.
+			if *project, err = absPath(*project); err != nil {
+				return err
+			}
+			if *worktreePath != "" {
+				if *worktreePath, err = absPath(*worktreePath); err != nil {
+					return err
+				}
+			}
+		}
 		p := wire.SpawnParams{Machine: *machine, Profile: *profile, Kind: *kind, Project: *project, Task: task, Name: *name, Branch: *branch,
 			LetParentAnswer: *tree.letParentAnswer}
 		switch {
@@ -276,6 +293,9 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 			return err
 		}
 		if *tree.wait {
+			if !*asJSON {
+				fmt.Println(a.ID) // the id first, then (once settled) the result
+			}
 			return waitAndPrint(context.WithoutCancel(ctx), *socket, a.ID, *tree.timeout, *asJSON)
 		}
 		return print(a)
@@ -384,6 +404,27 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		return nil
 	}
 	return fmt.Errorf("unknown command %q", command)
+}
+
+// isLocalMachine: machine is empty or this Mac's short name (hello).
+func isLocalMachine(ctx context.Context, c *wire.Client, machine string) (bool, error) {
+	if machine == "" {
+		return true, nil
+	}
+	var hello wire.HelloResult
+	if err := c.Call(ctx, "hello", wire.HelloParams{Client: "hesperctl", Version: wire.Version}, &hello); err != nil {
+		return false, err
+	}
+	return machine == hello.Machine, nil
+}
+
+// absPath is a folder on this Mac made absolute (~ expanded, relative to
+// the current directory).
+func absPath(p string) (string, error) {
+	if p == "" {
+		return p, nil
+	}
+	return filepath.Abs(expandHome(p))
 }
 
 func printAgents(w io.Writer, list []wire.Agent) error {

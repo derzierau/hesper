@@ -215,6 +215,29 @@ func (t *Term) Redraw() []byte {
 	return t.screen.Redraw(nil)
 }
 
+// Foreground is the terminal's foreground process group (TIOCGPGRP on
+// the PTY's master): the program's own while it waits at its prompt, a
+// job's while a shell runs one.
+func (t *Term) Foreground() (int, error) {
+	if t.ptmx == nil {
+		return 0, errExited
+	}
+	select {
+	case <-t.done:
+		return 0, errExited
+	default:
+	}
+	rc, err := t.ptmx.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	pgrp, ioErr := 0, error(nil)
+	if err := rc.Control(func(fd uintptr) { pgrp, ioErr = unix.IoctlGetInt(int(fd), unix.TIOCGPGRP) }); err != nil {
+		return 0, err
+	}
+	return pgrp, ioErr
+}
+
 var errExited = errors.New("the program has exited")
 
 // Input writes terminal input to the program.

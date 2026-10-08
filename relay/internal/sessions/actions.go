@@ -59,11 +59,14 @@ func (s *Service) Call(method string, params json.RawMessage) (any, error, bool)
 		res, err := s.Show(p.ID)
 		return res, err, true
 	case "sessions.resume", "sessions.fork":
-		var p wire.SessionResumeParams
+		var p struct {
+			wire.SessionResumeParams
+			treeParams
+		}
 		if err := decode(params, &p); err != nil {
 			return nil, err, true
 		}
-		res, err := s.Resume(p.ID, p.Machine, method == "sessions.fork")
+		res, err := s.resume(p.ID, p.Machine, method == "sessions.fork", p.tree())
 		return res, err, true
 	case "sessions.brief":
 		var p wire.SessionIDParams
@@ -76,11 +79,14 @@ func (s *Service) Call(method string, params json.RawMessage) (any, error, bool)
 		}
 		return wire.SessionBrief{Text: s.brief(&rw.rec)}, nil, true
 	case "sessions.continueAs":
-		var p wire.SessionContinueParams
+		var p struct {
+			wire.SessionContinueParams
+			treeParams
+		}
 		if err := decode(params, &p); err != nil {
 			return nil, err, true
 		}
-		res, err := s.ContinueAs(p.ID, p.Kind, p.Machine)
+		res, err := s.continueAs(p.ID, p.Kind, p.Machine, p.tree())
 		return res, err, true
 	case "sessions.archive":
 		var p wire.SessionArchiveParams
@@ -112,10 +118,30 @@ func decode(params json.RawMessage, v any) error {
 	return nil
 }
 
+// treeParams (agent tree): the place in the tree of the agent a session
+// start makes. hesperd's server sets them when an agent calls (the new
+// agent is its child; a person's calls never carry them); a controller
+// sends them to the host that starts it.
+type treeParams struct {
+	Parent string `json:"parent,omitempty"`
+	Depth  int    `json:"depth,omitempty"`
+}
+
+// Tree is where in the agent tree a session start puts its agent.
+type Tree struct {
+	Parent string
+	Depth  int
+}
+
+func (p treeParams) tree() Tree { return Tree{Parent: p.Parent, Depth: p.Depth} }
+
+func (t Tree) params() treeParams { return treeParams{Parent: t.Parent, Depth: t.Depth} }
+
 // hostParams are the host methods' params: entries are named by key.
 type hostParams struct {
 	Key  string `json:"key"`
 	Kind string `json:"kind,omitempty"`
+	treeParams
 }
 
 // HostCall answers the host methods another Mac's hesperd sends
@@ -165,9 +191,9 @@ func (s *Service) HostCall(ctx context.Context, method string, params json.RawMe
 		}
 		return s.gitc.get(rec.Meta.Cwd, s.gitEnv()), nil
 	case "sessions.resume", "sessions.fork":
-		return s.resumeHere(ctx, rec, method == "sessions.fork")
+		return s.resumeHere(ctx, rec, method == "sessions.fork", p.tree())
 	case "sessions.continueAs":
-		return s.continueHere(rec, p.Kind)
+		return s.continueHere(rec, p.Kind, p.tree())
 	}
 	return nil, wire.Errorf(wire.CodeNotFound, "no method %s", method)
 }
@@ -279,6 +305,11 @@ func liveError(sid string, l *wire.SessionLive) error {
 // Resume runs sessions.resume / sessions.fork: on machine (default: the
 // session's home).
 func (s *Service) Resume(id, machine string, fork bool) (ResumeResult, error) {
+	return s.resume(id, machine, fork, Tree{})
+}
+
+// resume is Resume with the new agent's place in the agent tree.
+func (s *Service) resume(id, machine string, fork bool, tree Tree) (ResumeResult, error) {
 	rw, err := s.find(id)
 	if err != nil {
 		return ResumeResult{}, err
@@ -300,7 +331,7 @@ func (s *Service) Resume(id, machine string, fork bool) (ResumeResult, error) {
 		target = s.nameOf(rec.Node, rec.Home)
 	}
 	if target == s.machine() {
-		return s.resumeHere(context.Background(), rec, fork)
+		return s.resumeHere(context.Background(), rec, fork, tree)
 	}
 	peers := s.peerSet()
 	if peers == nil {
@@ -310,7 +341,7 @@ func (s *Service) Resume(id, machine string, fork bool) (ResumeResult, error) {
 	if fork {
 		method = "sessions.fork"
 	}
-	params, _ := json.Marshal(hostParams{Key: rec.Key()})
+	params, _ := json.Marshal(hostParams{Key: rec.Key(), treeParams: tree.params()})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	raw, err := peers.Call(ctx, target, method, params)
@@ -329,7 +360,7 @@ func (s *Service) Resume(id, machine string, fork bool) (ResumeResult, error) {
 
 // resumeHere starts the session on this Mac: in its folder when this is
 // its home, else brought here first (and moved, unless forked).
-func (s *Service) resumeHere(ctx context.Context, rec *Record, fork bool) (ResumeResult, error) {
+func (s *Service) resumeHere(ctx context.Context, rec *Record, fork bool, tree Tree) (ResumeResult, error) {
 	reg := s.registry()
 	if reg == nil {
 		return ResumeResult{}, wire.Errorf(wire.CodeUnavailable, "no agents")
@@ -339,7 +370,8 @@ func (s *Service) resumeHere(ctx context.Context, rec *Record, fork bool) (Resum
 			return ResumeResult{}, liveError(rec.SID, l)
 		}
 	}
-	spawn := agents.SessionSpawn{Kind: rec.Kind, SessionID: rec.SID, Name: rec.Meta.Title, Task: rec.Meta.FirstPrompt, Branch: rec.Meta.Branch, Fork: fork}
+	spawn := agents.SessionSpawn{Kind: rec.Kind, SessionID: rec.SID, Name: rec.Meta.Title, Task: rec.Meta.FirstPrompt, Branch: rec.Meta.Branch, Fork: fork,
+		Parent: tree.Parent, Depth: tree.Depth}
 	if rec.Node == s.db.node {
 		dir, err := s.homeDir(ctx, rec)
 		if err != nil {
@@ -758,6 +790,11 @@ func (s *Service) brief(rec *Record) string {
 // ContinueAs runs sessions.continueAs: the other kind (or the same) starts
 // in the session's folder with the brief as its first prompt.
 func (s *Service) ContinueAs(id, kind, machine string) (wire.Agent, error) {
+	return s.continueAs(id, kind, machine, Tree{})
+}
+
+// continueAs is ContinueAs with the new agent's place in the agent tree.
+func (s *Service) continueAs(id, kind, machine string, tree Tree) (wire.Agent, error) {
 	if kind != wire.KindClaude && kind != wire.KindCodex {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "kind must be claude or codex")
 	}
@@ -772,13 +809,13 @@ func (s *Service) ContinueAs(id, kind, machine string) (wire.Agent, error) {
 		target = s.nameOf(rec.Node, rec.Home)
 	}
 	if target == s.machine() {
-		return s.continueHere(rec, kind)
+		return s.continueHere(rec, kind, tree)
 	}
 	peers := s.peerSet()
 	if peers == nil {
 		return wire.Agent{}, wire.Errorf(wire.CodeUnavailable, "machine %s is not connected", target)
 	}
-	params, _ := json.Marshal(hostParams{Key: rec.Key(), Kind: kind})
+	params, _ := json.Marshal(hostParams{Key: rec.Key(), Kind: kind, treeParams: tree.params()})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	raw, err := peers.Call(ctx, target, "sessions.continueAs", params)
@@ -795,7 +832,7 @@ func (s *Service) ContinueAs(id, kind, machine string) (wire.Agent, error) {
 	return a, nil
 }
 
-func (s *Service) continueHere(rec *Record, kind string) (wire.Agent, error) {
+func (s *Service) continueHere(rec *Record, kind string, tree Tree) (wire.Agent, error) {
 	reg := s.registry()
 	if reg == nil {
 		return wire.Agent{}, wire.Errorf(wire.CodeUnavailable, "no agents")
@@ -817,7 +854,8 @@ func (s *Service) continueHere(rec *Record, kind string) (wire.Agent, error) {
 		return wire.Agent{}, wire.Errorf(wire.CodeNotFound, "the session's folder is not on this Mac")
 	}
 	name := "continue " + rec.Meta.Title
-	return reg.Spawn(wire.SpawnParams{Kind: kind, Project: dir, Task: s.brief(rec), Name: clip(oneLine(name), 60)})
+	return reg.Spawn(wire.SpawnParams{Kind: kind, Project: dir, Task: s.brief(rec), Name: clip(oneLine(name), 60),
+		Parent: tree.Parent, Depth: tree.Depth})
 }
 
 // --- archive, delete ---

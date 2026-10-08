@@ -195,7 +195,7 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 			return err
 		}
 		req.Params = withCaller(p, c.Caller, method)
-	} else if c.Caller != "" && strings.HasPrefix(method, "agents.") {
+	} else if c.Caller != "" && CarriesCaller(method) {
 		req.Params = withCaller(json.RawMessage("{}"), c.Caller, method)
 	}
 	line, err := json.Marshal(req)
@@ -232,10 +232,21 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 	}
 }
 
-// withCaller adds "caller" to an agents.* method's params object (when it
-// has none).
+// CarriesCaller: the methods whose params carry "caller" (agent tree):
+// agents.*, the session starts (sessions.resume, sessions.fork,
+// sessions.continueAs) and files.put / files.chunk.
+func CarriesCaller(method string) bool {
+	switch method {
+	case "sessions.resume", "sessions.fork", "sessions.continueAs", "files.put", "files.chunk":
+		return true
+	}
+	return strings.HasPrefix(method, "agents.")
+}
+
+// withCaller adds "caller" to the params object of a method that carries
+// it (when it has none).
 func withCaller(params json.RawMessage, caller, method string) json.RawMessage {
-	if caller == "" || !strings.HasPrefix(method, "agents.") {
+	if caller == "" || !CarriesCaller(method) {
 		return params
 	}
 	var m map[string]json.RawMessage
