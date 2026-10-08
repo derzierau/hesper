@@ -48,6 +48,13 @@ final class AppModel {
     var toast: Toast?
     var showPalette = false
     var recentProjects: [RecentProject] = []
+    /// Another window's model reads the folder, recent-project and profile
+    /// lists from the main model, which keeps them current (a copy taken
+    /// when the window opened went stale, often empty: an empty folder
+    /// list in that window's drafts).
+    @ObservationIgnored weak var listSource: AppModel?
+    /// The model whose lists this window uses.
+    var lists: AppModel { listSource ?? self }
     var profiles: ProfilesInfo?
     /// Folders under the projects root (composer completion).
     var projectFolders: [String] = []
@@ -249,6 +256,7 @@ final class AppModel {
     /// never persists layout settings.
     init(env: AppEnvironment, sharing primary: AppModel) {
         self.env = env
+        listSource = primary
         client = primary.client
         closeBook = primary.closeBook
         settings = primary.settings

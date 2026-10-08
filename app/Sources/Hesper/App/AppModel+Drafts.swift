@@ -8,9 +8,11 @@ extension AppModel {
     // MARK: Context
 
     var composerContext: ComposerContext {
-        var projects: [ComposerContext.ProjectChoice] = recentProjects.map { .init(path: $0.path, name: $0.name, recent: true) }
+        let lists = self.lists
+        let profiles = lists.profiles
+        var projects: [ComposerContext.ProjectChoice] = lists.recentProjects.map { .init(path: $0.path, name: $0.name, recent: true) }
         let recent = Set(projects.map(\.path))
-        projects += projectFolders.filter { !recent.contains($0) }.map { .init(path: $0, recent: false) }
+        projects += lists.projectFolders.filter { !recent.contains($0) }.map { .init(path: $0, recent: false) }
         let kinds = profiles?.profiles.mapValues(\.kind) ?? ["claude-auto-rc": "claude", "claude-bypass": "claude", "codex-full": "codex", "shell": "shell"]
         var kindDefaults = profiles?.defaults?.kinds ?? ["claude": "claude-auto-rc", "codex": "codex-full", "shell": "shell"]
         for (k, p) in settings.defaultProfiles where kinds[p] != nil { kindDefaults[k] = p }
@@ -128,7 +130,7 @@ extension AppModel {
             d.project = project ?? place.path
             d.machine = project != nil ? (machine == localMachine ? nil : machine) : place.machine
             if let p = d.project {
-                d.profile = profiles?.defaults?.projects?[p] ?? catalog.project(home)?.defaults?.profile
+                d.profile = lists.profiles?.defaults?.projects?[p] ?? catalog.project(home)?.defaults?.profile
             }
             draftBands[d.id] = home
             d.band = home

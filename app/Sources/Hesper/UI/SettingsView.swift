@@ -174,7 +174,7 @@ struct SettingsView: View {
     // MARK: Agents & profiles
 
     @ViewBuilder private var profiles: some View {
-        let all = model.profiles?.profiles ?? [:]
+        let all = model.lists.profiles?.profiles ?? [:]
         let kinds = Array(Set(all.values.map(\.kind))).sorted()
         SettingsSection("Closing agents", footer: "⌘W closes an agent: it leaves the wall at once and its conversation stays in History (⌘Z or ⌘⇧T resumes it). ⌥⌘W keeps it running in the background, ⌃⌘W kills it and leaves the pane, ⇧⌘W closes every finished agent in the band or wall.") {
             SettingsLine("Ghost cards") {
@@ -192,7 +192,7 @@ struct SettingsView: View {
                 SettingsLine(Theme.kindLabel(kind)) {
                     Picker(Theme.kindLabel(kind), selection: Binding(get: { model.settings.defaultProfiles[kind] ?? "" },
                                                                      set: { model.settings.defaultProfiles[kind] = $0.isEmpty ? nil : $0 })) {
-                        Text("hesperd's default (\(model.profiles?.defaults?.kinds?[kind] ?? "–"))").tag("")
+                        Text("hesperd's default (\(model.lists.profiles?.defaults?.kinds?[kind] ?? "–"))").tag("")
                         ForEach(names, id: \.self) { Text($0).tag($0) }
                     }
                     .labelsHidden()
@@ -200,7 +200,7 @@ struct SettingsView: View {
                 }
             }
             SettingsLine("New agents run") {
-                Pill(Theme.kindLabel(model.profiles?.defaults?.kind ?? "claude"))
+                Pill(Theme.kindLabel(model.lists.profiles?.defaults?.kind ?? "claude"))
             }
         }
         if !all.isEmpty {

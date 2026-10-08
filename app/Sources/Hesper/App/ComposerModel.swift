@@ -71,7 +71,7 @@ final class ComposerModel {
     /// the draft's project, silently.
     func setFolder(_ path: String) {
         var d = app.followFolder(DraftSeed.folderChanged(draft, to: path))
-        if let p = app.profiles?.defaults?.projects?[path] { d.profile = p }
+        if let p = app.lists.profiles?.defaults?.projects?[path] { d.profile = p }
         persist(d)
         error = nil
         folderCheck += 1
