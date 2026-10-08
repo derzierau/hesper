@@ -185,8 +185,68 @@ in [docs/remote-shell-contract.md](docs/remote-shell-contract.md) and
 
 ## Install
 
-Hesper builds from source. You need macOS 14 or later, Xcode 26 (used from
-the command line) and Go 1.25 or later (`brew install go`).
+Requires macOS 14 or later. Signed releases include the app, daemon,
+`hesperctl` and the Secure Enclave helper; Xcode and Go are only needed for
+source builds. Install Claude Code or Codex separately to run those agents.
+
+The repository and downloads are private for now. Sign in with a GitHub
+account that has access to `derzierau/hesper`.
+
+### Homebrew
+
+With Homebrew, GitHub CLI and SSH access to this repository configured:
+
+```sh
+gh auth login
+brew tap derzierau/hesper git@github.com:derzierau/hesper.git
+HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install --cask derzierau/hesper/hesper
+/bin/sh /Applications/Hesper.app/Contents/Resources/hesper-setup.sh
+open /Applications/Hesper.app
+```
+
+Homebrew selects the native Apple Silicon or Intel archive and installs the
+CLI tools on your PATH. Use the app path printed by Homebrew if you choose
+another `--appdir`. To update:
+
+```sh
+brew update
+HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew upgrade --cask derzierau/hesper/hesper
+/bin/sh /Applications/Hesper.app/Contents/Resources/hesper-setup.sh
+```
+
+Run setup after each update to restart the daemon with the new binary.
+
+### Download a signed release
+
+Open [GitHub Releases](https://github.com/derzierau/hesper/releases/latest)
+while signed in, and download the archive for your Mac:
+
+| Mac | Release archive |
+| --- | --- |
+| Apple Silicon (M-series) | `Hesper-vX.Y.Z-arm64.zip` |
+| Intel | `Hesper-vX.Y.Z-x86_64.zip` |
+
+Each archive contains `Hesper.app`, including `hesperd`, `hesperctl` and
+`hesper-keys` in `Contents/MacOS`. Both architectures are Developer ID-signed,
+notarized and stapled. `SHA256SUMS` contains the archive checksums.
+
+Extract the zip, move `Hesper.app` to `/Applications`, then run:
+
+```sh
+/bin/sh /Applications/Hesper.app/Contents/Resources/hesper-setup.sh
+open /Applications/Hesper.app
+```
+
+The CLI is also available directly at
+`/Applications/Hesper.app/Contents/MacOS/hesperctl`.
+
+After either binary installation, open Codex and run `/hooks` once to enable
+its trusted hooks. Setup installs the LaunchAgent, agent hooks and Hesper skill.
+
+### Build from source
+
+You need Xcode 26 (used from the command line) and Go 1.25 or later
+(`brew install go`).
 
 ```sh
 git clone https://github.com/derzierau/hesper ~/projects/hesper
@@ -214,9 +274,8 @@ replaces is backed up first. See `./install.sh --help` for `--login-item`,
 Codex only runs hooks it trusts: after installing, open Codex and run
 `/hooks` once.
 
-Signed release automation and Homebrew installation are documented in
-[docs/releases.md](docs/releases.md). The first binary release requires the
-Apple signing and notarization credentials described there.
+Maintainer instructions for signing credentials, release automation and the
+private Homebrew tap are in [docs/releases.md](docs/releases.md).
 
 **Signing.** Without configuration the app is signed ad-hoc, which works
 locally. `SIGN_IDENTITY="Developer ID Application: …" ./install.sh` signs
