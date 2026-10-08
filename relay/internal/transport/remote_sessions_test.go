@@ -200,6 +200,16 @@ func TestSessionsSharedHistory(t *testing.T) {
 	if !errors.As(err, &we) || we.Code != wire.CodeLive || we.AgentID != onM.ID {
 		t.Fatalf("resume of a live session: %v", err)
 	}
+	// A fork is a copy: allowed while the session runs, also on another
+	// Mac (the home packs it as it is).
+	var forked sessions.ResumeResult
+	if err := L.call(t, "sessions.fork", wire.SessionResumeParams{ID: "M:claude:" + sidD, Machine: "L"}, &forked); err != nil {
+		t.Fatalf("fork of a live session to L: %v", err)
+	}
+	if !strings.HasPrefix(forked.ID, "L/") {
+		t.Fatalf("forked %+v", forked.Agent)
+	}
+	eventually(t, "L forked it", func() bool { return strings.Contains(L.argvs(forked.ID), "--fork-session") })
 
 	// Move B to L while M is reachable: the conversation and the
 	// uncommitted work come along; ownership moves.

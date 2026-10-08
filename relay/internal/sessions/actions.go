@@ -403,7 +403,7 @@ func (s *Service) resumeHere(ctx context.Context, rec *Record, fork bool, tree T
 		a, err := reg.SpawnSession(spawn)
 		return ResumeResult{Agent: a}, err
 	}
-	dir, note, err := s.bring(ctx, rec)
+	dir, note, err := s.bring(ctx, rec, fork)
 	if err != nil {
 		return ResumeResult{}, err
 	}
@@ -488,10 +488,24 @@ func (s *Service) pseudoAgent(rec *Record) wire.Agent {
 // ExportPrefix marks agents.export ids that name a session (its key).
 const ExportPrefix = "session:"
 
+// ExportForkMark follows ExportPrefix for a fork's bundle: a copy, so
+// the session may still be running (in an agent or another program).
+const ExportForkMark = "fork:"
+
+// exportKey splits an agents.export session id into its key and
+// whether it is for a fork.
+func exportKey(id string) (string, bool) {
+	key := strings.TrimPrefix(id, ExportPrefix)
+	if k, ok := strings.CutPrefix(key, ExportForkMark); ok {
+		return k, true
+	}
+	return key, false
+}
+
 // Pack writes a session's move bundle (its transcript and its folder's
 // code with the uncommitted work) for agents.export on its home.
 func (s *Service) Pack(ctx context.Context, id string, have []string, dir string) (err error) {
-	key := strings.TrimPrefix(id, ExportPrefix)
+	key, fork := exportKey(id)
 	rw, err := s.db.get(key)
 	if err != nil {
 		return err
@@ -500,7 +514,8 @@ func (s *Service) Pack(ctx context.Context, id string, have []string, dir string
 		return wire.Errorf(wire.CodeNotFound, "no session %s here", key)
 	}
 	rec := &rw.rec
-	if l := s.liveNow(rec); l != nil {
+	// A move needs the session at rest; a fork copies it as it is.
+	if l := s.liveNow(rec); l != nil && !fork {
 		return liveError(rec.SID, l)
 	}
 	reg := s.registry()
@@ -553,7 +568,8 @@ func copyTranscript(from, to string) error {
 
 // Exportable checks an agents.export id that names a session.
 func (s *Service) Exportable(id string) error {
-	rw, err := s.db.get(strings.TrimPrefix(id, ExportPrefix))
+	key, _ := exportKey(id)
+	rw, err := s.db.get(key)
 	if err != nil {
 		return err
 	}
@@ -567,7 +583,7 @@ func (s *Service) Exportable(id string) error {
 // reachable (transcript, branch and uncommitted work, as agents.move
 // does), else from this Mac's mirror on its branch as pushed. It
 // returns the folder to resume in and a note about what did not come.
-func (s *Service) bring(ctx context.Context, rec *Record) (string, string, error) {
+func (s *Service) bring(ctx context.Context, rec *Record, fork bool) (string, string, error) {
 	reg := s.registry()
 	paths := reg.HandoffPaths()
 	home := s.nameOf(rec.Node, rec.Home)
@@ -580,7 +596,7 @@ func (s *Service) bring(ctx context.Context, rec *Record) (string, string, error
 	peers := s.peerSet()
 	if peers != nil && linked(peers, home) {
 		bundle := filepath.Join(stage, "bundle")
-		err := s.fetchFromHome(ctx, peers, home, rec, bundle)
+		err := s.fetchFromHome(ctx, peers, home, rec, bundle, fork)
 		if err == nil {
 			_, placed, err := handoff.Unpack(ctx, bundle, paths)
 			if err != nil {
@@ -638,7 +654,7 @@ func (s *Service) bring(ctx context.Context, rec *Record) (string, string, error
 	return dir, msg, nil
 }
 
-func (s *Service) fetchFromHome(ctx context.Context, peers Peers, home string, rec *Record, dir string) error {
+func (s *Service) fetchFromHome(ctx context.Context, peers Peers, home string, rec *Record, dir string, fork bool) error {
 	params, _ := json.Marshal(hostParams{Key: rec.Key()})
 	raw, err := peers.Call(ctx, home, "sessions.plan", params)
 	if err != nil {
@@ -658,7 +674,11 @@ func (s *Service) fetchFromHome(ctx context.Context, peers Peers, home string, r
 		}
 		sortStrings(have)
 	}
-	return peers.Fetch(ctx, home, ExportPrefix+rec.Key(), have, dir)
+	id := ExportPrefix + rec.Key()
+	if fork {
+		id = ExportPrefix + ExportForkMark + rec.Key()
+	}
+	return peers.Fetch(ctx, home, id, have, dir)
 }
 
 // offlineDir is where the session resumes here without its home: its
