@@ -2,8 +2,10 @@ name: Hesper relay
 on:
   push:
     paths: ["relay/**", ".github/workflows/relay.yml"]
+  # Every pull request runs it: branch protection requires this check, and a
+  # path filter would leave it pending on pull requests outside relay/.
   pull_request:
-    paths: ["relay/**", ".github/workflows/relay.yml"]
+  workflow_dispatch:
 # Read-only token; no secrets are used, so pull requests from forks run
 # the same job safely.
 permissions:
