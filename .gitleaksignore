@@ -1,0 +1,3 @@
+# Test canaries (the relay must never see these strings), not secrets
+a0c12a432c1381f0b07e0f299ad08cc441203fe5:relay/internal/transport/remote_test.go:generic-api-key:104
+relay/internal/transport/remote_test.go:generic-api-key:104

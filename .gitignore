@@ -24,3 +24,6 @@ xcuserdata/
 .idea/
 .vscode/
 *.swp
+
+# Claude Code worktrees and local session files
+/.claude/
