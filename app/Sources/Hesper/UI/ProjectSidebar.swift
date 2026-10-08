@@ -407,7 +407,7 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
                 add(c.name.capitalized, to: colors, enabled: real) { [weak model] in model?.setProjectColor(pid, c.hex) }
             }
             let profiles = sub("Default Profile")
-            for name in (model.profiles?.profiles.keys.sorted() ?? []) {
+            for name in (model.lists.profiles?.profiles.keys.sorted() ?? []) {
                 add(name, to: profiles, enabled: real) { [weak model] in model?.setProjectDefaults(pid, profile: name, machine: nil) }
                 if p.defaults?.profile == name { profiles.items.last?.state = .on }
             }

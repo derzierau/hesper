@@ -540,7 +540,7 @@ extension AppModel {
         }
         for a in named.prefix(3) { actions += agentActions(a) }
         for var a in actions { a.section = "Actions"; out.append(a) }
-        for p in recentProjects {
+        for p in lists.recentProjects {
             out.append(OverlayItem(id: "project:\(p.path)", section: "Projects", title: p.name, detail: ComposerCompletion.abbreviate(p.path),
                                    run: { [weak self] in self?.showPalette = false; self?.newDraft(project: p.path) }))
         }
