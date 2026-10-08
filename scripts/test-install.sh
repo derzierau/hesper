@@ -170,6 +170,8 @@ echo '{"machines": {"dev_laptop_host": {"short": "L", "glyph": "L", "color": "fo
 echo "$H/Applications/Ghosty.app/Contents/MacOS/ghostyd" > "$S/fw-old"
 echo '{"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}' > "$H/.claude/settings.json"
 printf 'model = "gpt-5"\n' > "$H/.codex/config.toml"
+mkdir -p "$H/.agents/skills/hesper" "$H/.agents/skills/mine"            # an old copy of the skill (backed up); another skill (kept)
+echo old > "$H/.agents/skills/hesper/SKILL.md"
 
 before=$(snapshot "$H")
 run_install first "$H" --dry-run --skip-build
@@ -197,6 +199,10 @@ check 'fresh Mac: no controller pairing hint (no controller role)' lacks "$out" 
 check 'fresh Mac: names the old ghostyd firewall entry' has "$out" '--remove '"$H"'/Applications/Ghosty.app/Contents/MacOS/ghostyd'
 check 'fresh Mac: backs up settings.json first' has "$out" 'would: back up ~/.claude/settings.json'
 check 'fresh Mac: installs hooks' has "$out" 'would: install hooks: hesperd hooks install'
+check 'fresh Mac: links the skill for Claude Code' has "$out" "would: link ~/.claude/skills/hesper -> $repo/skills/hesper"
+check 'fresh Mac: links the skill for Codex' has "$out" "would: link ~/.agents/skills/hesper -> $repo/skills/hesper"
+check 'fresh Mac: backs up the old skill copy' has "$out" 'would: move ~/.agents/skills/hesper to the backup'
+check "fresh Mac: leaves the user's other skills" lacks "$out" 'skills/mine'
 check 'fresh Mac: writes the LaunchAgent' has "$out" 'would: write ~/Library/LaunchAgents/de.olezierau.hesperd.plist'
 check 'fresh Mac: loads the LaunchAgent' has "$out" 'would: (re)load de.olezierau.hesperd'
 check 'fresh Mac: asks the firewall for hesperd' has "$out" "would: allow hesperd's incoming connections"
@@ -247,6 +253,9 @@ chmod 700 "$H/.local/state/hesper"
 ln -s "$app/Contents/MacOS/hesperd" "$H/.local/bin/hesperd"
 ln -s "$app/Contents/MacOS/hesperctl" "$H/.local/bin/hesperctl"
 ln -s "$app/Contents/MacOS/hesper-keys" "$H/.local/lib/hesper/hesper-keys"
+mkdir -p "$H/.claude/skills" "$H/.agents/skills"
+ln -s "$repo/skills/hesper" "$H/.claude/skills/hesper"
+ln -s "$repo/skills/hesper" "$H/.agents/skills/hesper"
 HOME="$H" "$hesperd" hooks install --bin "$H/.local/bin/hesperd" --claude-settings "$H/.claude/settings.json" --codex-home "$H/.codex" > /dev/null
 env -i HOME="$H" PATH=/usr/bin:/bin "$install" --print-launch-agent > "$H/Library/LaunchAgents/de.olezierau.hesperd.plist"
 echo de.olezierau.hesperd > "$S/loaded"
@@ -266,6 +275,7 @@ unexpected=$(grep 'would:' "$out" | grep -vE 'would: (embed relay/dist/|record h
 check 'installed: nothing else to do (idempotent)' [ -z "$unexpected" ]
 [ -z "$unexpected" ] || printf '%s\n' "$unexpected"
 check 'installed: links ok' has "$out" 'ok: ~/.local/bin/hesperd -> ~/Applications/Hesper.app/Contents/MacOS/hesperd'
+check 'installed: skill links ok' bash -c "grep -qF 'ok: ~/.claude/skills/hesper -> $repo/skills/hesper' '$out' && grep -qF 'ok: ~/.agents/skills/hesper -> $repo/skills/hesper' '$out'"
 check 'installed: hooks ok' has "$out" 'ok: ~/.claude/settings.json'
 check 'installed: LaunchAgent ok' has "$out" 'ok: de.olezierau.hesperd running, hesperd unchanged'
 check 'installed: firewall ok' has "$out" 'ok: hesperd allowed through the firewall'
@@ -302,6 +312,9 @@ check 'signed: still no changing call' lacks "$calls" FORBIDDEN
 
 EXTRA_ENV="NOTARY_PROFILE=hesper-notary" run_install notary-only "$H" --dry-run --skip-build
 check 'notarization without identity is refused' bash -c "[ $status -ne 0 ] && grep -q 'NOTARY_PROFILE needs SIGN_IDENTITY' '$root/notary-only.out'"
+
+run_install no-skills "$H" --dry-run --skip-build --no-skills
+check '--no-skills: skips the skill step' bash -c "grep -q 'skipped (--no-skills)' '$root/no-skills.out' && ! grep -q 'skills/hesper' '$root/no-skills.out'"
 
 /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.example.other' "$app/Contents/Info.plist"
 run_install foreign "$H" --dry-run --skip-build

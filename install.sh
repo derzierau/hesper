@@ -15,11 +15,14 @@ usage() {
   cat <<'EOF'
 usage: ./install.sh [--dry-run] [--skip-build] [--login-item] [--no-firewall]
                     [--machine SHORT] [--allow-shell | --no-allow-shell]
+                    [--no-skills]
 
   --dry-run            print every action, change nothing
   --skip-build         use the existing relay/dist and app/build outputs
   --login-item         also open Hesper.app at login
   --no-firewall        do not let hesperd through the macOS firewall
+  --no-skills          do not link the Hesper skill (skills/hesper) into
+                       ~/.claude/skills and ~/.agents/skills (Codex)
   --machine SHORT      this Mac's short name on your other Macs (e.g. L or M):
                        written to ~/.config/hesper/machines.json for its host
                        enrollment, only when that file does not exist yet
@@ -45,6 +48,7 @@ dry_run=0
 skip_build=0
 login_item=0
 firewall=1
+skills=1
 print_plist=0
 migrate_only=0
 allow_shell='' # '': keep what the installed LaunchAgent has
@@ -56,6 +60,7 @@ while [ "$#" -gt 0 ]; do
     --skip-build) skip_build=1 ;;
     --login-item) login_item=1 ;;
     --no-firewall) firewall=0 ;;
+    --no-skills) skills=0 ;;
     --allow-shell) allow_shell=1 ;;
     --no-allow-shell) allow_shell=0 ;;
     --machine)
@@ -675,6 +680,23 @@ hooks_step() {
   fi
 }
 
+# The Hesper skill (skills/hesper: SKILL.md and references/) teaches Claude
+# Code and Codex to drive hesperctl. Both read Agent Skills from a folder per
+# skill: Claude Code from ~/.claude/skills, Codex from ~/.agents/skills (its
+# user-level location; it follows symlinks). Linked, not copied, so a pull
+# updates it.
+skills_step() {
+  step 'Hesper skill for Claude Code and Codex'
+  if [ "$skills" -eq 0 ]; then
+    note 'skipped (--no-skills)'
+    return
+  fi
+  skill="$repo_dir/skills/hesper"
+  [ -f "$skill/SKILL.md" ] || die "$(show "$skill")/SKILL.md is missing"
+  link_file "$skill" "$HOME/.claude/skills/hesper"
+  link_file "$skill" "$HOME/.agents/skills/hesper"
+}
+
 _load_agent() {
   domain="gui/$uid"
   "$LAUNCHCTL" bootout "$domain/$label" 2>/dev/null || true
@@ -790,6 +812,7 @@ install_app
 link_tools
 state_and_credentials
 hooks_step
+skills_step
 launch_agent
 firewall_step
 login_item_step

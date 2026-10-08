@@ -162,7 +162,8 @@ The installer:
 4. runs `hesperd serve` as a LaunchAgent;
 5. merges Hesper's hooks into `~/.claude/settings.json` and Codex (your other
    hooks are kept);
-6. lets `hesperd` through the macOS firewall.
+6. links the Hesper skill for Claude Code and Codex (see below);
+7. lets `hesperd` through the macOS firewall.
 
 Run it again after every pull; it only changes what differs, and anything it
 replaces is backed up first. See `./install.sh --help` for `--login-item`,
@@ -212,6 +213,19 @@ hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl mv ID mini
 ```
 
 Agents are addressed by id (`L/a7f3k2`), local id or unique name.
+
+### Hesper for agents (skill)
+
+`skills/hesper` is an [Agent Skill](https://agentskills.io) that teaches
+Claude Code and Codex to use `hesperctl`: see what every agent is doing and
+which ones need you, fan work out to parallel agents in worktrees and collect
+their results, delegate and wait (`hesperctl new --wait`), drive or answer an
+agent, and find and resume past sessions. It keeps to Hesper's agent policy
+(an agent steers only the agents it started) and never approves anything on
+your behalf unless you ask. The installer links it into `~/.claude/skills/hesper`
+and `~/.agents/skills/hesper` (Codex); `--no-skills` leaves it out. Then just
+ask, e.g. "what are my agents doing?" or "split this into three agents in
+worktrees and report back". `hesperctl reference` is the full CLI it reads.
 
 ## More than one Mac
 
