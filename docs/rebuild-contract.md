@@ -194,6 +194,40 @@ command takes `--json`; errors then go to stderr as
 remote), 5 forbidden, 6 timeout, 7 exists (exists, live). `hesperctl
 self` is the agent it runs in (`HESPER_AGENT_ID`).
 
+**As built — CLI: history, projects, groups, drafts, profiles, status**
+(`history.go`, `projects.go`, `drafts.go`; CLI only, the daemon methods
+as specified). The registry gained subcommands: a command named
+`"history search"` runs as `hesperctl history search …`; `hesperctl
+history`, `history --help` and `help history` list the parent's
+subcommands (`--json`: their descriptions); help and reference show each
+one like any command.
+
+| Command | Method |
+|---|---|
+| `history search [QUERY…] [--project P] [--kind K] [--machine M] [--since D] [--live] [--external] [--archived] [--moved] [--limit N] [--cursor C]` | `sessions.search` (`--project`: id, unique name, or a folder: the deepest project containing it, else `scratch:<folder>`; `--since`: 90m, 24h, 7d, 2w, a date or RFC 3339; the next page's cursor on stderr, or in the JSON) |
+| `history show ID` / `brief ID` / `stats` | `sessions.show` / `brief` / `stats` |
+| `history archive ID [--undo]` | `sessions.archive {archived: !undo}` |
+| `history delete ID` / `undelete ID` | `sessions.delete {undo?}` |
+| `history resume ID [--machine M]` / `fork ID [--machine M]` | `sessions.resume` / `fork`: prints the agent id, the note on stderr; a running session exits 7 (code `live`, `agentId` in the JSON error) |
+| `history continue-as ID --kind claude\|codex [--machine M]` | `sessions.continueAs` |
+| `projects ls` / `recent` | `projects.list` / `projects.recent` |
+| `projects update PROJECT [--name] [--color] [--kind] [--default-profile] [--default-machine]` | `projects.update`: only the flags given; the defaults merged with the current ones (the app's way: `defaults` is replaced whole) |
+| `projects rm PROJECT` / `promote PATH [--machine] [--name] [--kind]` / `clone URL [--machine]` | `projects.remove` / `promote` / `clone` |
+| `groups ls` / `rm GROUP` | `groups.list` / `groups.remove` |
+| `groups save [GROUP] [--name] [--color] [--project P]… [--remove-project P]… [--order N]` | `groups.save`: without GROUP a new group after the others (order max + 1, as the app's New Group); with it the group changed |
+| `drafts ls` / `rm ID` | `drafts.list` / `drafts.remove` |
+| `drafts save [TASK…\|-] [--id D] [--project P] [--machine M] [--kind K] [--profile P] [--worktree] [--branch B]` | `drafts.save`: a project (id or name) sets `band` and the project's folder on the machine (its default machine, else the first with a folder) and its default profile, as the app's "New Agent in …"; a folder sets `project`; `--machine` sets `machineExplicit` (this Mac's name is stored as none); `--kind` picks the kind's default profile; `--id` changes only what is given |
+| `profiles` | `profiles.list` |
+| `status` | `hello`: daemon, version, machine, machines with online, RTT and route |
+
+Projects are addressed by id, unique name (exact, else ignoring case; a
+real project wins a tie with scratch folders) or folder; groups by id or
+unique name; two of one name exit 2 (code `ambiguous`). Session ids are
+the full `machine:kind:sessionId`. Tests (`history_test.go`,
+`projects_test.go`, `drafts_test.go`) run hesperd as the gateway wires it
+(registry, project store, shared history with internal/sessions'
+synthetic transcripts; cat as claude and codex).
+
 ## Persistence
 
 `$HESPER_STATE_DIR/agents.json` (atomic writes) holds the registry. Agents

@@ -24,6 +24,10 @@ import (
 //
 // run dispatches on it; the overview, `help CMD` and `reference` are
 // generated from it, flags included (help runs the command with -h).
+//
+// Subcommands are commands whose name has two words ("history search"):
+// `hesperctl history search …` runs it; `hesperctl history` and `help
+// history` list the parent's subcommands.
 
 // Command is one hesperctl command.
 type Command struct {
@@ -68,6 +72,61 @@ func register(c Command) {
 		}
 	}
 	commands = append(commands, &c)
+}
+
+// lookup finds the command args start with, a subcommand ("history
+// search") before a command; n is how many args name it.
+func lookup(args []string) (c *Command, n int) {
+	if len(args) >= 2 && !strings.HasPrefix(args[1], "-") {
+		if c := findCommand(args[0] + " " + args[1]); c != nil {
+			return c, 2
+		}
+	}
+	if len(args) >= 1 {
+		if c := findCommand(args[0]); c != nil {
+			return c, 1
+		}
+	}
+	return nil, 0
+}
+
+// subcommands are the commands named "parent …".
+func subcommands(parent string) []*Command {
+	var list []*Command
+	for _, c := range commands {
+		if strings.HasPrefix(c.Name, parent+" ") {
+			list = append(list, c)
+		}
+	}
+	return list
+}
+
+// printSubcommands is `hesperctl history` (and `help history`): the
+// parent's subcommands.
+func printSubcommands(w io.Writer, parent string, subs []*Command, asJSON bool) error {
+	if asJSON {
+		var list []commandDoc
+		for _, c := range subs {
+			list = append(list, describe(c))
+		}
+		return output(list)
+	}
+	fmt.Fprintf(w, "hesperctl %s: its commands\n\n", parent)
+	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+	for _, c := range subs {
+		fmt.Fprintf(tw, "  %s\t%s\n", c.Name, c.Summary)
+	}
+	tw.Flush()
+	fmt.Fprintf(w, "\nhesperctl help %s SUBCOMMAND shows one's flags and examples.\n", parent)
+	return nil
+}
+
+// unknownCommand is the usage error for args that name no command.
+func unknownCommand(args []string) error {
+	if len(args) >= 2 && len(subcommands(args[0])) > 0 {
+		return usagef("unknown command %q (hesperctl help %s lists them)", args[0]+" "+args[1], args[0])
+	}
+	return usagef("unknown command %q (hesperctl help lists them)", args[0])
 }
 
 func findCommand(name string) *Command {
@@ -184,12 +243,15 @@ func run(ctx context.Context, args []string) error {
 	if len(args) == 0 || isHelpFlag(args[0]) {
 		return printOverview(os.Stdout)
 	}
-	c := findCommand(args[0])
+	c, n := lookup(args)
 	if c == nil {
-		return usagef("unknown command %q (hesperctl help lists them)", args[0])
+		if subs := subcommands(args[0]); len(subs) > 0 && (len(args) == 1 || strings.HasPrefix(args[1], "-")) {
+			return printSubcommands(os.Stdout, args[0], subs, wantsJSON(args[1:]))
+		}
+		return unknownCommand(args)
 	}
-	if hasFlag(args[1:], []string{"h", "help"}) {
-		if wantsJSON(args[1:]) {
+	if hasFlag(args[n:], []string{"h", "help"}) {
+		if wantsJSON(args[n:]) {
 			return output(describe(c))
 		}
 		return printHelp(os.Stdout, c)
@@ -197,7 +259,7 @@ func run(ctx context.Context, args []string) error {
 	f := newFlagSet(c.Name)
 	badFlags := false
 	f.Usage = func() { badFlags = true }
-	err := c.Run(ctx, f, args[1:])
+	err := c.Run(ctx, f, args[n:])
 	if err != nil && badFlags {
 		return usagef("%v\nusage: hesperctl %s", err, c.Usage)
 	}
@@ -342,9 +404,15 @@ func helpCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 		}
 		return printOverview(os.Stdout)
 	}
-	c := findCommand(positional[0])
+	c, n := lookup(positional)
 	if c == nil {
-		return usagef("unknown command %q (hesperctl help lists them)", positional[0])
+		if subs := subcommands(positional[0]); len(subs) > 0 && len(positional) == 1 {
+			return printSubcommands(os.Stdout, positional[0], subs, *asJSON)
+		}
+		return unknownCommand(positional)
+	}
+	if n < len(positional) {
+		return usagef("unknown command %q (hesperctl help lists them)", strings.Join(positional, " "))
 	}
 	if *asJSON {
 		return output(describe(c))
