@@ -57,6 +57,9 @@ var (
 type Paths struct {
 	Home, ClaudeHome, CodexHome string
 	Env                         []string
+	// MaxBytes (optional) caps a brought folder (settings.json
+	// maxTransferMB); 0: MaxFolderBytes.
+	MaxBytes int64
 }
 
 // Manifest describes a bundle.

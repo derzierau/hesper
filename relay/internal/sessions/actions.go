@@ -35,10 +35,15 @@ import (
 var UndoWindow = 30 * time.Second
 
 // ResumeResult is sessions.resume's / sessions.fork's result: the agent,
-// and a note when something did not come along (additive).
+// and a note when something did not come along (additive). Between Macs
+// (transfer.go) a target still at work answers Pending (the operation
+// to ask again) and its Progress instead.
 type ResumeResult struct {
 	wire.Agent
-	Note string `json:"note,omitempty"`
+	Note     string        `json:"note,omitempty"`
+	Pending  string        `json:"pending,omitempty"`
+	Progress *wire.Moving  `json:"progress,omitempty"`
+	Steps    []wire.Moving `json:"steps,omitempty"`
 }
 
 // Call runs a sessions method on the local socket.
@@ -146,9 +151,14 @@ func (p treeParams) tree() Tree { return Tree{Parent: p.Parent, Depth: p.Depth} 
 func (t Tree) params() treeParams { return treeParams{Parent: t.Parent, Depth: t.Depth} }
 
 // hostParams are the host methods' params: entries are named by key.
+// sessions.resume / sessions.fork (transfer.go): Poll, the caller follows
+// a pending operation; Op, the operation it asks about (no key).
 type hostParams struct {
 	Key  string `json:"key"`
 	Kind string `json:"kind,omitempty"`
+	Op   string `json:"op,omitempty"`
+	Poll bool   `json:"poll,omitempty"`
+	Seen int    `json:"seen,omitempty"`
 	treeParams
 }
 
@@ -189,6 +199,9 @@ func (s *Service) HostCall(ctx context.Context, method string, params json.RawMe
 	if err := decode(params, &p); err != nil {
 		return nil, err
 	}
+	if p.Op != "" && (method == "sessions.resume" || method == "sessions.fork") {
+		return s.pollOp(ctx, p.Op, p.Seen)
+	}
 	rw, err := s.db.get(p.Key)
 	if err != nil {
 		return nil, err
@@ -213,7 +226,8 @@ func (s *Service) HostCall(ctx context.Context, method string, params json.RawMe
 		}
 		return s.gitc.get(rec.Meta.Cwd, s.gitEnv()), nil
 	case "sessions.resume", "sessions.fork":
-		return s.resumeHere(ctx, rec, method == "sessions.fork", p.tree())
+		// Its own operation: it outlasts the request (transfer.go).
+		return s.awaitOp(ctx, s.startOp(*rec, method == "sessions.fork", p.tree()), p.Poll, 0)
 	case "sessions.continueAs":
 		return s.continueHere(rec, p.Kind, p.tree())
 	}
@@ -353,36 +367,45 @@ func (s *Service) resume(id, machine string, fork bool, tree Tree) (ResumeResult
 		target = s.nameOf(rec.Node, rec.Home)
 	}
 	if target == s.machine() {
-		return s.resumeHere(context.Background(), rec, fork, tree)
+		ctx, cancel := context.WithTimeout(s.ctx, TransferLimit)
+		defer cancel()
+		var progress func(wire.Moving)
+		if reg := s.registry(); reg != nil && rec.Node != s.db.node {
+			// Brought here: this Mac's subscribers see it come.
+			sid := s.nameOf(rec.Node, rec.Home) + ":" + rec.Kind + ":" + rec.SID
+			progress = func(m wire.Moving) {
+				m.ID, m.To, m.Fork, m.Session = sid, target, fork, true
+				reg.NoteMoving(m)
+			}
+		}
+		res, err := s.resumeHere(ctx, rec, fork, tree, progress)
+		if progress != nil {
+			if err != nil {
+				var we *wire.Error
+				if !errors.As(err, &we) {
+					we = &wire.Error{Code: wire.CodeRemote, Message: err.Error()}
+				}
+				progress(wire.Moving{Step: wire.MoveFailed, Error: we})
+			} else {
+				progress(wire.Moving{Step: wire.MoveDone, Agent: res.ID})
+			}
+		}
+		return res, err
 	}
 	peers := s.peerSet()
 	if peers == nil {
 		return ResumeResult{}, wire.Errorf(wire.CodeUnavailable, "machine %s is not connected", target)
 	}
-	method := "sessions.resume"
-	if fork {
-		method = "sessions.fork"
-	}
-	params, _ := json.Marshal(hostParams{Key: rec.Key(), treeParams: tree.params()})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-	raw, err := peers.Call(ctx, target, method, params)
-	if err != nil {
-		return ResumeResult{}, err
-	}
-	var res ResumeResult
-	if err := json.Unmarshal(raw, &res); err != nil {
-		return ResumeResult{}, wire.Errorf(wire.CodeRemote, "bad answer from %s", target)
-	}
-	if _, local, ok := strings.Cut(res.ID, "/"); ok {
-		res.ID, res.Machine = target+"/"+local, target
-	}
-	return res, nil
+	return s.resumeOn(target, peers, rec, fork, tree)
 }
 
 // resumeHere starts the session on this Mac: in its folder when this is
 // its home, else brought here first (and moved, unless forked).
-func (s *Service) resumeHere(ctx context.Context, rec *Record, fork bool, tree Tree) (ResumeResult, error) {
+// progress (optional) gets the steps of bringing it (agents.moving's).
+func (s *Service) resumeHere(ctx context.Context, rec *Record, fork bool, tree Tree, progress func(wire.Moving)) (ResumeResult, error) {
+	if progress == nil {
+		progress = func(wire.Moving) {}
+	}
 	reg := s.registry()
 	if reg == nil {
 		return ResumeResult{}, wire.Errorf(wire.CodeUnavailable, "no agents")
@@ -403,10 +426,11 @@ func (s *Service) resumeHere(ctx context.Context, rec *Record, fork bool, tree T
 		a, err := reg.SpawnSession(spawn)
 		return ResumeResult{Agent: a}, err
 	}
-	dir, note, err := s.bring(ctx, rec, fork)
+	dir, note, err := s.bring(ctx, rec, fork, progress)
 	if err != nil {
 		return ResumeResult{}, err
 	}
+	progress(wire.Moving{Step: wire.MoveResume})
 	spawn.Dir = dir
 	a, err := reg.SpawnSession(spawn)
 	if err != nil {
@@ -482,7 +506,7 @@ func (s *Service) pseudoAgent(rec *Record) wire.Agent {
 	rand.Read(b[:])
 	created := time.UnixMilli(rec.Meta.StartedAt).UTC()
 	return wire.Agent{ID: s.machine() + "/s" + hex.EncodeToString(b[:]), Kind: rec.Kind, Name: rec.Meta.Title, Task: rec.Meta.FirstPrompt,
-		Project: rec.Meta.Cwd, Branch: rec.Meta.Branch, SessionID: rec.SID, Created: created}
+		Project: rec.Meta.Cwd, ProjectID: rec.Meta.ProjectID, Branch: rec.Meta.Branch, SessionID: rec.SID, Created: created}
 }
 
 // ExportPrefix marks agents.export ids that name a session (its key).
@@ -535,8 +559,10 @@ func (s *Service) Pack(ctx context.Context, id string, have []string, dir string
 		return wire.Errorf(wire.CodeNotFound, "the transcript of %s is gone", rec.SID)
 	}
 	m.Agent.SessionID, m.Agent.Transcript = rec.SID, transcriptName(rec)
-	data, _ := json.MarshalIndent(m, "", "  ")
-	return os.WriteFile(filepath.Join(dir, handoff.ManifestFile), append(data, '\n'), 0o600)
+	if size, limit := dirBytes(dir), reg.TransferCap(); size > limit {
+		return wire.Errorf(wire.CodeTooLarge, "the session's code and conversation are %d MB, over the %d MB a transfer carries (settings.json maxTransferMB)", size>>20, limit>>20)
+	}
+	return handoff.WriteManifest(dir, m)
 }
 
 // copyTranscript copies a transcript, decompressing a .zst one.
@@ -583,9 +609,7 @@ func (s *Service) Exportable(id string) error {
 // reachable (transcript, branch and uncommitted work, as agents.move
 // does), else from this Mac's mirror on its branch as pushed. It
 // returns the folder to resume in and a note about what did not come.
-func (s *Service) bring(ctx context.Context, rec *Record, fork bool) (string, string, error) {
-	reg := s.registry()
-	paths := reg.HandoffPaths()
+func (s *Service) bring(ctx context.Context, rec *Record, fork bool, progress func(wire.Moving)) (string, string, error) {
 	home := s.nameOf(rec.Node, rec.Home)
 	stage, err := os.MkdirTemp(s.opt.StateDir, "session-")
 	if err != nil {
@@ -593,14 +617,17 @@ func (s *Service) bring(ctx context.Context, rec *Record, fork bool) (string, st
 	}
 	defer os.RemoveAll(stage)
 	os.Chmod(stage, 0o700)
+	var homeErr error
+	why := home + " is not reachable"
 	peers := s.peerSet()
 	if peers != nil && linked(peers, home) {
 		bundle := filepath.Join(stage, "bundle")
-		err := s.fetchFromHome(ctx, peers, home, rec, bundle, fork)
+		err := s.fetchFromHome(ctx, peers, home, rec, bundle, fork, progress)
 		if err == nil {
-			_, placed, err := handoff.Unpack(ctx, bundle, paths)
+			progress(wire.Moving{Step: wire.MoveWorktree})
+			_, placed, err := s.registry().PlaceSession(ctx, bundle)
 			if err != nil {
-				return "", "", moveError(err)
+				return "", "", err
 			}
 			dir := placed.Project
 			if placed.Worktree != "" {
@@ -611,22 +638,63 @@ func (s *Service) bring(ctx context.Context, rec *Record, fork bool) (string, st
 			}
 			return dir, "", nil
 		}
-		// Only a home that went away falls back to the mirror: anything
-		// else (live, conflicts in the folder here, …) is the answer.
-		var we *wire.Error
-		if !errors.As(err, &we) || we.Code != wire.CodeUnavailable {
+		// Only a home that went away (or a transfer that stopped moving)
+		// falls back to the mirror: anything else (live, conflicts in
+		// the folder here, too large, …) is the answer.
+		if !awayError(err) || ctx.Err() != nil {
 			return "", "", err
 		}
+		homeErr = err
+		why = "the transfer from " + home + " failed (" + errText(err) + ")"
 		s.opt.Logf("history: %s from %s: %v (trying this Mac's copy)", rec.SID, home, err)
+	} else {
+		homeErr = wire.Errorf(wire.CodeUnavailable, "%s is not connected", home)
 	}
-	// The home is away: this Mac's copy, the branch as pushed.
+	progress(wire.Moving{Step: wire.MoveWorktree})
+	dir, note, err := s.fromMirror(ctx, rec, stage, home, why)
+	if err != nil {
+		// Both ways failed: say why, for both.
+		code := wire.CodeUnavailable
+		var we *wire.Error
+		if errors.As(err, &we) && we.Code != wire.CodeUnavailable {
+			code = we.Code
+		}
+		out := wire.Errorf(code, "could not get the session from %s: %s; this Mac's copy: %s", home, errText(homeErr), errText(err))
+		s.opt.Logf("history: %s: %v", rec.SID, out)
+		return "", "", out
+	}
+	return dir, note, nil
+}
+
+// awayError: the home could not be reached, or the transfer from it
+// stopped (timed out, connection lost).
+func awayError(err error) bool {
+	var we *wire.Error
+	if errors.As(err, &we) {
+		return we.Code == wire.CodeUnavailable || we.Code == wire.CodeOffline
+	}
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
+func errText(err error) string {
+	var we *wire.Error
+	if errors.As(err, &we) {
+		return we.Message
+	}
+	return err.Error()
+}
+
+// fromMirror resumes the session from this Mac's copy of its transcript,
+// on its branch as pushed.
+func (s *Service) fromMirror(ctx context.Context, rec *Record, stage, home, why string) (string, string, error) {
+	paths := s.registry().HandoffPaths()
 	transcript := filepath.Join(stage, handoff.TranscriptFile)
 	ok, err := s.mirrored(rec.Key(), transcript)
 	if err != nil {
 		return "", "", err
 	}
 	if !ok {
-		return "", "", wire.Errorf(wire.CodeUnavailable, "%s is not reachable and this Mac has no copy of the session", home)
+		return "", "", wire.Errorf(wire.CodeUnavailable, "there is none (this Mac copies the transcripts of sessions active in the last %d days while their Mac is reachable; this one is not copied yet)", s.opt.MirrorDays)
 	}
 	dir, note, err := s.offlineDir(ctx, rec)
 	if err != nil {
@@ -637,14 +705,13 @@ func (s *Service) bring(ctx context.Context, rec *Record, fork bool) (string, st
 	m.Agent = handoff.AgentInfo{LocalID: "s" + randHex(4), Kind: rec.Kind, Name: rec.Meta.Title, Task: rec.Meta.FirstPrompt,
 		Created: time.UnixMilli(rec.Meta.StartedAt).UTC(), SessionID: rec.SID, Transcript: transcriptName(rec)}
 	m.Project = handoff.ProjectInfo{Path: dir}
-	data, _ := json.Marshal(m)
-	if err := os.WriteFile(filepath.Join(stage, handoff.ManifestFile), data, 0o600); err != nil {
+	if err := handoff.WriteManifest(stage, &m); err != nil {
 		return "", "", err
 	}
 	if _, _, err := handoff.Unpack(ctx, stage, paths); err != nil {
 		return "", "", moveError(err)
 	}
-	msg := home + " is not reachable: resumed from this Mac's copy of the conversation"
+	msg := why + ": resumed from this Mac's copy of the conversation"
 	if rec.Meta.Branch != "" {
 		msg += " on " + rec.Meta.Branch + " as pushed; uncommitted work there did not come along"
 	}
@@ -654,9 +721,12 @@ func (s *Service) bring(ctx context.Context, rec *Record, fork bool) (string, st
 	return dir, msg, nil
 }
 
-func (s *Service) fetchFromHome(ctx context.Context, peers Peers, home string, rec *Record, dir string, fork bool) error {
+func (s *Service) fetchFromHome(ctx context.Context, peers Peers, home string, rec *Record, dir string, fork bool, progress func(wire.Moving)) error {
+	progress(wire.Moving{Step: wire.MoveCheckpoint})
 	params, _ := json.Marshal(hostParams{Key: rec.Key()})
-	raw, err := peers.Call(ctx, home, "sessions.plan", params)
+	pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	raw, err := peers.Call(pctx, home, "sessions.plan", params)
+	cancel()
 	if err != nil {
 		return err
 	}
@@ -664,13 +734,19 @@ func (s *Service) fetchFromHome(ctx context.Context, peers Peers, home string, r
 	if err := json.Unmarshal(raw, &plan); err != nil {
 		return err
 	}
+	// The commits this Mac has: incremental from them. Without the
+	// repository it clones it from its remote (PlaceSession), which has
+	// the remote's head: the bundle carries only what is newer.
 	var have []string
-	if len(plan.Commits) > 0 {
-		probe := s.registry().Probe(ctx, plan.Project, plan.Home, plan.Commits)
+	if plan.Git || len(plan.Commits) > 0 {
+		probe := s.registry().ProbeMove(ctx, plan.Project, plan.Home, plan.Commits, plan.ProjectID, "")
 		for c, ok := range probe.Has {
 			if ok {
 				have = append(have, c)
 			}
+		}
+		if !probe.Exists && plan.Remote != "" && plan.RemoteHead != "" {
+			have = []string{plan.RemoteHead}
 		}
 		sortStrings(have)
 	}
@@ -678,7 +754,13 @@ func (s *Service) fetchFromHome(ctx context.Context, peers Peers, home string, r
 	if fork {
 		id = ExportPrefix + ExportForkMark + rec.Key()
 	}
-	return peers.Fetch(ctx, home, id, have, dir)
+	return peers.Fetch(ctx, home, id, have, dir, func(got, total int64) {
+		m := wire.Moving{Step: wire.MoveTransfer, Bytes: got, Total: total}
+		if total > 0 {
+			m.Percent = int(float64(got) / float64(total) * 100)
+		}
+		progress(m)
+	})
 }
 
 // offlineDir is where the session resumes here without its home: its
@@ -695,7 +777,8 @@ func (s *Service) offlineDir(ctx context.Context, rec *Record) (string, string, 
 		repo = p.PathOn(rec.Meta.ProjectID)
 	}
 	if repo == "" {
-		return "", "", wire.Errorf(wire.CodeNotFound, "the session's project has no folder on this Mac")
+		return "", "", wire.Errorf(wire.CodeNotFound, "the session's folder %s is not on this Mac, nor is its project (bring the project here, or resume when %s is reachable: then it is cloned from its remote)",
+			cwd, s.nameOf(rec.Node, rec.Home))
 	}
 	if rec.Meta.Branch == "" || cwd == "" || filepath.Base(cwd) == filepath.Base(repo) {
 		return repo, "", nil

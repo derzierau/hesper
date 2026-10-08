@@ -39,7 +39,7 @@ func init() {
 				"--bring (with --machine) brings --project, a folder on this Mac, to MACHINE first: a Git repository with its branch and " +
 				"uncommitted (and untracked, not ignored) files (--clean: the last commit only), cloned there from its remote when it has one " +
 				"(else carried whole); another folder copied without node_modules, .build, DerivedData, target, dist, .venv, __pycache__ " +
-				"(at most 100 MB). It lands at the same place under MACHINE's home (a repository with a remote outside ~/projects and ~/scratch: " +
+				"(at most 5 GB, settings.json maxTransferMB). It lands at the same place under MACHINE's home (a repository with a remote outside ~/projects and ~/scratch: " +
 				"in its projects folder). Refused, nothing written: exists (MACHINE has that folder already: start there without --bring), " +
 				"too-large, tool-missing, offline. Progress: agents.bringing events (see events).",
 			Output: "Agent",
@@ -66,7 +66,7 @@ func init() {
 				"its branch and uncommitted (and untracked, not ignored) files are carried to a worktree on MACHINE (the project is cloned from its " +
 				"Git remote when it is not there), its conversation resumes there with a short handover note, and the agent here is closed " +
 				"(--fork keeps it). Refused, the agent untouched: busy (it is working: --interrupt), processes (it started dev servers or the like " +
-				"that would stay behind: listed; --leave-processes), tool-missing, no-remote, too-large (over 200 MB), offline. " +
+				"that would stay behind: listed; --leave-processes), tool-missing, no-remote, too-large (over 5 GB, settings.json maxTransferMB), offline. " +
 				"Undo: move the new agent back. Prints the new agent's id.",
 			Output:   "MoveResult = Agent (the new one) plus agent: its id",
 			Examples: []string{"hesperctl move a7f3k2 --to mini", "hesperctl move push-provider --to mini --fork --json"}},
@@ -259,7 +259,9 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 	}
 	limit := 2 * time.Minute
 	if command == "move" || *bring {
-		limit = 11 * time.Minute // a move or a bring takes up to 10
+		// A move or a bring takes as long as its transfer: hesperd
+		// bounds it (2 hours; a minute without progress fails it).
+		limit = 2*time.Hour + 2*time.Minute
 	}
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()

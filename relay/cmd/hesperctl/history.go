@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -65,12 +66,13 @@ func init() {
 			Run:  historyUndelete},
 		{Name: "history resume", Summary: "Resume a session in a new agent", Usage: "history resume ID [--machine M] [--json]",
 			Help: sessionRefHelp + " Starts claude --resume / codex resume on the session's home, in its folder (a missing worktree is recreated from its branch), and prints the agent's id. --machine another Mac moves the session there (branch, uncommitted work, transcript). " +
-				"A note on stderr says what did not come along. When the session runs already: exit 7 (code live; --json adds agentId, the agent running it).",
+				"A note on stderr says what did not come along. When the session runs already: exit 7 (code live; --json adds agentId, the agent running it). " +
+				"Bringing a session from another Mac prints its progress on stderr (packing, transfer with percent and size, unpacking); a transfer fails only when nothing moved for a minute (at most 2 hours in all).",
 			Output:   "Agent plus note?",
 			Examples: []string{"hesperctl history resume mini:claude:5b0c1d2e-…", "hesperctl history resume L:codex:019a… --machine mini"},
 			Run:      historyStart("sessions.resume")},
 		{Name: "history fork", Summary: "Start a new agent from a copy of a session", Usage: "history fork ID [--machine M] [--json]",
-			Help:   sessionRefHelp + " A new conversation with the same history (claude --fork-session, codex fork); the original stays. Allowed while it runs. Prints the agent's id.",
+			Help:   sessionRefHelp + " A new conversation with the same history (claude --fork-session, codex fork); the original stays. Allowed while it runs. Prints the agent's id. Progress on stderr as for history resume.",
 			Output: "Agent plus note?",
 			Run:    historyStart("sessions.fork")},
 		{Name: "history continue-as", Summary: "Continue a session in the other agent kind", Usage: "history continue-as ID --kind claude|codex [--machine M] [--json]",
@@ -468,6 +470,66 @@ type startedAgent struct {
 	Note string `json:"note,omitempty"`
 }
 
+// historyStartLimit bounds history resume / fork (hesperd's transfer
+// limit and a little).
+const historyStartLimit = 2*time.Hour + 2*time.Minute
+
+// printSessionProgress prints the steps of a session coming from another
+// Mac (agents.moving with session set) until ctx ends: each step once,
+// the transfer every 5 percent.
+func printSessionProgress(ctx context.Context, sub *wire.Client, w io.Writer) {
+	last, lastPercent := "", -1
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case n, ok := <-sub.Notifications():
+			if !ok {
+				return
+			}
+			if n.Method != wire.NoteMoving {
+				continue
+			}
+			var m wire.Moving
+			if json.Unmarshal(n.Params, &m) != nil || !m.Session {
+				continue
+			}
+			switch m.Step {
+			case wire.MoveTransfer:
+				if m.Step == last && m.Percent < lastPercent+5 && m.Percent < 100 {
+					continue
+				}
+				lastPercent = m.Percent
+				if m.Total > 0 {
+					fmt.Fprintf(w, "transfer to %s: %d%% (%s of %s)\n", m.To, m.Percent, sizeText(m.Bytes), sizeText(m.Total))
+				} else {
+					fmt.Fprintf(w, "transfer to %s: %d%%\n", m.To, m.Percent)
+				}
+			case wire.MoveDone, wire.MoveFailed:
+			default:
+				if m.Step == last {
+					continue
+				}
+				fmt.Fprintf(w, "%s: %s\n", m.ID, map[string]string{wire.MoveCheckpoint: "packing on its home", wire.MoveWorktree: "unpacking", wire.MoveResume: "starting the agent"}[m.Step])
+			}
+			last = m.Step
+		}
+	}
+}
+
+// sizeText is a byte count for people: 82.0 MB, 1.4 GB.
+func sizeText(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d B", n)
+}
+
 // historyStart is the Run of resume, fork and continue-as.
 func historyStart(method string) func(context.Context, *flag.FlagSet, []string) error {
 	return func(ctx context.Context, f *flag.FlagSet, args []string) error {
@@ -490,8 +552,17 @@ func historyStart(method string) func(context.Context, *flag.FlagSet, []string) 
 				}
 				params = wire.SessionContinueParams{ID: id, Kind: *kind, Machine: *machine}
 			}
-			ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+			// A session brought from another Mac takes as long as its
+			// transfer (hesperd bounds it: 2 hours, a minute without
+			// progress); its progress is shown meanwhile.
+			ctx, cancel := context.WithTimeout(ctx, historyStartLimit)
 			defer cancel()
+			if method != "sessions.continueAs" {
+				if sub, err := subscribe(ctx, f.Lookup("daemon-socket").Value.String()); err == nil {
+					defer sub.Close()
+					go printSessionProgress(ctx, sub, os.Stderr)
+				}
+			}
 			var a startedAgent
 			if err := c.Call(ctx, method, params, &a); err != nil {
 				return err

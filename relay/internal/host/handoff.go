@@ -18,16 +18,32 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 	"github.com/derzierau/hesper/relay/pkg/session"
 	"github.com/derzierau/hesper/relay/pkg/transfer"
 )
 
+// MaxUploadBytes is the default cap of one upload's files together
+// (Handoff.MaxBytes overrides it: settings.json maxTransferMB).
+var MaxUploadBytes int64 = 5 << 30
+
+// ServeDelay (test seam) slows every served download chunk: a slow link.
+var ServeDelay atomic.Int64 // nanoseconds
+
+// ServeStall (test seam): the next ServeStall download chunks are held for
+// ServeStallFor, past the request's deadline: lost answers.
+var (
+	ServeStall    atomic.Int32
+	ServeStallFor = 4 * time.Second
+)
+
 // Handoff limits (relay/docs/protocol.md, Moves).
 const (
-	MaxUploadBytes = 512 << 20
 	MaxUploads     = 8
 	MaxRunningJobs = 4
 	Retention      = 24 * time.Hour
@@ -41,6 +57,10 @@ var downloadGrace = time.Minute
 
 // uploadFiles are the files of a move bundle (internal/handoff).
 var uploadFiles = map[string]bool{"manifest.json": true, "transcript.jsonl": true, "code.bundle": true, "folder.tar": true} // folder.tar: bring the folder
+
+// exportFiles are the files an export may stage: the upload files, and
+// the conversation compressed for a requester that asked for it.
+var exportFiles = map[string]bool{"manifest.json": true, "transcript.jsonl": true, "transcript.jsonl.zst": true, "code.bundle": true, "folder.tar": true}
 var uploadID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 var jobID = regexp.MustCompile(`^job-[0-9a-f]{12}$`)
 var commitID = regexp.MustCompile(`^[0-9a-fA-F]{7,64}$`)
@@ -63,9 +83,11 @@ type Handoff struct {
 	Import  func(ctx context.Context, dir string) (json.RawMessage, error)
 	Dir     string
 	Key     *ecdh.PrivateKey
-	Timeout time.Duration // per pack or import; default 10 minutes
-	Logger  *slog.Logger
-	Now     func() time.Time // test seam
+	Timeout time.Duration // per pack or import; default an hour
+	// MaxBytes (optional) is the cap of one upload; nil: MaxUploadBytes.
+	MaxBytes func() int64
+	Logger   *slog.Logger
+	Now      func() time.Time // test seam
 
 	mu        sync.Mutex
 	ctx       context.Context
@@ -95,7 +117,7 @@ func (h *Handoff) now() time.Time {
 // until running jobs have finished after that.
 func (h *Handoff) Start(ctx context.Context) error {
 	if h.Timeout <= 0 {
-		h.Timeout = 10 * time.Minute
+		h.Timeout = time.Hour
 	}
 	if h.Logger == nil {
 		h.Logger = slog.Default()
@@ -350,6 +372,15 @@ type transferParams struct {
 
 const sealedChunk = transfer.ChunkSize + transfer.Overhead
 
+func (h *Handoff) maxBytes() int64 {
+	if h.MaxBytes != nil {
+		if n := h.MaxBytes(); n > 0 {
+			return n
+		}
+	}
+	return MaxUploadBytes
+}
+
 // Transfer stores one sealed chunk. Chunks arrive in order; repeating an
 // earlier offset (a retry after an uncertain timeout, or 0 to restart) drops
 // what followed it. The last chunk carries the plaintext hash and the
@@ -363,7 +394,7 @@ func (h *Handoff) Transfer(p transferParams) (json.RawMessage, error) {
 		return nil, protocol.Err("invalid_request", "upload must be 1-64 letters, digits, - or _")
 	case !uploadFiles[p.Name]:
 		return nil, protocol.Err("invalid_request", "name must be manifest.json, transcript.jsonl, code.bundle or folder.tar")
-	case p.Offset < 0 || p.Offset%transfer.ChunkSize != 0 || p.Offset >= MaxUploadBytes:
+	case p.Offset < 0 || p.Offset%transfer.ChunkSize != 0 || p.Offset >= h.maxBytes():
 		return nil, protocol.Err("invalid_request", "offset must be a multiple of the 512 KiB chunk size")
 	case len(p.Data) < transfer.Overhead || len(p.Data) > sealedChunk || (!p.Last && len(p.Data) != sealedChunk):
 		return nil, protocol.Err("invalid_request", "Chunks hold 512 KiB of data; only the last may be shorter")
@@ -399,9 +430,9 @@ func (h *Handoff) Transfer(p transferParams) (json.RawMessage, error) {
 	if index > have {
 		return nil, protocol.Err("invalid_request", fmt.Sprintf("Chunk out of order; expected offset %d", have*transfer.ChunkSize))
 	}
-	if usage(dir, p.Name)+p.Offset+int64(len(p.Data)-transfer.Overhead) > MaxUploadBytes {
+	if limit := h.maxBytes(); usage(dir, p.Name)+p.Offset+int64(len(p.Data)-transfer.Overhead) > limit {
 		os.Remove(part)
-		return nil, protocol.Err("too_large", "Upload exceeds 512 MiB")
+		return nil, protocol.Err("too_large", fmt.Sprintf("Upload exceeds this machine's cap of %d MB (settings.json maxTransferMB)", limit>>20))
 	}
 	f, err := os.OpenFile(part, os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
@@ -566,6 +597,9 @@ type exportParams struct {
 	Have     []string `json:"have"`
 	Key      string   `json:"key"`
 	Download string   `json:"download"`
+	// Compress: the requester takes the conversation compressed
+	// (transcript.jsonl.zst instead of transcript.jsonl).
+	Compress bool `json:"compress,omitempty"`
 }
 
 type downloadParams struct {
@@ -601,7 +635,7 @@ func (h *Handoff) Export(ctx context.Context, p exportParams) (json.RawMessage, 
 		return nil, err
 	}
 	if p.Download != "" {
-		if p.ID != "" || len(p.Have) > 0 || p.Key != "" {
+		if p.ID != "" || len(p.Have) > 0 || p.Key != "" || p.Compress {
 			return nil, protocol.Err("invalid_request", "An export is polled with its download ID only")
 		}
 		return h.exportStatus(ctx, p.Download)
@@ -633,17 +667,20 @@ func (h *Handoff) Export(ctx context.Context, p exportParams) (json.RawMessage, 
 	h.downloads[id] = d
 	h.wg.Add(1)
 	h.mu.Unlock()
-	go h.pack(d, p.ID, p.Have)
+	go h.pack(d, p.ID, p.Have, p.Compress)
 	return h.exportStatus(ctx, id)
 }
 
-func (h *Handoff) pack(d *download, agent string, have []string) {
+func (h *Handoff) pack(d *download, agent string, have []string, compress bool) {
 	defer h.wg.Done()
 	defer close(d.done)
 	ctx, cancel := context.WithTimeout(h.ctx, h.Timeout)
 	err := os.MkdirAll(filepath.Dir(d.dir), 0700)
 	if err == nil {
 		err = h.Pack(ctx, agent, have, d.dir)
+	}
+	if err == nil && compress {
+		err = compressFile(ctx, filepath.Join(d.dir, "transcript.jsonl"), filepath.Join(d.dir, "transcript.jsonl.zst"))
 	}
 	cancel()
 	var bundle string
@@ -661,10 +698,58 @@ func (h *Handoff) pack(d *download, agent string, have []string) {
 	d.ready, d.bundle, d.files = true, bundle, files
 }
 
+// compressFile replaces from (when it exists) by its zstd compression
+// to, streamed. A conversation compresses to a fraction: JSON lines of
+// text and repeated keys.
+func compressFile(ctx context.Context, from, to string) error {
+	in, err := os.Open(from)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(to, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	enc, err := zstd.NewWriter(out, zstd.WithEncoderLevel(zstd.SpeedDefault), zstd.WithEncoderConcurrency(2))
+	if err != nil {
+		out.Close()
+		return err
+	}
+	_, err = io.Copy(enc, ctxReader{ctx, in})
+	if cerr := enc.Close(); err == nil {
+		err = cerr
+	}
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(to)
+		return err
+	}
+	return os.Remove(from)
+}
+
+// ctxReader stops a long copy when ctx ends.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
 // stage describes a packed bundle's files (manifest first).
 func stage(dir string) (string, []DownloadFile, error) {
 	var files []DownloadFile
-	for _, name := range []string{"manifest.json", "transcript.jsonl", "code.bundle", "folder.tar"} {
+	for _, name := range []string{"manifest.json", "transcript.jsonl", "transcript.jsonl.zst", "code.bundle", "folder.tar"} {
 		f, err := os.Open(filepath.Join(dir, name))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -736,7 +821,7 @@ func (h *Handoff) Download(p downloadParams) (json.RawMessage, error) {
 	switch {
 	case !downloadID.MatchString(p.Download):
 		return nil, protocol.Err("invalid_request", "Invalid download")
-	case !uploadFiles[p.Name]:
+	case !exportFiles[p.Name]:
 		return nil, protocol.Err("invalid_request", "name must be manifest.json, transcript.jsonl, code.bundle or folder.tar")
 	case p.Offset < 0 || p.Offset%transfer.ChunkSize != 0:
 		return nil, protocol.Err("invalid_request", "offset must be a multiple of the 512 KiB chunk size")
@@ -762,6 +847,12 @@ func (h *Handoff) Download(p downloadParams) (json.RawMessage, error) {
 		return nil, protocol.Err("not_found", "The export has no such file")
 	case p.Offset > 0 && p.Offset >= file.Size:
 		return nil, protocol.Err("invalid_request", "offset is beyond the end of the file")
+	}
+	if d := time.Duration(ServeDelay.Load()); d > 0 {
+		time.Sleep(d)
+	}
+	if ServeStall.Add(-1) >= 0 {
+		time.Sleep(ServeStallFor)
 	}
 	f, err := os.Open(filepath.Join(d.dir, p.Name))
 	if err != nil {

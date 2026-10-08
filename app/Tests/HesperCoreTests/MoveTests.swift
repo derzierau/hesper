@@ -89,6 +89,14 @@ private let machines = [
         #expect(MoveProgress(id: "a", to: "mini", step: .worktree).line(target: "mini", fork: true)
             == "Forking to mini · checkpoint → transfer → worktree → resuming")
         #expect(MoveProgress(id: "a", to: "mini").steps.allSatisfy { $0.status == .pending })
+        // A large transfer says its size (hesperd's bytes / total).
+        let big = MoveProgress(params: ["id": "L:claude:s", "step": "transfer", "to": "mini", "percent": 42,
+                                        "bytes": .number(631_242_752), "total": .number(1_503_238_553)])
+        #expect(big?.total == 1_503_238_553)
+        #expect(big?.label(.transfer) == "transfer 42% of 1.4 GB")
+        #expect(MoveProgress(id: "a", to: "mini", step: .transfer, total: 82 << 20).label(.transfer) == "transfer of 82.0 MB")
+        #expect(BringProgress(params: ["step": "transfer", "to": "mini", "percent": 7, "total": .number(5_368_709_120)])?.label(.transfer)
+            == "transfer 7% of 5.0 GB")
     }
 
     @Test func newAgentFromRemovalAndReply() {

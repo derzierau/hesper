@@ -2892,10 +2892,14 @@ of old transcripts announces nothing: search instead), and additive
 - `sessions.resume {id, machine}` with another machine than the home:
   the session **moves**. On the target: with the home reachable, the
   home packs it like `agents.move` (`sessions.plan` for the commits, the
-  target probes, `agents.export {id: "session:<key>"}` sealed download:
-  branch, base, uncommitted work incl. untracked files, the transcript —
-  `.zst` and archived rollouts decompressed) and the target unpacks it
-  (`handoff.Unpack`: repository created from a full bundle when missing,
+  target probes where the project is here — its project's folder, else
+  the path mapped —; without it and with a remote, the bundle is
+  incremental from the remote's head and the target clones;
+  `agents.export {id: "session:<key>", compress: true}` sealed download:
+  branch, base, uncommitted work incl. untracked files, the transcript
+  as `transcript.jsonl.zst` — archived and `.zst` rollouts read as they
+  are) and the target unpacks it (`PlaceSession`: the project cloned
+  from its remote when missing, else made from a full bundle,
   uncommitted changes restored, transcript placed with every `cwd` mapped
   to this home) and resumes; with the home away, the transcript comes
   from this Mac's mirror and the folder is the session's folder mapped
@@ -2904,8 +2908,21 @@ of old transcripts announces nothing: search instead), and additive
   `movedTo` (replicated); resuming it goes to the new home's entry
   (which this Mac indexes from the placed transcript and owns). Live
   sessions never move (`live`). A home that is reachable but refuses
-  (conflicts, live) is the answer: only an unreachable home falls back
-  to the mirror.
+  (conflicts, live, too large) is the answer: only an unreachable home,
+  or a transfer that stopped moving, falls back to the mirror (the
+  note says which). When the mirror cannot serve either (no copy, no
+  folder), the error names both reasons: "could not get the session
+  from laptop: <why>; this Mac's copy: <why>" (also in hesperd's log).
+- Between Macs a resume or fork runs as the target's own operation
+  (it outlasts the relay's 20 s per request): the caller sends
+  `{key, poll: true}`, the target answers the result or `{pending,
+  steps, progress}`, and the caller asks `{op, seen}` until the result.
+  It tells its subscribers `agents.moving {id: <session id>, session:
+  true, to, fork, step, percent?, bytes?, total?}` (checkpoint,
+  transfer, worktree, resume, done or failed); hesperctl prints them on
+  stderr. A transfer fails only when no chunk got through for a minute
+  (chunks lost on the way are asked again from the same offset); the
+  whole is bounded at 2 hours.
 - `sessions.fork`: `claude --resume <id> --fork-session --session-id
   <new>`, `codex fork [options] <id>`, on the home or brought to
   `machine` the same way (the original stays where it is).
@@ -3634,7 +3651,7 @@ host methods. Steps:
    handoff commit (same shape as before, so older daemons read it).
 3. Transfer: as before (incremental from the target's commits; when the
    target will clone, from the source's last known remote head), at most
-   200 MB (`too-large`, `agents.MaxMoveBytes`), over the E2E transfer
+   5 GB (`too-large`; settings.json `maxTransferMB`, default 5120), over the E2E transfer
    channel. The controller adds `move: {from, to, fork, note}` to the
    manifest (older targets ignore it).
 4. Target: the project is the project's folder there (shared projects,
@@ -3882,13 +3899,14 @@ from, path?, agent?, error?}` to every subscriber that takes moves;
    agents' routine; pruned with the others) is the handoff commit,
    `clean` carries HEAD only; the bundle has the branch and is
    incremental from the remote's head the source last saw when the
-   repository has a remote (the target clones), else full. Over 200 MB
-   (`MaxMoveBytes`): `too-large`. Any other folder (or a repository
+   repository has a remote (the target clones), else full. Over the
+   transfer cap (settings.json `maxTransferMB`, default 5 GB):
+   `too-large`. Any other folder (or a repository
    without a commit): `folder.tar` without `node_modules`, `.build`,
    `DerivedData`, `target`, `dist`, `.venv`, `__pycache__` at any depth,
    symlinks kept only when they point inside the folder (made
    relative), sockets/devices skipped, unreadable files skipped; over
-   100 MB of files: `too-large`. A remote source packs on
+   the transfer cap of files: `too-large`. A remote source packs on
    `agents.export {id: "folder:with:<path>" | "folder:clean:<path>"}`
    (right `transfer`), downloaded sealed for this Mac.
 2. `transfer` (percent 0–100; halves when both ends are other Macs).

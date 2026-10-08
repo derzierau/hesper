@@ -34,8 +34,9 @@ type Peers interface {
 	// TransferKey is a machine's published transfer key ("" unknown).
 	TransferKey(machine string) string
 	// Fetch has machine pack an export (agents.export of id, incremental
-	// from have) and downloads it into dir.
-	Fetch(ctx context.Context, machine, id string, have []string, dir string) error
+	// from have) and downloads it into dir; progress (optional) gets the
+	// bytes received of the total (first with 0 once it is packed).
+	Fetch(ctx context.Context, machine, id string, have []string, dir string, progress func(got, total int64)) error
 }
 
 // SetPeers connects the other Macs.

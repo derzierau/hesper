@@ -244,7 +244,7 @@ func (d *Daemon) startHost(ctx context.Context, cfg Config, logf func(string, ..
 	// Everything but the relay-visible snapshot and pings goes through the
 	// channel (agent names, tasks and screens never travel in plaintext).
 	channel := &host.E2E{Key: key, Auth: auth, Require: true}
-	d.Handoff = &host.Handoff{Dir: cfg.Uploads, Key: key, Logger: cfg.Logger,
+	d.Handoff = &host.Handoff{Dir: cfg.Uploads, Key: key, Logger: cfg.Logger, MaxBytes: reg.TransferCap,
 		Pack: func(ctx context.Context, id string, have []string, dir string) error {
 			if strings.HasPrefix(id, sessions.ExportPrefix) && d.History != nil {
 				// shared history; its codes (live, not_found, …) reach

@@ -385,5 +385,9 @@ func (s *Service) mirrored(key, dst string) (bool, error) {
 		out.Close()
 		return false, err
 	}
-	return true, out.Close()
+	if err := out.Close(); err != nil {
+		return false, err
+	}
+	// A copy still catching up may end inside a line.
+	return true, trimPartialLine(dst)
 }

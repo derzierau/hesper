@@ -39,8 +39,9 @@ import (
 //  4. the source's agent is closed with reason "moved" (agents.close),
 //     unless params.fork.
 
-// moveTimeout bounds a move.
-var moveTimeout = 10 * time.Minute
+// moveTimeout bounds a move or a bring as a whole: transfers fail when no
+// bytes moved for client.TransferIdle, not by their length.
+var moveTimeout = 2 * time.Hour
 
 // settleWait bounds the wait for an interrupted agent to settle.
 var settleWait = 15 * time.Second
@@ -226,9 +227,15 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 	defer os.RemoveAll(stage)
 	os.Chmod(stage, 0o700)
 	both := src.m != nil && dst.m != nil
+	// One size for both legs: the bytes that travel.
+	var size int64
 	percent := func(done, total int64, from, span int) {
 		if total > 0 {
-			progress(wire.Moving{Step: wire.MoveTransfer, Percent: from + int(int64(span)*done/total)})
+			if size == 0 {
+				size = total
+			}
+			progress(wire.Moving{Step: wire.MoveTransfer, Percent: from + int(int64(span)*done/total), Total: size,
+				Bytes: legDone(size, done, total, from, span)})
 		}
 	}
 	// 2. The checkpoint and the bundle, here.
@@ -247,7 +254,8 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 		if err != nil {
 			return wire.Agent{}, wireError(err)
 		}
-		progress(wire.Moving{Step: wire.MoveTransfer})
+		size = exp.Size()
+		progress(wire.Moving{Step: wire.MoveTransfer, Total: size})
 		span := 100
 		if both {
 			span = 50
@@ -283,7 +291,10 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 	if both {
 		from, span = 50, 50
 	}
-	progress(wire.Moving{Step: wire.MoveTransfer, Percent: from})
+	if size == 0 {
+		size = filesSize(files)
+	}
+	progress(wire.Moving{Step: wire.MoveTransfer, Percent: from, Total: size, Bytes: size * int64(from) / 100})
 	if err := dst.c.Upload(client.RequireE2E(ctx), dst.m.id, dst.transferKey, upload, files,
 		func(sent, total int64) { percent(sent, total, from, span) }); err != nil {
 		return wire.Agent{}, wireError(err)
@@ -304,6 +315,23 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 	f.mu.Unlock()
 	progress(wire.Moving{Step: wire.MoveResume, Agent: a.ID})
 	return a, nil
+}
+
+// legDone is the bytes of a transfer of size done when one leg (from,
+// span: its part of 0–100) moved done of its total.
+func legDone(size, done, total int64, from, span int) int64 {
+	f := float64(from)/100 + float64(span)/100*float64(done)/float64(total)
+	return min(size, int64(f*float64(size)))
+}
+
+func filesSize(files []client.UploadFile) int64 {
+	var n int64
+	for _, f := range files {
+		if st, err := os.Stat(f.Path); err == nil {
+			n += st.Size()
+		}
+	}
+	return n
 }
 
 // importUpload has a remote target import a completed upload

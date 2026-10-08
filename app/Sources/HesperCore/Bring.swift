@@ -220,6 +220,8 @@ public struct BringProgress: Equatable, Sendable {
     /// nil: sent, nothing heard yet.
     public var step: BringStep?
     public var percent: Int?
+    /// The transfer's size in bytes as it travels (`total`), when known.
+    public var total: Int64?
     public var phase: Phase = .running
 
     public init(draft: String? = nil, to: String, step: BringStep? = nil, percent: Int? = nil, phase: Phase = .running) {
@@ -255,6 +257,7 @@ public struct BringProgress: Equatable, Sendable {
             pct = Double(raw[r])
         }
         percent = pct.map { Int(max(0, min(100, $0)).rounded()) }
+        total = p["total"]?.doubleValue.flatMap { $0 > 0 ? Int64($0) : nil }
     }
 
     public enum Status: Equatable, Sendable { case done, current, pending }
@@ -269,10 +272,13 @@ public struct BringProgress: Equatable, Sendable {
         }
     }
 
-    /// "transfer 42%" while it runs.
+    /// "transfer 42%" while it runs ("transfer 42% of 1.4 GB" once its
+    /// size is known).
     public func label(_ s: BringStep) -> String {
-        if s == .transfer, step == .transfer, let percent { return "transfer \(percent)%" }
-        return s.title
+        guard s == .transfer, step == .transfer else { return s.title }
+        let size = total.map { " of " + TransferSize.text($0) } ?? ""
+        if let percent { return "transfer \(percent)%" + size }
+        return total == nil ? s.title : "transfer" + size
     }
 
     /// "Bringing to mini · checkpoint → transfer 42% → unpack → starting"

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
+
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 	"github.com/derzierau/hesper/relay/pkg/session"
 	"github.com/derzierau/hesper/relay/pkg/transfer"
@@ -110,15 +112,15 @@ func (c *Controller) uploadFile(ctx context.Context, machineID string, sender *t
 }
 
 func (c *Controller) chunk(ctx context.Context, machineID string, params map[string]any) error {
-	for attempt := 0; ; attempt++ {
-		requestCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		_, err := c.Request(requestCtx, machineID, "transfer", params)
-		cancel()
+	_, err := c.retry(ctx, machineID, "transfer", params)
+	if err != nil && params["last"] == true {
+		// A last chunk whose answer was lost: the host has the file.
 		var fault *protocol.Error
-		if err == nil || attempt > 0 || ctx.Err() != nil || !errors.As(err, &fault) || fault.Code != "timeout" {
-			return err
+		if errors.As(err, &fault) && fault.Code == "invalid_request" && strings.Contains(fault.Message, "already complete") {
+			return nil
 		}
 	}
+	return err
 }
 
 // Spawn has a hesperd host import a completed upload (agents.import:
@@ -163,21 +165,43 @@ type Export struct {
 }
 
 // downloadNames are the files an export may hold; nothing else is written.
-var downloadNames = map[string]bool{"manifest.json": true, "transcript.jsonl": true, "code.bundle": true, "folder.tar": true} // folder.tar: bring the folder
+// transcript.jsonl.zst is the conversation compressed (an export asked
+// with compress); Download stores it as transcript.jsonl.
+var downloadNames = map[string]bool{"manifest.json": true, "transcript.jsonl": true, "transcript.jsonl.zst": true, "code.bundle": true, "folder.tar": true} // folder.tar: bring the folder
+
+// Transfer timing: a chunk request that times out or loses its
+// connection is sent again (the host accepts a repeated offset, a
+// download chunk is read again) until TransferIdle passed without a
+// chunk getting through; only then does the transfer fail. A slow link
+// that keeps moving bytes never times out (the caller's context bounds
+// the whole transfer).
+var (
+	TransferIdle    = 60 * time.Second
+	chunkTimeout    = 25 * time.Second
+	retryBackoffMax = 5 * time.Second
+)
 
 // Export has a hesperd host pack agent id for a move (incremental from
 // have, commits the target has) for key (this side's ephemeral X25519
 // key) and polls until it is staged.
 func (c *Controller) Export(ctx context.Context, machineID, id string, have []string, key *ecdh.PrivateKey) (Export, error) {
 	var result Export
-	params := map[string]any{"key": transfer.EncodePublicKey(key.PublicKey()), "id": id}
+	params := map[string]any{"key": transfer.EncodePublicKey(key.PublicKey()), "id": id, "compress": true}
 	if len(have) > 0 {
 		params["have"] = have
 	}
-	for {
-		requestCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		raw, err := c.Request(requestCtx, machineID, "agents.export", params)
+	requestCtx, cancel := context.WithTimeout(ctx, chunkTimeout)
+	raw, err := c.Request(requestCtx, machineID, "agents.export", params)
+	cancel()
+	var fault *protocol.Error
+	if errors.As(err, &fault) && fault.Code == "invalid_request" && fault.Message == "Invalid method parameters" {
+		// A host before compressed exports.
+		delete(params, "compress")
+		requestCtx, cancel := context.WithTimeout(ctx, chunkTimeout)
+		raw, err = c.Request(requestCtx, machineID, "agents.export", params)
 		cancel()
+	}
+	for {
 		if err != nil {
 			return result, err
 		}
@@ -196,8 +220,18 @@ func (c *Controller) Export(ctx context.Context, machineID, id string, have []st
 		if result.State != "packing" || result.Download == "" {
 			return result, protocol.Err("invalid_response", "Unexpected export state "+result.State)
 		}
-		params = map[string]any{"download": result.Download}
+		// Polling is safe to repeat: a lost answer is asked again.
+		raw, err = c.retry(ctx, machineID, "agents.export", map[string]any{"download": result.Download})
 	}
+}
+
+// Size is the bytes an export's files hold (as they travel).
+func (e Export) Size() int64 {
+	var n int64
+	for _, f := range e.Files {
+		n += f.Size
+	}
+	return n
 }
 
 // Download fetches every file of a staged export into dir (created 0700),
@@ -229,7 +263,55 @@ func (c *Controller) Download(ctx context.Context, machineID, hostKey string, e 
 			return err
 		}
 	}
+	if downloaded(e, transcriptZst) {
+		return unzstd(filepath.Join(dir, transcriptZst), filepath.Join(dir, "transcript.jsonl"))
+	}
 	return nil
+}
+
+const transcriptZst = "transcript.jsonl.zst"
+
+func downloaded(e Export, name string) bool {
+	for _, f := range e.Files {
+		if f.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// unzstd decompresses from into to (0600, streamed) and removes from.
+func unzstd(from, to string) error {
+	in, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	d, err := zstd.NewReader(in, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	out, err := os.CreateTemp(filepath.Dir(to), ".unzstd-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(out.Name())
+	if _, err := io.Copy(out, d); err != nil {
+		out.Close()
+		return protocol.Err("integrity", "transcript.jsonl.zst does not decompress: "+err.Error())
+	}
+	if err := out.Chmod(0o600); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(out.Name(), to); err != nil {
+		return err
+	}
+	return os.Remove(from)
 }
 
 func (c *Controller) downloadFile(ctx context.Context, machineID string, opener *transfer.Download, download, name string, size int64, sum, dir string, received func(int64)) error {
@@ -283,16 +365,38 @@ func (c *Controller) downloadFile(ctx context.Context, machineID string, opener 
 	return os.Rename(out.Name(), final)
 }
 
-// retry sends a request once more after a timeout; the methods it is used
-// for are safe to repeat.
+// retry sends a request again while it fails on the way (timed out,
+// connection lost, the host or relay busy) and less than TransferIdle
+// has passed since the first attempt; the methods it is used for are
+// safe to repeat.
 func (c *Controller) retry(ctx context.Context, machineID, method string, params map[string]any) (json.RawMessage, error) {
-	for attempt := 0; ; attempt++ {
-		requestCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	start := time.Now()
+	backoff := 250 * time.Millisecond
+	for {
+		requestCtx, cancel := context.WithTimeout(ctx, chunkTimeout)
 		raw, err := c.Request(requestCtx, machineID, method, params)
 		cancel()
-		var fault *protocol.Error
-		if err == nil || attempt > 0 || ctx.Err() != nil || !errors.As(err, &fault) || fault.Code != "timeout" {
+		if err == nil || ctx.Err() != nil || !transient(err) || time.Since(start) >= TransferIdle {
 			return raw, err
 		}
+		select {
+		case <-ctx.Done():
+			return raw, err
+		case <-time.After(max(min(backoff, TransferIdle-time.Since(start)), 0)):
+		}
+		backoff = min(2*backoff, retryBackoffMax)
 	}
+}
+
+// transient: the request may not have arrived, or its answer was lost.
+func transient(err error) bool {
+	var fault *protocol.Error
+	if !errors.As(err, &fault) {
+		return false
+	}
+	switch fault.Code {
+	case "timeout", "connection_lost", "busy", "unavailable", "expired":
+		return true
+	}
+	return false
 }
