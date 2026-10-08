@@ -47,13 +47,45 @@ Installer:
 scripts/test-install.sh   # dry runs in a temporary HOME
 ```
 
+## Commits
+
+- One logical change per commit. Each commit builds and passes its tests on
+  its own, so `git bisect` works.
+- Keep formatting, renames and refactors in their own commits, apart from
+  behavior changes.
+- Subject: `<area>: <what changes>`, imperative, at most 72 characters, no
+  trailing period. Areas: `relay`, `hesperd`, `hesperctl`, `app` or an app
+  feature (`Wall`, `History`, `Desks`), `install.sh`, `ci`, `release`,
+  `brew`, `docs`, `AGENTS.md`. For example `relay: drop a viewer that falls 4 MiB behind`.
+- Body, wrapped at 72 columns: why the change is needed and what a reviewer
+  cannot see in the diff.
+
 ## Pull requests
 
 - Keep each pull request to one change, with tests where the code has them.
 - Run the checks above for the parts you touched.
 - If behavior changes, update the matching doc in `docs/` or `relay/docs/`.
-- Write commit messages in the imperative, prefixed with the area
-  (for example `Wall: …`, `relay: …`, `install.sh: …`).
+- Work on a branch. `main` is never force-pushed.
+
+## Third-party code and secrets
+
+Everything you commit, commit messages included, is public.
+
+- New dependencies need a license compatible with MIT (MIT, BSD, ISC,
+  Apache-2.0 or MPL-2.0). Say why in the pull request. Anything that ships
+  in a binary goes into [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- Do not copy code from other projects unless its license allows it; keep
+  its notice and list it in `THIRD_PARTY_NOTICES.md`.
+- Never commit credentials, keys, personal paths or data from real
+  sessions. Tests use fixtures.
+
+## Coding agents
+
+[AGENTS.md](AGENTS.md) holds the same rules for coding agents (Codex,
+Cursor, Claude Code and others), plus the commands they must not run.
+Directories with their own rules have their own `AGENTS.md`. Claude Code
+reads them through `CLAUDE.md`, and `.claude/settings.json` adds hooks that
+format Go, refuse the window-opening targets and run the headless checks.
 
 ## Security issues
 
