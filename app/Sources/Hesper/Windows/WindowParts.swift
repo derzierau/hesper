@@ -135,8 +135,9 @@ final class ScopePill {
 // MARK: Size ownership
 
 /// Who sets an agent's PTY size when several windows show it: the
-/// focus-role terminal (agent window, or a wall's focus view) in the
-/// app's key window. Another Hesper window becoming key (or the owner
+/// focus-role terminal (agent window, or a wall's focus view) or the
+/// active tile in the app's key window, one per agent (SizeOwner); every
+/// other terminal of the agent is a view at its own grid. Another Hesper window becoming key (or the owner
 /// closing) releases it, and the daemon falls back to its fit; the app
 /// merely going to the background keeps it (no resize on every app
 /// switch). Applied 250 ms after key changes settle, so flipping between
@@ -180,13 +181,39 @@ final class SizeOwnership {
         }
     }
 
+    /// The owner window: the last of ours that became key; before any did
+    /// (launch), the key or main window if it is ours.
+    var effectiveOwnerWindow: NSWindow? {
+        if let ownerWindow { return ownerWindow }
+        if let k = NSApp.keyWindow, isOurs(k) { return k }
+        if let m = NSApp.mainWindow, isOurs(m) { return m }
+        return nil
+    }
+
+    /// Who owns now (SizeOwner.owners): one read-write terminal per agent,
+    /// in the owner window. `extra` is a terminal not listed yet (a new one).
+    func owners(including extra: AgentTerminal? = nil) -> [(AgentTerminal, Bool)] {
+        var ts = terminals()
+        if let extra, !ts.contains(where: { $0 === extra }) { ts.append(extra) }
+        let id: (NSWindow?) -> Int? = { $0.map { ObjectIdentifier($0).hashValue } }
+        let cs = ts.map { SizeOwner.Candidate(agentID: $0.agent.id, window: id($0.host.window), focusRole: $0.role == .focus, readWrite: $0.readWrite) }
+        return Array(zip(ts, SizeOwner.owners(cs, ownerWindow: id(effectiveOwnerWindow))))
+    }
+
+    /// Whether `t` owns its agent's size now (AgentTerminal asks when it
+    /// makes a surface). Others of the same agent follow in the next apply.
+    func wouldOwn(_ t: AgentTerminal) -> Bool {
+        let all = owners(including: t)
+        let owns = all.first { $0.0 === t }?.1 ?? false
+        if owns, all.contains(where: { $0.0 !== t && $0.0.agent.id == t.agent.id && $0.0.readWrite && $0.0.ownsSize }) { schedule() }
+        return owns
+    }
+
     func apply() {
-        for t in terminals() {
-            guard let w = t.host.window else { continue }
-            let owns = w === ownerWindow
+        for (t, owns) in owners() where t.host.window != nil {
             if t.ownsSize != owns {
                 t.ownsSize = owns
-                if t.role == .focus || t.interactive { switches += 1 }
+                if t.readWrite { switches += 1 }
             }
         }
     }
