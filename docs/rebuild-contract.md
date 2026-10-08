@@ -550,6 +550,10 @@ tracking (mouse, focus, kitty keyboard flags, cursor shape), `Resize` and
   the attach fails or the connection drops. Without `--owner` it follows
   SIZE by setting its own terminal's window size (TIOCSWINSZ) to the PTY's;
   the app should take the grid from `agent.size` / SIZE for font scaling.
+  A terminal emulator that sizes its grid from its window (Ghostty, the
+  app's surfaces) does not follow that, so the app never uses a raw attach
+  without `--owner`: non-owners are `--fit` views (see "Size rule with
+  several windows").
   With `--owner` it sends its size at attach and on SIGWINCH.
 
 **Agents' environment:** the login environment (`$SHELL -l -c 'printf
@@ -1301,11 +1305,23 @@ Move Tab to New Window and dragging tabs out are AppKit's; full screen
 cycles. Wall windows don't tab. The tile of an agent with a window shows a
 ↗ badge on its top-right corner. Removing the agent closes its window.
 
-**Size rule with several windows** (`SizeOwnership`): among the
-read-write candidates for an agent (an agent window, a wall's focus view,
-the active tile) only the one in the app's **key window** attaches as
-owner; the others are rw without `owner`, and with no owner the daemon
-follows the views' fit (largest tile). Applied 250 ms after key changes
+**Size rule with several windows** (`SizeOwnership`, pure rule
+`HesperCore/SizeOwner.swift`): among the read-write candidates for an
+agent (an agent window, a wall's focus view, the active tile) only the one
+in the app's **key window** attaches as owner, and at most one per agent
+(a focus view before a tile); every other terminal of that agent is a
+**view** (`attach --fit`), and with no owner the daemon follows the views'
+fit (largest pane). Never rw without `owner`: that attach gets the PTY's
+raw stream at the PTY's grid, but libghostty sizes a surface's grid from
+its frame (the bridge's TIOCSWINSZ on its pty changes nothing there), so in
+a pane of another size the agent's TUI wrapped and its cursor-addressed
+redraws landed in the wrong cells (garbled panes in windows that weren't
+key). A view is rendered by the daemon from its screen copy at the pane's
+own grid: clipped, never reflowed. A terminal asks SizeOwnership whenever
+it makes a surface, so a new one in a window that isn't key never attaches
+as a second owner; the trade-off: a pane in a window that isn't key can't
+type until its window is key and the owner swap is done (≤ 250 ms + the
+swap). Applied 250 ms after key changes
 settle, through AgentTerminal's seamless swap (the new attach draws under
 the old surface, then replaces it), so flipping between windows doesn't
 ping-pong the PTY (test: 8 key flips in 400 ms → one size change, two
