@@ -59,6 +59,10 @@ var methodRights = map[string]string{
 	"sessions.pull": Observe, "sessions.transcript": Observe, "sessions.plan": Observe, "sessions.changes": Observe,
 	"checkpoints.restore": Transfer, // move work: a worktree from a checkpoint
 	"sessions.resume":     Transfer, "sessions.fork": Transfer, "sessions.continueAs": Transfer,
+	// bring the folder: planning reads any folder's Git state and
+	// exporting one (agents.export "folder:…") sends its files: transfer;
+	// probing the target observes.
+	"bring.plan": Transfer, "bring.probe": Observe,
 }
 
 // Unsigned reports the methods controllers send without a signature and
@@ -100,6 +104,15 @@ func MethodRight(method string, params []byte) (right string, strong, ok bool) {
 		// A shell on another machine: the shell right and Touch ID.
 		if SpawnsShell(params) {
 			return Shell, true, true
+		}
+	case "agents.export":
+		// bring the folder: a folder's files, not an agent's, leave.
+		var p struct {
+			ID string `json:"id"`
+		}
+		// (Params that do not parse are refused by the host.)
+		if json.Unmarshal(params, &p) == nil && strings.HasPrefix(p.ID, "folder:") {
+			return Transfer, false, true
 		}
 	case "projects.sync":
 		// Sending a state changes the host's projects.

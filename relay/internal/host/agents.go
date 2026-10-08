@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
+	"github.com/derzierau/hesper/relay/internal/handoff"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -45,6 +46,10 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 			return nil, protocol.Err("invalid", "machine "+p.Machine+" is not this one")
 		}
 		p.Machine = ""
+		if p.Bring != nil {
+			// bring the folder: the controller brings it, then spawns.
+			return nil, protocol.Err("invalid", "bring is a controller's (spawn in the brought folder)")
+		}
 		kind, err := reg.SpawnKind(p)
 		if err != nil {
 			return nil, publicError(err)
@@ -225,6 +230,38 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 			return protocol.JSON(reg.ProbeMove(ctx, p.Path, p.Home, p.Commits, p.ProjectID, p.Kind)), nil
 		}
 		return protocol.JSON(reg.Probe(ctx, p.Path, p.Home, p.Commits)), nil
+	case "bring.plan":
+		// bring the folder (internal/agents/bring.go): this Mac as the
+		// source.
+		var p struct {
+			Path string `json:"path"`
+		}
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		plan, err := reg.BringPlan(ctx, p.Path)
+		if err != nil {
+			return nil, publicError(err)
+		}
+		return protocol.JSON(plan), nil
+	case "bring.probe":
+		// bring the folder: this Mac as the target.
+		var p struct {
+			Plan    handoff.BringPlan `json:"plan"`
+			Kind    string            `json:"kind,omitempty"`
+			Profile string            `json:"profile,omitempty"`
+		}
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		if len(p.Plan.Path) > 4096 || len(p.Plan.Name) > 255 || len(p.Profile) > 128 {
+			return nil, protocol.Err("invalid_request", "plan too long")
+		}
+		probe, err := reg.BringProbe(p.Plan, p.Kind, p.Profile)
+		if err != nil {
+			return nil, publicError(err)
+		}
+		return protocol.JSON(probe), nil
 	case "agents.checkpoint":
 		// move work (internal/agents/checkpoint.go)
 		var p wire.IDParams

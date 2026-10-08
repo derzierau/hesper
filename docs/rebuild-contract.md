@@ -3825,6 +3825,115 @@ archive every old folder at once; clones in the scratch root are not
 adopted; a scratch without Git promotes to kind `folder`; the per-folder
 `scratch:<folder>` projects remain for agents outside every project.
 
+### As built — bring the folder (daemon)
+
+Code: `pkg/wire/bring.go` (`Bring`, `Bringing`, steps,
+`agents.bringing`), `pkg/wire/wire.go` (`SpawnParams.bring`,
+`SpawnParams.draft`, `Error.path`), `internal/handoff/bring.go` (plan,
+destination, pack, unpack, tar), `internal/agents/bring.go` (registry
+side, `Server.bring`), `internal/remote/bring.go` (`Fleet.Bring`
+orchestration), `internal/host/agents.go` (`bring.plan`,
+`bring.probe`), `internal/host/service.go` and `internal/gateway`
+(`agents.export "folder:…"`, `agents.import` of a bring bundle),
+`internal/host/handoff.go` / `pkg/client/handoff.go` (`folder.tar` on
+the transfer channel), `pkg/devicekey/rights.go`,
+`cmd/hesperctl/agents.go` (`new --bring [--clean]`). Tests:
+`internal/handoff/bring_test.go` (tar excludes, symlinks, cap, escapes,
+destinations, a repository without remote), `internal/transport/
+remote_bring_test.go` (two machines: a repository with a remote —
+clone, branch, staged/unstaged/untracked work, progress with the draft,
+catalog path, relay sees nothing, then `exists`; a repository without
+a remote, clean; `exists` with nothing written; a hidden folder
+refused; a scratch project; a plain folder from M to L with excludes
+and the cap). All in temporary homes.
+
+**agents.spawn** takes `bring: {from?: "<machine short>" (default: this
+Mac), path?: "<absolute path on from>" (default: params.project),
+changes?: "with" (default) | "clean", draft?}` and a top-level `draft?`
+(the app's draft id; either is echoed). The spawn's `machine` is the
+target (default: this Mac). from = target: a plain spawn of `path`.
+Otherwise the daemon the call reaches orchestrates (any two machines,
+itself included) and the reply is the agent, as for any spawn. `draft`
+and `bring` never reach a host (a host refuses `bring`).
+
+**Preflight** (nothing written on failure): both machines linked
+(`offline`, -32010; a host without transfer: `unavailable`); the
+source's `bring.plan {path}` → `{path, home, name, git?, remote?,
+remoteHead?, branch?, projectId?, scratch?}` — `path` must be an
+existing folder below the source's home, not the home, with no hidden
+folder below the home on the way (`invalid`; `~/.ssh` never travels);
+a Git checkout is taken at its top. The target's `bring.probe {plan,
+kind?, profile?}` → `{path, exists, tool?}`: where the folder goes
+there —
+- a scratch project: `<target's scratch root>/<same folder name>`;
+- a repository with a remote: the same path under the target's home
+  when the source has it under `~/projects` or `~/scratch`, else
+  `<target's projects root>/<name>`;
+- anything else: the same path under the target's home.
+Something there (anything, even empty) → `exists` with
+`data.path` = that path ("Use mini's copy"). The spawn's tool missing →
+`tool-missing`.
+
+**Steps** (`agents.bringing {id: "br-…", draft?, step, percent?, to,
+from, path?, agent?, error?}` to every subscriber that takes moves;
+`draft` on every note when given):
+1. `checkpoint`: the source packs. A Git folder (with a commit): with
+   changes a checkpoint at `refs/hesper/checkpoints/bring` (the
+   agents' routine; pruned with the others) is the handoff commit,
+   `clean` carries HEAD only; the bundle has the branch and is
+   incremental from the remote's head the source last saw when the
+   repository has a remote (the target clones), else full. Over 200 MB
+   (`MaxMoveBytes`): `too-large`. Any other folder (or a repository
+   without a commit): `folder.tar` without `node_modules`, `.build`,
+   `DerivedData`, `target`, `dist`, `.venv`, `__pycache__` at any depth,
+   symlinks kept only when they point inside the folder (made
+   relative), sockets/devices skipped, unreadable files skipped; over
+   100 MB of files: `too-large`. A remote source packs on
+   `agents.export {id: "folder:with:<path>" | "folder:clean:<path>"}`
+   (right `transfer`), downloaded sealed for this Mac.
+2. `transfer` (percent 0–100; halves when both ends are other Macs).
+3. `unpack`: the target makes the folder next to its place
+   (`.<name>.bring-*`) and renames it in only while the place is still
+   free (`exists` otherwise; never overwritten): a clone of the remote
+   on the source's branch (`checkout -B` at the source's HEAD, upstream
+   set when `origin/<branch>` exists) with the bundle's commits; a
+   repository made from the full bundle (origin set when the source had
+   one); or the untarred folder (only folders, files and symlinks inside
+   it; nothing written through a symlink). With changes the staged,
+   unstaged and untracked (not ignored) files are restored as on the
+   source. The catalog: a scratch project is recorded as the same
+   project with this Mac's path (its home stays the source); anything
+   else through the project resolution (`Paths[<target>]`; the same id
+   for a repository, a new folder project otherwise).
+4. `spawn` (`path`: the folder there): `agents.spawn` there with
+   `project` = that folder (the params' kind, profile, worktree, branch,
+   name, task and tree fields kept); then `done` (`agent`, `path`) or
+   `failed` (`error {code, message}`) at any point.
+
+**Host methods** (rights): `bring.plan` (transfer), `bring.probe`
+(observe), `agents.export` with a `folder:` id (transfer), uploads of
+`folder.tar`, `agents.import` of a manifest with `bring: {kind: "git" |
+"folder", changes}` (no agent; the job's result is `{path,
+projectId?}`). A host without them: `unavailable` ("update hesperd
+there").
+
+**hesperctl:** `new --machine M --bring [--clean] [--project DIR] TASK`
+brings DIR (default: the current folder) from this Mac; `--bring` needs
+another machine, no `--scratch`; `--clean` only with `--bring`; waits up
+to 11 minutes. `events` shows `agents.bringing`. In the reference and
+the MCP tools (flags of `new`).
+
+**Deviations from the shared contract (additive):** the top-level
+`draft` and `bring.draft` (both accepted); `agents.bringing` also has
+`id`, `from`, `path`, `agent` and `error`, and ends with `done` /
+`failed` like `agents.moving`; `exists` carries `data.path`; a
+non-Git folder's pack step is still called `checkpoint`; only folders
+below the home (not hidden) are brought; a repository with a remote
+brings only its current branch (as a move); the bring checkpoint ref is
+`refs/hesper/checkpoints/bring` (one per repository, replaced by the
+next bring); a non-scratch project's copy is recorded through the
+regular project resolution, not as a marked replica.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

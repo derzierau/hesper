@@ -201,7 +201,16 @@ func (s *Service) handoff(ctx context.Context, m protocol.Message) (json.RawMess
 		if err := params(m.Params, &p); err != nil {
 			return nil, err
 		}
-		if strings.HasPrefix(p.ID, "session:") && s.Sessions != nil {
+		if strings.HasPrefix(p.ID, agents.FolderExportPrefix) {
+			// bring the folder: "folder:with:<path>" or
+			// "folder:clean:<path>" (the registry checks the path).
+			if s.Agents == nil {
+				return nil, protocol.Err("unsupported", "Host serves no agents")
+			}
+			if _, _, err := agents.ParseFolderExport(p.ID); err != nil {
+				return nil, publicError(err)
+			}
+		} else if strings.HasPrefix(p.ID, "session:") && s.Sessions != nil {
 			// shared history: a session's bundle (sessions.go)
 			if err := s.Sessions.Exportable(p.ID); err != nil {
 				return nil, publicError(err)

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
+	"github.com/derzierau/hesper/relay/internal/handoff"
 	"github.com/derzierau/hesper/relay/internal/host"
 	"github.com/derzierau/hesper/relay/internal/projects"
 	"github.com/derzierau/hesper/relay/internal/remote"
@@ -257,10 +258,30 @@ func (d *Daemon) startHost(ctx context.Context, cfg Config, logf func(string, ..
 				}
 				return nil
 			}
+			if strings.HasPrefix(id, agents.FolderExportPrefix) {
+				// bring the folder: a folder, not an agent.
+				path, changes, err := agents.ParseFolderExport(id)
+				if err == nil {
+					_, err = reg.PackFolder(ctx, path, changes, have, dir)
+				}
+				var we *wire.Error
+				if errors.As(err, &we) {
+					return protocol.Err(we.Code, we.Message)
+				}
+				return err
+			}
 			_, err := reg.Pack(ctx, id, have, dir)
 			return err
 		},
 		Import: func(ctx context.Context, dir string) (json.RawMessage, error) {
+			if m, err := handoff.LoadManifest(dir); err == nil && m.Bring != nil {
+				// bring the folder: the folder made, no agent started.
+				res, err := reg.ImportFolder(ctx, dir)
+				if err != nil {
+					return nil, err
+				}
+				return json.Marshal(res)
+			}
 			a, err := reg.Import(ctx, dir)
 			if err != nil {
 				return nil, err

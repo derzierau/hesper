@@ -259,6 +259,18 @@ func TestMethodRights(t *testing.T) {
 			t.Errorf("%s: %s %v %v", method, right, strong, ok)
 		}
 	}
+	// Bring the folder: a folder's export, and its plan, transfer.
+	for method, params := range map[string]string{"agents.export": `{"id":"folder:with:/Users/a/x"}`, "bring.plan": `{"path":"/Users/a/x"}`} {
+		if right, _, ok := MethodRight(method, []byte(params)); !ok || right != Transfer {
+			t.Errorf("%s %s: %s %v", method, params, right, ok)
+		}
+	}
+	if right, _, ok := MethodRight("bring.probe", []byte(`{}`)); !ok || right != Observe {
+		t.Errorf("bring.probe: %s %v", right, ok)
+	}
+	if right, _, _ := MethodRight("agents.export", []byte(`{"id":"a7f3k2"}`)); right != Observe {
+		t.Errorf("an agent's export: %s", right)
+	}
 	// Projects: reading observes, sending a state or promoting transfers.
 	for p, want := range map[string]string{`{}`: Observe, `{"state":null}`: Observe, `{"state":{"node":"n"}}`: Transfer, `garbage`: Transfer} {
 		if r, _, ok := MethodRight("projects.sync", []byte(p)); !ok || r != want {

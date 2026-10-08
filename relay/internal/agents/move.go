@@ -94,7 +94,15 @@ func (r *Registry) HasTool(kind string) bool {
 	profiles, defaults := r.profiles, r.settings.Defaults
 	r.mu.Unlock()
 	_, profile, err := resolveProfile(profiles, defaults, "", kind, "")
-	if err != nil || len(profile.Argv) == 0 {
+	if err != nil {
+		return false
+	}
+	return r.hasCommand(profile)
+}
+
+// hasCommand reports whether a profile's command is here.
+func (r *Registry) hasCommand(profile wire.Profile) bool {
+	if len(profile.Argv) == 0 {
 		return false
 	}
 	name := strings.ReplaceAll(profile.Argv[0], "{loginShell}", r.opt.LoginShell)
@@ -102,7 +110,7 @@ func (r *Registry) HasTool(kind string) bool {
 		st, err := os.Stat(name)
 		return err == nil && !st.IsDir()
 	}
-	_, err = ptyhost.LookPath(name, r.env)
+	_, err := ptyhost.LookPath(name, r.env)
 	return err == nil
 }
 
@@ -173,6 +181,8 @@ func asMoveError(err error) error {
 			return wire.Errorf(wire.CodeInvalid, "%v", err)
 		case "missing_project":
 			return wire.Errorf(wire.CodeNotFound, "%v", err)
+		case "too-large": // bring the folder
+			return wire.Errorf(wire.CodeTooLarge, "%v", err)
 		default:
 			return wire.Errorf(wire.CodeExists, "%v", err)
 		}
@@ -314,6 +324,9 @@ func (r *Registry) Import(ctx context.Context, dir string) (wire.Agent, error) {
 	m, err := handoff.LoadManifest(dir)
 	if err != nil {
 		return wire.Agent{}, asMoveError(err)
+	}
+	if m.Bring != nil {
+		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "a brought folder has no agent (ImportFolder)")
 	}
 	opt, err := r.moveOptions(ctx, m)
 	if err != nil {
