@@ -25,5 +25,9 @@ xcuserdata/
 .vscode/
 *.swp
 
-# Claude Code worktrees and local session files
-/.claude/
+# Claude Code: worktrees and personal files stay local; .claude/settings.json
+# and .claude/hooks/ are shared with everyone who works on the repo
+/.claude/*
+!/.claude/settings.json
+!/.claude/hooks/
+CLAUDE.local.md
