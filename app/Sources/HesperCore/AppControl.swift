@@ -156,6 +156,16 @@ public struct AppOpenRequest: Equatable, Sendable {
         case history(query: String?)
         /// The ⌘J inbox (agents needing you).
         case inbox
+
+        /// The wall it shows leaves its focus view first (⌘Esc): showing
+        /// a wall or a composer means the wall, not the focused agent.
+        public var showsWall: Bool {
+            switch self {
+            case .wall, .composer: return true
+            case .agent(_, let mode): return mode == .wall
+            case .history, .inbox: return false
+            }
+        }
     }
 
     public var target: Target

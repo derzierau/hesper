@@ -88,7 +88,7 @@ func init() {
 		{Name: "open inbox", Summary: "Open the inbox of agents that need you (⌘J)", Usage: "open inbox",
 			Help: "On the frontmost wall; with nobody needing you the app says so.\n\n" + noLaunchHelp, Output: "{wall, needsYou}",
 			Run: openInbox},
-		{Name: "wall show", Aliases: []string{"wall"}, Summary: "Show the walls: scope, layout, grouping, density, bands, focus",
+		{Name: "wall show", Aliases: []string{"wall"}, ReadOnly: true, Summary: "Show the walls: scope, layout, grouping, density, bands, focus",
 			Usage: "wall show [--wall W] [--json]",
 			Help:  "Every wall in desk order (home first), the bands of walls that show bands, the current desk and what has the focus. --json prints the app's whole state (--wall W: that wall only). " + wallHelp + "\n\n" + noLaunchHelp,
 			Output: "{active, focused:{wall?, agent?, agentWindow?}, currentWall, walls:[" + wallOutput + "], agentWindows:[{agent, title, key}], desks:" + deskOutput +
@@ -113,7 +113,7 @@ func init() {
 				"hesperctl wall set --scope needs-you",
 			},
 			Run: wallSet},
-		{Name: "desk ls", Aliases: []string{"desk"}, Summary: "List the desks (window arrangements per display setup)", Usage: "desk ls [--json]",
+		{Name: "desk ls", Aliases: []string{"desk"}, ReadOnly: true, Summary: "List the desks (window arrangements per display setup)", Usage: "desk ls [--json]",
 			Help:   "A desk is the whole arrangement of walls and agent windows, kept per display setup; * marks the current one, (these) the desks of the displays attached now.\n\n" + noLaunchHelp,
 			Output: deskOutput, Run: deskRun("list", 0)},
 		{Name: "desk save", Summary: "Save the windows as they are as a desk", Usage: "desk save NAME",
@@ -123,7 +123,7 @@ func init() {
 			Help: "NAME is a desk's name or id; a desk of other displays is copied to these first (as the ⌃⌘D picker does).\n\n" + noLaunchHelp, Output: deskOutput,
 			Run: deskRun("switch", 1)},
 		{Name: "desk rename", Summary: "Rename a desk", Usage: "desk rename OLD NEW", Help: noLaunchHelp, Output: deskOutput, Run: deskRun("rename", 2)},
-		{Name: "desk rm", Summary: "Remove a named desk", Usage: "desk rm NAME",
+		{Name: "desk rm", Destructive: true, Summary: "Remove a named desk", Usage: "desk rm NAME",
 			Help: "A display setup's automatic desk stays (exit 1, code invalid).\n\n" + noLaunchHelp, Output: deskOutput, Run: deskRun("remove", 1)},
 	} {
 		c.Group = groupApp

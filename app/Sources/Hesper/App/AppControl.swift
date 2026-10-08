@@ -161,6 +161,7 @@ final class AppControl {
                 if !w.window.isVisible { w.window.orderFront(nil) }
                 manager.bringForward(w.window)
             }
+            if r.target.showsWall && w.model.mode == .focus { w.model.exitFocus() } // as ⌘Esc
             NSApp.activate(ignoringOtherApps: true)
             return wallState(w, home: manager.walls.first === w)
 

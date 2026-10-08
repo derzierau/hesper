@@ -140,7 +140,7 @@ func TestAppCommandsPrintAndUsage(t *testing.T) {
 		case "app.state":
 			return map[string]any{"focused": map[string]any{"wall": "main"}, "walls": []any{
 				map[string]any{"id": "main", "isHome": true, "open": true, "scope": "all", "arrangement": "shelf", "grouping": "auto", "density": "normal",
-					"mode": "wall", "agents": []string{"L/a"}, "bands": []any{map[string]any{"key": "p:as", "title": "as-apps", "collapsed": true, "agents": 2}}},
+					"mode": "focus", "focusedAgent": "L/a", "scopeName": "upday apps", "agents": []string{"L/a", "L/b", "M/c"}, "bands": []any{map[string]any{"key": "p:as", "title": "as-apps", "collapsed": true, "agents": 2}, map[string]any{"key": "p:gh", "title": "ghosty", "agents": 1}}},
 			}, "desks": []any{map[string]any{"id": "d1", "name": "Laptop only", "current": true, "automatic": true}}}, nil
 		case "app.desk":
 			return []any{map[string]any{"id": "d1", "name": "Laptop only", "current": true, "automatic": true, "thisDisplays": true, "displays": "Built-in", "walls": 1}}, nil
@@ -151,7 +151,8 @@ func TestAppCommandsPrintAndUsage(t *testing.T) {
 	})
 	ctx := context.Background()
 	out := capture(t, func() { execute(ctx, []string{"wall", "--daemon-socket", sock}, io.Discard) })
-	for _, want := range []string{"main (home)", "shelf", "p:as", "collapsed", "desk: Laptop only", "focused: main"} {
+
+	for _, want := range []string{"main (home)", "normal   3 ", "focus L/a", "shelf", "p:as", "collapsed", "desk: Laptop only", "focused: main"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("wall lacks %q:\n%s", want, out)
 		}

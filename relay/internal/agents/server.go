@@ -224,9 +224,13 @@ type ctrl struct {
 
 func (s *Server) control(conn net.Conn, r *bufio.Reader, first []byte) {
 	c := &ctrl{s: s, conn: conn, done: make(chan struct{})}
-	defer close(c.done)
 	var wg sync.WaitGroup
-	defer wg.Wait()
+	// done closes first: the watchers (agents, drafts, projects,
+	// sessions) end on it, and only then can their wait finish.
+	defer func() {
+		close(c.done)
+		wg.Wait()
+	}()
 	line := first
 	for {
 		var req wire.Request
