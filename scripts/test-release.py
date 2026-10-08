@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Exercise cask generation and binary setup with no real daemon changes."""
 import hashlib
-import json
 import os
 import plistlib
 import shutil
@@ -28,15 +27,9 @@ with tempfile.TemporaryDirectory(prefix='hesper-release-test-') as temporary:
     for tag in ('main', 'v1.2.2'):
         result = subprocess.run(['python3', str(generator), tag, str(assets)], capture_output=True)
         assert result.returncode != 0
-    metadata = temp/'release.json'
-    metadata.write_text(json.dumps({'assets': [{'name': f'Hesper-v1.2.3-{arch}.zip', 'id': index}
-                                               for index, arch in enumerate(('arm64', 'x86_64'), 101)]}))
-    subprocess.run(['python3', str(generator), 'v1.2.3', str(assets), str(metadata)], check=True)
-    cask = (checkout/'Casks/hesper.rb').read_text()
-    assert 'releases/assets/101' in cask and 'releases/assets/102' in cask
-    assert "ENV['HOMEBREW_GITHUB_API_TOKEN']" in cask
+    assert 'github.com/derzierau/hesper/releases/download/v#{version}' in cask
+    assert 'Authorization' not in cask and 'HOMEBREW_GITHUB_API_TOKEN' not in cask
     assert 'container type: :zip' in cask
-    subprocess.run(['ruby', '-c', str(checkout/'Casks/hesper.rb')], check=True)
     # A missing architecture must fail before publishing a new cask.
     (assets/'Hesper-v1.2.3-x86_64.zip').unlink()
     assert subprocess.run(['python3', str(generator), 'v1.2.3', str(assets)], capture_output=True).returncode != 0

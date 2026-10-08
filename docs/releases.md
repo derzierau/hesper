@@ -50,20 +50,20 @@ An older release cannot downgrade the cask.
 After the first successful signed release:
 
 ```sh
-brew tap derzierau/hesper git@github.com:derzierau/hesper.git
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install --cask derzierau/hesper/hesper
+brew tap derzierau/hesper https://github.com/derzierau/hesper.git
+brew install --cask derzierau/hesper/hesper
 /bin/sh /Applications/Hesper.app/Contents/Resources/hesper-setup.sh
 ```
 
 Use the app directory printed by Homebrew if you supplied `--appdir`.
 The setup command installs the LaunchAgent, hooks and skill without modifying
 the signed app. Enable Codex hooks once with `/hooks`. Run setup again after
-`HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew upgrade --cask hesper` to restart the daemon with the updated binary.
+`brew upgrade --cask hesper` to restart the daemon with the updated binary.
 Homebrew uninstall unloads the daemon and keeps your agents and configuration.
 
-The repository remains private. The tap uses SSH and release assets use the
-authenticated GitHub API. Sign in with `gh auth login` using an account that
-has repository access before installing. The token is read from the environment
-at download time; it is never stored in the cask. Public distribution is not enabled.
-The custom tap needs no separate cross-repository token. No cask is available
-until a signed release has succeeded.
+The repository and release downloads are public. The cask uses HTTPS
+release download URLs with exact SHA-256 hashes; no GitHub token is needed.
+The tap is hosted in this source repository, so its full URL is required
+when adding it. A separate `homebrew-hesper` repository would enable the
+short `brew tap derzierau/hesper` command. Official `homebrew/cask` inclusion
+requires its own submission and review.
