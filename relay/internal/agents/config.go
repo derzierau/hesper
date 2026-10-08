@@ -51,6 +51,12 @@ type Settings struct {
 	// <local id>/, so nothing lands in a repository; "project": the
 	// agent's worktree or project, .hesper/attachments/.
 	Attachments string `json:"attachments,omitempty"`
+	// MaxAgentDepth and MaxAgentChildren (agent tree, tree.go) bound the
+	// agents agents start: how deep below a person's agent (default 3),
+	// and how many live children one agent may have (default 8). 0 means
+	// agents may start none.
+	MaxAgentDepth    *int `json:"maxAgentDepth,omitempty"`
+	MaxAgentChildren *int `json:"maxAgentChildren,omitempty"`
 }
 
 // codexUpdatePrompt values.
@@ -123,6 +129,7 @@ func loadSettings(dir string) (Settings, error) {
 	}
 	s.Machine, s.Size = user.Machine, user.Size
 	s.TrustProjects, s.CodexSessionHooks = user.TrustProjects, user.CodexSessionHooks
+	s.MaxAgentDepth, s.MaxAgentChildren = user.MaxAgentDepth, user.MaxAgentChildren
 	switch user.CodexUpdatePrompt {
 	case "", CodexUpdateAsk, CodexUpdateSkip:
 		s.CodexUpdatePrompt = user.CodexUpdatePrompt

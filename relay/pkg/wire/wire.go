@@ -84,6 +84,14 @@ type Agent struct {
 	// Ended (closing agents): how a deliberately ended agent ended:
 	// "killed" (agents.kill); cleared when it runs again.
 	Ended string `json:"ended,omitempty"`
+	// Parent (agent tree): the full id of the agent that started this
+	// one (hesperctl new inside an agent); empty for one a person started.
+	// Depth is 0 for a person's agent, the parent's depth + 1 otherwise.
+	// LetParentAnswer: the parent may answer this agent's approvals and
+	// questions (hesperctl new --let-parent-answer). All three persisted.
+	Parent          string `json:"parent,omitempty"`
+	Depth           int    `json:"depth,omitempty"`
+	LetParentAnswer bool   `json:"letParentAnswer,omitempty"`
 }
 
 // EndedKilled is Agent.Ended after agents.kill.
@@ -151,6 +159,29 @@ type SpawnParams struct {
 	Name     string          `json:"name,omitempty"`
 	Worktree json.RawMessage `json:"worktree,omitempty"`
 	Branch   string          `json:"branch,omitempty"`
+	// LetParentAnswer (agent tree): when an agent spawns this one, it may
+	// answer its approvals and questions.
+	LetParentAnswer bool `json:"letParentAnswer,omitempty"`
+	// Caller (agent tree): the agent making the call (HESPER_AGENT_ID;
+	// see Client.Caller). Advisory: hesperd prefers the agent it finds
+	// the caller's process in.
+	Caller string `json:"caller,omitempty"`
+	// Parent and Depth (agent tree) are what a controller's hesperd
+	// sends a host for a spawn an agent asked for; hesperd ignores them
+	// from its local socket and derives them from the caller.
+	Parent string `json:"parent,omitempty"`
+	Depth  int    `json:"depth,omitempty"`
+}
+
+// AgentResult is agents.result's (agent tree): the agent's last turn's
+// final message (Message, from its Stop or notify hook; empty before its
+// first turn ended or when the hook carried none), else its Summary.
+type AgentResult struct {
+	ID      string    `json:"id"`
+	State   string    `json:"state"`
+	Message string    `json:"message,omitempty"`
+	Summary string    `json:"summary,omitempty"`
+	At      time.Time `json:"at,omitzero"`
 }
 
 // IDParams name one agent.

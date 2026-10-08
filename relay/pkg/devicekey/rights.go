@@ -36,6 +36,7 @@ func ValidRight(name string) bool {
 var methodRights = map[string]string{
 	"snapshot": Observe, "ping": Observe, "agents.list": Observe, "agents.link": Observe,
 	"agents.plan": Observe, "agents.probe": Observe, "agents.screen": Observe, "agents.export": Observe, "download": Observe, "job": Observe,
+	"agents.result": Observe, // agent tree: an agent's last final message
 	"agents.answer": Answer,
 	"agents.input":  Type, "files.put": Type, "files.chunk": Type,
 	"agents.spawn": Transfer, "agents.stop": Transfer, "agents.resume": Transfer, "agents.remove": Transfer,

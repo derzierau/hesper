@@ -85,6 +85,11 @@ type AgentInfo struct {
 	// below sessions/ (the rollout's date folders), for Claude the file
 	// name.
 	Transcript string `json:"transcript,omitempty"`
+	// Parent, Depth, LetParentAnswer (agent tree): the moved agent keeps
+	// its place in the tree (the parent's id as the source named it).
+	Parent          string `json:"parent,omitempty"`
+	Depth           int    `json:"depth,omitempty"`
+	LetParentAnswer bool   `json:"letParentAnswer,omitempty"`
 }
 
 // ProjectInfo is where its code is.
@@ -190,7 +195,8 @@ func Pack(ctx context.Context, a wire.Agent, machine string, have []string, dir 
 	g := p.git(ctx)
 	m := &Manifest{Version: Version, ID: newID(), Created: time.Now().Unix()}
 	m.Source.Machine, m.Source.Home = machine, p.Home
-	m.Agent = AgentInfo{LocalID: localPart(a.ID), Kind: a.Kind, Profile: a.Profile, Name: a.Name, Task: a.Task, Created: a.Created}
+	m.Agent = AgentInfo{LocalID: localPart(a.ID), Kind: a.Kind, Profile: a.Profile, Name: a.Name, Task: a.Task, Created: a.Created,
+		Parent: a.Parent, Depth: a.Depth, LetParentAnswer: a.LetParentAnswer}
 	m.Project = ProjectInfo{Path: a.Project, Worktree: a.Worktree, Branch: a.Branch}
 	if r := g.repoInfo(a.Dir()); r != nil && r.base != "" {
 		m.Project = ProjectInfo{Path: r.path, Worktree: r.worktree, Branch: r.branch, MainBranch: r.mainBranch, Base: r.base, Remote: r.remote}

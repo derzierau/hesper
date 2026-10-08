@@ -16,6 +16,10 @@ func TestMain(m *testing.M) {
 	}
 	testSigner := &devicekey.Software{Dir: dir}
 	deviceSigner = func() devicekey.Signer { return testSigner }
+	// Run inside a Hesper agent, the tests are still a person to their
+	// own daemons (agent tree); tests that need an agent set these.
+	os.Unsetenv("HESPER_AGENT_ID")
+	os.Unsetenv("HESPER_MACHINE")
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
