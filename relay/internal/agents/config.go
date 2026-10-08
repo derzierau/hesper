@@ -86,6 +86,10 @@ type Settings struct {
 	// agents may start none.
 	MaxAgentDepth    *int `json:"maxAgentDepth,omitempty"`
 	MaxAgentChildren *int `json:"maxAgentChildren,omitempty"`
+	// MaxTransferMB caps what one move, bring or session transfer
+	// carries, and what this Mac accepts as an upload (default 5120: 5
+	// GB; error "too-large").
+	MaxTransferMB *int64 `json:"maxTransferMB,omitempty"`
 	// Relay is the origin of your self-hosted relay (https://…), read by
 	// hesperctl login and pair (client.ResolveRelay). hesperd does not use
 	// it: each enrollment's credentials file records the relay it was
@@ -164,6 +168,10 @@ func loadSettings(dir string) (Settings, error) {
 	s.Machine, s.Size = user.Machine, user.Size
 	s.TrustProjects, s.CodexSessionHooks = user.TrustProjects, user.CodexSessionHooks
 	s.MaxAgentDepth, s.MaxAgentChildren = user.MaxAgentDepth, user.MaxAgentChildren
+	if user.MaxTransferMB != nil && *user.MaxTransferMB <= 0 {
+		return s, fmt.Errorf("settings.json: maxTransferMB must be positive")
+	}
+	s.MaxTransferMB = user.MaxTransferMB
 	switch user.CodexUpdatePrompt {
 	case "", CodexUpdateAsk, CodexUpdateSkip:
 		s.CodexUpdatePrompt = user.CodexUpdatePrompt

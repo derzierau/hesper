@@ -210,7 +210,7 @@ public final class DaemonClient: @unchecked Sendable {
 
     /// A spawn that brings its folder first waits like a move (transfer).
     public func spawn(_ req: SpawnRequest) async throws -> Agent {
-        if req.bring != nil { return try await call("agents.spawn", req.params, timeout: 600).decode(Agent.self) }
+        if req.bring != nil { return try await call("agents.spawn", req.params, timeout: Self.transferTimeout).decode(Agent.self) }
         return try await call("agents.spawn", req.params).decode(Agent.self)
     }
 
@@ -278,11 +278,19 @@ public final class DaemonClient: @unchecked Sendable {
     /// agents.move: checkpoint, carry and resume on `machine` (hesperd
     /// closes it here unless `fork`). Returns the new agent's id. Preflight
     /// refusals carry `data.code` (`MovePreflight`); -32601: an older
-    /// hesperd. A move carries a bundle: up to 10 min.
+    /// hesperd. A move carries a bundle: as long as its transfer takes
+    /// (transferTimeout).
     @discardableResult
     public func move(_ id: String, to machine: String, options: MoveOptions = MoveOptions()) async throws -> String? {
-        MoveRemoval.newAgent(result: try await call(MoveRPC.move, options.params(id: id, to: machine), timeout: 600))
+        MoveRemoval.newAgent(result: try await call(MoveRPC.move, options.params(id: id, to: machine), timeout: Self.transferTimeout))
     }
+
+    /// How long a call that carries work to another Mac (a move, a bring,
+    /// a session resumed or forked there) is waited for: hesperd fails a
+    /// transfer when nothing moved for a minute and bounds it at 2 hours,
+    /// so the app never gives up on one that progresses (agents.moving /
+    /// agents.bringing show it).
+    public static let transferTimeout: TimeInterval = 2 * 3600 + 120
     /// agents.checkpoint: a checkpoint now (nil: not a git folder).
     public func checkpoint(_ id: String) async throws -> Checkpoint? {
         Checkpoint(json: try await call(MoveRPC.checkpoint, ["id": .string(id)], timeout: 60)["checkpoint"])

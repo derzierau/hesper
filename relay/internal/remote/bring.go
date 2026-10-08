@@ -141,9 +141,14 @@ func (f *Fleet) carryFolder(ctx context.Context, src, dst side, path string, cha
 	defer os.RemoveAll(stage)
 	os.Chmod(stage, 0o700)
 	both := src.m != nil && dst.m != nil
+	var size int64
 	percent := func(done, total int64, from, span int) {
 		if total > 0 {
-			progress(wire.Bringing{Step: wire.BringTransfer, Percent: from + int(int64(span)*done/total)})
+			if size == 0 {
+				size = total
+			}
+			progress(wire.Bringing{Step: wire.BringTransfer, Percent: from + int(int64(span)*done/total), Total: size,
+				Bytes: legDone(size, done, total, from, span)})
 		}
 	}
 	progress(wire.Bringing{Step: wire.BringCheckpoint})
@@ -161,7 +166,8 @@ func (f *Fleet) carryFolder(ctx context.Context, src, dst side, path string, cha
 		if err != nil {
 			return res, wireError(err)
 		}
-		progress(wire.Bringing{Step: wire.BringTransfer})
+		size = exp.Size()
+		progress(wire.Bringing{Step: wire.BringTransfer, Total: size})
 		span := 100
 		if both {
 			span = 50
@@ -188,7 +194,10 @@ func (f *Fleet) carryFolder(ctx context.Context, src, dst side, path string, cha
 	if both {
 		from, span = 50, 50
 	}
-	progress(wire.Bringing{Step: wire.BringTransfer, Percent: from})
+	if size == 0 {
+		size = filesSize(files)
+	}
+	progress(wire.Bringing{Step: wire.BringTransfer, Percent: from, Total: size, Bytes: size * int64(from) / 100})
 	if err := dst.c.Upload(client.RequireE2E(ctx), dst.m.id, dst.transferKey, upload, files,
 		func(sent, total int64) { percent(sent, total, from, span) }); err != nil {
 		return res, wireError(err)

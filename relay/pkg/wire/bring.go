@@ -26,7 +26,8 @@ const (
 )
 
 // Bringing is agents.bringing's params: a bring's progress. Step is
-// "checkpoint" (the source packs the folder), "transfer" (Percent 0–100),
+// "checkpoint" (the source packs the folder), "transfer" (Percent 0–100;
+// Total the size as it travels and Bytes what moved, as Moving's),
 // "unpack" (the target makes the folder), "spawn" (Path: the folder
 // there), then "done" (Agent: the new agent's id) or "failed" (Error).
 // ID names the bring (one agents.spawn).
@@ -35,6 +36,8 @@ type Bringing struct {
 	Draft   string `json:"draft,omitempty"`
 	Step    string `json:"step"`
 	Percent int    `json:"percent,omitempty"`
+	Bytes   int64  `json:"bytes,omitempty"`
+	Total   int64  `json:"total,omitempty"`
 	To      string `json:"to"`
 	From    string `json:"from,omitempty"`
 	Path    string `json:"path,omitempty"`

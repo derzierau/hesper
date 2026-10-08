@@ -498,7 +498,8 @@ settled and asks the source's plan (with the agent's processes) and the
 target's probe (project, tool) — preflight errors leave the agent as it
 is —, has the source pack a bundle (`manifest.json`, `transcript.jsonl`,
 `code.bundle`; see `internal/handoff`; a fresh checkpoint is the handoff
-commit; at most 200 MB), adds the move's part to the manifest (`move:
+commit; at most the transfer cap, settings.json `maxTransferMB`, default
+5 GB), adds the move's part to the manifest (`move:
 {from, to, fork, note}`), carries it (a remote source: `agents.export` +
 `download`; a remote target: `transfer` + `agents.import`, polled with
 `job`), and closes the source's agent (`agents.close` with reason
@@ -526,7 +527,10 @@ of plaintext; `offset` is the plaintext offset, a multiple of 512 KiB, and
 chunks arrive in order. Repeating an earlier offset discards what followed
 it. The last chunk carries `sha256` (hex, of the whole plaintext) and `epk`
 (base64 ephemeral public key); the host then decrypts, verifies and stores
-the file. Limits: 512 MiB per upload (`too_large`), 8 uploads not yet
+the file. A chunk whose answer is lost (timeout, connection lost) is sent
+again from the same offset until no chunk got through for a minute. Limits:
+the receiving machine's transfer cap per upload (settings.json
+`maxTransferMB`, default 5 GB; `too_large`), 8 uploads not yet
 imported (`busy`). Uploads stay in the state directory's `uploads/<upload>/`
 (0700) for 24 hours.
 
@@ -537,9 +541,12 @@ as `result`; failures carry `error` (`code`, `message`). An imported agent
 keeps its local id when it is free. A job that was running when the host
 stopped is reported failed (`interrupted`), never rerun.
 
-**`agents.export`** `{id, have?, key}` packs agent `id` (incremental from
-`have`, commits the target has) for the requester's ephemeral X25519 key
-and answers `{"download":"dl-…","state":"ready","id":"ho-…","files":[{"name",
+**`agents.export`** `{id, have?, key, compress?}` packs agent `id`
+(incremental from `have`, commits the target has) for the requester's
+ephemeral X25519 key — with `compress` the conversation is staged as
+`transcript.jsonl.zst` (zstd; the requester decompresses it; a host that
+does not know `compress` answers `invalid_request` and is asked again
+without) — and answers `{"download":"dl-…","state":"ready","id":"ho-…","files":[{"name",
 "size","sha256"}]}`, or `{"download","state":"packing"}` when packing
 outlasts the request (ask again with only `download`). **`download`**
 `{download, name, offset}` returns chunk `offset / 512 KiB`: `data` (sealed)

@@ -27,12 +27,35 @@ import (
 // then it closes the source's agent (CloseAs, reason "moved") unless it
 // forks.
 
-// MaxMoveBytes caps a move's bundle (error "too-large").
-var MaxMoveBytes int64 = 200 << 20
+// MaxMoveBytes is the default cap of a move's or a bring's bundle (error
+// "too-large"); settings.json maxTransferMB overrides it (TransferCap).
+var MaxMoveBytes int64 = handoff.DefaultMaxTransfer
+
+// TransferCap is what one transfer may carry here: settings.json
+// maxTransferMB, else MaxMoveBytes.
+func (r *Registry) TransferCap() int64 {
+	r.mu.Lock()
+	mb := r.settings.MaxTransferMB
+	r.mu.Unlock()
+	if mb != nil && *mb > 0 {
+		return *mb << 20
+	}
+	return MaxMoveBytes
+}
+
+// transferCapSet is the configured cap (0: the defaults apply).
+func (r *Registry) transferCapSet() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if mb := r.settings.MaxTransferMB; mb != nil && *mb > 0 {
+		return *mb << 20
+	}
+	return 0
+}
 
 // HandoffPaths are this machine's homes for moves.
 func (r *Registry) HandoffPaths() handoff.Paths {
-	return handoff.Paths{Home: r.opt.Home, ClaudeHome: r.opt.ClaudeHome, CodexHome: r.opt.CodexHome, Env: r.env}
+	return handoff.Paths{Home: r.opt.Home, ClaudeHome: r.opt.ClaudeHome, CodexHome: r.opt.CodexHome, Env: r.env, MaxBytes: r.transferCapSet()}
 }
 
 // Plan reports the commits a move's target may already have, and the
@@ -154,11 +177,11 @@ func (r *Registry) Pack(ctx context.Context, id string, have []string, dir strin
 			}
 		}
 	}
-	if size := dirSize(dir); size > MaxMoveBytes {
+	if size, limit := dirSize(dir), r.TransferCap(); size > limit {
 		for _, name := range []string{handoff.ManifestFile, handoff.TranscriptFile, handoff.BundleFile} {
 			os.Remove(filepath.Join(dir, name))
 		}
-		return nil, wire.Errorf(wire.CodeTooLarge, "%s's code and conversation are %d MB, over the %d MB a move carries", id, size>>20, MaxMoveBytes>>20)
+		return nil, wire.Errorf(wire.CodeTooLarge, "%s's code and conversation are %d MB, over the %d MB a move carries (settings.json maxTransferMB)", id, size>>20, limit>>20)
 	}
 	return m, nil
 }
@@ -313,6 +336,49 @@ func (r *Registry) cloneForMove(ctx context.Context, url, path string) (string, 
 	r.touchProject(path, time.Now().UTC())
 	r.mu.Unlock()
 	return path, nil
+}
+
+// PlaceSession (shared history) unpacks a session's bundle (dir) for
+// a resume or fork here, without starting an agent: the project's
+// folder here (its project's, else the source's path mapped to this
+// home), cloned from its remote when it is missing, so an incremental
+// bundle (from the commit the remote has) is enough.
+func (r *Registry) PlaceSession(ctx context.Context, dir string) (*handoff.Manifest, handoff.Placed, error) {
+	m, err := handoff.LoadManifest(dir)
+	if err != nil {
+		return nil, handoff.Placed{}, asMoveError(err)
+	}
+	var opt handoff.UnpackOptions
+	if m.Project.Bundle != "" && m.Project.Scratch == nil {
+		paths := r.HandoffPaths()
+		path := r.movePath(m.Project.Path, m.Source.Home, m.Project.ProjectID)
+		if !handoff.ProbeAt(ctx, path, nil, paths).Exists && m.Project.Bundle != "full" {
+			if m.Project.Remote == "" {
+				return m, handoff.Placed{}, wire.Errorf(wire.CodeNoRemote, "%s is not on %s and has no Git remote to clone it from", filepath.Base(m.Project.Path), r.machine)
+			}
+			if path, err = r.cloneForMove(ctx, m.Project.Remote, path); err != nil {
+				return m, handoff.Placed{}, err
+			}
+		}
+		opt.Project = path
+	}
+	m, placed, err := handoff.UnpackManifest(ctx, m, dir, r.HandoffPaths(), opt)
+	if err != nil {
+		return m, placed, asMoveError(err)
+	}
+	return m, placed, nil
+}
+
+// SessionPath is where a session's project is here (as PlaceSession
+// puts it): its project's folder, else path mapped from sourceHome.
+func (r *Registry) SessionPath(path, sourceHome, projectID string) string {
+	return r.movePath(path, sourceHome, projectID)
+}
+
+// CloneProject clones a project's remote to path (or the projects root
+// when path is taken), as a move does.
+func (r *Registry) CloneProject(ctx context.Context, url, path string) (string, error) {
+	return r.cloneForMove(ctx, url, path)
 }
 
 // Import unpacks a moved agent's bundle (dir) and starts it here,

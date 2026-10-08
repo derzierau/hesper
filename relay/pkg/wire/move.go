@@ -74,15 +74,24 @@ func (m *MoveResult) UnmarshalJSON(data []byte) error {
 }
 
 // Moving is agents.moving's params: a move's progress. Step is
-// "checkpoint", "transfer" (Percent 0–100), "worktree", "resume", then
+// "checkpoint", "transfer" (Percent 0–100; Total the payload's size as it
+// travels, the conversation compressed, once known — "Transferring 1.4 GB
+// to mini" — and Bytes what moved so far), "worktree", "resume", then
 // "done" (Agent: the new agent's id) or "failed" (Error).
+//
+// A session resumed or forked on another Mac (sessions.resume /
+// sessions.fork) reports the same steps with ID the session's id
+// ("laptop:claude:<sid>") and Session set.
 type Moving struct {
 	ID      string `json:"id"`
 	Step    string `json:"step"`
 	To      string `json:"to"`
 	Percent int    `json:"percent,omitempty"`
+	Bytes   int64  `json:"bytes,omitempty"`
+	Total   int64  `json:"total,omitempty"`
 	Agent   string `json:"agent,omitempty"`
 	Fork    bool   `json:"fork,omitempty"`
+	Session bool   `json:"session,omitempty"`
 	Error   *Error `json:"error,omitempty"`
 }
 
@@ -115,7 +124,7 @@ const (
 	CodeProcesses   = "processes"    // it started processes that would not move (data.processes; params.leaveProcesses)
 	CodeToolMissing = "tool-missing" // the target has no claude / codex
 	CodeNoRemote    = "no-remote"    // the project is not on the target and has no Git remote to clone
-	CodeTooLarge    = "too-large"    // the bundle is over the cap (200 MB)
+	CodeTooLarge    = "too-large"    // the bundle is over the cap (settings.json maxTransferMB, default 5 GB)
 )
 
 // MoveCodes are the codes a move's error keeps across machines.

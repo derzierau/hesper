@@ -147,7 +147,7 @@ func (r *Registry) BringProbe(plan handoff.BringPlan, kind, profile string) (Bri
 // PackFolder writes the bring bundle of the folder at path into dir: a
 // Git folder's work (changes) checkpointed (BringCheckpoint) and carried
 // incremental from have, any other folder as a tar (at most
-// handoff.MaxFolderBytes). Over MaxMoveBytes it is "too-large".
+// handoff.MaxFolderBytes). Over TransferCap it is "too-large".
 func (r *Registry) PackFolder(ctx context.Context, path string, changes bool, have []string, dir string) (*handoff.Manifest, error) {
 	plan, err := r.BringPlan(ctx, path)
 	if err != nil {
@@ -181,11 +181,11 @@ func (r *Registry) PackFolder(ctx context.Context, path string, changes bool, ha
 			}
 		}
 	}
-	if size := dirSize(dir); size > MaxMoveBytes {
+	if size, limit := dirSize(dir), r.TransferCap(); size > limit {
 		for _, name := range []string{handoff.ManifestFile, handoff.BundleFile, handoff.FolderFile} {
 			os.Remove(filepath.Join(dir, name))
 		}
-		return nil, wire.Errorf(wire.CodeTooLarge, "%s is %d MB, over the %d MB a bring carries", plan.Name, size>>20, MaxMoveBytes>>20)
+		return nil, wire.Errorf(wire.CodeTooLarge, "%s is %d MB, over the %d MB a bring carries (settings.json maxTransferMB)", plan.Name, size>>20, limit>>20)
 	}
 	return m, nil
 }

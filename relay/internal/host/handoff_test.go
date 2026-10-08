@@ -209,7 +209,7 @@ func TestTransferLimits(t *testing.T) {
 	if err := upload(t, h, "up-extra", "transcript.jsonl", []byte("x")); code(err) != "busy" {
 		t.Fatal("ninth concurrent upload accepted", err)
 	}
-	// Existing uploads may continue; an upload over 512 MiB is refused.
+	// Existing uploads may continue; an upload over the cap (MaxUploadBytes) is refused.
 	big := filepath.Join(h.Dir, "up-0", "transcript.jsonl")
 	if err := os.WriteFile(big, nil, 0600); err != nil {
 		t.Fatal(err)

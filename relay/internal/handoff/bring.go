@@ -36,7 +36,20 @@ const FolderFile = "folder.tar"
 
 // MaxFolderBytes caps the files of a brought folder that is not a Git
 // repository (error "too-large").
-var MaxFolderBytes int64 = 100 << 20
+var MaxFolderBytes int64 = DefaultMaxTransfer
+
+// DefaultMaxTransfer is the default cap of one transfer (5 GB):
+// settings.json maxTransferMB changes it (Paths.MaxBytes).
+const DefaultMaxTransfer int64 = 5 << 30
+
+// maxFolder is the cap of a folder's tar: the configured one, else
+// MaxFolderBytes.
+func (p Paths) maxFolder() int64 {
+	if p.MaxBytes > 0 {
+		return p.MaxBytes
+	}
+	return MaxFolderBytes
+}
 
 // FolderExcludes are the folders a tar leaves out (at any depth).
 var FolderExcludes = map[string]bool{
@@ -152,7 +165,7 @@ func PackFolder(ctx context.Context, plan BringPlan, machine string, have []stri
 			return nil, err
 		}
 		m.Project.Bundle, m.Project.Have = kind, newest
-	} else if err := TarFolder(plan.Path, filepath.Join(dir, FolderFile), MaxFolderBytes); err != nil {
+	} else if err := TarFolder(plan.Path, filepath.Join(dir, FolderFile), p.maxFolder()); err != nil {
 		os.Remove(filepath.Join(dir, FolderFile))
 		return nil, err
 	}
@@ -178,7 +191,7 @@ func UnpackFolder(ctx context.Context, m *Manifest, dir, dest string, p Paths) e
 		if err := os.MkdirAll(dest, 0o755); err != nil {
 			return err
 		}
-		return UntarFolder(filepath.Join(dir, FolderFile), dest, MaxFolderBytes)
+		return UntarFolder(filepath.Join(dir, FolderFile), dest, p.maxFolder())
 	}
 	g := p.git(ctx)
 	pr := m.Project
@@ -275,7 +288,7 @@ func TarFolder(root, out string, max int64) error {
 		case info.Mode().IsRegular():
 			total += info.Size()
 			if total > max {
-				return Errorf("too-large", "%s is over the %d MB a folder brings (build and dependency folders left out)", filepath.Base(root), max>>20)
+				return Errorf("too-large", "%s is over the %d MB a folder brings (build and dependency folders left out; settings.json maxTransferMB)", filepath.Base(root), max>>20)
 			}
 			in, err := os.Open(path)
 			if err != nil {

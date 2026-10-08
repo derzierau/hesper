@@ -51,11 +51,12 @@ type world struct {
 }
 
 type worldOptions struct {
-	delay    time.Duration // one network leg each way at the tap
-	direct   bool          // M listens for the direct path (loopback)
-	shell    bool          // M offers shells (--allow-shell)
-	rights   []string      // what each machine's controller may do on the other
-	stranger bool          // L is not approved on M (M enforces device keys)
+	delay      time.Duration // one network leg each way at the tap
+	direct     bool          // M listens for the direct path (loopback)
+	shell      bool          // M offers shells (--allow-shell)
+	rights     []string      // what each machine's controller may do on the other
+	stranger   bool          // L is not approved on M (M enforces device keys)
+	hubTimeout time.Duration // the relay's cap of one request (default 20 s, as hesper-relay)
 	// beforeStart (optional) changes the nodes' files before they start.
 	beforeStart func(L, M *node)
 }
@@ -72,7 +73,11 @@ func newWorld(t *testing.T, opts worldOptions) *world {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { repo.Close() })
-	hub := relay.New(nil, 20*time.Second)
+	hubTimeout := opts.hubTimeout
+	if hubTimeout == 0 {
+		hubTimeout = 20 * time.Second
+	}
+	hub := relay.New(nil, hubTimeout)
 	t.Cleanup(hub.Close)
 	app := transport.New(repo, hub)
 	t.Cleanup(app.Terminals.Close)

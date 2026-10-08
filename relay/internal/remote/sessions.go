@@ -69,8 +69,11 @@ func (f *Fleet) TransferKey(short string) string {
 }
 
 // Fetch has a machine pack an export (agents.export of id, incremental
-// from have) and downloads it into dir, sealed for this Mac.
-func (f *Fleet) Fetch(ctx context.Context, short, id string, have []string, dir string) error {
+// from have) and downloads it into dir, sealed for this Mac. progress
+// (optional) gets the bytes received of the export's size (as it
+// travels: the conversation compressed); a first call with got 0 once
+// packing is done.
+func (f *Fleet) Fetch(ctx context.Context, short, id string, have []string, dir string, progress func(got, total int64)) error {
 	src, err := f.side(short)
 	if err != nil {
 		return err
@@ -86,5 +89,8 @@ func (f *Fleet) Fetch(ctx context.Context, short, id string, have []string, dir 
 	if err != nil {
 		return wireError(err)
 	}
-	return wireError(src.c.Download(client.RequireE2E(ctx), src.m.id, src.transferKey, exp, key, dir, nil))
+	if progress != nil {
+		progress(0, exp.Size())
+	}
+	return wireError(src.c.Download(client.RequireE2E(ctx), src.m.id, src.transferKey, exp, key, dir, progress))
 }

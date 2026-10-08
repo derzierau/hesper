@@ -88,6 +88,10 @@ type Service struct {
 	cpMu        sync.Mutex
 	checkpoints map[string]wire.Checkpoint
 
+	// transfer.go: resumes and forks other Macs asked for.
+	opsMu sync.Mutex
+	ops   map[string]*resumeOp
+
 	scan    *scanner
 	sync    *syncer
 	mirror  *mirrorer

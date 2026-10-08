@@ -237,9 +237,11 @@ public struct MoveProgress: Equatable, Sendable {
     public var step: MoveStep?
     /// The transfer's 0–100, when known.
     public var percent: Int?
+    /// The transfer's size in bytes as it travels (`total`), when known.
+    public var total: Int64?
 
-    public init(id: String, to: String, step: MoveStep? = nil, percent: Int? = nil) {
-        self.id = id; self.to = to; self.step = step; self.percent = percent
+    public init(id: String, to: String, step: MoveStep? = nil, percent: Int? = nil, total: Int64? = nil) {
+        self.id = id; self.to = to; self.step = step; self.percent = percent; self.total = total
     }
 
     /// `{id, step, to, percent?}`; the percent may also ride in the step
@@ -262,6 +264,7 @@ public struct MoveProgress: Equatable, Sendable {
             pct = Double(raw[r])
         }
         percent = pct.map { Int(max(0, min(100, $0)).rounded()) }
+        total = p["total"]?.doubleValue.flatMap { $0 > 0 ? Int64($0) : nil }
     }
 
     public enum Status: Equatable, Sendable { case done, current, pending }
@@ -275,10 +278,13 @@ public struct MoveProgress: Equatable, Sendable {
         }
     }
 
-    /// A step's label ("transfer 42%" while it runs).
+    /// A step's label ("transfer 42%" while it runs, "transfer 42% of
+    /// 1.4 GB" once its size is known).
     public func label(_ s: MoveStep) -> String {
-        if s == .transfer, step == .transfer, let percent { return "transfer \(percent)%" }
-        return s.title
+        guard s == .transfer, step == .transfer else { return s.title }
+        let size = total.map { " of " + TransferSize.text($0) } ?? ""
+        if let percent { return "transfer \(percent)%" + size }
+        return total == nil ? s.title : "transfer" + size
     }
 
     /// The tile's progress line: "Moving to mini · checkpoint → transfer
@@ -287,6 +293,17 @@ public struct MoveProgress: Equatable, Sendable {
         let head = "\(fork ? "Forking" : "Moving") to \(target)"
         guard step != nil else { return head + "…" }
         return head + " · " + MoveStep.allCases.map(label).joined(separator: " → ")
+    }
+}
+
+/// A transfer's size for people: "82.0 MB", "1.4 GB".
+public enum TransferSize {
+    public static func text(_ n: Int64) -> String {
+        let d = Double(n)
+        if n >= 1 << 30 { return String(format: "%.1f GB", d / Double(1 << 30)) }
+        if n >= 1 << 20 { return String(format: "%.1f MB", d / Double(1 << 20)) }
+        if n >= 1 << 10 { return String(format: "%.0f KB", d / Double(1 << 10)) }
+        return "\(n) B"
     }
 }
 

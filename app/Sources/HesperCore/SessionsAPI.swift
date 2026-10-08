@@ -69,7 +69,10 @@ extension DaemonClient {
         var p = extra
         p["id"] = .string(id)
         do {
-            let v = try await call(method, .object(p), timeout: 60)
+            // Resumed or forked on another Mac, the session travels there
+            // first: as long as its transfer takes (agents.moving with
+            // session set tells the progress).
+            let v = try await call(method, .object(p), timeout: method == "sessions.continueAs" ? 120 : Self.transferTimeout)
             let a = v["agent"] ?? v
             return .agent(try a.decode(Agent.self), note: (v["note"] ?? a["note"])?.stringValue.flatMap { $0.isEmpty ? nil : $0 })
         } catch {
