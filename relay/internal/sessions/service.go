@@ -184,9 +184,26 @@ func (s *Service) Close() {
 		w.close()
 	}
 	s.mu.Unlock()
-	s.wg.Wait()
+	// Every loop stops at its next check of stop: between transcripts and
+	// every MiB read (readLines). A reader in the middle of a line on a
+	// background-band thread can take seconds to get there, so Close waits
+	// at most closeWait: the index then closes under it. Its transcript's
+	// entry and checkpoint are one write, which now fails (errClosed), so
+	// the next start reads that transcript again from its last checkpoint;
+	// what the writer had queued is committed first (DB.close).
+	waited := make(chan struct{})
+	go func() { s.wg.Wait(); close(waited) }()
+	select {
+	case <-waited:
+	case <-time.After(closeWait):
+		s.opt.Logf("history: closing while a transcript is still being read; it is read again at the next start")
+	}
 	s.db.close()
 }
+
+// closeWait bounds how long Close waits for the scanner and the other
+// loops (hesperd's shutdown waits for Close).
+var closeWait = 1500 * time.Millisecond
 
 // Node is this Mac's node id in the shared history.
 func (s *Service) Node() string { return s.db.node }
