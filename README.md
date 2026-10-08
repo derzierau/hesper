@@ -216,6 +216,33 @@ HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew upgrade --cask derzierau/hespe
 
 Run setup after each update to restart the daemon with the new binary.
 
+### Public Homebrew distribution
+
+Public installation is not enabled yet. The private installation commands
+above remain the current way to install.
+
+To offer downloads without GitHub authentication, make `derzierau/hesper`
+public and change the cask to use public release URLs without authentication
+headers. Alternatively, keep the source private and publish the signed
+archives in a separate public distribution repository.
+
+For a short Homebrew command, publish the cask in a public repository named
+`derzierau/homebrew-hesper` and have release automation keep its versions,
+download URLs and checksums up to date. Once that public tap exists, users
+will be able to install with:
+
+```sh
+brew tap derzierau/hesper
+brew install --cask hesper
+```
+
+The `homebrew-` repository prefix enables Homebrew's short tap syntax; see
+[Homebrew's tap documentation](https://docs.brew.sh/Taps.html).
+Making the app repository public alone does not add Hesper to Homebrew's
+official catalog. Installation without adding a tap requires a separate
+submission and acceptance into `homebrew/cask` under its
+[package acceptance policy](https://docs.brew.sh/Package-Acceptance-Policy).
+
 ### Download a signed release
 
 Open [GitHub Releases](https://github.com/derzierau/hesper/releases/latest)
