@@ -220,6 +220,10 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
                 nav.scratchExpanded.toggle()
                 reload()
                 return
+            case .showArchived:
+                nav.showArchived.toggle()
+                reload()
+                return
             case .newAgent:
                 if let p = r.projectID { model?.newDraft(projectID: p) }
                 return
@@ -397,6 +401,12 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
             add("Remove Group") { [weak model] in model?.removeGroup(gid) }
         case .project:
             guard let pid = row.projectID, let p = catalog.project(pid) else { return menu }
+            // hesperd's scratch: its lifecycle only (rename, keep, promote,
+            // archive, restore, delete).
+            if !model.scratchActions(pid).isEmpty {
+                model.addScratchItems(pid, to: menu, window: window)
+                return menu
+            }
             let real = editable && !p.synthesized
             add("Rename…", enabled: real) { [weak model] in
                 guard let name = Self.ask("Rename project", value: p.name) else { return }
@@ -618,6 +628,11 @@ struct SidebarRowContent: View {
             Image(systemName: r.expanded ? "chevron.down" : "chevron.right")
                 .font(.system(size: DS.Spacing.s + DS.Spacing.xxs, weight: .semibold))
                 .foregroundStyle(Theme.dim)
+        case .showArchived:
+            Image(systemName: "archivebox").font(Self.iconFont).foregroundStyle(Theme.dim)
+        case .project where r.kept:
+            Image(systemName: "pin.fill").font(Self.iconFont).foregroundStyle(Theme.dim)
+                .accessibilityLabel("kept")
         case .newAgent:
             Image(systemName: "plus").font(Self.iconFont).foregroundStyle(Theme.dim)
         case .history:
@@ -629,8 +644,8 @@ struct SidebarRowContent: View {
 
     private func titleColor(_ r: ProjectNavRow) -> Color {
         switch r.kind {
-        case .empty, .newAgent, .history, .scratch, .allProjects: return Theme.dim
-        default: return r.quiet && !selected ? Theme.fg2 : Theme.fg
+        case .empty, .newAgent, .history, .scratch, .showArchived, .allProjects: return Theme.dim
+        default: return r.archived && !selected ? Theme.dim : r.quiet && !selected ? Theme.fg2 : Theme.fg
         }
     }
 }
@@ -685,7 +700,7 @@ final class SidebarRowView: NSView, NSDraggingSource {
         switch item {
         case .nav(let r):
             setAccessibilityIdentifier("sidebar.\(r.id)")
-            let parts = [r.title, r.suffix, r.meta, r.tally.isEmpty ? nil : r.tally.spoken,
+            let parts = [r.title, r.suffix, r.meta, r.kept ? "kept" : nil, r.tally.isEmpty ? nil : r.tally.spoken,
                          r.expandable ? (r.expanded ? "expanded" : "collapsed") : nil].compactMap { $0 }
             setAccessibilityLabel(parts.joined(separator: ", "))
         case .machine(let m):

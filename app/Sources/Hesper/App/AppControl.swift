@@ -92,7 +92,7 @@ final class AppControl {
             "mode": .string(m.mode == .focus ? "focus" : m.mode == .compose ? "compose" : "wall"),
             "agents": .array(m.wall.map { .string($0.id) }),
             "bands": .array(v.showsBands ? v.bands.map { b in
-                ["key": .string(b.key), "title": .string(b.displayTitle), "collapsed": .bool(m.collapsedBands.contains(b.key)),
+                ["key": .string(b.key), "title": .string(b.displayTitle), "collapsed": .bool(m.isCollapsed(key: b.key)),
                  "agents": .number(Double(b.counted.count)), "pointer": .bool(b.pointer != nil)]
             } : []),
         ]

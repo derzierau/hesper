@@ -62,6 +62,9 @@ public struct Session: Equatable, Sendable, Identifiable, Hashable {
     /// The agent's last worktree checkpoint (hesperd; "checkpoint · 3
     /// files", "Restore checkpoint" once the agent is gone).
     public var checkpoint: Checkpoint?
+    /// Its folder is gone: a scratch hesperd deleted (History keeps the
+    /// session, marked "folder removed").
+    public var folderRemoved = false
 
     public init(id: String, kind: String = "claude", sessionId: String = "", machine: String = "L", cwd: String = "", projectId: String? = nil,
                 branch: String? = nil, title: String = "", firstPrompt: String = "", lastUser: String = "", lastAssistant: String = "",
@@ -120,6 +123,7 @@ public struct Session: Equatable, Sendable, Identifiable, Hashable {
         origin = o["origin"].flatMap(Self.str).flatMap { $0.isEmpty ? nil : $0 }
         bytes = o["bytes"].flatMap(Self.int)
         checkpoint = Checkpoint(json: o["checkpoint"])
+        folderRemoved = o["folderRemoved"]?.boolValue ?? (o["folder"]?.stringValue == "removed")
     }
 
     public var json: JSONValue {

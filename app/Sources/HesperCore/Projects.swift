@@ -43,16 +43,19 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
     public var lastUsed: Date?
     /// Made up by the app (a daemon without projects): not editable.
     public var synthesized = false
+    /// A scratch's lifecycle (`kind: "scratch"`, Scratch.swift); nil from
+    /// an older hesperd.
+    public var scratch: ScratchInfo?
 
     public init(id: String, name: String, color: String? = nil, kind: ProjectKind = .repo, identity: String? = nil, parentId: String? = nil,
                 paths: [String: String] = [:], groups: [String] = [], defaults: ProjectDefaults? = nil, detectedPackages: [String] = [],
-                lastUsed: Date? = nil, synthesized: Bool = false) {
+                lastUsed: Date? = nil, synthesized: Bool = false, scratch: ScratchInfo? = nil) {
         self.id = id; self.name = name; self.color = color; self.kind = kind; self.identity = identity; self.parentId = parentId
         self.paths = paths; self.groups = groups; self.defaults = defaults; self.detectedPackages = detectedPackages
-        self.lastUsed = lastUsed; self.synthesized = synthesized
+        self.lastUsed = lastUsed; self.synthesized = synthesized; self.scratch = scratch
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, color, colorSet, kind, identity, parentId, paths, groups, defaults, detectedPackages, lastUsed }
+    enum CodingKeys: String, CodingKey { case id, name, color, colorSet, kind, identity, parentId, paths, groups, defaults, detectedPackages, lastUsed, scratch }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -79,6 +82,7 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
             detectedPackages = []
         }
         lastUsed = Agent.date(try? c.decodeIfPresent(String.self, forKey: .lastUsed)).flatMap { $0.timeIntervalSince1970 < 0 ? nil : $0 }
+        scratch = try? c.decodeIfPresent(ScratchInfo.self, forKey: .scratch)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -95,6 +99,7 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
         try c.encodeIfPresent(defaults, forKey: .defaults)
         if !detectedPackages.isEmpty { try c.encode(detectedPackages, forKey: .detectedPackages) }
         try c.encodeIfPresent(lastUsed.map(Agent.format), forKey: .lastUsed)
+        try c.encodeIfPresent(scratch, forKey: .scratch)
     }
 
     /// The folder on `machine`, else on the local machine, else any.

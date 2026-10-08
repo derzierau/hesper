@@ -25,6 +25,9 @@ public enum SearchKeyAction: Equatable, Sendable {
     /// R (the list) / the preview's button: a gone agent's checkpoint as a
     /// worktree again (`SearchPreview.restoreOffered`).
     case restoreCheckpoint
+    /// The preview's "Restore scratch": an archived scratch's folder back
+    /// (projects.scratchRestore), so the session can resume there.
+    case restoreScratch
     /// ⇥: the other scope (⌘K's All), with the query.
     case switchScope
     /// ⇧⇥: the search field ↔ the list (where letters are actions).
@@ -159,6 +162,9 @@ public struct SearchRowText: Equatable, Sendable {
 // MARK: Preview actions
 
 public enum SearchPreview {
+    /// The preview's "Restore scratch" button (no key of its own).
+    public static let restoreScratchKey = "↺"
+
     /// ⌘⏎'s target: a session from another Mac comes here (`local`); one
     /// of this Mac goes to the first other Mac online. nil: it can't move
     /// (live, moved already, or no other Mac).
@@ -186,7 +192,7 @@ public enum SearchPreview {
     /// `moveTo`), then R restore checkpoint, C continue in the other tool,
     /// A archive, ⌫ delete, ⌘C copy id.
     public static func actions(_ s: Session, card: SessionCardText, local: String, online: [String], machines: [String: String],
-                               moveTo: String? = nil, restore: Bool = false) -> [SessionCardText.Action] {
+                               moveTo: String? = nil, restore: Bool = false, restoreScratch: Bool = false) -> [SessionCardText.Action] {
         var out: [SessionCardText.Action] = []
         if let first = card.actions.first { out.append(first) }
         out.append(.init(key: "⌥⏎", title: "Fork", primary: false))
@@ -194,6 +200,7 @@ public enum SearchPreview {
             out.append(.init(key: "⌘⏎", title: "Continue on \(SessionFormat.machineName(t, machines))", primary: false))
         }
         if restore { out.append(.init(key: "R", title: "Restore checkpoint", primary: false)) }
+        if restoreScratch { out.append(.init(key: SearchPreview.restoreScratchKey, title: "Restore scratch", primary: false)) }
         out.append(.init(key: "C", title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
         out.append(.init(key: "A", title: s.archived ? "Unarchive" : "Archive", primary: false))
         out.append(.init(key: "⌫", title: "Delete", primary: false))

@@ -197,10 +197,36 @@ final class ComposerModel {
     }
 
     /// No folder yet: the draft can't start (Start disabled, the chip says
-    /// "Choose folder").
+    /// "Choose folder") — unless it starts a new scratch.
     var needsFolder: Bool {
         let r = resolution
-        return r.project == nil && r.cloneURL == nil
+        return r.project == nil && r.cloneURL == nil && !startsScratch
+    }
+
+    /// No folder chosen and the machine's hesperd makes scratches: the
+    /// project chip says "New scratch" and the start makes one
+    /// (`ScratchDraft`). A project window's locked draft never does.
+    var startsScratch: Bool {
+        let r = resolution
+        return ScratchDraft.starts(project: r.project, cloneURL: r.cloneURL, locked: projectLocked, supported: app.scratchAvailable(on: r.machine))
+    }
+
+    /// The folder list's "New scratch": no folder (a #token naming one
+    /// leaves the text).
+    func useScratch() {
+        var d = draft
+        if let t = resolution.tokens.last(where: { $0.token.kind == .project })?.token {
+            let ns = d.text as NSString
+            var range = NSRange(location: t.location, length: t.length)
+            if range.location + range.length < ns.length, ns.substring(with: NSRange(location: range.location + range.length, length: 1)) == " " { range.length += 1 }
+            d.text = ns.replacingCharacters(in: range, with: "")
+            onReplaceText?(d.text, min(t.location, (d.text as NSString).length))
+        }
+        d = DraftSeed.folderChanged(d, to: nil)
+        d.projectLocked = false
+        persist(d)
+        error = nil
+        folderCheck += 1
     }
 
     func caretMoved(_ caret: Int) {
@@ -403,8 +429,10 @@ final class ComposerModel {
         let r = resolution
         let profile = r.profile
         let kind = profile.flatMap { app.composerContext.profiles[$0] }
-        // No folder: not startable (the caller opens the folder chip).
-        guard r.project != nil || r.cloneURL != nil else { return nil }
+        // No folder: a new scratch, else not startable (the caller opens
+        // the folder chip).
+        let scratch = startsScratch
+        guard r.project != nil || r.cloneURL != nil || scratch else { return nil }
         if r.task.isEmpty && kind != "shell" {
             error = "Write the task first."
             return nil
@@ -413,8 +441,10 @@ final class ComposerModel {
             error = "\(m.displayName) is offline."
             return nil
         }
-        return SpawnRequest(machine: r.machine == app.localMachine ? nil : r.machine, profile: profile, kind: kind,
-                            project: r.project ?? "", task: r.task, name: nil,
-                            worktree: r.worktree ? .auto : nil, branch: r.worktree && !r.branch.isEmpty ? r.branch : nil)
+        var req = SpawnRequest(machine: r.machine == app.localMachine ? nil : r.machine, profile: profile, kind: kind,
+                               project: r.project ?? "", task: r.task, name: nil,
+                               worktree: r.worktree && !scratch ? .auto : nil, branch: r.worktree && !scratch && !r.branch.isEmpty ? r.branch : nil)
+        req.scratch = scratch
+        return req
     }
 }

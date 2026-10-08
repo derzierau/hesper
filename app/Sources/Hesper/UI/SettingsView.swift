@@ -186,6 +186,27 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.autoTidy")
             }
         }
+        // hesperd's scratch settings; hidden when it can't say them.
+        if let s = model.lists.scratchBook.settings {
+            SettingsSection("Scratch projects", footer: "⌘N without a folder starts the agent in a new scratch: ~/scratch/<date>-<task> on that Mac, a git repo of its own. Kept scratches never archive; archived ones move to ~/scratch/.archive, and their sessions stay in History after the folder is deleted.") {
+                SettingsLine("Archive scratches after") {
+                    Stepper(value: Binding(get: { s.archiveAfterDays }, set: { model.setScratchSetting(ScratchSettings.archiveKey, days: $0) }),
+                            in: ScratchSettings.range) {
+                        Text("\(s.archiveAfterDays) days").font(DS.font(.body)).monospacedDigit()
+                    }
+                    .accessibilityLabel("Archive scratches after \(s.archiveAfterDays) quiet days")
+                    .accessibilityIdentifier("settings.scratchArchiveDays")
+                }
+                SettingsLine("Delete archived after") {
+                    Stepper(value: Binding(get: { s.deleteAfterDays }, set: { model.setScratchSetting(ScratchSettings.deleteKey, days: $0) }),
+                            in: ScratchSettings.range) {
+                        Text("\(s.deleteAfterDays) days").font(DS.font(.body)).monospacedDigit()
+                    }
+                    .accessibilityLabel("Delete archived scratches after \(s.deleteAfterDays) days")
+                    .accessibilityIdentifier("settings.scratchDeleteDays")
+                }
+            }
+        }
         SettingsSection("Default profile per tool", footer: "A draft uses its project's last profile, else this default for the tool; type /profile in the task to choose one.") {
             ForEach(kinds.isEmpty ? ["claude", "codex", "shell"] : kinds, id: \.self) { kind in
                 let names = all.filter { $0.value.kind == kind }.keys.sorted()

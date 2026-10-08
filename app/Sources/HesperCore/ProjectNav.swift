@@ -69,8 +69,10 @@ public struct ProjectNavRow: Equatable, Sendable, Identifiable {
         case newAgent, history
         /// "All projects (n) ›": the full list.
         case allProjects
-        /// The folded scratch folders of the full list.
+        /// The folded scratch folders ("Scratch (n)": the resting ones).
         case scratch
+        /// "Show archived (n)" / "Hide archived" under the scratch fold.
+        case showArchived
         /// Search found nothing.
         case empty
     }
@@ -94,6 +96,10 @@ public struct ProjectNavRow: Equatable, Sendable, Identifiable {
     public var quiet = false
     public var colorHex = "#7aa2f7"
     public var lastActivity: Date?
+    /// A scratch that is never archived (Keep).
+    public var kept = false
+    /// An archived scratch (shown after "Show archived").
+    public var archived = false
     /// The row as the old sidebar row (menus, click, drag, tests); nil
     /// for actions, "All projects", the scratch fold and "no match".
     public var base: SidebarRow?
@@ -124,6 +130,8 @@ public struct ProjectNavState: Equatable, Sendable {
     public var showAll = false
     public var expandedGroups: Set<String> = []
     public var scratchExpanded = false
+    /// Archived scratches show under the fold.
+    public var showArchived = false
     /// The quiet project selected last (its actions show under it).
     public var selectedProject: String?
     public init() {}
@@ -148,6 +156,7 @@ public enum ProjectNav {
     public static let allRow = "all"
     public static let allProjectsRow = "nav:all-projects"
     public static let scratchRow = "nav:scratch"
+    public static let showArchivedRow = "nav:scratch-archived"
 
     // MARK: Building
 
@@ -176,6 +185,8 @@ public enum ProjectNav {
             recent.insert(contentsOf: actions(for: recent[i], history: historyAvailable), at: i + 1)
         }
         if !recent.isEmpty { out.append(ProjectNavSection(id: "recent", title: "Recent", rows: recent)) }
+        // Resting scratches (hesperd's scratch kind) fold here too.
+        if let fold = scratchFold(ix, state: state, now: now, lifecycleOnly: true) { out.append(fold) }
         var more = ProjectNavRow(id: allProjectsRow, kind: .allProjects, title: "All projects")
         more.meta = "\(ix.listed.count)"
         more.quiet = true
@@ -297,24 +308,61 @@ public enum ProjectNav {
             return r
         })
         out.append(ProjectNavSection(id: "projects", title: "All projects", rows: rows))
-        let orphans = ix.scratchIDs.filter { ix.parent[$0] == nil }
-        if !orphans.isEmpty {
-            var fold = ProjectNavRow(id: scratchRow, kind: .scratch, title: "Scratch")
-            fold.meta = "\(orphans.count)"
-            fold.expandable = true
-            fold.expanded = state.scratchExpanded
-            fold.quiet = true
-            var rows = [fold]
-            if state.scratchExpanded {
-                rows += orphans.map { pid -> ProjectNavRow in
-                    var r = ix.projectRow(pid, agents: ix.byUnit[pid] ?? [], group: nil, depth: 1)
-                    if r.tally.isEmpty { r.meta = ix.catalog.project(pid)?.lastUsed.map { age($0, now: now) }; r.quiet = true }
-                    return r
-                }.sorted { ($0.lastActivity ?? ix.lastUsed($0.projectID), $0.id) > ($1.lastActivity ?? ix.lastUsed($1.projectID), $1.id) }
-            }
-            out.append(ProjectNavSection(id: "scratch", title: nil, rows: rows))
-        }
+        if let fold = scratchFold(ix, state: state, now: now, lifecycleOnly: false) { out.append(fold) }
         return out
+    }
+
+    /// "Scratch (n)": the scratch folders no project claims, folded; n
+    /// counts the resting ones. A scratch with agents is in Active (hesperd's
+    /// scratch kind; older scratch folders stay here with their squares),
+    /// archived ones only after "Show archived". `lifecycleOnly`: hesperd's
+    /// scratch kind only (the navigator's own fold, under Recent).
+    static func scratchFold(_ ix: Index, state: ProjectNavState, now: Date, lifecycleOnly: Bool) -> ProjectNavSection? {
+        var resting: [String] = [], archived: [String] = []
+        for pid in ix.scratchIDs where ix.parent[pid] == nil {
+            let p = ix.catalog.project(pid)
+            if lifecycleOnly && p?.kind != .scratch { continue }
+            if ScratchLifecycle.isArchived(p) { archived.append(pid); continue }
+            if p?.kind == .scratch && ix.byUnit[pid] != nil { continue }
+            resting.append(pid)
+        }
+        guard !resting.isEmpty || !archived.isEmpty else { return nil }
+        var fold = ProjectNavRow(id: scratchRow, kind: .scratch, title: "Scratch")
+        fold.meta = "\(resting.count)"
+        fold.expandable = true
+        fold.expanded = state.scratchExpanded
+        fold.quiet = true
+        var rows = [fold]
+        func row(_ pid: String) -> ProjectNavRow {
+            let p = ix.catalog.project(pid)
+            var r = ix.projectRow(pid, agents: ix.byUnit[pid] ?? [], group: nil, depth: 1)
+            if p?.kind == .scratch, let p { r.title = ScratchName.display(p) } // under "Scratch": just its name
+            if r.tally.isEmpty { r.meta = p?.lastUsed.map { age($0, now: now) }; r.quiet = true }
+            r.kept = ScratchLifecycle.isKept(p)
+            return r
+        }
+        func newestFirst(_ ids: [String]) -> [ProjectNavRow] {
+            ids.map(row).sorted { ($0.lastActivity ?? ix.lastUsed($0.projectID), $0.id) > ($1.lastActivity ?? ix.lastUsed($1.projectID), $1.id) }
+        }
+        if state.scratchExpanded {
+            rows += newestFirst(resting)
+            if !archived.isEmpty {
+                var t = ProjectNavRow(id: showArchivedRow, kind: .showArchived, title: state.showArchived ? "Hide archived" : "Show archived")
+                t.meta = "\(archived.count)"
+                t.depth = 1
+                t.quiet = true
+                rows.append(t)
+                if state.showArchived {
+                    rows += newestFirst(archived).map { r in
+                        var r = r
+                        r.archived = true
+                        r.meta = "archived"
+                        return r
+                    }
+                }
+            }
+        }
+        return ProjectNavSection(id: "scratch", title: nil, rows: rows)
     }
 
     static func sortByName(_ rows: [ProjectNavRow]) -> [ProjectNavRow] {
@@ -569,7 +617,8 @@ public enum ProjectNav {
             if isFolded(pid) {
                 let l = ProjectNav.label(p.name)
                 if let par = parent[pid], let pp = catalog.projects[par] { return (pp.name, l == pp.name ? nil : l) }
-                return (l, nil)
+                // hesperd's scratch kind: "scratch · csv cleanup".
+                return (p.kind == .scratch ? "scratch · " + l : l, nil)
             }
             return (p.name, suffix[pid])
         }

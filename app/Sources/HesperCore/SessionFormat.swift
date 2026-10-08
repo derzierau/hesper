@@ -134,6 +134,9 @@ public enum SessionFormat {
         }
     }
 
+    /// A deleted scratch's sessions (their folder is gone).
+    public static let folderRemoved = "folder removed"
+
     public enum State: Equatable, Sendable {
         case live, liveExternal, moved(String), external, mirrored(Int), archived, ended
     }
@@ -238,6 +241,7 @@ public struct SessionCardText: Equatable, Sendable {
         var sub = "\(SessionFormat.kindLabel(s.kind)) on \(mac)"
         if let o = SessionFormat.originLabel(s.origin) { sub += " (\(o))" }
         if !s.cwd.isEmpty { sub += " · " + SessionFormat.abbreviate(s.cwd, home: home) }
+        if s.folderRemoved { sub += " · " + SessionFormat.folderRemoved }
         subtitle = sub
         asked = SessionFormat.oneLine(s.lastUser.isEmpty ? s.firstPrompt : s.lastUser, max: 400)
         answered = SessionFormat.oneLine(s.lastAssistant, max: 600)

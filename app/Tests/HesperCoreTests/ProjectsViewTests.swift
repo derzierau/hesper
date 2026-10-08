@@ -91,7 +91,7 @@ import Testing
         #expect(v.bands.map(\.key) == ["g:g1", "g:g2", "g:~other", "g:~scratch", "g:~none"])
         #expect(v.bands[0].members == ["L/3", "L/6", "L/7"], "wall order inside a band")
         #expect(v.bands[0].title == "acme apps" && v.bands[0].subtitle == "acme-apps, design-system")
-        #expect(v.bands[3].title == "scratch")
+        #expect(v.bands[3].title == "Scratch")
         #expect(v.order == ["L/3", "L/6", "L/7", "L/1", "L/4", "L/2", "L/5"])
         #expect(v.showsBands)
         // The wall's own order (header drag) comes first.

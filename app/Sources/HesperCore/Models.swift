@@ -255,6 +255,9 @@ public struct SpawnRequest: Equatable, Sendable {
     public var name: String?
     public var worktree: Worktree?
     public var branch: String?
+    /// No folder: hesperd makes a new scratch from the task and starts the
+    /// agent in it (scratch contract; `project` is not sent).
+    public var scratch = false
 
     public enum Worktree: Equatable, Sendable { case auto, path(String) }
 
@@ -265,7 +268,8 @@ public struct SpawnRequest: Equatable, Sendable {
     }
 
     public var params: JSONValue {
-        var o: [String: JSONValue] = ["project": .string(project), "task": .string(task)]
+        var o: [String: JSONValue] = ["task": .string(task)]
+        if scratch { o["scratch"] = .bool(true) } else { o["project"] = .string(project) }
         if let machine { o["machine"] = .string(machine) }
         if let profile { o["profile"] = .string(profile) }
         if let kind { o["kind"] = .string(kind) }

@@ -320,6 +320,46 @@ public final class DaemonClient: @unchecked Sendable {
 
     public func removeProject(_ id: String) async throws { _ = try await call("projects.remove", ["id": .string(id)]) }
 
+    // MARK: Scratch projects (scratch contract; -32601: an older hesperd)
+
+    /// `projects.scratch {name?, task?, machine?}` → Project.
+    public func createScratch(name: String? = nil, task: String? = nil, machine: String? = nil) async throws -> Project {
+        var p: [String: JSONValue] = [:]
+        if let name, !name.isEmpty { p["name"] = .string(name) }
+        if let task, !task.isEmpty { p["task"] = .string(task) }
+        if let machine { p["machine"] = .string(machine) }
+        return try await call(ScratchRPC.create, .object(p), timeout: 60).decode(Project.self)
+    }
+
+    /// `projects.scratchKeep {id, keep}`.
+    public func keepScratch(_ id: String, keep: Bool) async throws {
+        _ = try await call(ScratchRPC.keep, ["id": .string(id), "keep": .bool(keep)])
+    }
+
+    /// `projects.scratchArchive {id}` (moves the folder under ~/scratch/.archive).
+    public func archiveScratch(_ id: String) async throws { _ = try await call(ScratchRPC.archive, ["id": .string(id)], timeout: 60) }
+
+    /// `projects.scratchRestore {id}` (back from the archive, resting).
+    public func restoreScratch(_ id: String) async throws { _ = try await call(ScratchRPC.restore, ["id": .string(id)], timeout: 60) }
+
+    /// `projects.promote {id, name?, createRepo?: "github"}` → Project: the
+    /// scratch's folder becomes `~/projects/<name>`, same id. hesperd
+    /// refuses ("busy") while agents run in it.
+    public func promoteScratch(_ id: String, name: String?, createRepo: Bool) async throws -> Project {
+        var p: [String: JSONValue] = ["id": .string(id)]
+        if let name, !name.isEmpty { p["name"] = .string(name) }
+        if createRepo { p["createRepo"] = .string("github") }
+        return try await call(ScratchRPC.promote, .object(p), timeout: 120).decode(Project.self)
+    }
+
+    /// `settings.get {keys}` → hesperd's values for `keys`.
+    public func settings(_ keys: [String]) async throws -> JSONValue {
+        try await call(ScratchRPC.settingsGet, ["keys": .array(keys.map(JSONValue.string))], timeout: 10)
+    }
+
+    /// `settings.set {values}`.
+    public func setSettings(_ params: JSONValue) async throws { _ = try await call(ScratchRPC.settingsSet, params, timeout: 10) }
+
     /// `groups.save {group}` → Group (creates with an empty id, else replaces).
     public func saveGroup(_ g: ProjectGroup) async throws -> ProjectGroup {
         let data = try JSONEncoder().encode(g)
