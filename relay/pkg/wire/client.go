@@ -48,6 +48,8 @@ type ErrorData struct {
 	Code string `json:"code"`
 	// AgentID (shared history): the agent a "live" session runs in.
 	AgentID string `json:"agentId,omitempty"`
+	// Processes (move work): agents.move's error "processes".
+	Processes []Process `json:"processes,omitempty"`
 }
 
 // JSON-RPC error numbers.
@@ -64,10 +66,11 @@ const (
 // Err turns an RPCError into an *Error.
 func (e *RPCError) Err() *Error {
 	code, agent := CodeInvalid, ""
+	var procs []Process
 	if e.Data != nil && e.Data.Code != "" {
-		code, agent = e.Data.Code, e.Data.AgentID
+		code, agent, procs = e.Data.Code, e.Data.AgentID, e.Data.Processes
 	}
-	return &Error{Code: code, Message: e.Message, AgentID: agent}
+	return &Error{Code: code, Message: e.Message, AgentID: agent, Processes: procs}
 }
 
 // MaxLine bounds a control line (hook payloads carry tool output).

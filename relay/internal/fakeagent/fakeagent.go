@@ -9,8 +9,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -432,6 +434,22 @@ func (f *fake) work(prompt string) {
 		tool = map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": []any{"bash", "-lc", "git push origin main"}}}
 	}
 	f.hook("PreToolUse", tool)
+	if strings.Contains(prompt, "dev server") {
+		// A command left running, as a Bash tool's background job: a
+		// shell with a long command under it (its pid in <id>.child).
+		cmd := exec.Command("/bin/sh", "-c", "sleep 600; true")
+		if cmd.Start() == nil {
+			id := strings.ReplaceAll(os.Getenv("HESPER_AGENT_ID"), "/", "_")
+			os.WriteFile(filepath.Join(os.Getenv("FAKE_LOG"), id+".child"), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600)
+		}
+	}
+	if strings.Contains(prompt, "keep working") {
+		// Working until a key (Esc interrupts the turn).
+		f.readKey()
+		f.loneEsc()
+		f.finish("Interrupted")
+		return
+	}
 	if !strings.Contains(prompt, "approve") {
 		f.hook("PostToolUse", tool)
 		f.finish("Done: " + prompt)

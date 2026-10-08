@@ -119,9 +119,18 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 		return protocol.JSON(struct{}{}), publicErr(reg.Remove(a.ID))
 	case "agents.close", "agents.kill", "agents.background":
 		// closing agents (internal/agents/close.go)
-		var p wire.BackgroundParams
+		var p struct {
+			wire.BackgroundParams
+			// move work: a controller closes a moved agent's source with
+			// reason "moved" and the agent it became.
+			Reason string `json:"reason,omitempty"`
+			To     string `json:"to,omitempty"`
+		}
 		if err := params(m.Params, &p); err != nil {
 			return nil, err
+		}
+		if p.Reason != "" && (m.Method != "agents.close" || p.Reason != wire.ReasonMoved) || len(p.To) > 128 {
+			return nil, protocol.Err("invalid_request", "agents.close takes reason \"moved\" only")
 		}
 		a, err := s.agent(ctx, p.ID)
 		if err != nil {
@@ -129,7 +138,11 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 		}
 		switch m.Method {
 		case "agents.close":
-			res, err := reg.CloseAgent(a.ID)
+			reason := wire.ReasonClosed
+			if p.Reason == wire.ReasonMoved {
+				reason = wire.ReasonMoved
+			}
+			res, err := reg.CloseAs(a.ID, reason, p.To)
 			if err != nil {
 				return nil, publicError(err)
 			}
@@ -186,6 +199,10 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 			Path    string   `json:"path"`
 			Home    string   `json:"home"`
 			Commits []string `json:"commits"`
+			// move work: the project's id and the agent's kind (is the
+			// tool here?).
+			ProjectID string `json:"projectId,omitempty"`
+			Kind      string `json:"kind,omitempty"`
 		}
 		if err := params(m.Params, &p); err != nil {
 			return nil, err
@@ -201,7 +218,28 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 				return nil, protocol.Err("invalid_request", "commits must be hexadecimal SHAs")
 			}
 		}
+		if p.Kind != "" && p.Kind != wire.KindClaude && p.Kind != wire.KindCodex || len(p.ProjectID) > 1024 {
+			return nil, protocol.Err("invalid_request", "kind must be claude or codex")
+		}
+		if p.Kind != "" || p.ProjectID != "" {
+			return protocol.JSON(reg.ProbeMove(ctx, p.Path, p.Home, p.Commits, p.ProjectID, p.Kind)), nil
+		}
 		return protocol.JSON(reg.Probe(ctx, p.Path, p.Home, p.Commits)), nil
+	case "agents.checkpoint":
+		// move work (internal/agents/checkpoint.go)
+		var p wire.IDParams
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		a, err := s.agent(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		cp, err := reg.Checkpoint(a.ID)
+		if err != nil {
+			return nil, publicError(err)
+		}
+		return protocol.JSON(wire.CheckpointResult{Checkpoint: cp}), nil
 	case "agents.attach":
 		return s.attach(ctx, m)
 	case "agents.screen":

@@ -70,6 +70,19 @@ type Manifest struct {
 	} `json:"source"`
 	Agent   AgentInfo   `json:"agent"`
 	Project ProjectInfo `json:"project"`
+	// Move (move work; set by the controller before the import, older
+	// targets ignore it): how the target takes the agent.
+	Move *MoveInfo `json:"move,omitempty"`
+}
+
+// MoveInfo is agents.move's part of a manifest: the machines as the
+// controller names them, whether the source stays (Fork), and whether
+// the resumed agent gets the handover note.
+type MoveInfo struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Fork bool   `json:"fork,omitempty"`
+	Note bool   `json:"note,omitempty"`
 }
 
 // AgentInfo is the moved agent.
@@ -107,6 +120,9 @@ type ProjectInfo struct {
 	// repository, or one without a commit).
 	Bundle string `json:"bundle,omitempty"`
 	Have   string `json:"have,omitempty"`
+	// ProjectID (move work): the source's project id, for the target's
+	// folder of that project.
+	ProjectID string `json:"projectId,omitempty"`
 }
 
 // Plan is what the source tells the controller before a move: the
@@ -116,6 +132,15 @@ type Plan struct {
 	Project string   `json:"project"`
 	Home    string   `json:"home"`
 	Commits []string `json:"commits"`
+	// Move work (additive): the project's id, its Git remote and the
+	// commit the source last saw on the remote's default branch (a target
+	// that clones has it), and the processes the agent started that
+	// would stay behind.
+	ProjectID  string         `json:"projectId,omitempty"`
+	Remote     string         `json:"remote,omitempty"`
+	RemoteHead string         `json:"remoteHead,omitempty"`
+	Git        bool           `json:"git,omitempty"`
+	Processes  []wire.Process `json:"processes,omitempty"`
 }
 
 // Probe is what a target reports about a project: whether the repository
@@ -123,6 +148,11 @@ type Plan struct {
 type Probe struct {
 	Exists bool            `json:"exists"`
 	Has    map[string]bool `json:"has"`
+	// Move work (additive): where the project is on the target (its
+	// project's folder there, else the source's path mapped to its home),
+	// and whether it has the agent's tool (asked with kind).
+	Path string `json:"path,omitempty"`
+	Tool *bool  `json:"tool,omitempty"`
 }
 
 func newID() string {
@@ -136,13 +166,21 @@ func (p Paths) git(ctx context.Context) git { return git{ctx: ctx, env: p.Env} }
 // PlanFor reports the commits a target may have of a's project.
 func PlanFor(ctx context.Context, a wire.Agent, p Paths) Plan {
 	g := p.git(ctx)
-	plan := Plan{Project: a.Project, Home: p.Home}
+	plan := Plan{Project: a.Project, Home: p.Home, ProjectID: a.ProjectID}
 	if r := g.repoInfo(a.Dir()); r != nil && r.base != "" {
-		plan.Project = r.path
+		plan.Project, plan.Git, plan.Remote = r.path, true, r.remote
 		plan.Commits = append(plan.Commits, r.base)
 		if r.mainBranch != "" {
 			if head := g.try(r.path, "rev-parse", "--verify", "-q", "refs/heads/"+r.mainBranch); head != "" && head != r.base {
 				plan.Commits = append(plan.Commits, head)
+			}
+		}
+		if r.remoteName != "" {
+			for _, ref := range []string{"refs/remotes/" + r.remoteName + "/HEAD", "refs/remotes/" + r.remoteName + "/" + r.mainBranch} {
+				if head := g.try(r.path, "rev-parse", "--verify", "-q", ref+"^{commit}"); head != "" {
+					plan.RemoteHead = head
+					break
+				}
 			}
 		}
 	}
@@ -152,9 +190,13 @@ func PlanFor(ctx context.Context, a wire.Agent, p Paths) Plan {
 // ProbeRepo answers a Plan on the target: path is the source's, mapped
 // from its home to this one.
 func ProbeRepo(ctx context.Context, path, home string, commits []string, p Paths) Probe {
+	return ProbeAt(ctx, MapPath(path, home, p.Home), commits, p)
+}
+
+// ProbeAt answers a Plan for the repository at path on this machine.
+func ProbeAt(ctx context.Context, path string, commits []string, p Paths) Probe {
 	g := p.git(ctx)
-	path = MapPath(path, home, p.Home)
-	probe := Probe{Has: map[string]bool{}}
+	probe := Probe{Has: map[string]bool{}, Path: path}
 	if !g.isRepoAt(path) {
 		return probe
 	}
@@ -185,6 +227,13 @@ func MapPath(path, sourceHome, home string) string {
 // its code, the latter incremental from have (commits the target has).
 // machine is this machine's short name.
 func Pack(ctx context.Context, a wire.Agent, machine string, have []string, dir string, p Paths) (*Manifest, error) {
+	return PackCheckpoint(ctx, a, machine, have, dir, p, "")
+}
+
+// PackCheckpoint is Pack with the agent's checkpoint (move work) as the
+// handoff commit when it is one of the folder's current HEAD (the caller
+// took it just before); else Pack makes its own.
+func PackCheckpoint(ctx context.Context, a wire.Agent, machine string, have []string, dir string, p Paths, checkpoint string) (*Manifest, error) {
 	if a.Kind == wire.KindShell {
 		return nil, Errorf("invalid", "a shell has no conversation to move")
 	}
@@ -201,10 +250,14 @@ func Pack(ctx context.Context, a wire.Agent, machine string, have []string, dir 
 		Parent: a.Parent, Depth: a.Depth, LetParentAnswer: a.LetParentAnswer, Track: a.Track}
 	m.Project = ProjectInfo{Path: a.Project, Worktree: a.Worktree, Branch: a.Branch}
 	if r := g.repoInfo(a.Dir()); r != nil && r.base != "" {
-		m.Project = ProjectInfo{Path: r.path, Worktree: r.worktree, Branch: r.branch, MainBranch: r.mainBranch, Base: r.base, Remote: r.remote}
-		handoff, err := g.handoffCommit(r.top, r.base, m.ID)
-		if err != nil {
-			return nil, err
+		m.Project = ProjectInfo{Path: r.path, Worktree: r.worktree, Branch: r.branch, MainBranch: r.mainBranch, Base: r.base, Remote: r.remote,
+			ProjectID: a.ProjectID}
+		handoff := checkpoint
+		if !g.usableCheckpoint(r.top, r.base, handoff) {
+			var err error
+			if handoff, err = g.handoffCommit(r.top, r.base, m.ID); err != nil {
+				return nil, err
+			}
 		}
 		m.Project.Handoff = handoff
 		kind, newest, err := g.writeBundle(r, handoff, m.ID, have, filepath.Join(dir, BundleFile))
@@ -328,6 +381,9 @@ func LoadManifest(dir string) (*Manifest, error) {
 	if m.Project.Path == "" {
 		return nil, Errorf("manifest", "no project")
 	}
+	if m.Move != nil && (len(m.Move.From) > 64 || len(m.Move.To) > 64) {
+		return nil, Errorf("manifest", "bad machine names")
+	}
 	switch m.Project.Bundle {
 	case "", "full", "incremental":
 	default:
@@ -346,9 +402,41 @@ func Unpack(ctx context.Context, dir string, p Paths) (*Manifest, Placed, error)
 	if err != nil {
 		return nil, Placed{}, err
 	}
+	return UnpackManifest(ctx, m, dir, p, UnpackOptions{})
+}
+
+// UnpackOptions (move work) steer where a moved agent lands.
+type UnpackOptions struct {
+	// Project is the repository's folder here (the project's folder on
+	// this machine, or a fresh clone) instead of the source's path mapped
+	// to this home.
+	Project string
+	// NewWorktree is where a worktree is made for an agent that ran in
+	// its main checkout on the source, unless the branch is checked out
+	// here already (then that checkout is used, as before). Empty: the
+	// main checkout is used as on the source.
+	NewWorktree string
+}
+
+// UnpackManifest is Unpack of a loaded manifest with options.
+func UnpackManifest(ctx context.Context, m *Manifest, dir string, p Paths, opt UnpackOptions) (*Manifest, Placed, error) {
 	g := p.git(ctx)
 	path := MapPath(m.Project.Path, m.Source.Home, p.Home)
+	if opt.Project != "" {
+		path = opt.Project
+	}
 	worktree := MapPath(m.Project.Worktree, m.Source.Home, p.Home)
+	if m.Project.Bundle != "" && m.Project.Branch != "" && opt.NewWorktree != "" && g.isRepoAt(path) {
+		// The branch is checked out here already: there, as before.
+		if holder := g.checkedOut(path, m.Project.Branch); holder != "" {
+			worktree = holder
+			if samePath(holder, path) {
+				worktree = ""
+			}
+		} else if worktree == "" {
+			worktree = opt.NewWorktree
+		}
+	}
 	workdir := path
 	if worktree != "" {
 		workdir = worktree
@@ -369,9 +457,18 @@ func Unpack(ctx context.Context, dir string, p Paths) (*Manifest, Placed, error)
 	}
 	placed := Placed{Project: path, Worktree: worktree, Branch: m.Project.Branch}
 	if m.Agent.SessionID != "" && m.Agent.Transcript != "" && isFile(filepath.Join(dir, TranscriptFile)) {
-		var mapping *[2]string
+		var mapping [][2]string
+		// The agent's folder first (move work: it may land elsewhere, a
+		// new worktree, the project's folder here), then the home.
+		srcDir := m.Project.Path
+		if m.Project.Worktree != "" {
+			srcDir = m.Project.Worktree
+		}
+		if srcDir != "" && !samePath(MapPath(srcDir, m.Source.Home, p.Home), workdir) {
+			mapping = append(mapping, [2]string{srcDir, workdir})
+		}
 		if src := strings.TrimRight(m.Source.Home, "/"); src != "" && src != strings.TrimRight(p.Home, "/") {
-			mapping = &[2]string{src, strings.TrimRight(p.Home, "/")}
+			mapping = append(mapping, [2]string{src, strings.TrimRight(p.Home, "/")})
 		}
 		if err := placeTranscript(filepath.Join(dir, TranscriptFile), m.Agent, mapping, workdir, p); err != nil {
 			return m, Placed{}, err
@@ -383,13 +480,13 @@ func Unpack(ctx context.Context, dir string, p Paths) (*Manifest, Placed, error)
 
 // placeTranscript puts a travelled conversation where the agent CLI looks
 // for it, every "cwd" under the source's home moved to this home.
-func placeTranscript(source string, a AgentInfo, mapping *[2]string, workdir string, p Paths) error {
+func placeTranscript(source string, a AgentInfo, mapping [][2]string, workdir string, p Paths) error {
 	var target string
 	switch a.Kind {
 	case wire.KindClaude:
 		cwd := firstCwd(source)
-		if cwd != "" && mapping != nil {
-			cwd = MapPath(cwd, mapping[0], mapping[1])
+		if cwd != "" {
+			cwd = mapAll(cwd, mapping)
 		}
 		if cwd == "" {
 			cwd = workdir
@@ -420,8 +517,8 @@ func placeTranscript(source string, a AgentInfo, mapping *[2]string, workdir str
 	for {
 		line, err := r.ReadBytes('\n')
 		if len(line) > 0 {
-			if mapping != nil && bytes.Contains(line, []byte(`"cwd"`)) {
-				line = rewriteLine(line, *mapping)
+			if len(mapping) > 0 && bytes.Contains(line, []byte(`"cwd"`)) {
+				line = rewriteLine(line, mapping)
 			}
 			if _, werr := w.Write(line); werr != nil {
 				temp.Close()
@@ -448,7 +545,7 @@ func placeTranscript(source string, a AgentInfo, mapping *[2]string, workdir str
 
 // rewriteLine moves every "cwd" value of one JSON line from the source's
 // home to this one; a line that does not parse stays as it is.
-func rewriteLine(line []byte, mapping [2]string) []byte {
+func rewriteLine(line []byte, mapping [][2]string) []byte {
 	trimmed := bytes.TrimRight(line, "\r\n")
 	d := json.NewDecoder(bytes.NewReader(trimmed))
 	d.UseNumber()
@@ -466,12 +563,12 @@ func rewriteLine(line []byte, mapping [2]string) []byte {
 	return out.Bytes() // Encode ends with a newline
 }
 
-func rewriteCwd(v any, mapping [2]string) any {
+func rewriteCwd(v any, mapping [][2]string) any {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, item := range x {
 			if s, ok := item.(string); ok && k == "cwd" {
-				x[k] = MapPath(s, mapping[0], mapping[1])
+				x[k] = mapAll(s, mapping)
 			} else {
 				x[k] = rewriteCwd(item, mapping)
 			}
@@ -482,6 +579,16 @@ func rewriteCwd(v any, mapping [2]string) any {
 		}
 	}
 	return v
+}
+
+// mapAll maps path with the first mapping (from, to) it is under.
+func mapAll(path string, mapping [][2]string) string {
+	for _, m := range mapping {
+		if q := MapPath(path, m[0], m[1]); q != path {
+			return q
+		}
+	}
+	return path
 }
 
 var cwdRE = regexp.MustCompile(`"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"`)

@@ -119,7 +119,7 @@ func writeReference(w io.Writer) error {
 	fmt.Fprint(w, concepts)
 	agent, _ := json.MarshalIndent(sampleAgent(), "", "  ")
 	fmt.Fprintf(w, "\n**Agent object** (what --json prints for an agent; optional fields are left out when empty, `exit` is null while running or `{code, signal}`):\n\n```json\n%s\n```\n", agent)
-	fmt.Fprint(w, "\n## Output, errors and exit codes\n\nWith --json (accepted by every command) a command prints JSON on stdout. Commands that only act print nothing and exit 0. Errors go to stderr, with --json as:\n\n```json\n{\"error\":{\"code\":\"not_found\",\"message\":\"no agent a7f3k2\"}}\n```\n\n`code` is the daemon's or relay's error code (not_found, invalid, exists, unavailable, offline, remote, forbidden, live, …) or the CLI's (usage, ambiguous, timeout, error).\n\n| Exit | Name | When |\n|---|---|---|\n")
+	fmt.Fprint(w, "\n## Output, errors and exit codes\n\nWith --json (accepted by every command) a command prints JSON on stdout. Commands that only act print nothing and exit 0. Errors go to stderr, with --json as:\n\n```json\n{\"error\":{\"code\":\"not_found\",\"message\":\"no agent a7f3k2\"}}\n```\n\n`code` is the daemon's or relay's error code (not_found, invalid, exists, unavailable, offline, remote, forbidden, live; move: busy, processes, tool-missing, no-remote, too-large; …) or the CLI's (usage, ambiguous, timeout, error).\n\n| Exit | Name | When |\n|---|---|---|\n")
 	for _, e := range exitCodes {
 		fmt.Fprintf(w, "| %d | %s | %s |\n", e.Code, e.Name, e.Meaning)
 	}

@@ -160,6 +160,13 @@ struct AttentionBar: View {
     /// option `i` (0-based) is chosen by typing its number to the agent.
     /// nil: those options are not offered here (focus: type them).
     var onChoose: ((Int) -> Void)? = nil
+    /// A move asking first (it's working, processes stay here, the other
+    /// Mac can't take it), in the close strip's place (MoveParts).
+    var moveStrip: MoveStrip? = nil
+    /// The quiet progress line while it moves (agents.moving).
+    var moveProgress: MoveLine? = nil
+    /// A finished agent's "Continue on mini · Fork on mini".
+    var moveOffer: MoveOffer? = nil
 
     struct DenyField {
         var text: Binding<String>
@@ -181,6 +188,10 @@ struct AttentionBar: View {
         Group {
             if let closeStrip {
                 CloseStripRow(strip: closeStrip, tight: tight)
+            } else if let moveStrip {
+                MoveStripRow(strip: moveStrip, tight: tight)
+            } else if let moveProgress {
+                MoveProgressRow(line: moveProgress)
             } else if agent.state == .approval, let deny {
                 DenyRow(agent: agent, wide: wide, field: deny)
             } else {
@@ -212,7 +223,9 @@ struct AttentionBar: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .animation(DS.animation(.quick, reduceMotion: reduceMotion), value: contentKey)
-            if let selectionHint, !agent.state.needsAttention, agent.state != .exited {
+            if let moveOffer, MoveRules.showsOnStrip(agent) {
+                MoveOfferButtons(offer: moveOffer, tight: tight)
+            } else if let selectionHint, !agent.state.needsAttention, agent.state != .exited {
                 Text(selectionHint)
                     .font(.ds(.meta))
                     .foregroundStyle(Theme.dim)

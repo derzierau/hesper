@@ -37,7 +37,7 @@ var exitCodes = []struct {
 	{exitUnavailable, "unavailable", "hesperd is not running, or a machine is offline or unreachable (codes unavailable, offline, remote)"},
 	{exitForbidden, "forbidden", "Not allowed (codes forbidden, unauthorized)"},
 	{exitTimeout, "timeout", "Waited too long"},
-	{exitExists, "exists", "Already exists or in use (codes exists, live)"},
+	{exitExists, "exists", "Already exists or in use (codes exists, live, busy, processes)"},
 }
 
 // Error codes the CLI adds to the daemon's (wire.Code*).
@@ -57,7 +57,7 @@ var codeExits = map[string]int{
 	"connection_lost": exitUnavailable, "disconnected": exitUnavailable,
 	wire.CodeForbidden: exitForbidden, "unauthorized": exitForbidden,
 	codeTimeout:     exitTimeout,
-	wire.CodeExists: exitExists, wire.CodeLive: exitExists,
+	wire.CodeExists: exitExists, wire.CodeLive: exitExists, wire.CodeBusy: exitExists, wire.CodeProcesses: exitExists,
 }
 
 // cliError is an error with a code (printed with --json, mapped to the

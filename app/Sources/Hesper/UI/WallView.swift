@@ -114,7 +114,7 @@ final class TileView: NSView, TerminalDropTarget {
     /// more for a two-row approval, which then covers the terminal's
     /// bottom rows instead of shrinking it.
     func bandHeight(width: CGFloat) -> CGFloat {
-        max(Metrics.footer, AttentionBar.height(shown, width: width, confirming: model?.closeConfirm?.id == agent.id))
+        max(Metrics.footer, AttentionBar.height(shown, width: width, confirming: model?.closeConfirm?.id == agent.id || model?.moveConfirm?.id == agent.id))
     }
     /// On the shelf: header and one line, no terminal.
     private(set) var onShelf = false
@@ -172,7 +172,7 @@ final class TileView: NSView, TerminalDropTarget {
 
     // MARK: Hover: the focus Kbd in the header
 
-    private var hovering = false { didSet { if oldValue != hovering { refreshHeader() } } }
+    private var hovering = false { didSet { if oldValue != hovering { refreshContent() } } }
 
     /// The card sits in its own project's band (WallView.sync): the header
     /// leaves the project out; `bandBranch` the band's branch.
@@ -229,7 +229,10 @@ final class TileView: NSView, TerminalDropTarget {
             deny: Self.denyField(a, model: model),
             closeStrip: Self.closeStrip(a, model: model),
             killed: model.isKilled(a), onClose: { [weak model] in model?.requestClose(a) },
-            onChoose: { [weak model] i in model?.sendInput(a.id, "\(i + 1)") })
+            onChoose: { [weak model] i in model?.sendInput(a.id, "\(i + 1)") },
+            moveStrip: Self.moveStrip(a, model: model, tight: AttentionBar.isTight(width: w)),
+            moveProgress: Self.moveProgress(a, model: model),
+            moveOffer: isSelected || hovering ? Self.moveOffer(a, model: model) : nil)
         alphaValue = moving != nil ? Self.movingAlpha : (a.isRunning ? 1 : Self.stoppedAlpha)
     }
 
@@ -248,6 +251,32 @@ final class TileView: NSView, TerminalDropTarget {
                                        onPrimary: { [weak model] in model?.confirmClose() },
                                        onSecondary: { [weak model] in model?.confirmClose(discardWorktree: true) },
                                        onCancel: { [weak model] in model?.cancelClose() })
+    }
+
+    /// A move's question on this agent's strip (moving: AppModel+Move).
+    static func moveStrip(_ a: Agent, model: AppModel, tight: Bool) -> AttentionBar.MoveStrip? {
+        guard let p = model.moveConfirm, p.id == a.id else { return nil }
+        let target = model.machine(p.to)?.displayName ?? p.to
+        let project = a.project.map { ($0 as NSString).lastPathComponent }
+        return AttentionBar.MoveStrip(message: p.ask.message(name: a.name, target: target, project: project),
+                                      primary: p.ask.primary(tight: tight)?.title, detail: p.ask.detail, actionable: p.ask.actionable,
+                                      onPrimary: { [weak model] in model?.confirmMove() },
+                                      onCancel: { [weak model] in model?.cancelMove() })
+    }
+
+    /// The quiet progress line while it moves (agents.moving).
+    static func moveProgress(_ a: Agent, model: AppModel) -> AttentionBar.MoveLine? {
+        guard let to = model.moving[a.id] else { return nil }
+        let p = model.moveBook.progress[a.id] ?? MoveProgress(id: a.id, to: to)
+        return AttentionBar.MoveLine(progress: p, target: model.machine(to)?.displayName ?? to, fork: model.moveBook.forks.contains(a.id))
+    }
+
+    /// "Continue on mini · Fork on mini" on a finished agent's band.
+    static func moveOffer(_ a: Agent, model: AppModel) -> AttentionBar.MoveOffer? {
+        guard MoveRules.showsOnStrip(a), let t = model.moveTargets(a).first else { return nil }
+        return AttentionBar.MoveOffer(target: t.displayName,
+                                      onMove: { [weak model] in model?.requestMove(a, to: t.short) },
+                                      onFork: { [weak model] in model?.requestMove(a, to: t.short, options: MoveOptions(fork: true)) })
     }
 
     static func denyField(_ a: Agent, model: AppModel) -> AttentionBar.DenyField? {
@@ -967,6 +996,10 @@ final class WallView: NSView {
         if let p = model.closeConfirm, p.id == model.selectedID {
             if chord.key == .enter && chord.plain { model.confirmClose(); return }
             if chord.key == .escape && chord.plain { model.cancelClose(); return }
+        }
+        if let p = model.moveConfirm, p.id == model.selectedID {
+            if chord.key == .enter && chord.plain { model.confirmMove(); return }
+            if chord.key == .escape && chord.plain { model.cancelMove(); return }
         }
         // The active tile whose read-write terminal hasn't taken the
         // keyboard yet (it swaps in ≤ 800 ms after "start typing"): its keys

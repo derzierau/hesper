@@ -52,9 +52,21 @@ func init() {
 			Help: idHelp, Output: "Agent"},
 		{Name: "attach", NoMCP: true, Summary: "Attach this terminal to an agent", Usage: "attach ID [--ro] [--owner=false]",
 			Help: idHelp + " Ctrl-] detaches. Needs a terminal; not for scripts."},
-		{Name: "mv", Summary: "Move an agent with its conversation to another machine", Usage: "mv ID MACHINE [--json]",
-			Help: idHelp + " MACHINE is a short name (see machines).", Output: "Agent",
-			Examples: []string{"hesperctl mv a7f3k2 mini"}},
+		{Name: "move", Aliases: []string{"mv"}, Summary: "Move an agent with its conversation and uncommitted work to another machine",
+			Usage: "move ID --to MACHINE [--fork] [--interrupt] [--leave-processes] [--json]",
+			Help: idHelp + " MACHINE is a short name (see machines); `move ID MACHINE` works too. The agent's folder is checkpointed, " +
+				"its branch and uncommitted (and untracked, not ignored) files are carried to a worktree on MACHINE (the project is cloned from its " +
+				"Git remote when it is not there), its conversation resumes there with a short handover note, and the agent here is closed " +
+				"(--fork keeps it). Refused, the agent untouched: busy (it is working: --interrupt), processes (it started dev servers or the like " +
+				"that would stay behind: listed; --leave-processes), tool-missing, no-remote, too-large (over 200 MB), offline. " +
+				"Undo: move the new agent back. Prints the new agent's id.",
+			Output:   "MoveResult = Agent (the new one) plus agent: its id",
+			Examples: []string{"hesperctl move a7f3k2 --to mini", "hesperctl move push-provider --to mini --fork --json"}},
+		{Name: "checkpoint", Summary: "Checkpoint an agent's Git folder now", Usage: "checkpoint ID [--json]",
+			Help: idHelp + " A commit of HEAD, the index and every file (untracked included, ignored ones not) at refs/hesper/checkpoints/<id> " +
+				"in its repository, on no branch; the index, branches, stash and files stay as they are. Taken on its own when a turn ends (at most " +
+				"every 60 s), at close and move; kept 14 days. Prints the commit and the number of changed files (nothing for a folder outside Git).",
+			Output: "{checkpoint: {ref, commit, at, changed, branch?} | null}"},
 		{Name: "rm", Destructive: true, Summary: "Forget an exited agent", Usage: "rm ID", Help: idHelp},
 		{Name: "rename", Summary: "Rename an agent", Usage: "rename ID NAME… [--json]", Help: idHelp, Output: "Agent"},
 	} {
@@ -219,11 +231,23 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		ro = f.Bool("ro", false, "Read only")
 		owner = f.Bool("owner", true, "Resize the agent to this terminal")
 	}
+	var to *string
+	var fork, interrupt, leave *bool
+	if command == "move" {
+		to = f.String("to", "", "Machine to move to (short name)")
+		fork = f.Bool("fork", false, "Keep the agent here too (a copy continues there)")
+		interrupt = f.Bool("interrupt", false, "Interrupt a working agent first (else it is refused: busy)")
+		leave = f.Bool("leave-processes", false, "Move although processes it started stay behind here")
+	}
 	positional, err := parseInterspersed(f, args)
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	limit := 2 * time.Minute
+	if command == "move" {
+		limit = 11 * time.Minute // a move takes up to 10
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	c, err := dialDaemon(ctx, *socket)
 	if err != nil {
@@ -370,19 +394,58 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 			return err
 		}
 		return print(a)
-	case "mv":
-		if err := need(2, "mv ID MACHINE"); err != nil {
+	case "move":
+		dest := *to
+		if dest == "" && len(positional) >= 2 {
+			dest = positional[1] // move ID MACHINE (the former mv)
+		}
+		if err := need(1, "move ID --to MACHINE"); err != nil {
+			return err
+		}
+		if dest == "" {
+			return usagef("usage: hesperctl move ID --to MACHINE")
+		}
+		target, err := id()
+		if err != nil {
+			return err
+		}
+		var res wire.MoveResult
+		p := wire.MoveParams{ID: target, To: dest, Fork: *fork, Interrupt: *interrupt, LeaveProcesses: *leave}
+		if err := c.Call(ctx, "agents.move", p, &res); err != nil {
+			var we *wire.Error
+			if errors.As(err, &we) && len(we.Processes) > 0 && !*asJSON {
+				for _, pr := range we.Processes {
+					fmt.Fprintf(os.Stderr, "  %d  %s\n", pr.PID, pr.Command)
+				}
+			}
+			return err
+		}
+		if *asJSON {
+			return output(res)
+		}
+		fmt.Println(res.Agent)
+		return nil
+	case "checkpoint":
+		if err := need(1, "checkpoint ID"); err != nil {
 			return err
 		}
 		target, err := id()
 		if err != nil {
 			return err
 		}
-		var a wire.Agent
-		if err := c.Call(ctx, "agents.move", wire.MoveParams{ID: target, To: positional[1]}, &a); err != nil {
+		var res wire.CheckpointResult
+		if err := c.Call(ctx, "agents.checkpoint", wire.IDParams{ID: target}, &res); err != nil {
 			return err
 		}
-		return print(a)
+		if *asJSON {
+			return output(res)
+		}
+		if res.Checkpoint == nil {
+			fmt.Fprintln(os.Stderr, "not a Git folder: no checkpoint")
+			return nil
+		}
+		fmt.Printf("%s %d changed\n", res.Checkpoint.Commit, res.Checkpoint.Changed)
+		return nil
 	case "attach":
 		if err := need(1, "attach ID [--ro] [--owner=false]"); err != nil {
 			return err

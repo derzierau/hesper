@@ -155,6 +155,17 @@ func TestAgentCommands(t *testing.T) {
 	if !errors.As(err, &we) || we.Code != wire.CodeUnavailable {
 		t.Fatalf("mv: %v", err)
 	}
+	// move (mv is its alias): --to, the flags; without a machine a usage
+	// error; checkpoint of a folder outside Git: none, no error.
+	if err := ctl("move", a.ID, "--to", "mini", "--fork", "--interrupt", "--leave-processes"); !errors.As(err, &we) || we.Code != wire.CodeUnavailable {
+		t.Fatalf("move: %v", err)
+	}
+	if err := ctl("move", a.ID); exitCode(err) != exitUsage {
+		t.Fatalf("move without --to: %v", err)
+	}
+	if err := ctl("checkpoint", a.ID); err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
 	ctl("stop", a.ID)
 	eventually(t, "exited", func() bool { g, _ := reg.Get(a.ID); return g.State == wire.StateExited })
 	if err := ctl("rm", a.ID); err != nil {

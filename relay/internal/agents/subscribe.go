@@ -13,29 +13,64 @@ type Subscriber struct {
 	mu      sync.Mutex
 	pending map[string]*wire.Agent // nil: removed
 	reasons map[string]string      // a removal's reason (closing agents)
+	tos     map[string]string      // a moved agent's new id (move work)
 	order   []string
 	closed  bool
 	wake    chan struct{}
+	// moves (move work): agents.moving notes, for subscribers that take
+	// them (SubscribeMoves); at most maxMoves, the oldest dropped.
+	takesMoves bool
+	moves      []wire.Moving
 }
 
-// Note is one notification: Agent set for agents.changed, else Removed
-// with its Reason (wire.ReasonClosed, …; may be empty).
+// maxMoves bounds a subscriber's queued agents.moving notes.
+const maxMoves = 64
+
+// Note is one notification: Agent set for agents.changed, Moving for
+// agents.moving, else Removed with its Reason (wire.ReasonClosed, …; may
+// be empty) and To (reason "moved").
 type Note struct {
 	Agent   *wire.Agent
+	Moving  *wire.Moving
 	Removed string
 	Reason  string
+	To      string
 }
 
 func (s *Subscriber) push(id string, a *wire.Agent) {
-	s.pushReason(id, a, "")
+	s.pushReason(id, a, "", "")
 }
 
 // pushRemoved notes a removal with its reason.
 func (s *Subscriber) pushRemoved(id, reason string) {
-	s.pushReason(id, nil, reason)
+	s.pushReason(id, nil, reason, "")
 }
 
-func (s *Subscriber) pushReason(id string, a *wire.Agent, reason string) {
+// pushRemovedTo notes a removal with its reason and, for a move, the new
+// agent's id.
+func (s *Subscriber) pushRemovedTo(id, reason, to string) {
+	s.pushReason(id, nil, reason, to)
+}
+
+// pushMoving queues a move's progress (subscribers that take them).
+func (s *Subscriber) pushMoving(m wire.Moving) {
+	s.mu.Lock()
+	if s.closed || !s.takesMoves {
+		s.mu.Unlock()
+		return
+	}
+	if len(s.moves) >= maxMoves {
+		s.moves = s.moves[1:]
+	}
+	s.moves = append(s.moves, m)
+	s.mu.Unlock()
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Subscriber) pushReason(id string, a *wire.Agent, reason, to string) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -49,6 +84,11 @@ func (s *Subscriber) pushReason(id string, a *wire.Agent, reason string) {
 		s.reasons[id] = reason
 	} else {
 		delete(s.reasons, id)
+	}
+	if a == nil && to != "" {
+		s.tos[id] = to
+	} else {
+		delete(s.tos, id)
 	}
 	s.mu.Unlock()
 	select {
@@ -75,16 +115,19 @@ func (s *Subscriber) Wait(done <-chan struct{}) []Note {
 			s.mu.Unlock()
 			return nil
 		}
-		if len(s.order) > 0 {
-			notes := make([]Note, 0, len(s.order))
+		if len(s.order) > 0 || len(s.moves) > 0 {
+			notes := make([]Note, 0, len(s.order)+len(s.moves))
+			for i := range s.moves {
+				notes = append(notes, Note{Moving: &s.moves[i]})
+			}
 			for _, id := range s.order {
 				if a := s.pending[id]; a != nil {
 					notes = append(notes, Note{Agent: a})
 				} else {
-					notes = append(notes, Note{Removed: id, Reason: s.reasons[id]})
+					notes = append(notes, Note{Removed: id, Reason: s.reasons[id], To: s.tos[id]})
 				}
 			}
-			s.order, s.pending, s.reasons = nil, map[string]*wire.Agent{}, map[string]string{}
+			s.order, s.pending, s.reasons, s.tos, s.moves = nil, map[string]*wire.Agent{}, map[string]string{}, map[string]string{}, nil
 			s.mu.Unlock()
 			return notes
 		}
@@ -99,7 +142,28 @@ func (s *Subscriber) Wait(done <-chan struct{}) []Note {
 
 // Subscribe registers a subscriber; its first notifications are every agent.
 func (r *Registry) Subscribe() *Subscriber {
-	s := &Subscriber{pending: map[string]*wire.Agent{}, reasons: map[string]string{}, wake: make(chan struct{}, 1)}
+	return r.subscribe(false)
+}
+
+// SubscribeMoves is Subscribe with agents.moving notes (Note.Moving)
+// too.
+func (r *Registry) SubscribeMoves() *Subscriber {
+	return r.subscribe(true)
+}
+
+// NoteMoving tells the subscribers that take them a move's progress
+// (agents.moving; the controller's internal/remote sends them).
+func (r *Registry) NoteMoving(m wire.Moving) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for s := range r.subs {
+		s.pushMoving(m)
+	}
+}
+
+func (r *Registry) subscribe(moves bool) *Subscriber {
+	s := &Subscriber{pending: map[string]*wire.Agent{}, reasons: map[string]string{}, tos: map[string]string{}, wake: make(chan struct{}, 1),
+		takesMoves: moves}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, a := range r.listLocked() {

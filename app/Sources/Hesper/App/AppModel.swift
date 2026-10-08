@@ -106,8 +106,16 @@ final class AppModel {
     var undoToast: UndoStack<UndoAction>.Entry?
     @ObservationIgnored var undoTask: Task<Void, Never>?
     @ObservationIgnored var anchorProvider: ((PopoverKind) -> CGRect?)?
+    /// Moving work across Macs (AppModel+Move): shared by every window's model.
+    let moveBook: MoveBook
     /// Agents moving to another machine (id → target), shown in place.
-    var moving: [String: String] = [:]
+    var moving: [String: String] {
+        get { moveBook.targets }
+        set { moveBook.targets = newValue }
+    }
+    /// A moved agent continues as this new one: its selection / focus
+    /// follows once it arrives (this window's; new id → was focused).
+    @ObservationIgnored var moveFollow: [String: Bool] = [:]
     /// Closing agents (AppModel+Closing): shared by every window's model.
     let closeBook: CloseBook
     /// Closed, not gone from hesperd's agents yet (or queued for an
@@ -227,6 +235,7 @@ final class AppModel {
     init(env: AppEnvironment, userFontSize: Double? = nil) {
         self.env = env
         closeBook = CloseBook()
+        moveBook = MoveBook()
         client = DaemonClient(socketPath: env.socketPath, clientName: "Hesper.app", clientVersion: AppInfo.version)
         // Automated runs (tests, screenshots) take the layout from flags and
         // never touch the user's defaults.
@@ -259,6 +268,7 @@ final class AppModel {
         listSource = primary
         client = primary.client
         closeBook = primary.closeBook
+        moveBook = primary.moveBook
         settings = primary.settings
         registry = primary.registry
         drafts = primary.drafts
@@ -343,9 +353,10 @@ final class AppModel {
             if closeConfirm?.id == id { closeConfirm = nil }
             if selectedID == id { selectedID = wall.first?.id }
             if focusedID == id { exitFocus() }
-            moving.removeValue(forKey: id)
+            moveGone(id)
         case .changed(let a):
             adoptIfStarting(a)
+            followMoved(a.id)
             if !isMirror && registry.catalog.needsRefresh(for: a) { scheduleProjectsRefresh() }
         case .reconciled(let ids):
             // Forget places of agents that are gone.
@@ -365,6 +376,10 @@ final class AppModel {
             }
         case .projectsListed, .projectChanged, .projectRemoved, .groupChanged, .groupRemoved:
             break // the registry's catalog; the views re-read it
+        case .moving(let p):
+            if !isMirror { moveProgressed(p) } // the shared book, once
+        case .moved(let from, let to):
+            moved(from, to: to)
         }
         switch e {
         case .draftChanged, .draftsListed, .projectsListed, .projectChanged: normalizeDrafts()

@@ -56,6 +56,9 @@ type Session struct {
 	MovedTo string `json:"movedTo,omitempty"`
 	// Bytes is the transcript's size on its home.
 	Bytes int64 `json:"bytes,omitempty"`
+	// Checkpoint (move work): the last checkpoint of the hesperd agent
+	// that ran it, on this Mac (its home's entries only).
+	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
 }
 
 // SessionTodo is one item of the last todo list / plan.

@@ -59,17 +59,21 @@ public struct Session: Equatable, Sendable, Identifiable, Hashable {
     public var origin: String?
     /// The transcript's size on its home.
     public var bytes: Int?
+    /// The agent's last worktree checkpoint (hesperd; "checkpoint · 3
+    /// files", "Restore checkpoint" once the agent is gone).
+    public var checkpoint: Checkpoint?
 
     public init(id: String, kind: String = "claude", sessionId: String = "", machine: String = "L", cwd: String = "", projectId: String? = nil,
                 branch: String? = nil, title: String = "", firstPrompt: String = "", lastUser: String = "", lastAssistant: String = "",
                 todos: [SessionTodo] = [], turns: Int = 0, tokens: Int? = nil, startedAt: Date? = nil, lastActivity: Date? = nil,
                 live: SessionLive? = nil, external: Bool = false, archived: Bool = false, mirrored: [String] = [], snippet: String? = nil,
-                removedAt: Date? = nil, movedTo: String? = nil, origin: String? = nil, bytes: Int? = nil) {
+                removedAt: Date? = nil, movedTo: String? = nil, origin: String? = nil, bytes: Int? = nil, checkpoint: Checkpoint? = nil) {
         self.id = id; self.kind = kind; self.sessionId = sessionId; self.machine = machine; self.cwd = cwd; self.projectId = projectId
         self.branch = branch; self.title = title; self.firstPrompt = firstPrompt; self.lastUser = lastUser; self.lastAssistant = lastAssistant
         self.todos = todos; self.turns = turns; self.tokens = tokens; self.startedAt = startedAt; self.lastActivity = lastActivity
         self.live = live; self.external = external; self.archived = archived; self.mirrored = mirrored; self.snippet = snippet
         self.removedAt = removedAt; self.movedTo = movedTo; self.origin = origin; self.bytes = bytes
+        self.checkpoint = checkpoint
     }
 
     /// Lenient: missing fields get defaults, numbers may be strings, dates
@@ -115,6 +119,7 @@ public struct Session: Equatable, Sendable, Identifiable, Hashable {
         movedTo = o["movedTo"].flatMap(Self.str).flatMap { $0.isEmpty ? nil : $0 }
         origin = o["origin"].flatMap(Self.str).flatMap { $0.isEmpty ? nil : $0 }
         bytes = o["bytes"].flatMap(Self.int)
+        checkpoint = Checkpoint(json: o["checkpoint"])
     }
 
     public var json: JSONValue {
@@ -140,6 +145,7 @@ public struct Session: Equatable, Sendable, Identifiable, Hashable {
         if let movedTo { o["movedTo"] = .string(movedTo) }
         if let origin { o["origin"] = .string(origin) }
         if let bytes { o["bytes"] = .number(Double(bytes)) }
+        if let checkpoint { o["checkpoint"] = checkpoint.json }
         return .object(o)
     }
 

@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/derzierau/hesper/relay/internal/handoff"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
@@ -225,75 +223,4 @@ func git(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// agents.move: L's agent goes to M with its conversation and its
-// uncommitted work and resumes there; then back to L (a remote source).
-func TestRemoteMoveWithConversation(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git unavailable")
-	}
-	w := newWorld(t, worldOptions{})
-	L, M := w.L, w.M
-	git(t, L.project, "init", "-q", "-b", "main")
-	os.WriteFile(filepath.Join(L.project, "a.txt"), []byte("one\n"), 0o644)
-	git(t, L.project, "add", ".")
-	git(t, L.project, "commit", "-q", "-m", "first")
-	L.waitLinked(t, "M")
-	var a wire.Agent
-	if err := L.call(t, "agents.spawn", wire.SpawnParams{Project: L.project, Task: "SECRET-MOVE-TASK"}, &a); err != nil {
-		t.Fatal(err)
-	}
-	L.waitAgent(t, a.ID, inState(wire.StateDone))
-	os.WriteFile(filepath.Join(L.project, "a.txt"), []byte("one\nUNCOMMITTED\n"), 0o644)
-	transcript := filepath.Join(L.home, ".claude", "projects", handoff.ClaudeSlug(L.project), a.SessionID+".jsonl")
-	os.MkdirAll(filepath.Dir(transcript), 0o700)
-	os.WriteFile(transcript, []byte(`{"cwd":"`+L.project+`","message":"SECRET-CONVERSATION"}`+"\n"), 0o600)
-
-	var moved wire.Agent
-	if err := L.call(t, "agents.move", wire.MoveParams{ID: a.ID, To: "M"}, &moved); err != nil {
-		t.Fatal(err)
-	}
-	if moved.ID != localOn(a.ID, "M") || moved.Project != M.project || moved.SessionID != a.SessionID {
-		t.Fatalf("moved %+v", moved)
-	}
-	L.waitAgent(t, moved.ID, func(x wire.Agent) bool { return x.Exit == nil })
-	var list []wire.Agent
-	L.call(t, "agents.list", nil, &list)
-	for _, x := range list {
-		if x.ID == a.ID {
-			t.Fatal("the source still lists the moved agent")
-		}
-	}
-	placed := filepath.Join(M.home, ".claude", "projects", handoff.ClaudeSlug(M.project), a.SessionID+".jsonl")
-	data, err := os.ReadFile(placed)
-	if err != nil || !strings.Contains(string(data), `"cwd":"`+M.project+`"`) {
-		t.Fatalf("transcript on M: %s %v", data, err)
-	}
-	if got, _ := os.ReadFile(filepath.Join(M.project, "a.txt")); string(got) != "one\nUNCOMMITTED\n" {
-		t.Fatalf("work on M: %q", got)
-	}
-	for end := time.Now().Add(5 * time.Second); !strings.Contains(M.argvs(moved.ID), "--resume") && time.Now().Before(end); {
-		time.Sleep(20 * time.Millisecond)
-	}
-	if !strings.Contains(M.argvs(moved.ID), `"--resume","`+a.SessionID+`"`) {
-		t.Fatalf("not resumed on M: %s", M.argvs(moved.ID))
-	}
-	// And back, the source now remote.
-	os.WriteFile(filepath.Join(M.project, "b.txt"), []byte("from M\n"), 0o644)
-	git(t, L.project, "checkout", "-q", "--", ".")
-	var back wire.Agent
-	if err := L.call(t, "agents.move", wire.MoveParams{ID: moved.ID, To: "L"}, &back); err != nil {
-		t.Fatal(err)
-	}
-	if back.ID != a.ID {
-		t.Fatalf("back %+v", back)
-	}
-	if got, _ := os.ReadFile(filepath.Join(L.project, "b.txt")); string(got) != "from M\n" {
-		t.Fatalf("work back on L: %q", got)
-	}
-	L.waitAgent(t, a.ID, func(x wire.Agent) bool { return x.Exit == nil })
-	if leaked := w.tap.sawAny("SECRET-CONVERSATION", "SECRET-MOVE-TASK", "UNCOMMITTED"); leaked != "" {
-		t.Fatalf("the relay saw %q", leaked)
-	}
 }

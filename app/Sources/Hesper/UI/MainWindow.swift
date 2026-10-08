@@ -27,12 +27,25 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     /// its worktree) takes ⏎ and esc first, wherever the keyboard is
     /// (the wall, an active tile, the focus view's terminal).
     private func closeStripKey(_ event: NSEvent) -> Bool {
+        if moveStripKey(event) { return true }
         guard event.type == .keyDown, let model, let p = model.closeConfirm, !model.showPalette, model.popover == nil,
               model.current?.id == p.id || model.selectedID == p.id else { return false }
         let chord = KeyChord(event: event)
         guard chord.plain && !chord.shift else { return false }
         if chord.key == .enter { model.confirmClose(); return true }
         if chord.key == .escape { model.cancelClose(); return true }
+        return false
+    }
+
+    /// A move asking on the agent's strip (it's working, processes stay
+    /// here, the other Mac can't take it): ⏎ goes on, esc dismisses.
+    private func moveStripKey(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, let model, let p = model.moveConfirm, !model.showPalette, model.popover == nil,
+              model.current?.id == p.id || model.selectedID == p.id else { return false }
+        let chord = KeyChord(event: event)
+        guard chord.plain && !chord.shift else { return false }
+        if chord.key == .enter { model.confirmMove(); return true }
+        if chord.key == .escape { model.cancelMove(); return true }
         return false
     }
 

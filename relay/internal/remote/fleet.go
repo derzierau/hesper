@@ -113,7 +113,7 @@ type machine struct {
 
 type watcher struct {
 	changed func(wire.Agent)
-	removed func(id, reason string)
+	removed func(id, reason, to string)
 }
 
 // New makes a Fleet; Run connects it.
@@ -413,8 +413,14 @@ func (f *Fleet) emitRemovedLocked(id string) {
 // emitRemovedReasonLocked: a removal with the host's reason (closing
 // agents: "closed", "finished-in-background", "removed").
 func (f *Fleet) emitRemovedReasonLocked(id, reason string) {
+	f.emitRemovedToLocked(id, reason, "")
+}
+
+// emitRemovedToLocked: a removal with its reason and, for a move, the
+// agent it became.
+func (f *Fleet) emitRemovedToLocked(id, reason, to string) {
 	for w := range f.watchers {
-		w.removed(id, reason)
+		w.removed(id, reason, to)
 	}
 }
 
@@ -485,7 +491,7 @@ func (f *Fleet) agentsLocked() []wire.Agent {
 
 // Watch reports remote agents (all of them first) and their changes until
 // ctx ends.
-func (f *Fleet) Watch(ctx context.Context, changed func(wire.Agent), removed func(id, reason string)) {
+func (f *Fleet) Watch(ctx context.Context, changed func(wire.Agent), removed func(id, reason, to string)) {
 	w := &watcher{changed: changed, removed: removed}
 	f.mu.Lock()
 	for _, a := range f.agentsLocked() {
@@ -529,7 +535,8 @@ func wireError(err error) error {
 	var fault *protocol.Error
 	if errors.As(err, &fault) {
 		switch fault.Code {
-		case wire.CodeNotFound, wire.CodeInvalid, wire.CodeExists, wire.CodeUnavailable, wire.CodeForbidden, wire.CodeLive:
+		case wire.CodeNotFound, wire.CodeInvalid, wire.CodeExists, wire.CodeUnavailable, wire.CodeForbidden, wire.CodeLive,
+			wire.CodeTooLarge, wire.CodeNoRemote, wire.CodeToolMissing: // move work
 			return &wire.Error{Code: fault.Code, Message: fault.Message}
 		case "invalid_request":
 			return &wire.Error{Code: wire.CodeInvalid, Message: fault.Message}

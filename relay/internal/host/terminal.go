@@ -268,7 +268,7 @@ func (r *Runner) serveLink(link *hostLink) {
 				return
 			}
 			for _, n := range notes {
-				e := agentlink.Event{Removed: n.Removed, Reason: n.Reason}
+				e := agentlink.Event{Removed: n.Removed, Reason: n.Reason, To: n.To}
 				if n.Agent != nil {
 					if n.Agent.Kind == wire.KindShell && !link.shells {
 						continue

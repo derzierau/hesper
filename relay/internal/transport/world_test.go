@@ -56,6 +56,8 @@ type worldOptions struct {
 	shell    bool          // M offers shells (--allow-shell)
 	rights   []string      // what each machine's controller may do on the other
 	stranger bool          // L is not approved on M (M enforces device keys)
+	// beforeStart (optional) changes the nodes' files before they start.
+	beforeStart func(L, M *node)
 }
 
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -111,6 +113,9 @@ func newWorld(t *testing.T, opts worldOptions) *world {
 		w.approve(t, w.M, w.L, rights...)
 	}
 	w.approve(t, w.L, w.M, rights...)
+	if opts.beforeStart != nil {
+		opts.beforeStart(w.L, w.M)
+	}
 	w.L.start(t, ctx)
 	w.M.start(t, ctx)
 	return w

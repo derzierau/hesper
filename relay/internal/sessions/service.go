@@ -83,6 +83,11 @@ type Service struct {
 	ownedMu sync.Mutex
 	owned   map[string]bool // "kind:sid" started by hesperd
 
+	// checkpoints.go (move work): "kind:sid" → its agent's last
+	// checkpoint, loaded at the first use.
+	cpMu        sync.Mutex
+	checkpoints map[string]wire.Checkpoint
+
 	scan    *scanner
 	sync    *syncer
 	mirror  *mirrorer
@@ -213,6 +218,7 @@ func (s *Service) SetRegistry(reg *agents.Registry) {
 	s.mu.Lock()
 	s.reg = reg
 	s.mu.Unlock()
+	reg.OnCheckpoint(s.agentCheckpoint) // checkpoints.go
 	s.wg.Add(1)
 	go func() { defer s.wg.Done(); s.watchAgents(reg) }()
 }
@@ -367,6 +373,9 @@ func (s *Service) toWire(r *Record) wire.Session {
 		Origin: m.Origin, RemovedAt: msTime(r.RemovedAt), Bytes: m.Size}
 	if r.MovedTo != "" {
 		out.MovedTo = s.nameOf(r.MovedTo, "")
+	}
+	if r.Node == s.db.node {
+		out.Checkpoint = s.checkpointOf(r.Kind, r.SID) // checkpoints.go
 	}
 	for node, mk := range r.Mirrors {
 		if mk.At > 0 && node != r.Node {
