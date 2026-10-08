@@ -4,7 +4,7 @@
 
 <h1 align="center">hesper.</h1>
 
-<p align="center"><b>Every Mac you own, running your agents. One fast window to steer them.</b></p>
+<p align="center"><b>Start an agent on one Mac, pick it up on another. Every Mac you own, one fast window.</b></p>
 
 <p align="center">
   <a href="https://github.com/derzierau/hesper/actions/workflows/app.yml"><img src="https://github.com/derzierau/hesper/actions/workflows/app.yml/badge.svg" alt="app"></a>
@@ -14,10 +14,12 @@
 </p>
 
 Hesper turns all your Macs into one pool of compute for Claude Code and Codex
-agents. Start an agent on the laptop, the Mac mini under the desk or the
-Studio in the office, from any of them. Every agent shows up as a live
-terminal tile on one wall, wherever it runs. The ones waiting for you line up
-in a single queue, one key away.
+agents, and makes moving work between them a single step. Hand a running
+agent from your laptop to the Mac mini under the desk, and it continues there
+with its conversation, its branch and its uncommitted changes, as if it had
+never left. Every agent shows up as a live terminal tile on one wall,
+wherever it runs. The ones waiting for you line up in a single queue, one key
+away.
 
 Every layer is trimmed for speed: a native AppKit app on libghostty, a small
 Go daemon per Mac, and a budget for every hop. Typing into an agent reaches
@@ -31,6 +33,32 @@ that needs you.
 > Hesper is built on [libghostty](https://ghostty.org). It is an independent
 > project and not affiliated with Ghostty.
 
+## Pick up anywhere
+
+Most agent tools tie a session to the machine it started on. In Hesper, work
+moves between your Macs as easily as it moves between windows.
+
+**Hand off a running agent.** Continue on mini (⇧⌘M, ⌘K, or the tile's menu)
+moves an agent to another Mac in seconds. Hesper checkpoints its worktree
+(staged, unstaged and untracked work, never your own branches or index),
+sends only the changes over your encrypted link, recreates the worktree on
+the same branch there, and resumes the same Claude or Codex conversation.
+One ⌘Z moves it back. Fork on mini keeps the original and starts a twin.
+
+**Start anywhere, even without the folder.** Start a task for a Mac that
+doesn't have the project yet, and Hesper brings it along: cloned from its
+remote with your uncommitted changes, or copied whole when there is no remote
+(scratch folders and plain folders included, build output left behind).
+
+**One history across all your Macs.** ⌘Y searches every Claude and Codex
+session on every Mac. Resume one where it ran, continue it on another Mac,
+fork it, or hand a Claude session to Codex. When an agent closes, its last
+checkpoint stays with its session, so you can restore the work later.
+
+**Safe by design.** Every piece of work lives in exactly one place at a time,
+and moving it is an explicit step you can undo. Nothing syncs your folders
+behind your back, so two agents never fight over the same files.
+
 ## Every Mac is compute
 
 One Mac runs out of cores, memory and battery long before you run out of
@@ -42,10 +70,9 @@ idle. Hesper uses all of them.
 project a default machine. A remote agent looks and behaves exactly like a
 local one: the machine is a badge on the tile, not a place you go to.
 
-**Move work to where there is room.** ⌘⇧M moves a running agent to another
-Mac with its conversation and its uncommitted changes, and resumes it there.
-⌘Y searches every Claude and Codex session on all your Macs; resume one where
-it ran, continue it on another Mac, or hand it from Claude to Codex.
+**Move work to where there is room.** When the laptop runs hot or its
+battery runs low, hand the busy agents to a Mac with room to spare (see
+[Pick up anywhere](#pick-up-anywhere)).
 
 **Agents that use the whole pool.** `hesperctl`, the Hesper skill and the
 MCP server let Claude and Codex start their own helpers on any of your Macs,
