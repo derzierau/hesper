@@ -81,12 +81,16 @@ func newHarness(t *testing.T, env ...string) *harness {
 
 func (h *harness) open() {
 	h.t.Helper()
-	reg, err := Open(h.opt)
+	// Open resumes persisted agents immediately. Bind the socket first so
+	// their SessionStart hooks can queue until the server starts serving,
+	// matching gateway startup rather than racing a missing socket.
+	ln, err := Listen(h.sock)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	ln, err := Listen(h.sock)
+	reg, err := Open(h.opt)
 	if err != nil {
+		ln.Close()
 		h.t.Fatal(err)
 	}
 	h.reg, h.srv = reg, NewServer(reg)
