@@ -114,6 +114,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
+| `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
 
 Errors: JSON-RPC errors with `data.code` in `not_found`, `invalid`,
 `exists`, `unavailable`, `forbidden`, `remote` and a human message.
@@ -305,6 +306,69 @@ the screen's size; cursor (0-based, on the screen) when visible; alt
 when the alternate screen is on (the scrollback is the main screen's).
 Another machine's agent: forwarded like agents.input; the host method
 needs the `observe` right and hides shells as agents.list does.
+
+**As built — app control** (walls, desks, navigation from the CLI;
+Settings stay app-only). Walls, desks, layouts and focus live only in
+Hesper.app, so hesperd relays: the app's control connection calls
+`app.register` (`{client}` → `{}`) after every connect; one app at a
+time, the latest registration wins, it ends with its connection. Any
+other local client's `app.state` / `app.open` / `app.wall.set` /
+`app.desk` is sent to that app **as a JSON-RPC request on the app's
+connection** (server → client; ids are strings `"app-N"`, so they never
+collide with the app's numeric ids; the app answers with an ordinary
+response line, which hesperd takes only from the connection it asked)
+and the answer is relayed back unchanged (the app's `data.code`
+included). No app registered → `unavailable`; the app's connection
+closing mid-call → `unavailable`; no answer within 10 s → `data.code`
+`timeout` (hesperctl exits 6). Local only: hesperd's host service has
+no `app.*`. Any caller, agents included: the agent tree's policy covers
+the methods that start or change agents, and `app.*` changes none (a
+`caller` param is dropped before forwarding). Code: `relay/internal/agents/appbridge.go` (a two-line hook
+in `server.go`'s read loop and dispatch); the app: `HesperCore/
+AppControl.swift` (params, names; pure, unit-tested), `RPCConnection`
+(`onRequest`), `DaemonClient.onAppRequest`, `Hesper/App/AppControl.swift`
+(runs the same WindowManager / AppModel / DeskController actions as
+menus, keys and clicks; changes persist through desks.json and
+UserDefaults as usual). Automated app runs (`--selftest-out` & co.) and
+`--no-app-control` don't register. Methods:
+
+| Method | Params | Result |
+|---|---|---|
+| `app.state` | – | `{active, focused: {wall?, agent?, agentWindow?}, currentWall, walls: [{id, title, isMain, isHome, open, visible, scope, scopeName?, arrangement, grouping, minChars, density, collapsed, bandOrder, sidebar, ownWalls, mode: wall\|focus\|compose, focusedAgent?, selectedAgent?, agents: [id], bands: [{key, title, collapsed, agents, pointer}]}] (desk order, home first), agentWindows: [{agent, title, key}], desks: [Desk row], arrangements, groupings, ownWalls, densities, scopes}` |
+| `app.open` | one of: `{agent, mode?: focus\|wall\|window\|tab}` (focus: like a notification click — its window, the frontmost wall showing it, else home; wall: selected there; window: ⇧-click; tab: ⌥⇧-click) · `{mode?: "wall", wall?, scope?, newWall?}` (a wall forward; with `scope`: the named wall takes it, or without `wall` a wall having it comes forward, else a new wall — the sidebar's click / ⌥-click; `newWall`: ⌥⌘N) · `{composer: {project?, task?, kind?, profile?, machine?, worktree?, branch?}, wall?}` (⌘N's draft on that wall, filled in, not started; `project` a folder or a project id / name; `kind` picks its default profile) · `{history: {query?} \| true \| "query"}` (⌘Y searching) · `{inbox: true}` (⌘J) | `{agent, mode}` · the wall (as in `app.state`) · `{draft, wall}` · `{wall, query}` · `{wall, needsYou}`; brings the app to the front |
+| `app.wall.set` | `{wall?, arrangement?: shelf\|columns\|treemap\|mainStack\|grid, grouping?: auto\|none\|group\|project\|branch, density?: dense\|normal\|N (or minChars), collapse?: [band], expand?: [band], bandOrder?: [band], scope?, sidebar?: bool, ownWalls?: collapsed\|full\|hidden, home?: bool}` | the wall; a band is its key (`p:<project>`, `g:<group>`, …), title or project / group id, `all` in collapse / expand: every band; an unknown band changes nothing (`not_found`) |
+| `app.desk` | `{action: list\|save\|switch\|rename\|remove, name?, newName?}` | the desks after it: `[{id, name, current, automatic, thisDisplays, displays, walls, agentWindows}]` (this setup's first); a desk is named by id or name; an automatic desk can't be removed (`invalid`) |
+
+`wall` everywhere: a wall id, its 1-based position (1 = home), `current`
+(the key window's wall, else the last in front; the default) or `home`.
+Scopes as text (`ScopeSpec`): `all`, `overflow`, `needs-you`, `working`,
+`project:<id|name>`, `group:<id|name>`, `filter:machine=M,kind=K,
+state=needsYou|working|quiet|ended,project=P,group=G` (a key repeated:
+OR; keys: AND); `app.state` prints the same form. Agents by full id,
+local id or unique name (`not_found`; two matches: `invalid`).
+
+hesperctl (`relay/cmd/hesperctl/app.go`, group "App", subcommands of
+the registry; the parents are aliases: `open ID` = `open agent ID`,
+`wall` = `wall show`, `desk` = `desk ls`): `open agent ID
+[--window|--tab|--select]` (also `open ID`), `open wall [--wall W]
+[--scope S] [--new]`, `open new [--project P] [--task T | TASK…] [--kind
+K] [--profile P] [--machine M] [--worktree] [--branch B] [--wall W]`,
+`open history [QUERY…]`, `open inbox`; `wall [show] [--wall W]` (a table
+and the bands; `--json`: the whole `app.state`), `wall set [--wall W]
+[--arrangement A] [--grouping G] [--density D] [--collapse BAND]…
+[--expand BAND]… [--band-order B,…] [--scope S] [--sidebar on|off]
+[--own-walls M] [--home]`; `desk [ls] | save NAME | switch NAME | rename
+OLD NEW | rm NAME`. When hesperd answers `unavailable` (no app), it runs
+`open -a Hesper` (else `open ~/Applications/Hesper.app`; `-g` for
+`wall` / `desk` except `desk switch`) and retries every 250 ms for up to
+10 s; `--no-launch` exits 4 at once. Tests: relay `TestAppControl*`
+(forwarding, params and errors through, no app, disconnect mid-request,
+timeout with a late answer dropped, latest registration wins), hesperctl
+`TestAppCommands*` (each command's params, printing, usage exits, no app /
+launch fails / never registers / registers late; tests never launch the
+app), HesperCore `AppControlTests` (params, names, wall.set → view,
+desks, the request round trip on a scripted socket). Not covered by a UI
+run yet: the actions themselves in the running app.
 
 ## Persistence
 

@@ -48,6 +48,17 @@ public final class DaemonClient: @unchecked Sendable {
         set { lock.withLock { extraNotifications = newValue } }
     }
 
+    /// App control: hesperd's requests (app.state, app.open, …: hesperctl
+    /// through hesperd). Set before `start`: every connect then registers
+    /// this connection as the app's (app.register; an older hesperd
+    /// without it is ignored). Called on the reader thread.
+    public typealias AppRequestHandler = @Sendable (_ method: String, _ params: JSONValue) async -> Result<JSONValue, RPCError>
+    private var appRequests: AppRequestHandler?
+    public var onAppRequest: AppRequestHandler? {
+        get { lock.withLock { appRequests } }
+        set { lock.withLock { appRequests = newValue } }
+    }
+
     public init(socketPath: String, clientName: String = "Hesper.app", clientVersion: String = "0.1.0") {
         self.socketPath = socketPath
         self.clientName = clientName
@@ -101,6 +112,12 @@ public final class DaemonClient: @unchecked Sendable {
                     default:
                         self?.onOtherNotification?(method, params) // shared history (sessions.*)
                     }
+                }, onRequest: { [weak self] method, params, reply in
+                    guard let handler = self?.onAppRequest else {
+                        reply(.failure(RPCError(code: -32601, message: "no method \(method)", kind: .notFound, data: ["code": "not_found"])))
+                        return
+                    }
+                    Task { reply(await handler(method, params)) }
                 }, onClose: { closed.continuation.yield(); closed.continuation.finish() })
                 lock.withLock { connection = conn }
                 let hello = try await conn.call("hello", ["client": .string(clientName), "version": .string(clientVersion)]).decode(HelloInfo.self)
@@ -124,6 +141,11 @@ public final class DaemonClient: @unchecked Sendable {
                     continuation.yield(.projectsListed(nil, nil))
                 } catch {
                     // Projects are not worth the connection either.
+                }
+                if onAppRequest != nil {
+                    // App control: this connection takes hesperctl's app.* calls
+                    // (an older hesperd answers -32601: nothing to do).
+                    _ = try? await conn.call("app.register", ["client": .string(clientName)], timeout: 5)
                 }
                 backoff = 100_000_000
                 for await _ in closed.stream { break }

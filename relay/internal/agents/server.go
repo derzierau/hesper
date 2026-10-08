@@ -82,11 +82,12 @@ type Server struct {
 	spawning map[string]int
 	// uploads: the agent each files.put upload is for (tree.go).
 	uploads map[string]uploadTarget
+	app     *appBridge // app control (appbridge.go)
 }
 
 // NewServer serves reg.
 func NewServer(reg *Registry) *Server {
-	return &Server{reg: reg, drafts: OpenDrafts(reg.opt.StateDir, reg.opt.Logf), conns: map[net.Conn]struct{}{}, done: make(chan struct{})}
+	return &Server{reg: reg, drafts: OpenDrafts(reg.opt.StateDir, reg.opt.Logf), app: newAppBridge(), conns: map[net.Conn]struct{}{}, done: make(chan struct{})}
 }
 
 // Serve accepts connections until Close.
@@ -231,6 +232,8 @@ func (s *Server) control(conn net.Conn, r *bufio.Reader, first []byte) {
 		var req wire.Request
 		if err := json.Unmarshal(line, &req); err != nil {
 			c.reply(nil, nil, &wire.RPCError{Code: wire.RPCParse, Message: "parse error", Data: &wire.ErrorData{Code: wire.CodeInvalid}})
+		} else if s.app.intercept(c, &req, line) {
+			// app control (appbridge.go): app.register, the app's responses
 		} else if req.Method == "agents.subscribe" {
 			c.subscribe(req.ID, &wg)
 		} else {
@@ -680,6 +683,8 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 			return res, err
 		}
 		return nil, wire.Errorf(wire.CodeUnavailable, "the shared history is not available")
+	case "app.state", "app.open", "app.wall.set", "app.desk":
+		return s.app.forward(method, withoutCaller(params)) // app control (appbridge.go): any caller, it touches no agent
 	case "hook":
 		var p wire.HookParams
 		if err := decode(params, &p); err != nil {

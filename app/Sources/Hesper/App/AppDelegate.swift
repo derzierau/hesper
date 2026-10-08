@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var notifier: Notifier?
     var harness: AnyObject?
     var quickLaunch: QuickLaunchController?
+    var appControl: AppControl?
     let hotKey = GlobalHotKey()
     private var automated = false
 
@@ -60,6 +61,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if quick { n?.postStarted(a) ?? (); if NSApp.isActive { self?.model.goTo(a.id) } }
         }
         registerHotKey()
+        // App control: hesperctl open / wall / desk through hesperd. Never
+        // in automated runs (a test instance must not take the user's
+        // hesperctl calls).
+        if !automated && !env.options.contains("no-app-control") { appControl = AppControl(manager: windows) }
 
         model.start()
         if !automated { FirstRun.watch(model: model) } // once, for a fresh setup
