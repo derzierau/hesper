@@ -19,7 +19,7 @@ import (
 
 func init() {
 	for _, c := range []Command{
-		{Name: "drafts ls", Summary: "List the drafts (new agents not started yet)", Usage: "drafts ls [--json]",
+		{Name: "drafts ls", ReadOnly: true, Summary: "List the drafts (new agents not started yet)", Usage: "drafts ls [--json]",
 			Help:   "Drafts are Hesper's draft tiles: a task with its folder, machine and profile, kept by hesperd until started or removed. A table of id, machine, folder, profile, last change and the task's first line.",
 			Output: "[{id, text, machine?, machineExplicit?, project? (folder), band? (project id), wall?, projectLocked?, profile?, worktree?, branch?, attachments?, after?, parked?, created, updated}]",
 			Run:    draftsList},
@@ -29,12 +29,12 @@ func init() {
 			Output:   "the draft (as in drafts ls)",
 			Examples: []string{"hesperctl drafts save --project ~/src/app --kind codex fix the login redirect", "git diff | hesperctl drafts save --project app -", "hesperctl drafts save --id d-k2m9x0ab --worktree --branch fix-login"},
 			Run:      draftsSave},
-		{Name: "drafts rm", Summary: "Remove a draft", Usage: "drafts rm ID", Run: draftsRemove},
-		{Name: "profiles", Summary: "List the launch profiles and the defaults", Usage: "profiles [--json]",
+		{Name: "drafts rm", Destructive: true, Summary: "Remove a draft", Usage: "drafts rm ID", Run: draftsRemove},
+		{Name: "profiles", ReadOnly: true, Summary: "List the launch profiles and the defaults", Usage: "profiles [--json]",
 			Help:   "Profiles are how agents start (~/.config/hesper/profiles.json): kind and command line. The defaults (settings.json) name the kind a new agent gets, the profile per kind and per project folder.",
 			Output: "{profiles:{name:{kind, argv}}, defaults:{kind, kinds:{kind: profile}, projects?:{folder: profile}}}",
 			Run:    profilesCommand},
-		{Name: "status", Summary: "Show hesperd and the machines it reaches", Usage: "status [--json]",
+		{Name: "status", ReadOnly: true, Summary: "Show hesperd and the machines it reaches", Usage: "status [--json]",
 			Help:     "hesperd's version and this Mac's short name, then every machine: online, round trip and route (local, direct or relay). Exit 4 when hesperd is not running.",
 			Output:   "{daemon, version, machine, machines:[{short, name, online, rttMs, route}]}",
 			Examples: []string{"hesperctl status", "hesperctl status --json | jq -r '.machines[] | select(.online) | .short'"},

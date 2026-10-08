@@ -20,6 +20,12 @@ import (
 // directory; its "claude" profile is cat in a PTY (never a real agent).
 func daemon(t *testing.T) (*agents.Registry, string, string) {
 	t.Helper()
+	return daemonWith(t, nil)
+}
+
+// daemonWith is daemon with more profiles.
+func daemonWith(t *testing.T, extra map[string]wire.Profile) (*agents.Registry, string, string) {
+	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "gctl")
 	if err != nil {
 		t.Fatal(err)
@@ -30,9 +36,13 @@ func daemon(t *testing.T) (*agents.Registry, string, string) {
 	os.MkdirAll(project, 0o755)
 	os.MkdirAll(config, 0o755)
 	project, _ = filepath.EvalSymlinks(project)
-	profiles, _ := json.Marshal(map[string]wire.Profile{
+	all := map[string]wire.Profile{
 		"cat": {Kind: wire.KindClaude, Argv: []string{"/bin/sh", "-c", "exec cat"}},
-	})
+	}
+	for name, p := range extra {
+		all[name] = p
+	}
+	profiles, _ := json.Marshal(all)
 	os.WriteFile(filepath.Join(config, "profiles.json"), profiles, 0o600)
 	os.WriteFile(filepath.Join(config, "settings.json"), []byte(`{"defaults":{"kinds":{"claude":"cat"}}}`), 0o600)
 	trust, _ := json.Marshal(map[string]any{"projects": map[string]any{project: map[string]any{"hasTrustDialogAccepted": true}}})

@@ -28,12 +28,12 @@ const groupRefHelp = "GROUP is a group's id (g-…) or its name when unique."
 
 func init() {
 	for _, c := range []Command{
-		{Name: "projects ls", Summary: "List the projects", Usage: "projects ls [--json]",
+		{Name: "projects ls", ReadOnly: true, Summary: "List the projects", Usage: "projects ls [--json]",
 			Help:     "Every project (shared by the owner's Macs), most recently used first, then the scratch folders agents run in. A table of id, kind, name, groups, the folder on this Mac (else machine:folder) and when an agent last started there.",
 			Output:   "[{id, name, color, colorSet?, kind: repo|package|folder|reference|scratch, identity:{remote?, package?, local?}, parentId?, paths:{machine: folder}, groups:[groupId], defaults:{profile?, machine?}, detectedPackages?, lastUsed}]",
 			Examples: []string{"hesperctl projects ls", "hesperctl projects ls --json | jq -r '.[] | select(.kind==\"repo\") | .name'"},
 			Run:      projectsList},
-		{Name: "projects recent", Summary: "List the folders agents started in recently", Usage: "projects recent [--json]",
+		{Name: "projects recent", ReadOnly: true, Summary: "List the folders agents started in recently", Usage: "projects recent [--json]",
 			Help:   "The projects with a folder on this Mac first (most recently used first), then other folders agents started in (at most 30). What Hesper's composer offers.",
 			Output: "[{path, name, lastUsed, projectId?}]",
 			Run:    projectsRecent},
@@ -42,7 +42,7 @@ func init() {
 			Output:   "the project (as in projects ls)",
 			Examples: []string{"hesperctl projects update app --name 'App (iOS)' --color '#7aa2f7'", "hesperctl projects update p-1a2b3c4d5e6f7a8b --default-profile claude-bypass --default-machine mini"},
 			Run:      projectsUpdate},
-		{Name: "projects rm", Summary: "Remove a project", Usage: "projects rm PROJECT",
+		{Name: "projects rm", Destructive: true, Summary: "Remove a project", Usage: "projects rm PROJECT",
 			Help: projectRefHelp + " Removes it on every Mac (its folders stay). Its agents fall back to the next project containing their folder, else scratch. projects promote brings it back.",
 			Run:  projectsRemove},
 		{Name: "projects promote", Summary: "Make a folder a project", Usage: "projects promote PATH [--machine M] [--name N] [--kind K] [--json]",
@@ -55,7 +55,7 @@ func init() {
 			Output:   "{path}",
 			Examples: []string{"hesperctl projects clone git@github.com:me/app.git", "dir=$(hesperctl projects clone https://github.com/me/app --machine mini)"},
 			Run:      projectsClone},
-		{Name: "groups ls", Summary: "List the project groups", Usage: "groups ls [--json]",
+		{Name: "groups ls", ReadOnly: true, Summary: "List the project groups", Usage: "groups ls [--json]",
 			Help:   "Groups in their order: id, name, color and projects.",
 			Output: "[{id, name, projectIds, order, color?}]",
 			Run:    groupsList},
@@ -64,7 +64,7 @@ func init() {
 			Output:   "the group: {id, name, projectIds, order, color?}",
 			Examples: []string{"hesperctl groups save --name work --project app --project api", "hesperctl groups save work --remove-project api --color '#bb9af7'"},
 			Run:      groupsSave},
-		{Name: "groups rm", Summary: "Remove a group (its projects stay)", Usage: "groups rm GROUP", Help: groupRefHelp, Run: groupsRemove},
+		{Name: "groups rm", Destructive: true, Summary: "Remove a group (its projects stay)", Usage: "groups rm GROUP", Help: groupRefHelp, Run: groupsRemove},
 	} {
 		c.Group = groupProjects
 		register(c)

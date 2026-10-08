@@ -14,7 +14,7 @@ repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 usage() {
   cat <<'EOF'
 usage: ./install.sh [--dry-run] [--skip-build] [--login-item] [--no-firewall]
-                    [--machine SHORT] [--allow-shell | --no-allow-shell]
+                    [--machine SHORT] [--allow-shell | --no-allow-shell] [--mcp]
                     [--no-skills]
 
   --dry-run            print every action, change nothing
@@ -30,6 +30,8 @@ usage: ./install.sh [--dry-run] [--skip-build] [--login-item] [--no-firewall]
                        shells on this Mac (hesperd serve --allow-shell; Touch
                        ID on theirs). --no-allow-shell turns it off again;
                        without either, the installed LaunchAgent's choice stays
+  --mcp                register hesperctl mcp (Hesper as MCP tools) with Claude
+                       Code (user scope) and Codex (~/.codex/config.toml)
 
 Environment:
   SIGN_IDENTITY   codesign identity ("Developer ID Application: …"): signs
@@ -53,6 +55,7 @@ print_plist=0
 migrate_only=0
 allow_shell='' # '': keep what the installed LaunchAgent has
 machine_short=''
+mcp=0
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -63,6 +66,7 @@ while [ "$#" -gt 0 ]; do
     --no-skills) skills=0 ;;
     --allow-shell) allow_shell=1 ;;
     --no-allow-shell) allow_shell=0 ;;
+    --mcp) mcp=1 ;;
     --machine)
       [ "$#" -ge 2 ] || { printf 'install.sh: --machine needs a short name\n' >&2; exit 2; }
       machine_short=$2
@@ -90,6 +94,7 @@ SUDO=${SUDO:-sudo}
 OSASCRIPT=${OSASCRIPT:-osascript}
 DEFAULTS=${DEFAULTS:-defaults}
 PGREP=${PGREP:-pgrep}
+CLAUDE=${CLAUDE:-claude}
 
 app_dir=${HESPER_APP_DIR:-$HOME/Applications}
 app="$app_dir/Hesper.app"
@@ -785,6 +790,67 @@ login_item_step() {
     -e "tell application \"System Events\" to if not (exists login item \"Hesper\") then make login item at end with properties {path:\"$app\", hidden:false}"
 }
 
+# --- MCP server (--mcp) -------------------------------------------------------
+
+# Registers `hesperctl mcp` (Hesper's commands as MCP tools) with Claude
+# Code, user scope (claude mcp add; ~/.claude.json backed up first), and
+# with Codex ([mcp_servers.hesper] in $CODEX_HOME/config.toml, default
+# ~/.codex; backed up first). A registration that already runs this
+# hesperctl stays; one that runs another is replaced.
+_codex_mcp_write() { # FILE CTL: drops an old [mcp_servers.hesper] table, appends ours
+  mkdir -p "$(dirname -- "$1")"
+  if [ -f "$1" ]; then
+    awk '/^[[:space:]]*\[/ { skip = ($0 ~ /^[[:space:]]*\[mcp_servers\.hesper\][[:space:]]*(#.*)?$/) } !skip' "$1" > "$1.new"
+  else
+    : > "$1.new"
+  fi
+  printf '\n[mcp_servers.hesper]\ncommand = "%s"\nargs = ["mcp"]\n' "$2" >> "$1.new"
+  mv "$1.new" "$1"
+}
+codex_mcp_current() { # FILE: the command line of [mcp_servers.hesper], if any
+  awk '/^[[:space:]]*\[/ { t = ($0 ~ /^[[:space:]]*\[mcp_servers\.hesper\][[:space:]]*(#.*)?$/); next } t && /^[[:space:]]*command[[:space:]]*=/ { print }' "$1" 2>/dev/null
+}
+mcp_step() {
+  [ "$mcp" -eq 1 ] || return 0
+  step 'MCP server (hesperctl mcp)'
+  ctl="$bin_dir/hesperctl"
+  claude_json="$HOME/.claude.json"
+  if ! command -v "$CLAUDE" >/dev/null 2>&1; then
+    note "Claude Code (claude) not found; later: claude mcp add --scope user hesper -- $(show "$ctl") mcp"
+  else
+    current=''
+    if [ -f "$claude_json" ]; then
+      current=$(plutil -extract mcpServers.hesper.command raw -o - "$claude_json" 2>/dev/null || true)
+      if [ -n "$current" ]; then
+        current="$current $(plutil -extract mcpServers.hesper.args.0 raw -o - "$claude_json" 2>/dev/null || true)"
+      fi
+    fi
+    if [ "$current" = "$ctl mcp" ]; then
+      ok "Claude Code: hesper runs $(show "$ctl") mcp"
+    else
+      if [ -f "$claude_json" ]; then
+        backup_copy "$claude_json"
+      fi
+      if [ -n "$current" ]; then
+        act "remove Claude Code's MCP server hesper ($current)" "$CLAUDE" mcp remove --scope user hesper
+      fi
+      act "register with Claude Code: claude mcp add --scope user hesper -- $(show "$ctl") mcp" \
+        "$CLAUDE" mcp add --scope user hesper -- "$ctl" mcp
+    fi
+  fi
+  codex_toml="${CODEX_HOME:-$HOME/.codex}/config.toml"
+  if [ "$(codex_mcp_current "$codex_toml")" = "command = \"$ctl\"" ]; then
+    ok "Codex: [mcp_servers.hesper] in $(show "$codex_toml") runs $(show "$ctl") mcp"
+  elif [ ! -d "$(dirname -- "$codex_toml")" ] && ! command -v codex >/dev/null 2>&1; then
+    note "Codex not found; later add [mcp_servers.hesper] command = \"$ctl\", args = [\"mcp\"] to $(show "$codex_toml")"
+  else
+    if [ -f "$codex_toml" ]; then
+      backup_copy "$codex_toml"
+    fi
+    act "register with Codex: [mcp_servers.hesper] in $(show "$codex_toml")" _codex_mcp_write "$codex_toml" "$ctl"
+  fi
+}
+
 finish() {
   step 'Done'
   if [ "$dry_run" -eq 1 ]; then
@@ -816,4 +882,5 @@ skills_step
 launch_agent
 firewall_step
 login_item_step
+mcp_step
 finish

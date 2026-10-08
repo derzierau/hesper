@@ -28,7 +28,7 @@ const idHelp = "ID is the agent's full id (mini/a7f3k2), its local id (a7f3k2) o
 
 func init() {
 	for _, c := range []Command{
-		{Name: "ls", Summary: "List the agents of every machine", Usage: "ls [--json]",
+		{Name: "ls", ReadOnly: true, Summary: "List the agents of every machine", Usage: "ls [--json]",
 			Help:     "A table of id, state, kind, name, folder and what the agent waits for (attention) or last said (summary).",
 			Output:   "[Agent]",
 			Examples: []string{"hesperctl ls", "hesperctl ls --json | jq -r '.[] | select(.state==\"approval\") | .id'"}},
@@ -45,16 +45,16 @@ func init() {
 		{Name: "deny", Summary: "Deny what an agent waits for (approval)", Usage: "deny ID [--message TEXT]",
 			Help:     idHelp + " Without --message the agent goes idle; with it, the message tells the agent what to do instead.",
 			Examples: []string{"hesperctl deny a7f3k2 --message 'push to a branch, not main'"}},
-		{Name: "stop", Summary: "Stop an agent (it stays, exited, and can be resumed)", Usage: "stop ID",
+		{Name: "stop", Destructive: true, Summary: "Stop an agent (it stays, exited, and can be resumed)", Usage: "stop ID",
 			Help: idHelp + " Sends SIGHUP, then SIGKILL after 5 seconds."},
 		{Name: "resume", Summary: "Restart an exited agent with its conversation", Usage: "resume ID [--json]",
 			Help: idHelp, Output: "Agent"},
-		{Name: "attach", Summary: "Attach this terminal to an agent", Usage: "attach ID [--ro] [--owner=false]",
+		{Name: "attach", NoMCP: true, Summary: "Attach this terminal to an agent", Usage: "attach ID [--ro] [--owner=false]",
 			Help: idHelp + " Ctrl-] detaches. Needs a terminal; not for scripts."},
 		{Name: "mv", Summary: "Move an agent with its conversation to another machine", Usage: "mv ID MACHINE [--json]",
 			Help: idHelp + " MACHINE is a short name (see machines).", Output: "Agent",
 			Examples: []string{"hesperctl mv a7f3k2 mini"}},
-		{Name: "rm", Summary: "Forget an exited agent", Usage: "rm ID", Help: idHelp},
+		{Name: "rm", Destructive: true, Summary: "Forget an exited agent", Usage: "rm ID", Help: idHelp},
 		{Name: "rename", Summary: "Rename an agent", Usage: "rename ID NAME… [--json]", Help: idHelp, Output: "Agent"},
 	} {
 		c.Group, c.Run = groupAgents, agentRun(c.Name)
@@ -63,7 +63,7 @@ func init() {
 		}
 		register(c)
 	}
-	register(Command{Name: "self", Group: groupAgents, Summary: "Show the agent this command runs in",
+	register(Command{Name: "self", ReadOnly: true, Group: groupAgents, Summary: "Show the agent this command runs in",
 		Usage:    "self [--json]",
 		Help:     "Inside a Hesper agent (HESPER_AGENT_ID set, with HESPER_MACHINE when the id has no machine) prints the agent's id. Elsewhere, or when hesperd does not know the agent, exits 3.",
 		Output:   "Agent",
