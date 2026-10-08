@@ -42,7 +42,7 @@ output.write_text(f'''cask "hesper" do
   name "Hesper"
   desc "Run and steer coding agents across your Macs"
   homepage "https://github.com/derzierau/hesper"
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
   container type: :zip
 
   app "Hesper.app"
