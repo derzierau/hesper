@@ -42,6 +42,8 @@ struct TopBarData {
     var compact = false
     /// Agents in the background (the tray pill; hidden at 0).
     var background = BackgroundSummary()
+    /// Finished work ready to review (the review pill; hidden at 0).
+    var review = 0
 
     /// The wordmark's stop is Signal (approvals and questions).
     var wordmarkSignal: Bool { counts.approval + counts.question > 0 }
@@ -54,6 +56,7 @@ struct TopBarActions {
     var popover: @MainActor (PopoverKind) -> Void = { _ in }
     var search: @MainActor () -> Void = {}
     var newAgent: @MainActor () -> Void = {}
+    var review: @MainActor () -> Void = {}
 }
 
 /// The window layer's name for a wall's scope (the first segment); the
@@ -80,7 +83,8 @@ enum TopBarSource {
         case .model(let m, let s):
             return TopBarData(counts: m.counts, machines: m.machines, scope: m.scope, popover: m.popover, connected: m.isConnected,
                               connectionMessage: m.connectionMessage, arrangement: m.arrangement,
-                              scopeName: s.name, scopeCount: s.count, scopeOf: s.of, compact: compact, background: m.backgroundSummary)
+                              scopeName: s.name, scopeCount: s.count, scopeOf: s.of, compact: compact, background: m.backgroundSummary,
+                              review: m.reviewCount)
         }
     }
 
@@ -93,7 +97,8 @@ enum TopBarSource {
             },
             popover: { [weak m] k in m?.openPopover(k) },
             search: { [weak m] in m?.perform(.palette) },
-            newAgent: { [weak m] in m?.perform(.newAgent) })
+            newAgent: { [weak m] in m?.perform(.newAgent) },
+            review: { [weak m] in m?.perform(.review) })
     }
 }
 
@@ -267,6 +272,7 @@ struct TopBarTrailingContent: View {
                     .accessibilityIdentifier("toolbar.new")
             }
             machines
+            ReviewPill(data: data, actions: actions)
             BackgroundPill(data: data, actions: actions)
             AttentionPill(data: data, actions: actions)
         }
@@ -341,6 +347,28 @@ struct TopBarTrailingContent: View {
             return s
         }
         return (["Machines: online, route, round trip"] + lines).joined(separator: "\n")
+    }
+}
+
+/// "Review · 3": finished work ready to review on every Mac (⌘R). A
+/// status Pill in `working` (never Signal: red stays for needs-you),
+/// hidden at 0; click → the review sheet.
+struct ReviewPill: View {
+    var data: TopBarData
+    var actions: TopBarActions
+
+    var body: some View {
+        if data.review > 0 {
+            Button { actions.review() } label: {
+                Pill(data.compact ? "\(data.review)" : ReviewText.pill(data.review), variant: .status, mark: .working)
+                    .contentShape(DS.Radius.shape(DS.Radius.control))
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("Ready to review (⌘R)")
+            .accessibilityLabel("\(data.review) ready to review")
+            .accessibilityIdentifier("topbar.review")
+        }
     }
 }
 

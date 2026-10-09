@@ -348,6 +348,7 @@ final class AppModel {
         let before = closingBefore(e) // closing agents: the state / name before this event
         let transitions = registry.apply(e)
         if !isMirror { closingAfter(e, before: before) }
+        if !isMirror { reviewSaw(e) } // review: the list follows agents settling
         switch e {
         case .connected:
             connectionMessage = nil
@@ -589,6 +590,8 @@ final class AppModel {
             sidebarVisible.toggle()
         case .history: // shared history (⌘Y)
             toggleHistory()
+        case .review: // review (⌘R)
+            toggleReview()
         case .passThrough, .none:
             break
         }

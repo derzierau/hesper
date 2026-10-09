@@ -129,6 +129,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
+| `review.list` / `review.diff` / `review.accept` / `review.reject` / `review.sendBack` / `review.evidence` / `review.provenance` | see "As built — review (daemon)" | agents ready for review on every Mac, one agent's changes, what the reviewer does with them, what the agent ran and which turn wrote a line (added) |
 
 Errors: JSON-RPC errors with `data.code` in `not_found`, `invalid`,
 `exists`, `unavailable`, `forbidden`, `remote` and a human message.
@@ -3951,6 +3952,304 @@ brings only its current branch (as a move); the bring checkpoint ref is
 `refs/hesper/checkpoints/bring` (one per repository, replaced by the
 next bring); a non-scratch project's copy is recorded through the
 regular project resolution, not as a marked replica.
+
+### As built — review (daemon)
+
+Phases 1–2 of [the review concept](review/concept.md), the daemon side.
+Code: `pkg/wire/review.go` (types), `internal/review` (Git through a copy
+of the index, diff parsing, word ranges, the rules: generated,
+formatting-only, moved, risk, reading order; diffs in parts; accept and
+reject in `apply.go`), `internal/agents/review.go` (registry and socket
+side), `reviewact.go` (accept, reject, send back), `reviewlog.go` (the
+per-agent review log), `internal/host/review.go` (host methods),
+`reviewevidence.go` (hook events into the log, evidence, provenance;
+the rules in `internal/review/evidence.go`), `pkg/devicekey/rights.go`.
+Tests: `internal/review/*_test.go`,
+`internal/agents/review_test.go`, `internal/transport/
+remote_review_test.go`. All in temporary homes and repositories with the
+fake agent.
+
+**Review base.** `Agent.reviewBase` (persisted): the commit HEAD pointed
+to when a Claude or Codex agent started in a Git folder (spawn, session
+resume or fork); a moved agent keeps the source's (`AgentInfo.reviewBase`
+in the move manifest) when the bundle brought that commit, else the
+commit it moved at. An agent without one (started before this, or its
+base gone) reviews from its branch point: the merge base of HEAD and the
+main worktree's branch, else HEAD. Shells are never reviewed.
+
+**Ready for review:** a Claude or Codex agent in `done`, `idle` or
+`exited` whose folder (its worktree, else its project; a project below
+a repository's top limits the diff to that folder) differs from its
+base. The folder is its files now, untracked ones included, ignored ones
+not: a tree written through a copy of the index (`git add -A` into a
+temporary index file), so the user's index is never touched.
+
+| Method | Params | Result |
+|---|---|---|
+| `review.list` | `{}` | `[ReviewItem]`: this Mac's, then every connected Mac's (each asked in parallel, 30 s; a Mac without `review.*` lists none), most recently settled first |
+| `review.diff` | `{id, context?}` (default 3, at most 1000) | `{base, head: "worktree", tree, files: [ReviewFile]}` |
+| `review.accept` | `{id, hunks?: [id], message?, context?, tree?}` | `{commit}` |
+| `review.reject` | `{id, hunks: [id], context?, tree?}` | `{}` |
+| `review.sendBack` | `{id, notes: [{path, line?, side?: "old"\|"new", text}], message?}` | `{}` |
+| `review.evidence` | `{id}` | `{freshness, lastEditAt?, commands: [{command, kind, exitCode?, startedAt, endedAt?}], attachments: [{path, kind}]}` |
+| `review.provenance` | `{id, path, line?}` | `{sessionId?, turn?, tool?, prompt?, at?}` |
+
+`ReviewItem = {id, machine, name, kind, project, branch?, worktree?,
+state, files, added, removed, risk, riskNotes: [string], evidence,
+readyAt, reviewedAt?, base}`; `readyAt` is when the agent settled
+(`stateSince`); `evidence` is `review.evidence`'s freshness.
+
+`ReviewFile = {path, oldPath?, status: "A"|"M"|"D"|"R", binary?,
+formattingOnly?, generated?, tooLarge?, order, risk, added, removed,
+hunks: [Hunk]}`; `Hunk = {id: "<file index>:<hunk index>", oldStart,
+oldLines, newStart, newLines, formattingOnly?, moved?, lines: [{kind:
+" "|"+"|"-", text, old?, new?, words?: [[start, end]], noNewline?}]}`.
+Files come in reading order (`order` is the index); hunk ids are
+positions in that list, so they hold for one `tree` and one `context`.
+
+- Diff: `git diff --histogram --find-renames` of the base against that
+  tree, whatever the user's diff configuration (no color, no external
+  diff or textconv, fixed prefixes, not relative); a type change is
+  `M`; binary files have no hunks; a file with more than 20,000 diff
+  lines is `tooLarge` without hunks.
+- Word ranges: inside a hunk each run of removed lines is paired line
+  by line with the run of added lines after it; pairs that share enough
+  words get the differing ranges, `[start, end)` in **UTF-8 bytes**
+  of `text`. Bounded: 400 words a line, 20,000
+  pairs and 300 ms a diff, then none.
+- `formattingOnly`: a hunk whose changed lines are equal without
+  whitespace; a file (M or R) whose every hunk is.
+- `moved`: a hunk whose every changed line belongs to a block (at
+  least 3 non-blank lines) removed in one hunk and added, equal but for
+  indentation, in another (any file).
+- `generated`: lock files (`go.sum`, `package-lock.json`, `yarn.lock`,
+  `Cargo.lock`, `Package.resolved`, …), `vendor/`, `node_modules/`,
+  `dist/`, `build/`, `*.pb.go`, `*.min.js`, `*.snap`, …,
+  `linguist-generated` in `.gitattributes`, or "Code generated … DO NOT
+  EDIT" / `@generated` in the new file's first 10 lines.
+- Risk of a file: generated or formatting-only `low`; auth, secrets,
+  tokens, crypto, certificates, permissions, `.env` (by path words),
+  migrations and schemas (`*.sql`, `*.prisma`), deployment and CI
+  `high`; deletions, build and dependency manifests (`go.mod`,
+  `package.json`, `Package.swift`, `Makefile`, …) and changes over 300
+  lines `medium`; else `low`. Of a change (`review.list`): the riskiest
+  file; at least `medium` over 800 changed lines or over 100 changed
+  lines of code without a test changed. `riskNotes` say why (`touches
+  auth or secrets: <path>`, `migration or schema: <path>`, `deployment
+  or CI: <path>`, `deletes <path>`, `dependencies or build: <path>`,
+  `large change: …`, `no tests changed for N lines of code`).
+- Reading order: high-risk files; then what others depend on (build
+  and dependency manifests, configuration, `.proto`, `.graphql`,
+  `.d.ts`); code, each test right after its subject (`foo_test.go`,
+  `foo.test.ts`, `test_foo.py`, `FooTests.swift` after `foo`, same folder
+  first); tests without a changed subject; docs; formatting-only files;
+  generated files last. Within a group: riskier, then larger, the path
+  only breaks ties.
+
+**Accept, reject, send back.** Ids in `hunks` are hunk ids
+(`"<file>:<hunk>"`) or file ids (`"<file>"`: the whole file; the only
+way to take a binary, `tooLarge` or renamed-without-hunks file) of the
+diff the reviewer saw: the daemon computes that diff again with the
+given `context`; with `tree` a folder that changed since is refused
+(`invalid`). Accept and reject are refused with `busy` while the agent
+is `starting`, `working`, in an approval or a question, and run one at a
+time.
+- `review.accept` without `hunks` takes everything. It commits on the
+  folder's HEAD a tree that is HEAD's with the folder's paths at the
+  base plus the accepted changes (so what was not accepted stays as
+  uncommitted changes, also of commits the agent made since the base),
+  with the user's Git configuration (author, signing); the message is
+  `message`, else the agent's summary, else its name. The index entries
+  of the paths the commit changed are set to it (other staged changes
+  stay). The commit becomes the agent's review base, so only what was
+  not accepted is left to review; with nothing left the agent leaves
+  `review.list`. `{commit}` is HEAD when there was nothing to commit.
+- `review.reject` writes, for each named file, the base plus its changes
+  not rejected to the working tree (an added file rejected whole is
+  deleted, a deleted one restored, a rename undone). The index is not
+  touched.
+- `review.sendBack` (refused with `busy` like accept) keeps the folder
+  as it is as the reviewed point (a commit at
+  `refs/hesper/checkpoints/<local id>-reviewed`, pruned with the
+  checkpoints; `reviewedAt` in `review.list`, kept in the agent's review
+  log across daemon restarts; the interdiff of phase 4 starts there),
+  then types one instruction into the agent as `agents.input` does
+  (pasted, submitted): `Review notes on your changes; please address
+  them:`, one line per note (`- path:line: text`, `- path (old line N):
+  text`, `- path: text`; a note's text on one line), a blank line, the
+  message.
+- Agent tree: inside an agent, the three are allowed only on the agents
+  it started (as `agents.input`); hesperctl sends the caller for them.
+
+**Evidence (phase 2).** Every hook event of a Claude or Codex agent
+that hesperd takes (as for its state) also goes into the agent's review
+log (`$STATE/review/<local id>.json`, mode 0600, written 200 ms after a
+change and when the daemon stops, the last 2,000 events, removed with
+the agent; a moved agent starts a new one):
+- `UserPromptSubmit`: a turn starts (counted per session; the prompt's
+  first 200 characters kept);
+- `PreToolUse` / `PostToolUse` (and `PostToolUseFailure` when the tool
+  sends it) of a shell tool (`Bash`, Codex's `shell`, `exec_command`,
+  `local_shell`, `unified_exec`): a command, its line (Codex's `["bash",
+  "-lc", …]` unwrapped), start and end (the hooks' arrival times; the
+  two are matched by `tool_use_id` / `call_id`, else name and input, in
+  either order), exit code: the tool's (`exit_code`, Codex's output
+  `Exit code: N`), else 0 for `PostToolUse` and 1 (or the error's exit
+  code) for `PostToolUseFailure`, none when interrupted; a command
+  without its end has neither. Classified by its programs, the
+  strongest part of a chain (`&&`, `;`, `|`) winning: `test` (`go test`,
+  `npm test`, `pytest`, `cargo test`, `swift test`, `xcodebuild test`,
+  `make test`/`check`, `jest`, `vitest`, …), `build` (`go build`,
+  `make`, `npm run build`, `cargo build`, `swift build`, `tsc`, …),
+  `lint` (`go vet`, `eslint`, `ruff`, `golangci-lint`, `cargo clippy`,
+  …), `run` (`go run`, `npm start`, `python x.py`, …), else `other`;
+- `PostToolUse` of an edit tool (`Edit`, `Write`, `MultiEdit`,
+  `NotebookEdit`, Codex's `apply_patch`: the patch's `*** Update/Add/
+  Delete File:` and `*** Move to:` paths against its cwd): the files
+  (absolute, links resolved) and, from Claude Code's `structuredPatch`,
+  the new lines it wrote.
+
+`freshness`: `none` without changes; `fresh` when a `test` or `build`
+command that started at or after the last edit ended with exit code 0;
+`stale` when one ran but none did since the last edit (or it failed);
+`missing` when none ran. Edits made by commands (formatters, `sed`) are
+not seen. `commands` are the latest 200, oldest first; `attachments`
+the changed (not deleted) images, videos and `.log` files of the folder,
+absolute paths on the agent's Mac.
+
+**Provenance.** `review.provenance {id, path, line?}` (`path` as the
+diff has it, `line` on the new side, 0 or omitted: the file) is the last
+edit of that file whose lines cover `line`, else (an edit without line
+ranges, or none covering it) the file's last edit: `sessionId` in the
+shared history's form `<machine>:<kind>:<session>` (`sessions.show`
+takes it; the controller names the machine as it does), `turn` (the
+session's prompt it followed, 1-based, counted from the prompts hesperd
+saw), `tool`, `prompt` (that prompt's first 200 characters), `at`.
+`{}` when no edit of the file is known.
+
+**Across Macs.** `review.diff` of another Mac's agent goes to its
+daemon (host methods `review.list`, `review.diff`, `review.evidence`
+and `review.provenance`, right `observe`;
+`review.accept` and `review.reject`, right `transfer`;
+`review.sendBack`, right `type`). The controller refuses them with
+`busy` itself when its copy of the agent is at work (a host's own
+`busy`, in a race, arrives as `unavailable` with the host's message).
+A diff can be larger than one relay message: the controller asks for
+it in parts (`review.diff {id, context?, part: n, tree?}` →
+`{tree, parts, part, data}`: the diff's JSON gzipped, base64, cut into
+384 KiB pieces; parts after the first name the first part's `tree`, and
+a folder that changed in between is refused) and hands the app the
+whole diff. The host keeps the last 4 encoded diffs for 2 minutes.
+
+**hesperctl** (`cmd/hesperctl/review.go`, group Review; in `help`,
+`reference` and the MCP tools `hesper_review_*`): `review ls`, `review
+show ID` (files in reading order, risk notes, evidence), `review diff ID
+[--context N]` (hunk ids in the headers), `review accept ID [--hunk H]…
+[--message/-m M] [--tree T] [--context N]` (prints the commit), `review
+reject ID --hunk H… [--tree T] [--context N]`, `review send-back ID
+[--note "PATH[:LINE] TEXT"]… [--message/-m M]` (`:-LINE`: the old side),
+`review evidence ID`, `review provenance ID PATH[:LINE]`. `busy` exits
+7.
+
+**Notification:** `review.changed {id}` on `agents.subscribe` when an
+agent of this Mac settles with changes in its folder, when a connected
+Mac's agent settles, and after an accept, reject or send-back through
+this daemon (a hint: the app fetches `review.list` again).
+
+**Deviations from the shared contract:** additive fields `tree`
+(`review.diff`; `tree` and `context` taken back by accept and reject),
+`base` (items), `added`/`removed`/`tooLarge` (files), `noNewline`
+(lines), file ids (`"<file>"`) next to hunk ids, and the host-only
+`part` of `review.diff`; `hesperctl review provenance` in addition to the
+listed commands. The folder is read as a tree written through a
+temporary copy of the index (`git add -A`), which shows untracked files
+as intent-to-add would, and never touches the user's index. Word ranges
+are UTF-8 byte offsets. The notification is `review.changed {id}` (not a
+field of `agents.changed`). Agents in `error` are not listed (only
+`done`, `idle`, `exited`); shells are never reviewed. Claude Code's
+`PostToolUse` carries no exit code: a command it reports is taken as
+exit 0; hesperd does not install `PostToolUseFailure` (it takes it when
+a tool sends it), so a failing Claude command usually has no end and
+never counts as evidence. A moved agent's review log stays behind (its
+evidence starts anew on the target).
+
+### As built — review (app)
+
+Concept: `docs/review/concept.md` (phases 1–2); research:
+`docs/review/research.md`. Wire: the `review.*` methods (hesperd). Code:
+pure rules in `HesperCore/Review.swift` (wire types decoded by hand from
+`JSONValue`, lenient: unknown risk is medium, unknown evidence is
+missing; word ranges arrive as UTF-8 byte offsets and become UTF-16;
+`DaemonClient.review*` calls), `ReviewRules.swift` (reading order,
+inbox ranking, `ReviewSupport` per Mac, bulk-accept eligibility,
+evidence badge, texts), `ReviewStream.swift` (the row stream, the hunk
+cursor, attention, notes, `ReviewKeys`, line text); the app in
+`Sources/Hesper/Review/` (`ReviewHub`, `ReviewSession`, `ReviewPanel`,
+`ReviewStreamView`, `ReviewParts`) and `Perf/ReviewRender.swift`.
+
+- **⌘R** (Agents › Review) opens the review sheet over the wall like
+  History: a Night scrim and one opaque Panel, min(1440, 94%) ×
+  min(940, 88%) of the window. Left the inbox (every Mac, ranked: fresh
+  evidence first, then stale, missing; lower risk first; then the one
+  waiting longest), middle the selected item's header (Send back ⇧↩,
+  Accept & commit ⌘↩) and its diff, right the evidence (fresh ✓ /
+  stale ! / missing ?, the commands with exit codes, attachments), the
+  risk and its notes, the attention strip (one cell per hunk: seen,
+  rejected, noted, unseen) and whether ⇧A would take it. Below 1120 pt
+  the evidence sits under the inbox. ⌘K, ⌘Y and ⌘J close it and go on.
+- **The diff** is one virtualized stream of every file (view-based
+  `NSTableView`): file header, hunk header, code lines (one fixed height,
+  one `CTLine` each, changed words as tinted rects behind the text),
+  notes and the line under each hunk. Only notes and that line are
+  measured; code geometry never is. The file being read keeps its
+  header at the top. `review.diff` is fetched and turned into rows off
+  the main thread. Files come in reading order (hesperd's `order`, else
+  the same rules here: risky and schema first, a test right after its
+  code, formatting-only and generated last and folded; never
+  alphabetical).
+- **Keys** (`ReviewKeys`): ↑↓ items, J/K hunk, N/⇧N file, V seen
+  (toggle), X reject the hunk (`review.reject`, one at a time against
+  the diff as it is then; hunk ids are positions), C a note on the
+  clicked line (else the hunk's first change; the editor under the
+  stream: ⌘↩ or ⇧↩ saves, esc cancels), ⏎ open/fold a folded file,
+  ⇧↩ send every note back as one instruction (`review.sendBack`),
+  ⌘↩ accept and commit (`review.accept`; with hunks not marked seen,
+  the first ⌘↩ says how many and the second commits), ⌥↩ History at
+  the conversation that last wrote the hunk, ⇧A accept in bulk (only
+  low risk, fresh evidence, no schema/auth/migration path; the first ⇧A
+  lists them, the second commits each), esc closes (or cancels a
+  confirm or a note). After V or X the cursor goes to the next
+  undecided hunk.
+- **Marks survive reloads**: seen and rejected hang on a hunk's key (its
+  file and changed lines, not its position), so rejecting one hunk and
+  reloading keeps the others' marks.
+- **Provenance**: under the focused hunk, "Why here? turn 2 · Edit ·
+  “…”" from `review.provenance` (fetched once per hunk, debounced).
+- **Per Mac**: `review.list` answering -32601 means no review anywhere
+  (⌘R says hesperd needs an update); any review call answering "no such
+  method" for one Mac drops that Mac's items (the header names it).
+  A Mac without `review.evidence` / `review.provenance` keeps its items
+  and shows no evidence / no provenance.
+- The list (`ReviewHub`, one per connection) refreshes on
+  `review.changed`, after a connect, and when an agent settles or starts
+  again (debounced).
+- **On the wall**: a finished tile ready to review says so in its
+  footer, "Ready to review · 3 files · tests ✓" with a Review button;
+  ⏎ on that selected tile opens the sheet on it (`KeyRouter`,
+  `selectedReviewable`; needing you still wins). The top bar shows
+  "Review · n" (a `working` status Pill, never Signal; hidden at 0;
+  click: ⌘R). The menu bar menu has a "Ready to review" section (name,
+  machine, "3 files · +120 −14 · tests ✓"; opens the sheet on it) and
+  "Review…". A notification "api on mini is ready to review" arrives
+  for each item new since the last list (none for the first list after
+  a connect); a click opens the sheet on it.
+- `Hesper --render-review <dir>` draws the sheet offscreen (wide,
+  narrow, a note being written with a confirm, empty), the tile's
+  footer (wide, narrow) and the top bar with the pill; Dusk and
+  Daylight.
+
+**Status: built and unit-tested headless only.** Not run against a
+real hesperd with `review.*` yet, and no UI suite covers the sheet.
 
 ## Wire names kept from Ghosty
 

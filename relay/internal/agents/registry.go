@@ -175,6 +175,12 @@ type Registry struct {
 	cpHooks []func(wire.Agent)
 	cpRun   sync.Mutex
 	cpFile  sync.Mutex
+
+	// review (review.go): the agents' review logs (reviewlog.go); one
+	// accept, reject or send-back at a time.
+	reviewOnce sync.Once
+	reviewLogs *reviewStore
+	reviewRun  sync.Mutex
 }
 
 type agent struct {
@@ -393,6 +399,9 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 	if state == wire.StateDone && a.State != state {
 		r.turnCheckpoint(a) // checkpoint.go
 	}
+	if readyForReview(state) && !readyForReview(a.State) {
+		r.settledForReview(a) // review.go
+	}
 	a.State, a.Attention = state, att
 	r.changed(a)
 	if finished {
@@ -484,6 +493,7 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 	}
 	now := time.Now().UTC()
 	projectID := r.projectOf(dirOf(project, worktree)) // projects step 1
+	reviewBase := r.reviewBaseAt(profile.Kind, dirOf(project, worktree))
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closing {
@@ -500,7 +510,8 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 		// agent tree (tree.go): set by the server from the caller, or by
 		// a controller for a host
 		Parent: p.Parent, Depth: p.Depth, LetParentAnswer: p.LetParentAnswer && p.Parent != "",
-		Track: p.Track && profile.Kind == wire.KindShell, // shell.go
+		Track:      p.Track && profile.Kind == wire.KindShell, // shell.go
+		ReviewBase: reviewBase,                                // review.go
 	}}
 	if a.Parent == "" {
 		a.Depth = 0
@@ -1102,11 +1113,20 @@ func (r *Registry) Hook(p wire.HookParams) error {
 		message = lastMessage(data)
 		summary = summarize(message)
 	}
+	evidenceOf := "" // review: recorded once the lock is released
+	defer func() {
+		if evidenceOf != "" {
+			r.recordEvidence(evidenceOf, event, data) // reviewevidence.go
+		}
+	}()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a := r.hookAgent(p, event, data)
 	if a == nil || a.term == nil || a.Exit != nil {
 		return nil // not one of ours (another claude, a nested one): ignored
+	}
+	if checkpointable(a.Kind) {
+		evidenceOf = a.local
 	}
 	if !a.sessionSeen && a.SessionID != "" && confirmsSession(event, data) {
 		if sid := payloadSessionID(data); sid == "" || sid == a.SessionID {
@@ -1214,4 +1234,5 @@ func (r *Registry) Close() {
 	close(r.saveCh)
 	<-r.saverEnd
 	r.writeState()
+	r.reviews().flush() // reviewlog.go
 }

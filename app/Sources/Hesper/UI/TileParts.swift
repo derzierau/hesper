@@ -167,6 +167,9 @@ struct AttentionBar: View {
     var moveProgress: MoveLine? = nil
     /// A finished agent's "Continue on mini · Fork on mini".
     var moveOffer: MoveOffer? = nil
+    /// Review: "Ready to review · 3 files · tests ✓ · Review ⏎" on a
+    /// finished agent with changes (ReviewParts).
+    var reviewReady: ReviewReady? = nil
 
     struct DenyField {
         var text: Binding<String>
@@ -223,7 +226,9 @@ struct AttentionBar: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .animation(DS.animation(.quick, reduceMotion: reduceMotion), value: contentKey)
-            if let moveOffer, MoveRules.showsOnStrip(agent) {
+            if reviewReady != nil, agent.state == .done || agent.state == .idle {
+                EmptyView() // the review line has its own button
+            } else if let moveOffer, MoveRules.showsOnStrip(agent) {
                 MoveOfferButtons(offer: moveOffer, tight: tight)
             } else if let selectionHint, !agent.state.needsAttention, agent.state != .exited {
                 Text(selectionHint)
@@ -309,6 +314,8 @@ struct AttentionBar: View {
                     }
                     if !inFocus { button("Open", key: TileHeader.focusKeys, action: onOpen) }
                 }
+            case .done where reviewReady != nil, .idle where reviewReady != nil:
+                if let reviewReady { ReviewReadyRow(ready: reviewReady, state: agent.state, keyHints: keyHints, tight: tight) }
             case .done, .idle:
                 if (agent.summary ?? "").isEmpty {
                     Text(agent.state == .done ? "Done" : "Idle").font(.ds(.chrome)).foregroundStyle(Theme.dim)

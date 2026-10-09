@@ -64,6 +64,8 @@ var treeMutating = map[string]bool{
 	"agents.input": true, "agents.answer": true, "agents.stop": true, "agents.resume": true,
 	"agents.remove": true, "agents.rename": true, "agents.move": true,
 	"agents.close": true, "agents.kill": true, "agents.background": true,
+	// review: what changes an agent's folder or types into it
+	"review.accept": true, "review.reject": true, "review.sendBack": true,
 }
 
 // maxAncestry bounds walks up process and agent trees.
@@ -246,6 +248,10 @@ func verb(method string) string {
 		return "type into"
 	case "agents.move":
 		return "move"
+	case "review.accept", "review.reject":
+		return strings.TrimPrefix(method, "review.") + " the work of"
+	case "review.sendBack":
+		return "send back the work of"
 	}
 	return strings.TrimPrefix(method, "agents.")
 }

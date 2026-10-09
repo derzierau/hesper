@@ -355,12 +355,13 @@ pick a profile per agent, per project or per kind:
 | ⏎ / A / N | Allow / always allow / deny the selected tile's approval |
 | ⌘K | Palette: agents, projects, machines, actions |
 | ⌘Y | History: every session on every Mac |
+| ⌘R | Review: finished work from every Mac, its diff, tests and where each change came from |
 | ⌘W | Stop the agent (asks first); for an ended one, remove it |
 | ⌘⇧M | Move the agent to another Mac |
 
 Esc always goes to the agent, since Claude and Codex use it. The menu bar item
 shows the counts and the queue, and a notification arrives when an agent
-starts waiting for you.
+starts waiting for you, or when its finished work is ready to review.
 
 `hesperctl` does the same from a terminal:
 

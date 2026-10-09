@@ -207,6 +207,11 @@ func TestScratchAdoption(t *testing.T) {
 	e := newScratchEnv(t, "L")
 	notes := filepath.Join(e.root, "2025-01-02-old-notes")
 	write(t, notes, map[string]string{"notes.md": "hello"})
+	// Its files were last touched at the test clock's time, not the real
+	// time the test runs (adoption reads the newest file time).
+	at := e.clock.now()
+	os.Chtimes(filepath.Join(notes, "notes.md"), at, at)
+	os.Chtimes(notes, at, at)
 	repo := filepath.Join(e.root, "2025-03-04-tool")
 	newRepo(t, repo, "", map[string]string{"main.go": "package main"})
 	empty := filepath.Join(e.root, "2025-05-06")

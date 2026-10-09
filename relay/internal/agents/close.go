@@ -189,6 +189,7 @@ func (r *Registry) removeLocked(a *agent, reason string) {
 		s.pushRemovedTo(a.ID, reason, to)
 	}
 	r.scheduleSave()
+	r.reviews().forget(a.local) // reviewlog.go
 }
 
 // adoptChildren gives the children of a closed agent to its parent (the

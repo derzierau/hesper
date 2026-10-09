@@ -70,6 +70,7 @@ func (r *Registry) SpawnSession(p SessionSpawn) (wire.Agent, error) {
 	}
 	now := time.Now().UTC()
 	projectID := r.projectOf(dir)
+	reviewBase := r.reviewBaseAt(p.Kind, dir) // review.go
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closing {
@@ -87,7 +88,7 @@ func (r *Registry) SpawnSession(p SessionSpawn) (wire.Agent, error) {
 	a := &agent{local: local, Agent: wire.Agent{
 		ID: r.id(local), Machine: r.machine, Kind: p.Kind, Profile: profileName, Name: name, Task: p.Task,
 		Project: dir, ProjectID: projectID, Branch: p.Branch, State: wire.StateStarting, StateSince: now, Created: now,
-		Size: r.defaultSize(), Parent: p.Parent,
+		Size: r.defaultSize(), Parent: p.Parent, ReviewBase: reviewBase,
 	}}
 	if p.Parent != "" {
 		a.Depth = p.Depth

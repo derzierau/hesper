@@ -39,6 +39,11 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-bring"), i + 1 < Comma
     MainActor.assumeIsolated { BringRender.run(CommandLine.arguments[i + 1]) }
     exit(0)
 }
+// Dev tool: the review sheet (inbox, stream, evidence; wide and narrow) drawn offscreen into PNGs.
+if let i = CommandLine.arguments.firstIndex(of: "--render-review"), i + 1 < CommandLine.arguments.count {
+    MainActor.assumeIsolated { ReviewRender.run(CommandLine.arguments[i + 1]) }
+    exit(0)
+}
 app.setActivationPolicy(.regular)
 let delegate = AppDelegate()
 app.delegate = delegate

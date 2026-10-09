@@ -232,7 +232,8 @@ final class TileView: NSView, TerminalDropTarget {
             onChoose: { [weak model] i in model?.sendInput(a.id, "\(i + 1)") },
             moveStrip: Self.moveStrip(a, model: model, tight: AttentionBar.isTight(width: w)),
             moveProgress: Self.moveProgress(a, model: model),
-            moveOffer: isSelected || hovering ? Self.moveOffer(a, model: model) : nil)
+            moveOffer: isSelected || hovering ? Self.moveOffer(a, model: model) : nil,
+            reviewReady: Self.reviewReady(a, model: model))
         alphaValue = moving != nil ? Self.movingAlpha : (a.isRunning ? 1 : Self.stoppedAlpha)
     }
 
@@ -242,6 +243,12 @@ final class TileView: NSView, TerminalDropTarget {
         if shelf { return "⏎ open" }
         if AttentionBar.isTight(width: width) { return "←→↑↓ · ⏎ type" }
         return "←→↑↓ move · ⏎ type · ⇧-click window"
+    }
+
+    /// Review: the finished agent's "Ready to review" line.
+    static func reviewReady(_ a: Agent, model: AppModel) -> AttentionBar.ReviewReady? {
+        guard let item = model.reviewItem(a.id) else { return nil }
+        return AttentionBar.ReviewReady(item: item, onOpen: { [weak model] in model?.openReview(select: a.id) })
     }
 
     /// The close's question on this agent's strip, if one is asked.
@@ -1016,7 +1023,8 @@ final class WallView: NSView {
         }
         if model.ghostKey(chord, keyCode: event.keyCode) { return } // shared history: ⏎ resume / ⌫ forget a ghost card
         let cmd = KeyRouter.route(chord, mode: .wall, selectedState: model.current?.state, selectedIsDraft: model.selectedDraft != nil,
-                                   selectedAnswers: model.current?.attention?.answers ?? [], typed: event.characters)
+                                   selectedAnswers: model.current?.attention?.answers ?? [], typed: event.characters,
+                                   selectedReviewable: model.reviewItem(model.current?.id) != nil)
         if cmd == .none { super.keyDown(with: event) } else { model.perform(cmd) }
     }
 

@@ -61,6 +61,7 @@ type Service struct {
 	Sessions SessionsHost
 
 	links       links
+	reviewParts partCache // review.go
 	runtime     string
 	runtimeOnce sync.Once
 }
@@ -163,6 +164,9 @@ func (s *Service) Execute(ctx context.Context, m protocol.Message) (json.RawMess
 	}
 	if m.Method == "files.put" || m.Method == "files.chunk" {
 		return s.files(ctx, m)
+	}
+	if strings.HasPrefix(m.Method, "review.") {
+		return s.review(ctx, m) // review.go
 	}
 	return s.agents(ctx, m)
 }

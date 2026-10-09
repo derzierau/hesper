@@ -52,6 +52,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let model, event.type == .keyDown else { return super.performKeyEquivalent(with: event) }
         if HistoryPanelHost.handleKeyEquivalent(event, window: self) { return true } // shared history: the panel's ⌘ keys
+        if ReviewPanelHost.handleKeyEquivalent(event, window: self) { return true } // review: the sheet's ⌘ keys
         let chord = KeyChord(event: event)
         if model.showPalette {
             if chord.command && chord.key == .char("k") { model.showPalette = false; return true }
@@ -100,6 +101,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     override func sendEvent(_ event: NSEvent) {
         if closeStripKey(event) { return } // closing agents: the strip's ⏎ / esc
         if event.type == .keyDown, !(model?.showPalette ?? false), HistoryPanelHost.handleKey(event, window: self) { return } // shared history
+        if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, ReviewPanelHost.handleKey(event, window: self) { return } // review
         if event.type == .keyDown, let model {
             let chord = KeyChord(event: event)
             let action = OverlayKeys.route(chord, characters: event.characters)
@@ -189,6 +191,7 @@ final class RootView: NSView {
         }
         observeChanges { [weak self] in self?.overlayStateChanged() }
         HistoryPanelHost.attach(self) // shared history (⌘Y panel, ghost cards)
+        ReviewPanelHost.attach(self) // review (⌘R sheet)
         observeChanges { [weak self] in
             guard let self else { return }
             _ = (self.model.sidebarVisible, self.model.scope, self.model.machines)
@@ -231,6 +234,7 @@ final class RootView: NSView {
     private func restoreKeyboard() {
         guard let window else { return }
         if historyPanel?.isOpen == true { return } // shared history: the panel keeps the keyboard (toasts come and go)
+        if reviewPanel?.isOpen == true { return } // review: the sheet keeps the keyboard
         if window.firstResponder is NSText && !(window.firstResponder is ComposerTextView) && model.denyOpen != nil { return }
         switch model.mode {
         case .focus: focus.focusTerminal()
@@ -270,6 +274,7 @@ final class RootView: NSView {
         toolbarGlass.isHidden = top <= 0
         overlay.frame = bounds
         historyPanel?.frame = historyFrame // shared history
+        reviewPanel?.frame = reviewFrame // review
     }
 
     /// The soft edge on a side with cards scrolled off it.
@@ -304,6 +309,18 @@ final class RootView: NSView {
     }
 
     func historyClosed() { restoreKeyboard() }
+
+    // MARK: Review (the ⌘R sheet sits over the wall, under the overlays)
+
+    private(set) weak var reviewPanel: ReviewPanel?
+    var reviewFrame: NSRect { historyFrame }
+
+    func addReviewPanel(_ p: ReviewPanel) {
+        reviewPanel = p
+        addSubview(p, positioned: .below, relativeTo: overlay)
+    }
+
+    func reviewClosed() { restoreKeyboard() }
 
     private func anchor(for kind: PopoverKind) -> CGRect? {
         switch kind {

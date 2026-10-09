@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -23,6 +24,8 @@ type Subscriber struct {
 	moves      []wire.Moving
 	// bringing (bring the folder): agents.bringing notes, as moves.
 	bringing []wire.Bringing
+	// reviews (review): the agents of review.changed notes, as moves.
+	reviews []string
 }
 
 // maxMoves bounds a subscriber's queued agents.moving notes.
@@ -35,6 +38,7 @@ type Note struct {
 	Agent    *wire.Agent
 	Moving   *wire.Moving
 	Bringing *wire.Bringing // bring the folder
+	Review   string         // review.changed (review)
 	Removed  string
 	Reason   string
 	To       string
@@ -91,6 +95,22 @@ func (s *Subscriber) pushBringing(b wire.Bringing) {
 	}
 }
 
+// pushReview queues review.changed for an agent (subscribers that take
+// moves; once per agent until sent).
+func (s *Subscriber) pushReview(id string) {
+	s.mu.Lock()
+	if s.closed || !s.takesMoves || slices.Contains(s.reviews, id) {
+		s.mu.Unlock()
+		return
+	}
+	s.reviews = append(s.reviews, id)
+	s.mu.Unlock()
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
 func (s *Subscriber) pushReason(id string, a *wire.Agent, reason, to string) {
 	s.mu.Lock()
 	if s.closed {
@@ -136,13 +156,16 @@ func (s *Subscriber) Wait(done <-chan struct{}) []Note {
 			s.mu.Unlock()
 			return nil
 		}
-		if len(s.order) > 0 || len(s.moves) > 0 || len(s.bringing) > 0 {
+		if len(s.order) > 0 || len(s.moves) > 0 || len(s.bringing) > 0 || len(s.reviews) > 0 {
 			notes := make([]Note, 0, len(s.order)+len(s.moves))
 			for i := range s.moves {
 				notes = append(notes, Note{Moving: &s.moves[i]})
 			}
 			for i := range s.bringing {
 				notes = append(notes, Note{Bringing: &s.bringing[i]})
+			}
+			for _, id := range s.reviews {
+				notes = append(notes, Note{Review: id})
 			}
 			for _, id := range s.order {
 				if a := s.pending[id]; a != nil {
@@ -151,7 +174,7 @@ func (s *Subscriber) Wait(done <-chan struct{}) []Note {
 					notes = append(notes, Note{Removed: id, Reason: s.reasons[id], To: s.tos[id]})
 				}
 			}
-			s.order, s.pending, s.reasons, s.tos, s.moves, s.bringing = nil, map[string]*wire.Agent{}, map[string]string{}, map[string]string{}, nil, nil
+			s.order, s.pending, s.reasons, s.tos, s.moves, s.bringing, s.reviews = nil, map[string]*wire.Agent{}, map[string]string{}, map[string]string{}, nil, nil, nil
 			s.mu.Unlock()
 			return notes
 		}
@@ -182,6 +205,16 @@ func (r *Registry) NoteMoving(m wire.Moving) {
 	defer r.mu.Unlock()
 	for s := range r.subs {
 		s.pushMoving(m)
+	}
+}
+
+// NoteReview tells the subscribers that take moves that an agent's review
+// changed (review.changed; a hint to fetch review.list again).
+func (r *Registry) NoteReview(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for s := range r.subs {
+		s.pushReview(id)
 	}
 }
 
