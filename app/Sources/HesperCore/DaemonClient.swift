@@ -49,6 +49,7 @@ public final class DaemonClient: @unchecked Sendable {
     private var running = false
     private var loop: Task<Void, Never>?
     private var extraNotifications: (@Sendable (String, JSONValue) -> Void)?
+    private var reviewNotifications: (@Sendable (String, JSONValue) -> Void)?
 
     /// Shared history (sessions.*): notifications the agent events don't
     /// cover, delivered on the connection's reader thread (decode there,
@@ -56,6 +57,13 @@ public final class DaemonClient: @unchecked Sendable {
     public var onOtherNotification: (@Sendable (String, JSONValue) -> Void)? {
         get { lock.withLock { extraNotifications } }
         set { lock.withLock { extraNotifications = newValue } }
+    }
+
+    /// Review (`review.*` notifications), on the reader thread like
+    /// `onOtherNotification`.
+    public var onReviewNotification: (@Sendable (String, JSONValue) -> Void)? {
+        get { lock.withLock { reviewNotifications } }
+        set { lock.withLock { reviewNotifications = newValue } }
     }
 
     /// App control: hesperd's requests (app.state, app.open, …: hesperctl
@@ -126,6 +134,8 @@ public final class DaemonClient: @unchecked Sendable {
                         if let g = params["group"], let group = try? g.decode(ProjectGroup.self) { cont.yield(.groupChanged(group)) }
                     case "groups.removed":
                         if let id = params["id"]?.stringValue { cont.yield(.groupRemoved(id)) }
+                    case _ where method.hasPrefix("review."):
+                        self?.onReviewNotification?(method, params)
                     default:
                         self?.onOtherNotification?(method, params) // shared history (sessions.*)
                     }

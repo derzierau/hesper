@@ -216,6 +216,7 @@ struct ReviewTests {
         #expect(s.headerRow(ofHunk: "0:1") == 6 && s.headerRow(ofHunk: "1:0") == nil)
         #expect(s.endRow(ofHunk: s.hunks[0]) == 5)
         #expect(s.hunkOrdinal(atRow: 3) == 0 && s.hunkOrdinal(atRow: 0) == nil && s.hunkOrdinal(atRow: 7) == 1)
+        #expect(s.fileIndex(atRow: 10) == 0 && s.fileIndex(atRow: 11) == 1 && s.fileIndex(atRow: 99) == nil)
         #expect(ReviewRow.line(0, 0, 0).fixedHeight && !ReviewRow.note(ReviewNoteAnchor(path: "a")).fixedHeight)
         let open = ReviewStream(files: files, unfolded: ["fmt.ts"])
         #expect(open.headerRow(ofHunk: "1:0") != nil && !open.rows.contains(.folded(1)))
@@ -296,5 +297,23 @@ struct ReviewTests {
         // In a note the text field gets the keys: ⌘↩ / ⇧↩ save, esc cancels.
         #expect(r(.char("j"), note: true) == .pass && r(.enter, note: true) == .pass)
         #expect(r(.enter, cmd: true, note: true) == .saveNote && r(.enter, shift: true, note: true) == .saveNote && r(.escape, note: true) == .cancelNote)
+    }
+}
+
+struct ReviewKeyRouterTests {
+    @Test func commandROpensReviewEverywhere() {
+        for mode in [AppMode.wall, .focus, .compose] {
+            #expect(KeyRouter.route(KeyChord(.char("r"), command: true), mode: mode, selectedState: .working) == .review)
+        }
+        #expect(KeyRouter.routeActiveTile(KeyChord(.char("r"), command: true)) == .review)
+    }
+
+    @Test func enterOnAReviewableTileOpensReview() {
+        let enter = KeyChord(.enter)
+        #expect(KeyRouter.route(enter, mode: .wall, selectedState: .done, selectedReviewable: true) == .review)
+        #expect(KeyRouter.route(enter, mode: .wall, selectedState: .done) == .activateTile)
+        // Needing you wins (⏎ answers).
+        #expect(KeyRouter.route(enter, mode: .wall, selectedState: .approval, selectedReviewable: true) == .answer(.allow))
+        #expect(KeyRouter.route(enter, mode: .focus, selectedState: .done, selectedReviewable: true) == .passThrough)
     }
 }

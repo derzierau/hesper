@@ -50,6 +50,9 @@ public enum AppCommand: Equatable, Sendable {
     case toggleSidebar
     /// ⌘Y: shared history (the History panel).
     case history
+    /// ⌘R: the review sheet (finished work on every Mac); ⏎ on a finished
+    /// tile that is ready to review opens it there.
+    case review
     /// Belongs to the terminal (focus mode).
     case passThrough
     case none
@@ -70,8 +73,10 @@ public enum AppCommand: Equatable, Sendable {
 public enum KeyRouter {
     /// - Parameter typed: the text the key produced (`NSEvent.characters`);
     ///   a printable one on a selected agent or draft is `.typeInto`.
+    /// - Parameter selectedReviewable: the selected agent is ready to
+    ///   review (its footer says so): ⏎ opens the review sheet on it.
     public static func route(_ k: KeyChord, mode: AppMode, selectedState: AgentState?, selectedIsDraft: Bool = false, selectedTrust: Bool = false,
-                             selectedAnswers: [Decision] = [], typed: String? = nil) -> AppCommand {
+                             selectedAnswers: [Decision] = [], typed: String? = nil, selectedReviewable: Bool = false) -> AppCommand {
         if mode == .compose { return compose(k) }
         if k.command && k.option && !k.control && !k.shift {
             switch k.key {
@@ -103,6 +108,7 @@ public enum KeyRouter {
             case .char("z") where !k.shift: return .undo
             case .char("0") where !k.shift: return .toggleSidebar
             case .char("y") where !k.shift: return .history
+            case .char("r") where !k.shift: return .review
             default: return mode == .focus ? .passThrough : .none
             }
         }
@@ -131,6 +137,7 @@ public enum KeyRouter {
             if selectedIsDraft { return .editDraft }
             if let first = selectedAnswers.first, selectedState == .question { return .answer(first) }
             if selectedTrust && selectedState == .question { return .answer(.trust) }
+            if selectedReviewable && !(selectedState?.needsAttention ?? false) { return .review }
             return approval ? .answer(.allow) : (selectedState == nil ? .none : .activateTile)
         case .char("a") where approval, .char("A") where approval: return .answer(.always)
         case .char("n") where approval, .char("N") where approval: return .denyWithMessage
@@ -159,6 +166,7 @@ public enum KeyRouter {
             case .char("j") where !k.shift: return .nextAttention
             case .char("k") where !k.shift: return .palette
             case .char("y") where !k.shift: return .history
+            case .char("r") where !k.shift: return .review
             default: return .passThrough
             }
         }

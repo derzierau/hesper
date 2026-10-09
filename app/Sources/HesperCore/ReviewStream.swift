@@ -56,6 +56,8 @@ public struct ReviewStream: Sendable {
     public let hunks: [HunkRef]
     /// Row → the hunk ordinal it belongs to (-1: a file row).
     private let rowHunk: [Int32]
+    /// Row → its file.
+    private let rowFile: [Int32]
     private let hunkHeaderRow: [String: Int]
     private let fileHeaderRow: [Int]
     private let noteRow: [ReviewNoteAnchor: Int]
@@ -68,17 +70,22 @@ public struct ReviewStream: Sendable {
         self.files = files
         var rows: [ReviewRow] = []
         var rowHunk: [Int32] = []
+        var rowFile: [Int32] = []
         var hunks: [HunkRef] = []
         var hunkHeaderRow: [String: Int] = [:]
         var fileHeaderRow: [Int] = []
         var noteRow: [ReviewNoteAnchor: Int] = [:]
         rows.reserveCapacity(files.reduce(0) { $0 + 2 + $1.hunks.reduce(0) { $0 + $1.lines.count + 2 } })
 
+        func add(_ r: ReviewRow, _ hunk: Int32, _ file: Int) {
+            rows.append(r)
+            rowHunk.append(hunk)
+            rowFile.append(Int32(file))
+        }
         let byPath = Dictionary(grouping: notes, by: \.path)
         for (fi, f) in files.enumerated() {
             fileHeaderRow.append(rows.count)
-            rows.append(.file(fi))
-            rowHunk.append(-1)
+            add(.file(fi), -1, fi)
             var fileNotes = byPath[f.path] ?? []
             if let o = f.oldPath { fileNotes += byPath[o] ?? [] }
             // Notes on lines this diff shows go under them; the rest under the header.
@@ -90,8 +97,7 @@ public struct ReviewStream: Sendable {
             let shown = Self.shownLines(f)
             for a in fileNotes.sorted(by: Self.noteOrder) where a.line == nil || !shown.contains("\(a.side.rawValue):\(a.line!)") {
                 noteRow[a] = rows.count
-                rows.append(.note(a))
-                rowHunk.append(-1)
+                add(.note(a), -1, fi)
                 placed.insert(a)
             }
             let folded = f.foldedByDefault && !unfolded.contains(f.path)
@@ -104,30 +110,26 @@ public struct ReviewStream: Sendable {
                 hunks.append(HunkRef(file: fi, hunk: hi, id: h.id, key: n == 0 ? print : "\(print)#\(n + 1)"))
                 guard !folded else { continue }
                 hunkHeaderRow[h.id] = rows.count
-                rows.append(.hunk(fi, hi))
-                rowHunk.append(ordinal)
+                add(.hunk(fi, hi), ordinal, fi)
                 for (li, l) in h.lines.enumerated() {
-                    rows.append(.line(fi, hi, li))
-                    rowHunk.append(ordinal)
+                    add(.line(fi, hi, li), ordinal, fi)
                     for key in Self.keys(l) {
                         for a in (lineNotes[key] ?? []).sorted(by: Self.noteOrder) where !placed.contains(a) {
                             noteRow[a] = rows.count
-                            rows.append(.note(a))
-                            rowHunk.append(ordinal)
+                            add(.note(a), ordinal, fi)
                             placed.insert(a)
                         }
                     }
                 }
-                rows.append(.hunkEnd(fi, hi))
-                rowHunk.append(ordinal)
+                add(.hunkEnd(fi, hi), ordinal, fi)
             }
             if folded {
-                rows.append(.folded(fi))
-                rowHunk.append(-1)
+                add(.folded(fi), -1, fi)
             }
         }
         self.rows = rows
         self.rowHunk = rowHunk
+        self.rowFile = rowFile
         self.hunks = hunks
         self.hunkHeaderRow = hunkHeaderRow
         self.fileHeaderRow = fileHeaderRow
@@ -158,6 +160,11 @@ public struct ReviewStream: Sendable {
     public func hunkOrdinal(atRow row: Int) -> Int? {
         guard rows.indices.contains(row), rowHunk[row] >= 0 else { return nil }
         return Int(rowHunk[row])
+    }
+
+    public func fileIndex(atRow row: Int) -> Int? {
+        guard rows.indices.contains(row) else { return nil }
+        return Int(rowFile[row])
     }
 
     /// The header row of a hunk (nil: its file is folded).
@@ -416,5 +423,43 @@ public enum ReviewKeys {
             }
         default: return .pass
         }
+    }
+}
+
+// MARK: Line text
+
+/// A code line as drawn: tabs expanded, very long lines cut (one CTLine
+/// per row stays cheap), the changed-word ranges moved along.
+public enum ReviewLineText {
+    public static let tabWidth = 4
+    /// UTF-16 units drawn at most; the rest is "…".
+    public static let maxLength = 1_000
+
+    public static func display(_ text: String, words: [NSRange]) -> (text: String, words: [NSRange]) {
+        let u = Array(text.utf16)
+        guard u.contains(9) || u.contains(13) || u.count > maxLength else { return (text, words) }
+        var out: [UInt16] = []
+        out.reserveCapacity(min(u.count, maxLength) + 8)
+        var map: [Int] = [] // source index → output index
+        map.reserveCapacity(u.count + 1)
+        for c in u {
+            map.append(out.count)
+            if out.count >= maxLength { continue }
+            switch c {
+            case 9: out.append(contentsOf: repeatElement(32, count: tabWidth - out.count % tabWidth))
+            case 13: break
+            default: out.append(c)
+            }
+        }
+        map.append(out.count)
+        let limit = min(out.count, maxLength)
+        var s = String(decoding: out.prefix(limit), as: UTF16.self)
+        if out.count > maxLength || (u.count > 0 && map[u.count - 1] >= maxLength) { s += "…" }
+        let moved = words.compactMap { r -> NSRange? in
+            guard r.location >= 0, r.location < u.count else { return nil }
+            let a = min(map[r.location], limit), b = min(map[min(r.location + r.length, u.count)], limit)
+            return b > a ? NSRange(location: a, length: b - a) : nil
+        }
+        return (s, moved)
     }
 }

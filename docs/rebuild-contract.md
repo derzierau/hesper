@@ -4173,6 +4173,73 @@ a tool sends it), so a failing Claude command usually has no end and
 never counts as evidence. A moved agent's review log stays behind (its
 evidence starts anew on the target).
 
+### As built — review (app)
+
+Concept: `docs/review/concept.md` (phases 1–2); research:
+`docs/review/research.md`. Wire: the `review.*` methods (hesperd). Code:
+pure rules in `HesperCore/Review.swift` (wire types decoded by hand from
+`JSONValue`, lenient: unknown risk is medium, unknown evidence is
+missing; word ranges arrive as UTF-8 byte offsets and become UTF-16;
+`DaemonClient.review*` calls), `ReviewRules.swift` (reading order,
+inbox ranking, `ReviewSupport` per Mac, bulk-accept eligibility,
+evidence badge, texts), `ReviewStream.swift` (the row stream, the hunk
+cursor, attention, notes, `ReviewKeys`, line text); the app in
+`Sources/Hesper/Review/` (`ReviewHub`, `ReviewSession`, `ReviewPanel`,
+`ReviewStreamView`, `ReviewParts`) and `Perf/ReviewRender.swift`.
+
+- **⌘R** (Agents › Review) opens the review sheet over the wall like
+  History: a Night scrim and one opaque Panel, min(1440, 94%) ×
+  min(940, 88%) of the window. Left the inbox (every Mac, ranked: fresh
+  evidence first, then stale, missing; lower risk first; then the one
+  waiting longest), middle the selected item's header (Send back ⇧↩,
+  Accept & commit ⌘↩) and its diff, right the evidence (fresh ✓ /
+  stale ! / missing ?, the commands with exit codes, attachments), the
+  risk and its notes, the attention strip (one cell per hunk: seen,
+  rejected, noted, unseen) and whether ⇧A would take it. Below 1120 pt
+  the evidence sits under the inbox. ⌘K, ⌘Y and ⌘J close it and go on.
+- **The diff** is one virtualized stream of every file (view-based
+  `NSTableView`): file header, hunk header, code lines (one fixed height,
+  one `CTLine` each, changed words as tinted rects behind the text),
+  notes and the line under each hunk. Only notes and that line are
+  measured; code geometry never is. The file being read keeps its
+  header at the top. `review.diff` is fetched and turned into rows off
+  the main thread. Files come in reading order (hesperd's `order`, else
+  the same rules here: risky and schema first, a test right after its
+  code, formatting-only and generated last and folded; never
+  alphabetical).
+- **Keys** (`ReviewKeys`): ↑↓ items, J/K hunk, N/⇧N file, V seen
+  (toggle), X reject the hunk (`review.reject`, one at a time against
+  the diff as it is then; hunk ids are positions), C a note on the
+  clicked line (else the hunk's first change; the editor under the
+  stream: ⌘↩ or ⇧↩ saves, esc cancels), ⏎ open/fold a folded file,
+  ⇧↩ send every note back as one instruction (`review.sendBack`),
+  ⌘↩ accept and commit (`review.accept`; with hunks not marked seen,
+  the first ⌘↩ says how many and the second commits), ⌥↩ History at
+  the conversation that last wrote the hunk, ⇧A accept in bulk (only
+  low risk, fresh evidence, no schema/auth/migration path; the first ⇧A
+  lists them, the second commits each), esc closes (or cancels a
+  confirm or a note). After V or X the cursor goes to the next
+  undecided hunk.
+- **Marks survive reloads**: seen and rejected hang on a hunk's key (its
+  file and changed lines, not its position), so rejecting one hunk and
+  reloading keeps the others' marks.
+- **Provenance**: under the focused hunk, "Why here? turn 2 · Edit ·
+  “…”" from `review.provenance` (fetched once per hunk, debounced).
+- **Per Mac**: `review.list` answering -32601 means no review anywhere
+  (⌘R says hesperd needs an update); any review call answering "no such
+  method" for one Mac drops that Mac's items (the header names it).
+  A Mac without `review.evidence` / `review.provenance` keeps its items
+  and shows no evidence / no provenance.
+- The list (`ReviewHub`, one per connection) refreshes on
+  `review.changed`, after a connect, and when an agent settles or starts
+  again (debounced).
+- `Hesper --render-review <dir>` draws the sheet offscreen (wide,
+  narrow, a note being written with a confirm, empty; Dusk and
+  Daylight).
+
+**Status: built and unit-tested headless only.** Not run against a
+real hesperd with `review.*` yet, and no UI suite covers the sheet.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

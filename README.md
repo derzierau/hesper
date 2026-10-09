@@ -355,6 +355,7 @@ pick a profile per agent, per project or per kind:
 | ⏎ / A / N | Allow / always allow / deny the selected tile's approval |
 | ⌘K | Palette: agents, projects, machines, actions |
 | ⌘Y | History: every session on every Mac |
+| ⌘R | Review: finished work from every Mac, its diff, tests and where each change came from |
 | ⌘W | Stop the agent (asks first); for an ended one, remove it |
 | ⌘⇧M | Move the agent to another Mac |
 
