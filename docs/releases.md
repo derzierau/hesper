@@ -6,6 +6,24 @@ skill and a binary setup script. The workflow tests, signs with the hardened
 runtime, notarizes, staples and checks Gatekeeper before publishing either
 architecture. libghostty is built without libintl as described in licensing.md.
 
+## Current distribution
+
+Homebrew currently installs **v0.1.4**, the signed and notarized release for
+macOS 14+. Install Claude Code or Codex separately. Local use needs no relay;
+multi-Mac use requires a self-hosted relay and device enrollment.
+
+v0.1.4 includes basic cross-Mac moves, Move Undo, history transfer/fork and
+Claude ↔ Codex handoff. Checkpoint-based moves, live-agent forks, improved
+preflight, folder transfer on launch, scratch projects and native Review/diffs
+are implemented on `main` but not in v0.1.4. The
+[README feature table](../README.md#release-availability) is the availability
+reference. Do not advertise these development features as available through
+Homebrew until a release includes them and its cask update is merged.
+
+A corrected, ready-to-publish [v0.1.4 release note](release-notes-v0.1.4.md)
+replaces the old private-repository installation instructions. Editing this
+file does not change the notes already published on GitHub.
+
 ## One-time credentials
 
 Use personal Apple Developer team `JG9EEDCLZB` and bundle identifier
@@ -31,12 +49,23 @@ Signing secrets are used only in the release workflow, never pull-request CI.
 
 ## Release
 
-After build/test CI passes on main:
+Before publishing the next release:
 
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
+- Require green app CI and relay CI on both macOS and Linux for the release
+  commit. Investigate failures rather than treating macOS success as sufficient.
+- Test a fresh Homebrew install and an upgrade on a disposable Mac or account,
+  including the setup script, CLI paths, signatures and daemon restart.
+- Start Claude and Codex sessions, handle a permission prompt, and test a move
+  and Move Undo between two enrolled Macs. Check any newly released features.
+- Prepare release notes with Homebrew as the primary installation method,
+  prerequisites and the features actually included in the tag.
+- Create a new stable `vX.Y.Z` tag only after those checks pass. Do not reuse
+  v0.1.4 or any other published version.
+
+The 2026-10-09 relay run [37921267092](https://github.com/derzierau/hesper/actions/runs/37921267092)
+passed on macOS but failed on Linux: `TestHasTool` could not reopen its test
+daemon (already running), and `TestSessionsForkLargeOverSlowLink` failed its
+placed-transcript size assertion. Root causes and fixes still need verification.
 
 The release workflow runs tests again, publishes both notarized zip files and
 SHA256SUMS, then commits `Casks/hesper.rb` with exact archive hashes to the
@@ -49,7 +78,7 @@ An older release cannot downgrade the cask.
 
 ## Install binaries
 
-After the first successful signed release:
+Recommended installation (public downloads; no GitHub login, SSH or token):
 
 ```sh
 brew tap derzierau/hesper https://github.com/derzierau/hesper.git
@@ -60,7 +89,8 @@ brew install --cask derzierau/hesper/hesper
 Use the app directory printed by Homebrew if you supplied `--appdir`.
 The setup command installs the LaunchAgent, hooks and skill without modifying
 the signed app. Enable Codex hooks once with `/hooks`. Run setup again after
-`brew upgrade --cask hesper` to restart the daemon with the updated binary.
+`brew update` and `brew upgrade --cask derzierau/hesper/hesper` to restart
+the daemon with the updated binary.
 Homebrew uninstall unloads the daemon and keeps your agents and configuration.
 
 The repository and release downloads are public. The cask uses HTTPS
