@@ -143,9 +143,11 @@ final class ReviewStreamView: NSScrollView, NSTableViewDataSource, NSTableViewDe
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    private var rows: [ReviewRow] { session?.stream?.rows ?? [] }
+    /// The rows the table shows (taken on reload: the table asks per row).
+    private var rows: [ReviewRow] = []
 
     func reload() {
+        rows = session?.stream?.rows ?? []
         noteHeights = [:]
         table.reloadData()
         updateSticky()
