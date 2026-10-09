@@ -4010,8 +4010,8 @@ positions in that list, so they hold for one `tree` and one `context`.
   lines is `tooLarge` without hunks.
 - Word ranges: inside a hunk each run of removed lines is paired line
   by line with the run of added lines after it; pairs that share enough
-  words get the differing ranges, `[start, end)` in **UTF-16 code
-  units** of `text` (CoreText's). Bounded: 400 words a line, 20,000
+  words get the differing ranges, `[start, end)` in **UTF-8 bytes**
+  of `text`. Bounded: 400 words a line, 20,000
   pairs and 300 ms a diff, then none.
 - `formattingOnly`: a hunk whose changed lines are equal without
   whitespace; a file (M or R) whose every hunk is.

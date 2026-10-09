@@ -223,8 +223,8 @@ func TestReadingOrder(t *testing.T) {
 
 func TestWordRanges(t *testing.T) {
 	old, nw := wordRanges("let 👋 = name", "let 👋 = title")
-	// 👋 is two UTF-16 code units: "name" starts at 9.
-	if len(old) != 1 || old[0] != [2]int{9, 13} || len(nw) != 1 || nw[0] != [2]int{9, 14} {
+	// 👋 is four UTF-8 bytes: "name" starts at byte 11.
+	if len(old) != 1 || old[0] != [2]int{11, 15} || len(nw) != 1 || nw[0] != [2]int{11, 16} {
 		t.Errorf("%v %v", old, nw)
 	}
 	if o, n := wordRanges("completely different", "nothing alike here at all"); o != nil || n != nil {

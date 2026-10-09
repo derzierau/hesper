@@ -124,8 +124,8 @@ type ReviewHunk struct {
 
 // ReviewLine is one line of a hunk: Kind " " (context), "+" or "-"; Old
 // and New its line numbers (1-based; the side it is not on omitted);
-// Words the changed ranges of a changed line, [start, end) in UTF-16
-// code units of Text. NoNewline (additive): the line ends its side
+// Words the changed ranges of a changed line, [start, end) in UTF-8
+// bytes of Text. NoNewline (additive): the line ends its side
 // without a newline.
 type ReviewLine struct {
 	Kind      string   `json:"kind"`

@@ -3,7 +3,6 @@ package review
 import (
 	"time"
 	"unicode"
-	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -11,8 +10,8 @@ import (
 
 // Word ranges: inside a hunk, each run of removed lines is paired line by
 // line with the run of added lines after it; a pair that shares enough
-// words gets the ranges that differ (UTF-16 code units, what CoreText
-// counts). Bounded by time and size: a review diff never waits on them.
+// words gets the ranges that differ (UTF-8 byte offsets into the
+// line's text). Bounded by time and size: a review diff never waits on them.
 
 var (
 	// wordTime bounds the word ranges of one diff.
@@ -69,7 +68,7 @@ func addWords(h *wire.ReviewHunk, budget *wordBudget) {
 
 type token struct {
 	text       string
-	start, end int // UTF-16 offsets
+	start, end int // byte offsets
 }
 
 // tokens splits a line into words (letters, digits, _), runs of spaces
@@ -85,11 +84,10 @@ func tokens(s string) []token {
 		}
 		return 0
 	}
-	pos, i := 0, 0
-	for i < len(s) {
+	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
 		c := class(r)
-		j, end := i+size, pos+utf16.RuneLen(r)
+		j := i + size
 		if c != 0 {
 			for j < len(s) {
 				r2, size2 := utf8.DecodeRuneInString(s[j:])
@@ -97,11 +95,10 @@ func tokens(s string) []token {
 					break
 				}
 				j += size2
-				end += utf16.RuneLen(r2)
 			}
 		}
-		list = append(list, token{text: s[i:j], start: pos, end: end})
-		i, pos = j, end
+		list = append(list, token{text: s[i:j], start: i, end: j})
+		i = j
 	}
 	return list
 }
