@@ -393,6 +393,9 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 	if state == wire.StateDone && a.State != state {
 		r.turnCheckpoint(a) // checkpoint.go
 	}
+	if readyForReview(state) && !readyForReview(a.State) {
+		r.settledForReview(a) // review.go
+	}
 	a.State, a.Attention = state, att
 	r.changed(a)
 	if finished {
@@ -484,6 +487,7 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 	}
 	now := time.Now().UTC()
 	projectID := r.projectOf(dirOf(project, worktree)) // projects step 1
+	reviewBase := r.reviewBaseAt(profile.Kind, dirOf(project, worktree))
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closing {
@@ -500,7 +504,8 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 		// agent tree (tree.go): set by the server from the caller, or by
 		// a controller for a host
 		Parent: p.Parent, Depth: p.Depth, LetParentAnswer: p.LetParentAnswer && p.Parent != "",
-		Track: p.Track && profile.Kind == wire.KindShell, // shell.go
+		Track:      p.Track && profile.Kind == wire.KindShell, // shell.go
+		ReviewBase: reviewBase,                                // review.go
 	}}
 	if a.Parent == "" {
 		a.Depth = 0

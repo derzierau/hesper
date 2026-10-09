@@ -63,6 +63,8 @@ var methodRights = map[string]string{
 	// exporting one (agents.export "folder:…") sends its files: transfer;
 	// probing the target observes.
 	"bring.plan": Transfer, "bring.probe": Observe,
+	// review: reading an agent's changes observes.
+	"review.list": Observe, "review.diff": Observe,
 }
 
 // Unsigned reports the methods controllers send without a signature and

@@ -409,6 +409,7 @@ func (r *Registry) Import(ctx context.Context, dir string) (wire.Agent, error) {
 		r.scratch().ScratchArrived(sc.Local, sc.Name, sc.Created, placed.Project, !m.Move.Fork)
 	}
 	projectID := r.projectOf(workdir) // projects step 1
+	reviewBase := r.movedReviewBase(workdir, m)
 	r.mu.Lock()
 	settings := r.settings
 	r.mu.Unlock()
@@ -443,7 +444,8 @@ func (r *Registry) Import(ctx context.Context, dir string) (wire.Agent, error) {
 		Project: placed.Project, ProjectID: projectID, Worktree: placed.Worktree, Branch: placed.Branch, State: wire.StateStarting, StateSince: now,
 		Created: created, Size: r.defaultSize(),
 		Parent: m.Agent.Parent, Depth: m.Agent.Depth, LetParentAnswer: m.Agent.LetParentAnswer && m.Agent.Parent != "", // agent tree
-		Track: m.Agent.Track && m.Agent.Kind == wire.KindShell,
+		Track:      m.Agent.Track && m.Agent.Kind == wire.KindShell,
+		ReviewBase: reviewBase, // review.go
 	}}
 	// A moved agent took its task where it ran: it is never sent again.
 	a.engaged = true

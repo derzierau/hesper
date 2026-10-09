@@ -129,6 +129,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
+| `review.list` / `review.diff` | see "As built — review (daemon)" | agents ready for review on every Mac, and one agent's changes (added) |
 
 Errors: JSON-RPC errors with `data.code` in `not_found`, `invalid`,
 `exists`, `unavailable`, `forbidden`, `remote` and a human message.
@@ -3951,6 +3952,104 @@ brings only its current branch (as a move); the bring checkpoint ref is
 `refs/hesper/checkpoints/bring` (one per repository, replaced by the
 next bring); a non-scratch project's copy is recorded through the
 regular project resolution, not as a marked replica.
+
+### As built — review (daemon)
+
+Phases 1–2 of [the review concept](review/concept.md), the daemon side.
+Code: `pkg/wire/review.go` (types), `internal/review` (Git through a copy
+of the index, diff parsing, word ranges, the rules: generated,
+formatting-only, moved, risk, reading order; diffs in parts),
+`internal/agents/review.go` (registry and socket side),
+`internal/host/review.go` (host methods), `pkg/devicekey/rights.go`.
+Tests: `internal/review/diff_test.go`, `internal/agents/review_test.go`,
+`internal/transport/remote_review_test.go`. All in temporary homes and
+repositories with the fake agent.
+
+**Review base.** `Agent.reviewBase` (persisted): the commit HEAD pointed
+to when a Claude or Codex agent started in a Git folder (spawn, session
+resume or fork); a moved agent keeps the source's (`AgentInfo.reviewBase`
+in the move manifest) when the bundle brought that commit, else the
+commit it moved at. An agent without one (started before this, or its
+base gone) reviews from its branch point: the merge base of HEAD and the
+main worktree's branch, else HEAD. Shells are never reviewed.
+
+**Ready for review:** a Claude or Codex agent in `done`, `idle` or
+`exited` whose folder (its worktree, else its project; a project below
+a repository's top limits the diff to that folder) differs from its
+base. The folder is its files now, untracked ones included, ignored ones
+not: a tree written through a copy of the index (`git add -A` into a
+temporary index file), so the user's index is never touched.
+
+| Method | Params | Result |
+|---|---|---|
+| `review.list` | `{}` | `[ReviewItem]`: this Mac's, then every connected Mac's (each asked in parallel, 30 s; a Mac without `review.*` lists none), most recently settled first |
+| `review.diff` | `{id, context?}` (default 3, at most 1000) | `{base, head: "worktree", tree, files: [ReviewFile]}` |
+
+`ReviewItem = {id, machine, name, kind, project, branch?, worktree?,
+state, files, added, removed, risk, riskNotes: [string], evidence,
+readyAt, reviewedAt?, base}`; `readyAt` is when the agent settled
+(`stateSince`).
+
+`ReviewFile = {path, oldPath?, status: "A"|"M"|"D"|"R", binary?,
+formattingOnly?, generated?, tooLarge?, order, risk, added, removed,
+hunks: [Hunk]}`; `Hunk = {id: "<file index>:<hunk index>", oldStart,
+oldLines, newStart, newLines, formattingOnly?, moved?, lines: [{kind:
+" "|"+"|"-", text, old?, new?, words?: [[start, end]], noNewline?}]}`.
+Files come in reading order (`order` is the index); hunk ids are
+positions in that list, so they hold for one `tree` and one `context`.
+
+- Diff: `git diff --histogram --find-renames` of the base against that
+  tree, whatever the user's diff configuration (no color, no external
+  diff or textconv, fixed prefixes, not relative); a type change is
+  `M`; binary files have no hunks; a file with more than 20,000 diff
+  lines is `tooLarge` without hunks.
+- Word ranges: inside a hunk each run of removed lines is paired line
+  by line with the run of added lines after it; pairs that share enough
+  words get the differing ranges, `[start, end)` in **UTF-16 code
+  units** of `text` (CoreText's). Bounded: 400 words a line, 20,000
+  pairs and 300 ms a diff, then none.
+- `formattingOnly`: a hunk whose changed lines are equal without
+  whitespace; a file (M or R) whose every hunk is.
+- `moved`: a hunk whose every changed line belongs to a block (at
+  least 3 non-blank lines) removed in one hunk and added, equal but for
+  indentation, in another (any file).
+- `generated`: lock files (`go.sum`, `package-lock.json`, `yarn.lock`,
+  `Cargo.lock`, `Package.resolved`, …), `vendor/`, `node_modules/`,
+  `dist/`, `build/`, `*.pb.go`, `*.min.js`, `*.snap`, …,
+  `linguist-generated` in `.gitattributes`, or "Code generated … DO NOT
+  EDIT" / `@generated` in the new file's first 10 lines.
+- Risk of a file: generated or formatting-only `low`; auth, secrets,
+  tokens, crypto, certificates, permissions, `.env` (by path words),
+  migrations and schemas (`*.sql`, `*.prisma`), deployment and CI
+  `high`; deletions, build and dependency manifests (`go.mod`,
+  `package.json`, `Package.swift`, `Makefile`, …) and changes over 300
+  lines `medium`; else `low`. Of a change (`review.list`): the riskiest
+  file; at least `medium` over 800 changed lines or over 100 changed
+  lines of code without a test changed. `riskNotes` say why (`touches
+  auth or secrets: <path>`, `migration or schema: <path>`, `deployment
+  or CI: <path>`, `deletes <path>`, `dependencies or build: <path>`,
+  `large change: …`, `no tests changed for N lines of code`).
+- Reading order: high-risk files; then what others depend on (build
+  and dependency manifests, configuration, `.proto`, `.graphql`,
+  `.d.ts`); code, each test right after its subject (`foo_test.go`,
+  `foo.test.ts`, `test_foo.py`, `FooTests.swift` after `foo`, same folder
+  first); tests without a changed subject; docs; formatting-only files;
+  generated files last. Within a group: riskier, then larger, the path
+  only breaks ties.
+
+**Across Macs.** `review.diff` of another Mac's agent goes to its
+daemon (host methods `review.list` and `review.diff`, right `observe`).
+A diff can be larger than one relay message: the controller asks for
+it in parts (`review.diff {id, context?, part: n, tree?}` →
+`{tree, parts, part, data}`: the diff's JSON gzipped, base64, cut into
+384 KiB pieces; parts after the first name the first part's `tree`, and
+a folder that changed in between is refused) and hands the app the
+whole diff. The host keeps the last 4 encoded diffs for 2 minutes.
+
+**Notification:** `review.changed {id}` on `agents.subscribe` when an
+agent of this Mac settles with changes in its folder, and when a
+connected Mac's agent settles (a hint: the app fetches `review.list`
+again).
 
 ## Wire names kept from Ghosty
 

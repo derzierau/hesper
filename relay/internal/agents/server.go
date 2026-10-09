@@ -338,7 +338,14 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 	go func() { defer wg.Done(); c.watchSessions() }() // shared history
 	ctx, cancel := context.WithCancel(context.Background())
 	if remote := c.s.reg.opt.Remote; remote != nil {
-		go remote.Watch(ctx, func(a wire.Agent) { sub.push(a.ID, &a) }, func(rid, reason, to string) { sub.pushRemovedTo(rid, reason, to) })
+		// review: a remote agent that settles may be ready for review.
+		var seen sync.Map
+		go remote.Watch(ctx, func(a wire.Agent) {
+			sub.push(a.ID, &a)
+			if before, ok := seen.Swap(a.ID, a.State); ok && checkpointable(a.Kind) && readyForReview(a.State) && !readyForReview(before.(string)) {
+				sub.pushReview(a.ID)
+			}
+		}, func(rid, reason, to string) { sub.pushRemovedTo(rid, reason, to) })
 	}
 	wg.Add(1)
 	go func() {
@@ -363,6 +370,9 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 				case n.Bringing != nil:
 					note.Method = wire.NoteBringing // bring the folder
 					note.Params, _ = json.Marshal(n.Bringing)
+				case n.Review != "":
+					note.Method = wire.NoteReviewChanged // review.go
+					note.Params, _ = json.Marshal(wire.ReviewChanged{ID: n.Review})
 				default:
 					note.Method = wire.NoteRemoved
 					rm := wire.Removed{ID: n.Removed, Reason: n.Reason}
@@ -737,6 +747,8 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return nil, wire.Errorf(wire.CodeUnavailable, "the shared history is not available")
 	case "app.state", "app.open", "app.wall.set", "app.desk":
 		return s.app.forward(method, withoutCaller(params)) // app control (appbridge.go): any caller, it touches no agent
+	case "review.list", "review.diff":
+		return s.reviewCall(method, params, forward) // review.go
 	case "hook":
 		var p wire.HookParams
 		if err := decode(params, &p); err != nil {

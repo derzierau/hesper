@@ -98,6 +98,11 @@ type Agent struct {
 	// Checkpoint (move work) is the agent's last checkpoint (Git folders
 	// only; omitted before the first and for other folders). Persisted.
 	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
+	// ReviewBase (review) is the commit the agent's review diff starts
+	// from: HEAD when it started (a moved agent keeps its own), moved on
+	// by review.accept. Claude and Codex agents in Git folders only.
+	// Persisted.
+	ReviewBase string `json:"reviewBase,omitempty"`
 }
 
 // EndedKilled is Agent.Ended after agents.kill.

@@ -252,7 +252,7 @@ func TestMethodRights(t *testing.T) {
 		"snapshot": Observe, "ping": Observe, "agents.list": Observe, "agents.link": Observe, "agents.export": Observe,
 		"download": Observe, "job": Observe, "agents.answer": Answer, "agents.input": Type, "transfer": Transfer,
 		"agents.spawn": Transfer, "agents.stop": Transfer, "agents.import": Transfer,
-		"files.put": Type, "files.chunk": Type,
+		"files.put": Type, "files.chunk": Type, "review.list": Observe, "review.diff": Observe,
 	} {
 		right, strong, ok := MethodRight(method, nil)
 		if !ok || right != want || strong {
