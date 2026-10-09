@@ -88,7 +88,10 @@ func (r *Registry) settledForReview(a *agent) {
 	}
 	snap := a.Agent
 	go func() {
-		if item, _ := r.reviewItem(context.Background(), snap); item != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), reviewTimeout)
+		defer cancel()
+		g := r.reviewGit(ctx)
+		if f, base, err := r.reviewFolder(g, snap); err == nil && g.HasChanges(f, base) {
 			r.NoteReview(snap.ID)
 		}
 	}()

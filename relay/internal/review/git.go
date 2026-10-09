@@ -131,6 +131,19 @@ func (g Git) BranchPoint(f *Folder) string {
 	return f.Head
 }
 
+// HasChanges reports, without writing anything, whether the folder
+// differs from base: commits since with changes in it, or uncommitted
+// (untracked included) changes.
+func (g Git) HasChanges(f *Folder, base string) bool {
+	if base != f.Head {
+		if _, err := g.run(f.Top, append([]string{"diff", "--quiet", base, f.Head}, f.pathspec()...)...); err != nil {
+			return true
+		}
+	}
+	out, err := g.run(f.Top, append([]string{"status", "--porcelain", "--untracked-files=all"}, f.pathspec()...)...)
+	return err == nil && out != ""
+}
+
 // Snapshot writes the folder's files (untracked included, ignored ones
 // left out) as a tree, through a copy of the index: the real index is
 // never touched.
