@@ -61,11 +61,12 @@ const (
 	groupAgents   = "Agents"
 	groupProjects = "Projects"
 	groupHistory  = "History"
+	groupReview   = "Review"
 	groupRelay    = "Relay and devices"
 	groupHelp     = "Help"
 )
 
-var groupOrder = []string{groupAgents, groupProjects, groupHistory, groupRelay}
+var groupOrder = []string{groupAgents, groupReview, groupProjects, groupHistory, groupRelay}
 
 var commands []*Command
 

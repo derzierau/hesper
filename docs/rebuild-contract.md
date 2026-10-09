@@ -4141,10 +4141,37 @@ it in parts (`review.diff {id, context?, part: n, tree?}` →
 a folder that changed in between is refused) and hands the app the
 whole diff. The host keeps the last 4 encoded diffs for 2 minutes.
 
+**hesperctl** (`cmd/hesperctl/review.go`, group Review; in `help`,
+`reference` and the MCP tools `hesper_review_*`): `review ls`, `review
+show ID` (files in reading order, risk notes, evidence), `review diff ID
+[--context N]` (hunk ids in the headers), `review accept ID [--hunk H]…
+[--message/-m M] [--tree T] [--context N]` (prints the commit), `review
+reject ID --hunk H… [--tree T] [--context N]`, `review send-back ID
+[--note "PATH[:LINE] TEXT"]… [--message/-m M]` (`:-LINE`: the old side),
+`review evidence ID`, `review provenance ID PATH[:LINE]`. `busy` exits
+7.
+
 **Notification:** `review.changed {id}` on `agents.subscribe` when an
 agent of this Mac settles with changes in its folder, when a connected
 Mac's agent settles, and after an accept, reject or send-back through
 this daemon (a hint: the app fetches `review.list` again).
+
+**Deviations from the shared contract:** additive fields `tree`
+(`review.diff`; `tree` and `context` taken back by accept and reject),
+`base` (items), `added`/`removed`/`tooLarge` (files), `noNewline`
+(lines), file ids (`"<file>"`) next to hunk ids, and the host-only
+`part` of `review.diff`; `hesperctl review provenance` in addition to the
+listed commands. The folder is read as a tree written through a
+temporary copy of the index (`git add -A`), which shows untracked files
+as intent-to-add would, and never touches the user's index. Word ranges
+are UTF-8 byte offsets. The notification is `review.changed {id}` (not a
+field of `agents.changed`). Agents in `error` are not listed (only
+`done`, `idle`, `exited`); shells are never reviewed. Claude Code's
+`PostToolUse` carries no exit code: a command it reports is taken as
+exit 0; hesperd does not install `PostToolUseFailure` (it takes it when
+a tool sends it), so a failing Claude command usually has no end and
+never counts as evidence. A moved agent's review log stays behind (its
+evidence starts anew on the target).
 
 ## Wire names kept from Ghosty
 

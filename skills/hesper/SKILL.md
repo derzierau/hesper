@@ -74,6 +74,8 @@ On exit 5, do not look for a way around it: report it to the user.
 - Do not kill, stop, close or `tidy` agents you did not start unless the
   user asked. Prefer `close` (conversation kept in History) over `kill`.
 - `history delete` deletes transcripts: only on explicit request.
+- `review accept` commits and `review reject` reverts files in the user's
+  repository: only on explicit request.
 - Read an agent's screen before typing into it (it may be mid-question).
 
 ## Recipes
@@ -115,6 +117,16 @@ hesperctl send ID "now run the linter" && hesperctl wait ID --next --until settl
 hesperctl send ID --key esc                         # keys: esc, enter, up, down, tab, ctrl-c, …
 hesperctl show ID --json | jq .choices; hesperctl choose ID 2
 hesperctl answer ID deny --message "use a branch, not main"   # only when allowed (see Safety)
+```
+
+**Review finished work** (accept and reject change the user's repository:
+only when asked)
+```sh
+hesperctl review ls --json      # settled agents with changes: risk, evidence (fresh/stale/missing)
+hesperctl review show ID        # files in reading order, risk notes, commands it ran
+hesperctl review diff ID --json # hunks with ids ("<file>:<hunk>") and the folder's tree
+hesperctl review send-back ID --note "src/x.go:42 handle the error" --message "Then run the tests."
+hesperctl review accept ID --hunk 0:0 --tree TREE -m "message"   # without --hunk: everything
 ```
 
 **Find and resume past sessions**
