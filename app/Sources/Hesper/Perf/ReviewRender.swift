@@ -7,8 +7,9 @@ import HesperCore
 /// across two Macs, one item's stream in reading order (a migration
 /// first, code with its test next to it, a folded formatting-only file),
 /// a note, a rejected and seen hunks, the provenance line, the evidence
-/// panel; plus a confirm and the note editor, and the empty sheet. Then
-/// exits.
+/// panel; plus a confirm and the note editor, and the empty sheet; a
+/// finished tile's "Ready to review" footer (wide, narrow) and the top
+/// bar with the "Review · n" pill. Then exits.
 @MainActor
 enum ReviewRender {
     static func run(_ dir: String) {
@@ -22,6 +23,26 @@ enum ReviewRender {
                 s.showFixtureConfirm(.accept(id: "M/a1", unseen: 3))
             }
             render(size: NSSize(width: 1200, height: 760), appearance: appearance, to: dir, name: "review-empty-\(scheme)", items: []) { _ in }
+            func out(_ name: String) -> String { (dir as NSString).appendingPathComponent("\(name)-\(scheme).png") }
+            let ap = NSAppearance(named: appearance)!
+            var done = Agent(id: "M/a1", machine: "mini", kind: "claude", name: "users locale", state: .done, stateSince: Fixture.now.addingTimeInterval(-600),
+                             summary: "Added a locale to users")
+            done.branch = "hesper/users-locale"
+            for (item, width, suffix) in [(Fixture.items[0], CGFloat(640), "tile-ready"), (Fixture.items[1], 380, "tile-ready-narrow")] {
+                done.name = item.name
+                let bar = AttentionBar(agent: done, wide: true, tight: AttentionBar.isTight(width: width), keyHints: true, onAnswer: { _ in },
+                                       onDenyMessage: {}, onOpen: {}, onResume: {},
+                                       reviewReady: AttentionBar.ReviewReady(item: item, onOpen: {}))
+                CloseRender.render(bar.frame(height: Metrics.footer).padding(DS.Spacing.xl).background(Theme.color(.background)),
+                                   width: width, appearance: ap, to: out(suffix))
+            }
+            var c = StateCounts()
+            c.total = 9; c.working = 4; c.done = 5
+            let machines = [Machine(short: "laptop", name: "ABC123456", online: true, route: "local"),
+                            Machine(short: "mini", name: "XYZ987654 Mac mini", online: true, rttMs: 41, route: "relay")]
+            for width in [CGFloat(1200), 760] {
+                TopBarRender.render(TopBarData(counts: c, machines: machines, review: 4), width: width, appearance: appearance, to: out("topbar-review-\(Int(width))"))
+            }
         }
     }
 

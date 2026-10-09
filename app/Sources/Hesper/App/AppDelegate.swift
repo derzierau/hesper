@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let s = StatusItemController(model: model)
             s.showWindow = { [weak self] in self?.showWindow() }
             s.openAgent = { [weak self] id in self?.windows.open(id, focus: true) }
+            s.openReview = { [weak self] id in self?.windows.activeModel.openReview(select: id) }
             statusItem = s
         }
         let n = Notifier(model: model, enabled: !automated && !env.options.contains("no-notifications"))
@@ -49,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         notifier = n
         model.onTransitions = { [weak n] t in n?.post(t) }
+        // Review: an agent on any Mac became ready to review.
+        n.openReview = { [weak self] id in self?.windows.activeModel.openReview(select: id) }
+        model.reviewHub.onArrivals = { [weak n] items in n?.postReadyToReview(items) }
         // Closing agents: a background agent finished (and was closed).
         model.onFinishedInBackground = { [weak n, weak self] name in
             n?.postFinished(name)

@@ -34,6 +34,16 @@ enum ReviewPanelHost {
             if let select, select != p.session.selectedID { p.session.select(select) } else { p.close() }
             return
         }
+        show(model, select: select)
+    }
+
+    /// Open (or stay open) on `select`: a tile's Review, the menu bar, a
+    /// notification.
+    static func show(_ model: AppModel, select: String?) {
+        if let p = panel(for: model), p.isOpen {
+            if let select { p.session.select(select) }
+            return
+        }
         let hub = ReviewHub.shared(for: model)
         guard hub.available || !hub.items.isEmpty else {
             model.showToast(hub.support.local == false ? "Review needs a newer hesperd on this Mac" : "Nothing to review yet")

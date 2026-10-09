@@ -4233,9 +4233,20 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
 - The list (`ReviewHub`, one per connection) refreshes on
   `review.changed`, after a connect, and when an agent settles or starts
   again (debounced).
+- **On the wall**: a finished tile ready to review says so in its
+  footer, "Ready to review · 3 files · tests ✓" with a Review button;
+  ⏎ on that selected tile opens the sheet on it (`KeyRouter`,
+  `selectedReviewable`; needing you still wins). The top bar shows
+  "Review · n" (a `working` status Pill, never Signal; hidden at 0;
+  click: ⌘R). The menu bar menu has a "Ready to review" section (name,
+  machine, "3 files · +120 −14 · tests ✓"; opens the sheet on it) and
+  "Review…". A notification "api on mini is ready to review" arrives
+  for each item new since the last list (none for the first list after
+  a connect); a click opens the sheet on it.
 - `Hesper --render-review <dir>` draws the sheet offscreen (wide,
-  narrow, a note being written with a confirm, empty; Dusk and
-  Daylight).
+  narrow, a note being written with a confirm, empty), the tile's
+  footer (wide, narrow) and the top bar with the pill; Dusk and
+  Daylight.
 
 **Status: built and unit-tested headless only.** Not run against a
 real hesperd with `review.*` yet, and no UI suite covers the sheet.

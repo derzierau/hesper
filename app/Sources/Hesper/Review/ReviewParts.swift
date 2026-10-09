@@ -331,3 +331,56 @@ final class ReviewInboxCell: NSView {
                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
     }
 }
+
+// MARK: The tile's footer
+
+extension AttentionBar {
+    /// A finished agent ready to review.
+    struct ReviewReady {
+        var item: ReviewItem
+        var onOpen: () -> Void
+    }
+}
+
+/// "Ready to review · 3 files · tests ✓ … Review ⏎" in a finished tile's
+/// footer; ⏎ on the selected tile opens the sheet on it (KeyRouter).
+struct ReviewReadyRow: View {
+    var ready: AttentionBar.ReviewReady
+    var state: AgentState
+    var keyHints: Bool
+    var tight: Bool
+
+    var body: some View {
+        let item = ready.item
+        let badge = EvidenceBadge(item.evidence)
+        HStack(spacing: DS.Spacing.m) {
+            StateMark(state: state)
+            HStack(spacing: DS.Spacing.xs) {
+                Text("Ready to review").font(.ds(.chrome, .medium)).foregroundStyle(Theme.fg)
+                Text("· \(ReviewText.files(item.files)) ·").font(.ds(.chrome)).foregroundStyle(Theme.dim)
+                Text(badge.short).font(.ds(.meta, .medium)).foregroundStyle(Theme.color(Theme.token(badge.tone)))
+            }
+            .lineLimit(1)
+            Spacer(minLength: DS.Spacing.m)
+            Button(action: ready.onOpen) {
+                HStack(spacing: DS.Spacing.s) {
+                    Text("Review").font(.ds(.chrome, .medium)).lineLimit(1)
+                    if keyHints && !tight { Kbd("⏎") }
+                }
+                .padding(.horizontal, DS.Spacing.m)
+                .frame(height: Pill.height)
+                .background(DS.Radius.shape(DS.Radius.control).fill(Theme.color(.working).opacity(AttentionBar.primaryFill)))
+                .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(Theme.color(.working).opacity(AttentionBar.primaryStroke), lineWidth: 1))
+                .foregroundStyle(Theme.fg)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("Review (⌘R)")
+            .accessibilityIdentifier("tile.review")
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(ReviewText.footer(item))
+        .accessibilityIdentifier("tile.reviewReady")
+    }
+}

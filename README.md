@@ -361,7 +361,7 @@ pick a profile per agent, per project or per kind:
 
 Esc always goes to the agent, since Claude and Codex use it. The menu bar item
 shows the counts and the queue, and a notification arrives when an agent
-starts waiting for you.
+starts waiting for you, or when its finished work is ready to review.
 
 `hesperctl` does the same from a terminal:
 

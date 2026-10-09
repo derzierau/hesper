@@ -14,6 +14,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     var showWindow: () -> Void = {}
     /// Window layer: takes the user to an agent (its window, a wall).
     var openAgent: ((String) -> Void)?
+    /// Review: the sheet on the front wall, on that item.
+    var openReview: ((String?) -> Void)?
 
     init(model: AppModel) {
         self.model = model
@@ -52,7 +54,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             for a in g.agents { menu.addItem(row(a, group: g.group, tab: trail, font: font)) }
             menu.addItem(.separator())
         }
-        if groups.isEmpty {
+        // Review: finished work on every Mac, its own section.
+        let ready = model.reviewHub.items
+        if !ready.isEmpty {
+            menu.addItem(.sectionHeader(title: "Ready to review"))
+            let tab = Self.trailingTab(ready.map { ($0.name, $0.machine) }, font: font)
+            for r in ready { menu.addItem(reviewRow(r, tab: tab, font: font)) }
+            menu.addItem(.separator())
+        }
+        if groups.isEmpty && ready.isEmpty {
             let none = NSMenuItem(title: "Nothing running", action: nil, keyEquivalent: "")
             none.isEnabled = false
             menu.addItem(none)
@@ -61,6 +71,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         add(menu, "Open Hesper", "0", #selector(show))
         add(menu, "New agent…", "n", #selector(newAgent))
         add(menu, "History…", "y", #selector(history))
+        add(menu, "Review…", "r", #selector(review))
         menu.addItem(.separator())
         let quick = add(menu, "Quick Launch…  \(model.settings.hotKey.label)", "", #selector(quickLaunch))
         quick.setAccessibilityIdentifier("statusitem.quicklaunch")
@@ -96,6 +107,24 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         return i
     }
 
+    /// A review row: its evidence as the subtitle ("3 files · +120 −14 ·
+    /// tests ✓"), the machine trailing; opens the sheet on it.
+    private func reviewRow(_ r: ReviewItem, tab: CGFloat, font: NSFont) -> NSMenuItem {
+        let i = NSMenuItem(title: r.name, action: #selector(openReviewItem(_:)), keyEquivalent: "")
+        let p = NSMutableParagraphStyle()
+        p.tabStops = [NSTextTab(textAlignment: .right, location: tab)]
+        let s = NSMutableAttributedString(string: r.name, attributes: [.font: font, .paragraphStyle: p])
+        s.append(NSAttributedString(string: "\t\(r.machine)", attributes: [.font: font, .paragraphStyle: p, .foregroundColor: NSColor.secondaryLabelColor]))
+        i.attributedTitle = s
+        let detail = ReviewText.notificationBody(r)
+        if #available(macOS 14.4, *) { i.subtitle = detail } else { i.toolTip = detail }
+        i.image = StateMark.image(StateMarkKind(r.state))
+        i.target = self
+        i.representedObject = r.id
+        i.setAccessibilityLabel("\(r.name), \(r.machine), ready to review")
+        return i
+    }
+
     /// Where the machine column ends: the widest name, a gap, the widest
     /// machine.
     static func trailingTab(_ rows: [(name: String, machine: String)], font: NSFont) -> CGFloat {
@@ -115,6 +144,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func show() { showWindow() }
     @objc private func newAgent() { showWindow(); model.perform(.newAgent) }
     @objc private func history() { showWindow(); model.perform(.history) }
+    @objc private func review() { showWindow(); if let openReview { openReview(nil) } else { model.perform(.review) } }
+    @objc private func openReviewItem(_ sender: NSMenuItem) {
+        showWindow()
+        let id = sender.representedObject as? String
+        if let openReview { openReview(id) } else { model.openReview(select: id) }
+    }
     @objc private func settings() { NSApp.activate(ignoringOtherApps: true); model.onShowSettings?() }
     @objc private func quickLaunch() { model.onQuickLaunch?() }
 }
@@ -182,6 +217,23 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "finished-\(name)-\(UUID().uuidString)", content: content, trigger: nil))
     }
 
+    /// Review: "api on mini is ready to review" with its files and
+    /// evidence; a click opens the sheet on it.
+    var openReview: ((String) -> Void)?
+
+    func postReadyToReview(_ items: [ReviewItem]) {
+        guard enabled, model.settings.notificationsEnabled else { return }
+        for r in items {
+            let content = UNMutableNotificationContent()
+            content.title = ReviewText.notificationTitle(r, machineName: model.machineName(r.machine))
+            content.body = ReviewText.notificationBody(r)
+            content.subtitle = Theme.kindLabel(r.kind)
+            content.userInfo = ["review": r.id]
+            content.threadIdentifier = "review"
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "\(r.id)-review", content: content, trigger: nil))
+        }
+    }
+
     /// Quick launch started an agent: a notification that jumps to it.
     func postStarted(_ a: Agent) {
         guard enabled else { return }
@@ -198,9 +250,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
         let id = info["agent"] as? String
+        let review = info["review"] as? String
         let go = info["go"] as? Bool ?? false
         let action = response.actionIdentifier
         await MainActor.run {
+            if let review {
+                showWindow()
+                if let openReview { openReview(review) } else { model.openReview(select: review) }
+                return
+            }
             // Allow / Deny: the same answer as the tile's, only while the
             // agent still waits for it.
             if action == AgentNotificationText.allowAction || action == AgentNotificationText.denyAction {

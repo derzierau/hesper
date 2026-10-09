@@ -132,14 +132,24 @@ extension AppModel {
     /// The review item of an agent, when it is ready to review.
     func reviewItem(_ id: String?) -> ReviewItem? { reviewHub.item(id) }
 
-    /// ⌘R, the pill, a tile's footer (⏎), the menu bar, a notification:
-    /// open the sheet (on `select` when given), or close it.
+    /// ⌘R, the pill, ⏎ on a ready tile: open the sheet (on `select`, else
+    /// the selected tile's item), or close it.
     func toggleReview(select: String? = nil) {
+        prepareForReview()
+        ReviewPanelHost.toggle(self, select: select ?? reviewItem(selectedID)?.id)
+    }
+
+    /// The sheet open on `id` (never closes it).
+    func openReview(select id: String?) {
+        prepareForReview()
+        ReviewPanelHost.show(self, select: id)
+    }
+
+    private func prepareForReview() {
         if mode == .compose { leaveComposer() }
         closePopover()
         showPalette = false
         if HistoryPanelHost.isOpen(self) { HistoryPanelHost.panel(for: self)?.close() }
-        ReviewPanelHost.toggle(self, select: select ?? reviewItem(selectedID)?.id)
     }
 
     /// Every daemon event (marked integration point in `handle`): an
