@@ -747,7 +747,7 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return nil, wire.Errorf(wire.CodeUnavailable, "the shared history is not available")
 	case "app.state", "app.open", "app.wall.set", "app.desk":
 		return s.app.forward(method, withoutCaller(params)) // app control (appbridge.go): any caller, it touches no agent
-	case "review.list", "review.diff", "review.accept", "review.reject", "review.sendBack":
+	case "review.list", "review.diff", "review.accept", "review.reject", "review.sendBack", "review.evidence", "review.provenance":
 		return s.reviewCall(method, params, forward) // review.go
 	case "hook":
 		var p wire.HookParams

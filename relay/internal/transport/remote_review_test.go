@@ -75,6 +75,27 @@ func TestRemoteReviewListAndDiff(t *testing.T) {
 	if err := L.call(t, "review.diff", wire.ReviewDiffParams{ID: "M/nope00"}, nil); err == nil || !strings.Contains(err.Error(), "nope00") {
 		t.Fatalf("unknown remote agent: %v", err)
 	}
+
+	// Evidence and provenance of M's agent, from its hooks on M.
+	payload, _ := json.Marshal(map[string]any{"session_id": remote.SessionID, "tool_name": "Edit",
+		"tool_input": map[string]any{"file_path": filepath.Join(M.project, "a.txt")}})
+	if err := M.call(t, "hook", wire.HookParams{Agent: "M/" + id, Source: "claude", Event: "PostToolUse", Payload: payload}, nil); err != nil {
+		t.Fatal(err)
+	}
+	var ev wire.ReviewEvidence
+	if err := L.call(t, "review.evidence", wire.IDParams{ID: remote.ID}, &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev.Freshness != wire.EvidenceMissing || ev.LastEditAt.IsZero() || len(ev.Commands) == 0 {
+		t.Fatalf("evidence through L %+v", ev)
+	}
+	var prov wire.ReviewProvenance
+	if err := L.call(t, "review.provenance", wire.ReviewProvenanceParams{ID: remote.ID, Path: "a.txt", Line: 2}, &prov); err != nil {
+		t.Fatal(err)
+	}
+	if prov.SessionID != "M:claude:"+remote.SessionID || prov.Tool != "Edit" {
+		t.Fatalf("provenance through L %+v", prov)
+	}
 }
 
 // A diff larger than one relay message comes through L in parts.

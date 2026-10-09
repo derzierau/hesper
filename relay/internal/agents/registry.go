@@ -1113,11 +1113,20 @@ func (r *Registry) Hook(p wire.HookParams) error {
 		message = lastMessage(data)
 		summary = summarize(message)
 	}
+	evidenceOf := "" // review: recorded once the lock is released
+	defer func() {
+		if evidenceOf != "" {
+			r.recordEvidence(evidenceOf, event, data) // reviewevidence.go
+		}
+	}()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a := r.hookAgent(p, event, data)
 	if a == nil || a.term == nil || a.Exit != nil {
 		return nil // not one of ours (another claude, a nested one): ignored
+	}
+	if checkpointable(a.Kind) {
+		evidenceOf = a.local
 	}
 	if !a.sessionSeen && a.SessionID != "" && confirmsSession(event, data) {
 		if sid := payloadSessionID(data); sid == "" || sid == a.SessionID {

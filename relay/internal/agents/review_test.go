@@ -303,3 +303,87 @@ func TestReviewSendBack(t *testing.T) {
 		t.Fatalf("after a restart %+v", again)
 	}
 }
+
+func (h *harness) evidence(id string) wire.ReviewEvidence {
+	h.t.Helper()
+	var ev wire.ReviewEvidence
+	if err := h.call("review.evidence", wire.IDParams{ID: id}, &ev); err != nil {
+		h.t.Fatal(err)
+	}
+	return ev
+}
+
+// Evidence and provenance from hook events (synthetic ones here, besides
+// the fake agent's own): freshness fresh / stale / missing / none, kept
+// across a daemon restart, forgotten with the agent.
+func TestReviewEvidenceAndProvenance(t *testing.T) {
+	h := reviewHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "do it"})
+	h.waitSettled(a.ID)
+	if ev := h.evidence(a.ID); ev.Freshness != wire.EvidenceNone || len(ev.Commands) != 1 || ev.Commands[0].Command != "git push origin main" ||
+		ev.Commands[0].Kind != "other" || ev.Commands[0].ExitCode == nil || ev.Commands[0].EndedAt.IsZero() {
+		t.Fatalf("no changes: %+v", ev)
+	}
+	hook := func(event string, payload map[string]any) {
+		t.Helper()
+		payload["session_id"] = a.SessionID
+		if err := h.reg.Hook(wire.HookParams{Agent: a.ID, Source: "claude", Event: event, Payload: mustJSON(payload)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file := filepath.Join(h.project, "a.txt")
+	hook("UserPromptSubmit", map[string]any{"prompt": "add a second line"})
+	os.WriteFile(file, []byte("one\ntwo\nthree\n"), 0o644)
+	hook("PostToolUse", map[string]any{"tool_name": "Edit", "tool_input": map[string]any{"file_path": file},
+		"tool_response": map[string]any{"structuredPatch": []any{map[string]any{"newStart": 2, "newLines": 2}}}})
+	if ev := h.evidence(a.ID); ev.Freshness != wire.EvidenceMissing || ev.LastEditAt.IsZero() {
+		t.Fatalf("edited, nothing run: %+v", ev)
+	}
+	test := map[string]any{"tool_name": "Bash", "tool_use_id": "toolu_1", "tool_input": map[string]any{"command": "go test ./..."}}
+	hook("PreToolUse", test)
+	hook("PostToolUse", test)
+	if ev := h.evidence(a.ID); ev.Freshness != wire.EvidenceFresh || ev.Commands[len(ev.Commands)-1].Kind != "test" {
+		t.Fatalf("tested: %+v", ev)
+	}
+	hook("Stop", map[string]any{"last_assistant_message": "Added lines"})
+	h.waitState(a.ID, wire.StateDone)
+	if item := findItem(h.reviewList(), a.ID); item == nil || item.Evidence != wire.EvidenceFresh {
+		t.Fatalf("item %+v", item)
+	}
+	var prov wire.ReviewProvenance
+	if err := h.call("review.provenance", wire.ReviewProvenanceParams{ID: a.ID, Path: "a.txt", Line: 3}, &prov); err != nil {
+		t.Fatal(err)
+	}
+	if prov.SessionID != "L:claude:"+a.SessionID || prov.Turn != 2 || prov.Tool != "Edit" || prov.Prompt != "add a second line" || prov.At.IsZero() {
+		t.Fatalf("provenance %+v", prov)
+	}
+	var none wire.ReviewProvenance
+	if err := h.call("review.provenance", wire.ReviewProvenanceParams{ID: a.ID, Path: "nothing.txt", Line: 1}, &none); err != nil || none.SessionID != "" {
+		t.Fatalf("no edit: %+v %v", none, err)
+	}
+	wantCode(t, h.call("review.provenance", wire.ReviewProvenanceParams{ID: a.ID, Path: "../x"}, nil), wire.CodeInvalid)
+
+	// A daemon restart keeps it; an edit after the test makes it stale.
+	h.close()
+	h.open()
+	h.waitState(a.ID, wire.StateIdle)
+	if ev := h.evidence(a.ID); ev.Freshness != wire.EvidenceFresh {
+		t.Fatalf("after a restart: %+v", ev)
+	}
+	hook("PostToolUse", map[string]any{"tool_name": "Write", "tool_input": map[string]any{"file_path": file}})
+	if ev := h.evidence(a.ID); ev.Freshness != wire.EvidenceStale {
+		t.Fatalf("edited after the test: %+v", ev)
+	}
+	// Removed with the agent.
+	_, local, _ := strings.Cut(a.ID, "/")
+	log := filepath.Join(h.state, "review", local+".json")
+	waitFor(t, func() bool { _, err := os.Stat(log); return err == nil })
+	h.call("agents.stop", wire.IDParams{ID: a.ID}, nil)
+	h.waitState(a.ID, wire.StateExited)
+	if err := h.call("agents.remove", wire.IDParams{ID: a.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatalf("review log left: %v", err)
+	}
+}

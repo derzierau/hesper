@@ -181,3 +181,54 @@ type ReviewSendBackParams struct {
 	Notes   []ReviewNote `json:"notes"`
 	Message string       `json:"message,omitempty"`
 }
+
+// ReviewEvidence is review.evidence's: what the agent ran (from its hook
+// events; the latest 200 commands, oldest first) and its freshness
+// against its last edit; Attachments are the changed images, videos and
+// logs in its folder (absolute paths on its Mac).
+type ReviewEvidence struct {
+	Freshness   string             `json:"freshness"`
+	LastEditAt  time.Time          `json:"lastEditAt,omitzero"`
+	Commands    []ReviewCommand    `json:"commands"`
+	Attachments []ReviewAttachment `json:"attachments"`
+}
+
+// ReviewCommand is one command the agent ran: Kind test, build, lint,
+// run or other; ExitCode and EndedAt once it ended (no exit code: it was
+// interrupted, or its end is unknown).
+type ReviewCommand struct {
+	Command   string    `json:"command"`
+	Kind      string    `json:"kind"`
+	ExitCode  *int      `json:"exitCode,omitempty"`
+	StartedAt time.Time `json:"startedAt"`
+	EndedAt   time.Time `json:"endedAt,omitzero"`
+}
+
+// ReviewAttachment is a file the agent produced: Kind image, video or
+// log.
+type ReviewAttachment struct {
+	Path string `json:"path"`
+	Kind string `json:"kind"`
+}
+
+// ReviewProvenanceParams are review.provenance's: a path of the diff and
+// a line (new side; 0: the file).
+type ReviewProvenanceParams struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+	Line int    `json:"line,omitempty"`
+}
+
+// ReviewProvenance is review.provenance's: the last edit that wrote that
+// line (or file). SessionID is the shared history's session id
+// ("<machine>:<kind>:<session>", as sessions.show takes it); Turn the
+// session's prompt the edit followed (1-based, as hesperd saw them);
+// Prompt that prompt's first 200 characters. Empty when no edit of the
+// file is known.
+type ReviewProvenance struct {
+	SessionID string    `json:"sessionId,omitempty"`
+	Turn      int       `json:"turn,omitempty"`
+	Tool      string    `json:"tool,omitempty"`
+	Prompt    string    `json:"prompt,omitempty"`
+	At        time.Time `json:"at,omitzero"`
+}

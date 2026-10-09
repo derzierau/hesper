@@ -469,6 +469,8 @@ renames to its own machine naming.
 | `review.accept` | `{id, hunks?, message?, context?, tree?}` | `{commit}`: the accepted changes committed in the agent's folder (right `transfer`) |
 | `review.reject` | `{id, hunks, context?, tree?}` | `{}`: those changes reverted in the agent's folder (right `transfer`) |
 | `review.sendBack` | `{id, notes, message?}` | `{}`: typed into the agent as one instruction (right `type`) |
+| `review.evidence` | `{id}` | `ReviewEvidence`: what the agent ran, its freshness (right `observe`) |
+| `review.provenance` | `{id, path, line?}` | `ReviewProvenance`: the edit that wrote that line; `sessionId` in the host's naming, renamed by the controller (right `observe`) |
 
 ### Links
 

@@ -62,9 +62,16 @@ func (s *reviewStore) get(local string, fn func(*review.Log)) {
 
 // update changes local's log and schedules its write.
 func (s *reviewStore) update(local string, fn func(*review.Log)) {
+	s.record(local, func(l *review.Log) bool { fn(l); return true })
+}
+
+// record is update when fn reports a change.
+func (s *reviewStore) record(local string, fn func(*review.Log) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fn(s.load(local))
+	if !fn(s.load(local)) {
+		return
+	}
 	s.dirty[local] = true
 	if s.timer == nil {
 		s.timer = time.AfterFunc(reviewSaveDelay, s.flush)

@@ -129,7 +129,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
-| `review.list` / `review.diff` / `review.accept` / `review.reject` / `review.sendBack` | see "As built — review (daemon)" | agents ready for review on every Mac, one agent's changes, and what the reviewer does with them (added) |
+| `review.list` / `review.diff` / `review.accept` / `review.reject` / `review.sendBack` / `review.evidence` / `review.provenance` | see "As built — review (daemon)" | agents ready for review on every Mac, one agent's changes, what the reviewer does with them, what the agent ran and which turn wrote a line (added) |
 
 Errors: JSON-RPC errors with `data.code` in `not_found`, `invalid`,
 `exists`, `unavailable`, `forbidden`, `remote` and a human message.
@@ -3962,7 +3962,9 @@ formatting-only, moved, risk, reading order; diffs in parts; accept and
 reject in `apply.go`), `internal/agents/review.go` (registry and socket
 side), `reviewact.go` (accept, reject, send back), `reviewlog.go` (the
 per-agent review log), `internal/host/review.go` (host methods),
-`pkg/devicekey/rights.go`. Tests: `internal/review/*_test.go`,
+`reviewevidence.go` (hook events into the log, evidence, provenance;
+the rules in `internal/review/evidence.go`), `pkg/devicekey/rights.go`.
+Tests: `internal/review/*_test.go`,
 `internal/agents/review_test.go`, `internal/transport/
 remote_review_test.go`. All in temporary homes and repositories with the
 fake agent.
@@ -3989,11 +3991,13 @@ temporary index file), so the user's index is never touched.
 | `review.accept` | `{id, hunks?: [id], message?, context?, tree?}` | `{commit}` |
 | `review.reject` | `{id, hunks: [id], context?, tree?}` | `{}` |
 | `review.sendBack` | `{id, notes: [{path, line?, side?: "old"\|"new", text}], message?}` | `{}` |
+| `review.evidence` | `{id}` | `{freshness, lastEditAt?, commands: [{command, kind, exitCode?, startedAt, endedAt?}], attachments: [{path, kind}]}` |
+| `review.provenance` | `{id, path, line?}` | `{sessionId?, turn?, tool?, prompt?, at?}` |
 
 `ReviewItem = {id, machine, name, kind, project, branch?, worktree?,
 state, files, added, removed, risk, riskNotes: [string], evidence,
 readyAt, reviewedAt?, base}`; `readyAt` is when the agent settled
-(`stateSince`).
+(`stateSince`); `evidence` is `review.evidence`'s freshness.
 
 `ReviewFile = {path, oldPath?, status: "A"|"M"|"D"|"R", binary?,
 formattingOnly?, generated?, tooLarge?, order, risk, added, removed,
@@ -4077,8 +4081,55 @@ time.
 - Agent tree: inside an agent, the three are allowed only on the agents
   it started (as `agents.input`); hesperctl sends the caller for them.
 
+**Evidence (phase 2).** Every hook event of a Claude or Codex agent
+that hesperd takes (as for its state) also goes into the agent's review
+log (`$STATE/review/<local id>.json`, mode 0600, written 200 ms after a
+change and when the daemon stops, the last 2,000 events, removed with
+the agent; a moved agent starts a new one):
+- `UserPromptSubmit`: a turn starts (counted per session; the prompt's
+  first 200 characters kept);
+- `PreToolUse` / `PostToolUse` (and `PostToolUseFailure` when the tool
+  sends it) of a shell tool (`Bash`, Codex's `shell`, `exec_command`,
+  `local_shell`, `unified_exec`): a command, its line (Codex's `["bash",
+  "-lc", …]` unwrapped), start and end (the hooks' arrival times; the
+  two are matched by `tool_use_id` / `call_id`, else name and input, in
+  either order), exit code: the tool's (`exit_code`, Codex's output
+  `Exit code: N`), else 0 for `PostToolUse` and 1 (or the error's exit
+  code) for `PostToolUseFailure`, none when interrupted; a command
+  without its end has neither. Classified by its programs, the
+  strongest part of a chain (`&&`, `;`, `|`) winning: `test` (`go test`,
+  `npm test`, `pytest`, `cargo test`, `swift test`, `xcodebuild test`,
+  `make test`/`check`, `jest`, `vitest`, …), `build` (`go build`,
+  `make`, `npm run build`, `cargo build`, `swift build`, `tsc`, …),
+  `lint` (`go vet`, `eslint`, `ruff`, `golangci-lint`, `cargo clippy`,
+  …), `run` (`go run`, `npm start`, `python x.py`, …), else `other`;
+- `PostToolUse` of an edit tool (`Edit`, `Write`, `MultiEdit`,
+  `NotebookEdit`, Codex's `apply_patch`: the patch's `*** Update/Add/
+  Delete File:` and `*** Move to:` paths against its cwd): the files
+  (absolute, links resolved) and, from Claude Code's `structuredPatch`,
+  the new lines it wrote.
+
+`freshness`: `none` without changes; `fresh` when a `test` or `build`
+command that started at or after the last edit ended with exit code 0;
+`stale` when one ran but none did since the last edit (or it failed);
+`missing` when none ran. Edits made by commands (formatters, `sed`) are
+not seen. `commands` are the latest 200, oldest first; `attachments`
+the changed (not deleted) images, videos and `.log` files of the folder,
+absolute paths on the agent's Mac.
+
+**Provenance.** `review.provenance {id, path, line?}` (`path` as the
+diff has it, `line` on the new side, 0 or omitted: the file) is the last
+edit of that file whose lines cover `line`, else (an edit without line
+ranges, or none covering it) the file's last edit: `sessionId` in the
+shared history's form `<machine>:<kind>:<session>` (`sessions.show`
+takes it; the controller names the machine as it does), `turn` (the
+session's prompt it followed, 1-based, counted from the prompts hesperd
+saw), `tool`, `prompt` (that prompt's first 200 characters), `at`.
+`{}` when no edit of the file is known.
+
 **Across Macs.** `review.diff` of another Mac's agent goes to its
-daemon (host methods `review.list` and `review.diff`, right `observe`;
+daemon (host methods `review.list`, `review.diff`, `review.evidence`
+and `review.provenance`, right `observe`;
 `review.accept` and `review.reject`, right `transfer`;
 `review.sendBack`, right `type`). The controller refuses them with
 `busy` itself when its copy of the agent is at work (a host's own

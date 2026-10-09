@@ -79,6 +79,35 @@ func (s *Service) review(ctx context.Context, m protocol.Message) (json.RawMessa
 		}
 		p.ID = a.ID
 		return protocol.JSON(struct{}{}), publicErr(reg.ReviewReject(ctx, p))
+	case "review.evidence":
+		var p wire.IDParams
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		a, err := s.agent(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		ev, err := reg.ReviewEvidence(ctx, a.ID)
+		if err != nil {
+			return nil, publicError(err)
+		}
+		return protocol.JSON(ev), nil
+	case "review.provenance":
+		var p wire.ReviewProvenanceParams
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		a, err := s.agent(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		p.ID = a.ID
+		res, err := reg.ReviewProvenance(ctx, p)
+		if err != nil {
+			return nil, publicError(err)
+		}
+		return protocol.JSON(res), nil
 	case "review.sendBack":
 		var p wire.ReviewSendBackParams
 		if err := params(m.Params, &p); err != nil {

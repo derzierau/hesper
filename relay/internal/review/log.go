@@ -3,9 +3,13 @@ package review
 import "time"
 
 // Log is what hesperd keeps per agent for its review (persisted, removed
-// with the agent): the reviewed point review.sendBack records.
+// with the agent): the reviewed point review.sendBack records, and its
+// hook events (evidence.go, the last MaxEvents) with the turns counted
+// per session.
 type Log struct {
-	Reviewed *Reviewed `json:"reviewed,omitempty"`
+	Reviewed *Reviewed      `json:"reviewed,omitempty"`
+	Turns    map[string]int `json:"turns,omitempty"`
+	Events   []Event        `json:"events,omitempty"`
 }
 
 // Reviewed is a reviewed point: the folder's tree when the reviewer sent

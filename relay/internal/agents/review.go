@@ -158,12 +158,13 @@ func (r *Registry) reviewItem(ctx context.Context, a wire.Agent) (*wire.ReviewIt
 		return nil, err
 	}
 	item := &wire.ReviewItem{ID: a.ID, Machine: a.Machine, Name: a.Name, Kind: a.Kind, Project: a.Project, Branch: a.Branch,
-		Worktree: a.Worktree, State: a.State, Files: len(changes), ReadyAt: a.StateSince, Base: base, Evidence: wire.EvidenceMissing}
+		Worktree: a.Worktree, State: a.State, Files: len(changes), ReadyAt: a.StateSince, Base: base}
 	for _, c := range changes {
 		item.Added += c.Added
 		item.Removed += c.Removed
 	}
 	item.Risk, item.RiskNotes = review.ChangeRisk(changes)
+	item.Evidence = r.evidenceOf(a.ID, true).Freshness // reviewevidence.go
 	_, local := r.split(a.ID)
 	r.reviews().get(local, func(l *review.Log) {
 		if l.Reviewed != nil {
@@ -235,6 +236,18 @@ func (s *Server) reviewCall(method string, params json.RawMessage, forward func(
 		if err == nil && treeMutating[method] {
 			reg.NoteReview(head.ID) // the host's own note stays there
 		}
+		if raw, ok := res.(json.RawMessage); ok && err == nil && method == "review.provenance" {
+			// The session as this daemon's shared history names its
+			// machine.
+			var p wire.ReviewProvenance
+			if json.Unmarshal(raw, &p) == nil && p.SessionID != "" {
+				machine, _ := reg.split(head.ID)
+				if _, rest, ok := strings.Cut(p.SessionID, ":"); ok {
+					p.SessionID = machine + ":" + rest
+				}
+				return p, nil
+			}
+		}
 		return res, err
 	}
 	ctx := context.Background()
@@ -263,6 +276,14 @@ func (s *Server) reviewCall(method string, params json.RawMessage, forward func(
 			return nil, err
 		}
 		return struct{}{}, reg.ReviewSendBack(ctx, p)
+	case "review.evidence":
+		return reg.ReviewEvidence(ctx, head.ID) // reviewevidence.go
+	case "review.provenance":
+		var p wire.ReviewProvenanceParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		return reg.ReviewProvenance(ctx, p)
 	}
 	return nil, &noMethod{method}
 }

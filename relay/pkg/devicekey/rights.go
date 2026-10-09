@@ -66,7 +66,7 @@ var methodRights = map[string]string{
 	// review: reading an agent's changes observes; accepting (a commit)
 	// and rejecting (files reverted) change its folder: transfer, as a
 	// checkpoint; sending it back types into it.
-	"review.list": Observe, "review.diff": Observe,
+	"review.list": Observe, "review.diff": Observe, "review.evidence": Observe, "review.provenance": Observe,
 	"review.accept": Transfer, "review.reject": Transfer, "review.sendBack": Type,
 }
 
