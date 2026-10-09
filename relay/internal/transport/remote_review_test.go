@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -108,5 +109,71 @@ func TestRemoteReviewLargeDiff(t *testing.T) {
 	y, _ := json.Marshal(there)
 	if len(x) < 4<<20 || string(x) != string(y) || len(through.Files) != 6 {
 		t.Fatalf("through L %d bytes, on M %d bytes, %d files", len(x), len(y), len(through.Files))
+	}
+}
+
+// Accept, reject and send back M's agent's work through L.
+func TestRemoteReviewAcceptRejectSendBack(t *testing.T) {
+	w := newWorld(t, worldOptions{beforeStart: func(L, M *node) {
+		M.cfg.Registry.Env = append(M.cfg.Registry.Env, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+	}})
+	L, M := w.L, w.M
+	reviewRepo(t, M)
+	L.waitLinked(t, "M")
+	var a wire.Agent
+	if err := L.call(t, "agents.spawn", wire.SpawnParams{Machine: "M", Project: M.project, Task: "do it"}, &a); err != nil {
+		t.Fatal(err)
+	}
+	L.waitAgent(t, a.ID, inState(wire.StateDone))
+	os.WriteFile(filepath.Join(M.project, "a.txt"), []byte("one\nrejected\n"), 0o644)
+	os.WriteFile(filepath.Join(M.project, "b.txt"), []byte("accepted\n"), 0o644)
+	var d wire.ReviewDiff
+	if err := L.call(t, "review.diff", wire.ReviewDiffParams{ID: a.ID}, &d); err != nil {
+		t.Fatal(err)
+	}
+	index := map[string]string{}
+	for i, f := range d.Files {
+		index[f.Path] = fmt.Sprint(i)
+	}
+	if err := L.call(t, "review.reject", wire.ReviewRejectParams{ID: a.ID, Hunks: []string{index["a.txt"]}, Tree: d.Tree}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(M.project, "a.txt")); string(data) != "one\n" {
+		t.Fatalf("a.txt on M: %q", data)
+	}
+	var res wire.ReviewAcceptResult
+	if err := L.call(t, "review.accept", wire.ReviewAcceptParams{ID: a.ID, Message: "Accepted from L"}, &res); err != nil {
+		t.Fatal(err)
+	}
+	if git(t, M.project, "rev-parse", "HEAD") != res.Commit || git(t, M.project, "log", "-1", "--format=%s") != "Accepted from L" {
+		t.Fatalf("accept on M: %+v", res)
+	}
+	os.WriteFile(filepath.Join(M.project, "c.txt"), []byte("c\n"), 0o644)
+	if err := L.call(t, "review.sendBack", wire.ReviewSendBackParams{ID: a.ID, Notes: []wire.ReviewNote{{Path: "c.txt", Line: 1, Text: "rename it"}}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := "Done: Review notes on your changes; please address them:\n- c.txt:1: rename it"
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		var r wire.AgentResult
+		L.call(t, "agents.result", wire.IDParams{ID: a.ID}, &r)
+		if r.Message == want {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("result %+v", r)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	// A working agent on M: busy, as for a local one.
+	var busy wire.Agent
+	if err := L.call(t, "agents.spawn", wire.SpawnParams{Machine: "M", Project: M.project, Task: "keep working"}, &busy); err != nil {
+		t.Fatal(err)
+	}
+	L.waitAgent(t, busy.ID, inState(wire.StateWorking))
+	err := L.call(t, "review.accept", wire.ReviewAcceptParams{ID: busy.ID}, nil)
+	if we, ok := err.(*wire.Error); !ok || we.Code != wire.CodeBusy {
+		t.Fatalf("accept of a working agent on M: %v", err)
 	}
 }

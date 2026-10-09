@@ -175,6 +175,12 @@ type Registry struct {
 	cpHooks []func(wire.Agent)
 	cpRun   sync.Mutex
 	cpFile  sync.Mutex
+
+	// review (review.go): the agents' review logs (reviewlog.go); one
+	// accept, reject or send-back at a time.
+	reviewOnce sync.Once
+	reviewLogs *reviewStore
+	reviewRun  sync.Mutex
 }
 
 type agent struct {
@@ -1219,4 +1225,5 @@ func (r *Registry) Close() {
 	close(r.saveCh)
 	<-r.saverEnd
 	r.writeState()
+	r.reviews().flush() // reviewlog.go
 }

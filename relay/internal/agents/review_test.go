@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,5 +172,134 @@ func TestReviewChangedNote(t *testing.T) {
 		case <-ctx.Done():
 			t.Fatal("no review.changed")
 		}
+	}
+}
+
+func (h *harness) reviewDiff(id string) wire.ReviewDiff {
+	h.t.Helper()
+	var d wire.ReviewDiff
+	if err := h.call("review.diff", wire.ReviewDiffParams{ID: id}, &d); err != nil {
+		h.t.Fatal(err)
+	}
+	return d
+}
+
+func fileID(t *testing.T, d wire.ReviewDiff, path string) string {
+	t.Helper()
+	for i, f := range d.Files {
+		if f.Path == path {
+			return strconv.Itoa(i)
+		}
+	}
+	t.Fatalf("no %s in the diff", path)
+	return ""
+}
+
+func wantCode(t *testing.T, err error, code string) {
+	t.Helper()
+	if we, ok := err.(*wire.Error); !ok || we.Code != code {
+		t.Fatalf("error %v, want code %s", err, code)
+	}
+}
+
+// review.accept and review.reject: refused while the agent works and for
+// a folder that changed since the diff; reject reverts in the working
+// tree, accept commits on HEAD and moves the review base.
+func TestReviewAcceptReject(t *testing.T) {
+	h := reviewHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "do it"})
+	h.waitSettled(a.ID)
+	os.WriteFile(filepath.Join(h.project, "a.txt"), []byte("one\nrejected\n"), 0o644)
+	os.WriteFile(filepath.Join(h.project, "b.txt"), []byte("accepted\n"), 0o644)
+	d := h.reviewDiff(a.ID)
+
+	err := h.call("review.accept", wire.ReviewAcceptParams{ID: a.ID, Tree: "0123456789abcdef0123456789abcdef01234567"}, nil)
+	wantCode(t, err, wire.CodeInvalid)
+	wantCode(t, h.call("review.reject", wire.ReviewRejectParams{ID: a.ID}, nil), wire.CodeInvalid)
+	wantCode(t, h.call("review.accept", wire.ReviewAcceptParams{ID: a.ID, Hunks: []string{"7:0"}}, nil), wire.CodeInvalid)
+
+	if err := h.call("review.reject", wire.ReviewRejectParams{ID: a.ID, Hunks: []string{fileID(t, d, "a.txt") + ":0"}, Tree: d.Tree}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(h.project, "a.txt")); string(data) != "one\n" {
+		t.Fatalf("a.txt after reject: %q", data)
+	}
+	d = h.reviewDiff(a.ID)
+	var res wire.ReviewAcceptResult
+	if err := h.call("review.accept", wire.ReviewAcceptParams{ID: a.ID, Hunks: []string{fileID(t, d, "b.txt")}, Message: "Add b", Tree: d.Tree}, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Commit == "" || gitIn(t, h.project, "rev-parse", "HEAD") != res.Commit || gitIn(t, h.project, "log", "-1", "--format=%s") != "Add b" {
+		t.Fatalf("accept %+v", res)
+	}
+	if st := gitIn(t, h.project, "status", "--porcelain"); st != "" {
+		t.Fatalf("status %q", st)
+	}
+	if got, _ := h.reg.Get(a.ID); got.ReviewBase != res.Commit {
+		t.Fatalf("review base %s, want %s", got.ReviewBase, res.Commit)
+	}
+	if list := h.reviewList(); len(list) != 0 {
+		t.Fatalf("accepted work still listed: %+v", list)
+	}
+
+	// The default message is the agent's summary.
+	os.WriteFile(filepath.Join(h.project, "c.txt"), []byte("c\n"), 0o644)
+	if err := h.call("review.accept", wire.ReviewAcceptParams{ID: a.ID}, &res); err != nil {
+		t.Fatal(err)
+	}
+	if msg := gitIn(t, h.project, "log", "-1", "--format=%s"); msg != "Done: do it" {
+		t.Fatalf("default message %q", msg)
+	}
+
+	// A working agent's folder is left alone.
+	busy := h.spawn(wire.SpawnParams{Task: "keep working", Worktree: json.RawMessage("true")})
+	h.waitState(busy.ID, wire.StateWorking)
+	os.WriteFile(filepath.Join(busy.Worktree, "w.txt"), []byte("w\n"), 0o644)
+	wantCode(t, h.call("review.accept", wire.ReviewAcceptParams{ID: busy.ID}, nil), wire.CodeBusy)
+	wantCode(t, h.call("review.reject", wire.ReviewRejectParams{ID: busy.ID, Hunks: []string{"0"}}, nil), wire.CodeBusy)
+	wantCode(t, h.call("review.sendBack", wire.ReviewSendBackParams{ID: busy.ID, Message: "x"}, nil), wire.CodeBusy)
+	// An agent may not accept another agent's work it did not start.
+	c := h.client()
+	c.Caller = busy.ID
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	wantCode(t, c.Call(ctx, "review.accept", wire.ReviewAcceptParams{ID: a.ID}, nil), wire.CodeForbidden)
+	h.call("agents.input", wire.InputParams{ID: busy.ID, Text: "x"}, nil)
+	h.waitSettled(busy.ID)
+}
+
+// review.sendBack: one instruction typed into the agent, the reviewed
+// point kept (a ref, the review log; across a daemon restart).
+func TestReviewSendBack(t *testing.T) {
+	h := reviewHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "do it"})
+	h.waitSettled(a.ID)
+	os.WriteFile(filepath.Join(h.project, "a.txt"), []byte("one\ntwo\n"), 0o644)
+	wantCode(t, h.call("review.sendBack", wire.ReviewSendBackParams{ID: a.ID}, nil), wire.CodeInvalid)
+	notes := []wire.ReviewNote{{Path: "a.txt", Line: 2, Side: "new", Text: "use a constant"}, {Path: "a.txt", Line: 1, Side: "old", Text: "keep this\nline"}}
+	if err := h.call("review.sendBack", wire.ReviewSendBackParams{ID: a.ID, Notes: notes, Message: "Then run the tests."}, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := "Done: Review notes on your changes; please address them:\n- a.txt:2: use a constant\n- a.txt (old line 1): keep this line\n\nThen run the tests."
+	waitFor(t, func() bool {
+		var res wire.AgentResult
+		h.call("agents.result", wire.IDParams{ID: a.ID}, &res)
+		return res.Message == want
+	})
+	_, local, _ := strings.Cut(a.ID, "/")
+	ref := "refs/hesper/checkpoints/" + local + "-reviewed"
+	if tree := gitIn(t, h.project, "rev-parse", ref+"^{tree}"); tree == "" {
+		t.Fatal("no reviewed point")
+	}
+	h.waitSettled(a.ID)
+	item := findItem(h.reviewList(), a.ID)
+	if item == nil || item.ReviewedAt.IsZero() {
+		t.Fatalf("reviewedAt %+v", item)
+	}
+	h.close()
+	h.open()
+	h.waitState(a.ID, wire.StateIdle) // resumed
+	if again := findItem(h.reviewList(), a.ID); again == nil || !again.ReviewedAt.Equal(item.ReviewedAt) {
+		t.Fatalf("after a restart %+v", again)
 	}
 }

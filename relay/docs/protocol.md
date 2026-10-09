@@ -466,6 +466,9 @@ renames to its own machine naming.
 | `fs.stat` | `{path}` (clean absolute) | `{exists, isDir}` (a draft's folder on this machine; right `observe`) |
 | `review.list` | `{}` | `[ReviewItem]`: this host's agents ready for review (right `observe`) |
 | `review.diff` | `{id, context?}` | `ReviewDiff` (right `observe`). With `part: n` (and, after the first, `tree`): `{tree, parts, part, data}`, the diff's JSON gzipped, base64, in 384 KiB pieces; the controller fetches every part (a diff can be larger than one message); a folder that changed since the first part is refused |
+| `review.accept` | `{id, hunks?, message?, context?, tree?}` | `{commit}`: the accepted changes committed in the agent's folder (right `transfer`) |
+| `review.reject` | `{id, hunks, context?, tree?}` | `{}`: those changes reverted in the agent's folder (right `transfer`) |
+| `review.sendBack` | `{id, notes, message?}` | `{}`: typed into the agent as one instruction (right `type`) |
 
 ### Links
 

@@ -164,6 +164,12 @@ func (r *Registry) reviewItem(ctx context.Context, a wire.Agent) (*wire.ReviewIt
 		item.Removed += c.Removed
 	}
 	item.Risk, item.RiskNotes = review.ChangeRisk(changes)
+	_, local := r.split(a.ID)
+	r.reviews().get(local, func(l *review.Log) {
+		if l.Reviewed != nil {
+			item.ReviewedAt = l.Reviewed.At
+		}
+	})
 	return item, nil
 }
 
@@ -217,7 +223,18 @@ func (s *Server) reviewCall(method string, params json.RawMessage, forward func(
 		}
 		return s.remoteDiff(p)
 	}
+	if remote := reg.opt.Remote; remote != nil && treeMutating[method] && reg.IsRemote(head.ID) {
+		// busy here: a host's "busy" would arrive as "unavailable".
+		for _, a := range remote.Agents() {
+			if a.ID == head.ID && reviewBusy(a.State) {
+				return nil, busyError(a)
+			}
+		}
+	}
 	if ok, res, err := forward(head.ID); ok {
+		if err == nil && treeMutating[method] {
+			reg.NoteReview(head.ID) // the host's own note stays there
+		}
 		return res, err
 	}
 	ctx := context.Background()
@@ -228,6 +245,24 @@ func (s *Server) reviewCall(method string, params json.RawMessage, forward func(
 			return nil, err
 		}
 		return reg.ReviewDiff(ctx, p)
+	case "review.accept":
+		var p wire.ReviewAcceptParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		return reg.ReviewAccept(ctx, p) // reviewact.go
+	case "review.reject":
+		var p wire.ReviewRejectParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		return struct{}{}, reg.ReviewReject(ctx, p)
+	case "review.sendBack":
+		var p wire.ReviewSendBackParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		return struct{}{}, reg.ReviewSendBack(ctx, p)
 	}
 	return nil, &noMethod{method}
 }

@@ -475,7 +475,7 @@ func (s *Server) spawn(caller string, params json.RawMessage, t treeView) (any, 
 // call runs one method.
 func (s *Server) call(method string, params json.RawMessage) (any, error) {
 	reg := s.reg
-	if strings.HasPrefix(method, "agents.") {
+	if strings.HasPrefix(method, "agents.") || strings.HasPrefix(method, "review.") {
 		params = withoutCaller(params) // hosts decode strictly
 	}
 	remote := reg.opt.Remote
@@ -747,7 +747,7 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return nil, wire.Errorf(wire.CodeUnavailable, "the shared history is not available")
 	case "app.state", "app.open", "app.wall.set", "app.desk":
 		return s.app.forward(method, withoutCaller(params)) // app control (appbridge.go): any caller, it touches no agent
-	case "review.list", "review.diff":
+	case "review.list", "review.diff", "review.accept", "review.reject", "review.sendBack":
 		return s.reviewCall(method, params, forward) // review.go
 	case "hook":
 		var p wire.HookParams

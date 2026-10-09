@@ -243,10 +243,12 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 
 // CarriesCaller: the methods whose params carry "caller" (agent tree):
 // agents.*, the session starts (sessions.resume, sessions.fork,
-// sessions.continueAs) and files.put / files.chunk.
+// sessions.continueAs), files.put / files.chunk and the review methods
+// that change an agent's folder or type into it.
 func CarriesCaller(method string) bool {
 	switch method {
-	case "sessions.resume", "sessions.fork", "sessions.continueAs", "files.put", "files.chunk":
+	case "sessions.resume", "sessions.fork", "sessions.continueAs", "files.put", "files.chunk",
+		"review.accept", "review.reject", "review.sendBack":
 		return true
 	}
 	return strings.HasPrefix(method, "agents.")

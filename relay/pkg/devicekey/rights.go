@@ -63,8 +63,11 @@ var methodRights = map[string]string{
 	// exporting one (agents.export "folder:…") sends its files: transfer;
 	// probing the target observes.
 	"bring.plan": Transfer, "bring.probe": Observe,
-	// review: reading an agent's changes observes.
+	// review: reading an agent's changes observes; accepting (a commit)
+	// and rejecting (files reverted) change its folder: transfer, as a
+	// checkpoint; sending it back types into it.
 	"review.list": Observe, "review.diff": Observe,
+	"review.accept": Transfer, "review.reject": Transfer, "review.sendBack": Type,
 }
 
 // Unsigned reports the methods controllers send without a signature and

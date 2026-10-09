@@ -135,3 +135,49 @@ type ReviewLine struct {
 	Words     [][2]int `json:"words,omitempty"`
 	NoNewline bool     `json:"noNewline,omitempty"`
 }
+
+// ReviewAcceptParams are review.accept's: Hunks are hunk ids
+// ("<file>:<hunk>") or file ids ("<file>": the whole file) of the diff
+// the reviewer saw; omitted: everything. Message is the commit message
+// (default: the agent's summary, else its name). Context and Tree
+// (additive) are that diff's: its hunks are found again with the same
+// context, and a folder that changed since (another tree) is refused.
+type ReviewAcceptParams struct {
+	ID      string   `json:"id"`
+	Hunks   []string `json:"hunks,omitempty"`
+	Message string   `json:"message,omitempty"`
+	Context *int     `json:"context,omitempty"`
+	Tree    string   `json:"tree,omitempty"`
+}
+
+// ReviewAcceptResult is review.accept's: the commit made (HEAD when
+// there was nothing left to commit).
+type ReviewAcceptResult struct {
+	Commit string `json:"commit"`
+}
+
+// ReviewRejectParams are review.reject's: the hunk or file ids to revert
+// in the working tree (required), Context and Tree as for accept.
+type ReviewRejectParams struct {
+	ID      string   `json:"id"`
+	Hunks   []string `json:"hunks"`
+	Context *int     `json:"context,omitempty"`
+	Tree    string   `json:"tree,omitempty"`
+}
+
+// ReviewNote is one note of review.sendBack: on Path (the diff's path),
+// at Line on Side ("old" or "new", default new) when given.
+type ReviewNote struct {
+	Path string `json:"path"`
+	Line int    `json:"line,omitempty"`
+	Side string `json:"side,omitempty"`
+	Text string `json:"text"`
+}
+
+// ReviewSendBackParams are review.sendBack's: the notes and a message,
+// typed into the agent as one instruction.
+type ReviewSendBackParams struct {
+	ID      string       `json:"id"`
+	Notes   []ReviewNote `json:"notes"`
+	Message string       `json:"message,omitempty"`
+}

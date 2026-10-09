@@ -53,6 +53,46 @@ func (s *Service) review(ctx context.Context, m protocol.Message) (json.RawMessa
 			return nil, publicError(err)
 		}
 		return protocol.JSON(part), nil
+	case "review.accept":
+		var p wire.ReviewAcceptParams
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		a, err := s.agent(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		p.ID = a.ID
+		res, err := reg.ReviewAccept(ctx, p)
+		if err != nil {
+			return nil, publicError(err)
+		}
+		return protocol.JSON(res), nil
+	case "review.reject":
+		var p wire.ReviewRejectParams
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		a, err := s.agent(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		p.ID = a.ID
+		return protocol.JSON(struct{}{}), publicErr(reg.ReviewReject(ctx, p))
+	case "review.sendBack":
+		var p wire.ReviewSendBackParams
+		if err := params(m.Params, &p); err != nil {
+			return nil, err
+		}
+		a, err := s.typable(ctx, m, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		p.ID = a.ID
+		if len(p.Message) > 64<<10 || len(p.Notes) > 1000 {
+			return nil, protocol.Err("invalid", "at most 1000 notes and a 64 KiB message")
+		}
+		return protocol.JSON(struct{}{}), publicErr(reg.ReviewSendBack(ctx, p))
 	}
 	return nil, protocol.Err("unsupported", "Unsupported operation: "+m.Method)
 }

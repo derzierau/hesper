@@ -129,7 +129,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
-| `review.list` / `review.diff` | see "As built — review (daemon)" | agents ready for review on every Mac, and one agent's changes (added) |
+| `review.list` / `review.diff` / `review.accept` / `review.reject` / `review.sendBack` | see "As built — review (daemon)" | agents ready for review on every Mac, one agent's changes, and what the reviewer does with them (added) |
 
 Errors: JSON-RPC errors with `data.code` in `not_found`, `invalid`,
 `exists`, `unavailable`, `forbidden`, `remote` and a human message.
@@ -3958,12 +3958,14 @@ regular project resolution, not as a marked replica.
 Phases 1–2 of [the review concept](review/concept.md), the daemon side.
 Code: `pkg/wire/review.go` (types), `internal/review` (Git through a copy
 of the index, diff parsing, word ranges, the rules: generated,
-formatting-only, moved, risk, reading order; diffs in parts),
-`internal/agents/review.go` (registry and socket side),
-`internal/host/review.go` (host methods), `pkg/devicekey/rights.go`.
-Tests: `internal/review/diff_test.go`, `internal/agents/review_test.go`,
-`internal/transport/remote_review_test.go`. All in temporary homes and
-repositories with the fake agent.
+formatting-only, moved, risk, reading order; diffs in parts; accept and
+reject in `apply.go`), `internal/agents/review.go` (registry and socket
+side), `reviewact.go` (accept, reject, send back), `reviewlog.go` (the
+per-agent review log), `internal/host/review.go` (host methods),
+`pkg/devicekey/rights.go`. Tests: `internal/review/*_test.go`,
+`internal/agents/review_test.go`, `internal/transport/
+remote_review_test.go`. All in temporary homes and repositories with the
+fake agent.
 
 **Review base.** `Agent.reviewBase` (persisted): the commit HEAD pointed
 to when a Claude or Codex agent started in a Git folder (spawn, session
@@ -3984,6 +3986,9 @@ temporary index file), so the user's index is never touched.
 |---|---|---|
 | `review.list` | `{}` | `[ReviewItem]`: this Mac's, then every connected Mac's (each asked in parallel, 30 s; a Mac without `review.*` lists none), most recently settled first |
 | `review.diff` | `{id, context?}` (default 3, at most 1000) | `{base, head: "worktree", tree, files: [ReviewFile]}` |
+| `review.accept` | `{id, hunks?: [id], message?, context?, tree?}` | `{commit}` |
+| `review.reject` | `{id, hunks: [id], context?, tree?}` | `{}` |
+| `review.sendBack` | `{id, notes: [{path, line?, side?: "old"\|"new", text}], message?}` | `{}` |
 
 `ReviewItem = {id, machine, name, kind, project, branch?, worktree?,
 state, files, added, removed, risk, riskNotes: [string], evidence,
@@ -4037,8 +4042,47 @@ positions in that list, so they hold for one `tree` and one `context`.
   generated files last. Within a group: riskier, then larger, the path
   only breaks ties.
 
+**Accept, reject, send back.** Ids in `hunks` are hunk ids
+(`"<file>:<hunk>"`) or file ids (`"<file>"`: the whole file; the only
+way to take a binary, `tooLarge` or renamed-without-hunks file) of the
+diff the reviewer saw: the daemon computes that diff again with the
+given `context`; with `tree` a folder that changed since is refused
+(`invalid`). Accept and reject are refused with `busy` while the agent
+is `starting`, `working`, in an approval or a question, and run one at a
+time.
+- `review.accept` without `hunks` takes everything. It commits on the
+  folder's HEAD a tree that is HEAD's with the folder's paths at the
+  base plus the accepted changes (so what was not accepted stays as
+  uncommitted changes, also of commits the agent made since the base),
+  with the user's Git configuration (author, signing); the message is
+  `message`, else the agent's summary, else its name. The index entries
+  of the paths the commit changed are set to it (other staged changes
+  stay). The commit becomes the agent's review base, so only what was
+  not accepted is left to review; with nothing left the agent leaves
+  `review.list`. `{commit}` is HEAD when there was nothing to commit.
+- `review.reject` writes, for each named file, the base plus its changes
+  not rejected to the working tree (an added file rejected whole is
+  deleted, a deleted one restored, a rename undone). The index is not
+  touched.
+- `review.sendBack` (refused with `busy` like accept) keeps the folder
+  as it is as the reviewed point (a commit at
+  `refs/hesper/checkpoints/<local id>-reviewed`, pruned with the
+  checkpoints; `reviewedAt` in `review.list`, kept in the agent's review
+  log across daemon restarts; the interdiff of phase 4 starts there),
+  then types one instruction into the agent as `agents.input` does
+  (pasted, submitted): `Review notes on your changes; please address
+  them:`, one line per note (`- path:line: text`, `- path (old line N):
+  text`, `- path: text`; a note's text on one line), a blank line, the
+  message.
+- Agent tree: inside an agent, the three are allowed only on the agents
+  it started (as `agents.input`); hesperctl sends the caller for them.
+
 **Across Macs.** `review.diff` of another Mac's agent goes to its
-daemon (host methods `review.list` and `review.diff`, right `observe`).
+daemon (host methods `review.list` and `review.diff`, right `observe`;
+`review.accept` and `review.reject`, right `transfer`;
+`review.sendBack`, right `type`). The controller refuses them with
+`busy` itself when its copy of the agent is at work (a host's own
+`busy`, in a race, arrives as `unavailable` with the host's message).
 A diff can be larger than one relay message: the controller asks for
 it in parts (`review.diff {id, context?, part: n, tree?}` →
 `{tree, parts, part, data}`: the diff's JSON gzipped, base64, cut into
@@ -4047,9 +4091,9 @@ a folder that changed in between is refused) and hands the app the
 whole diff. The host keeps the last 4 encoded diffs for 2 minutes.
 
 **Notification:** `review.changed {id}` on `agents.subscribe` when an
-agent of this Mac settles with changes in its folder, and when a
-connected Mac's agent settles (a hint: the app fetches `review.list`
-again).
+agent of this Mac settles with changes in its folder, when a connected
+Mac's agent settles, and after an accept, reject or send-back through
+this daemon (a hint: the app fetches `review.list` again).
 
 ## Wire names kept from Ghosty
 
