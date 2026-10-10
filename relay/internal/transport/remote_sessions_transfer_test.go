@@ -1,6 +1,7 @@
 package transport_test
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -59,6 +60,16 @@ func writeLargeClaude(t *testing.T, home, cwd, sid string, at time.Time, size in
 	return path
 }
 
+// transcriptLines reads a JSONL transcript's lines.
+func transcriptLines(t *testing.T, path string) [][]byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bytes.Split(bytes.TrimSuffix(data, []byte("\n")), []byte("\n"))
+}
+
 // sessionMoves collects the agents.moving notes of session transfers.
 func sessionMoves(t *testing.T, sub *wire.Client, stop <-chan struct{}) <-chan []wire.Moving {
 	out := make(chan []wire.Moving, 1)
@@ -103,7 +114,7 @@ func TestSessionsForkLargeOverSlowLink(t *testing.T) {
 	M.waitLinked(t, "L")
 	const sid = "fffffff0-0000-4000-8000-0000000000f0"
 	const size = 30 << 20
-	writeLargeClaude(t, L.home, L.project, sid, time.Now().Add(-time.Hour), size)
+	source := writeLargeClaude(t, L.home, L.project, sid, time.Now().Add(-time.Hour), size)
 	eventually2(t, 60*time.Second, "M lists L's session", func() bool { _, ok := M.sessionByID(t, "L:claude:"+sid); return ok })
 
 	host.ServeDelay.Store(int64(150 * time.Millisecond))
@@ -131,10 +142,19 @@ func TestSessionsForkLargeOverSlowLink(t *testing.T) {
 		t.Fatalf("forked %+v", forked)
 	}
 	eventually(t, "M forked it", func() bool { return strings.Contains(M.argvs(forked.ID), "--fork-session") })
-	// The conversation is whole on M.
+	// The conversation is whole on M: every line, the last one included,
+	// its cwd moved to M's project. Not its size: moving cwd re-encodes
+	// each line, so the size follows the lengths of the two (temporary)
+	// project paths.
 	placed := filepath.Join(M.home, ".claude", "projects", handoff.ClaudeSlug(M.project), sid+".jsonl")
-	if st, err := os.Stat(placed); err != nil || st.Size() < size {
-		t.Fatalf("placed transcript: %v %v", st, err)
+	sent, arrived := transcriptLines(t, source), transcriptLines(t, placed)
+	if len(arrived) != len(sent) {
+		t.Fatalf("placed transcript: %d lines, the source has %d", len(arrived), len(sent))
+	}
+	var first, last struct{ UUID, Cwd string }
+	if json.Unmarshal(sent[len(sent)-1], &first) != nil || json.Unmarshal(arrived[len(arrived)-1], &last) != nil ||
+		last.UUID != first.UUID || last.Cwd != M.project {
+		t.Fatalf("placed transcript's last line: %+v, the source's: %+v (M's project %s)", last, first, M.project)
 	}
 	// M cloned the project from its remote; the uncommitted work came.
 	if refs := gitIn(t, M.project, "for-each-ref", "refs/remotes/origin"); !strings.Contains(refs, "refs/remotes/origin/main") {
