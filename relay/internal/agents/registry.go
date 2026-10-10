@@ -335,6 +335,20 @@ func (r *Registry) List() []wire.Agent {
 	return r.listLocked()
 }
 
+// Working reports whether one of this Mac's agents is working or
+// starting: List's question for pollers (the history's indexer asks
+// every second), without copying every agent under the lock.
+func (r *Registry) Working() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, a := range r.agents {
+		if a.State == wire.StateWorking || a.State == wire.StateStarting {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Registry) listLocked() []wire.Agent {
 	out := make([]wire.Agent, 0, len(r.agents))
 	for _, a := range r.agents {

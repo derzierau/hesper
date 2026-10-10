@@ -212,7 +212,7 @@ func (p *keyProbe) one(t testing.TB) time.Duration {
 func (p *keyProbe) close() { p.tm.Signal(syscall.SIGKILL); <-p.tm.Done() }
 
 // The real transcripts (HESPER_HISTORY_BENCH=1): a first full index in
-// the background band, timed, with keystrokes through a PTY measured
+// throttled, timed, with keystrokes through a PTY measured
 // before and while it runs; then search and show over the result.
 func TestRealHistoryBenchmark(t *testing.T) {
 	if os.Getenv("HESPER_HISTORY_BENCH") == "" {
@@ -233,7 +233,7 @@ func TestRealHistoryBenchmark(t *testing.T) {
 	opt := Options{StateDir: state, ClaudeHome: filepath.Join(home, ".claude"), CodexHome: filepath.Join(home, ".codex"), UserHome: home,
 		Machine: "L", ScanEvery: time.Hour, FullScanEvery: time.Hour, Logf: t.Logf}
 	if os.Getenv("HESPER_HISTORY_BENCH_BUSY") != "" {
-		opt.Busy = func() bool { return true } // as while agents work: background band
+		opt.Busy = func() bool { return true } // as while agents work: the slowest pace
 	}
 	sc := &scanner{s: &Service{opt: opt}}
 	sc.s.opt.Now = time.Now
@@ -274,7 +274,7 @@ func TestRealHistoryBenchmark(t *testing.T) {
 				float64(s.scan.readTotal.Load())/(1<<20)/el.Seconds(), recentAt.Round(time.Millisecond))
 			t.Logf("keystroke echo through a PTY: idle p50 %v p99 %v; while indexing p50 %v p99 %v (%d samples)",
 				percentile(idle, 0.5), percentile(idle, 0.99), percentile(during, 0.5), percentile(during, 0.99), len(during))
-			t.Logf("  while indexing older transcripts (background band): p50 %v p99 %v (%d samples)", percentile(duringOld, 0.5), percentile(duringOld, 0.99), len(duringOld))
+			t.Logf("  while indexing older transcripts (agents working): p50 %v p99 %v (%d samples)", percentile(duringOld, 0.5), percentile(duringOld, 0.99), len(duringOld))
 			return
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -286,7 +286,7 @@ func TestRealHistoryBenchmark(t *testing.T) {
 		float64(st.IndexBytes)/(1<<20), float64(st.IndexBytes)/(1<<20)/(float64(st.Count)/1000))
 	t.Logf("keystroke echo through a PTY: idle p50 %v p99 %v; while indexing p50 %v p99 %v (%d samples)",
 		percentile(idle, 0.5), percentile(idle, 0.99), percentile(during, 0.5), percentile(during, 0.99), len(during))
-	t.Logf("  while indexing older transcripts (background band): p50 %v p99 %v (%d samples)", percentile(duringOld, 0.5), percentile(duringOld, 0.99), len(duringOld))
+	t.Logf("  while indexing older transcripts (agents working): p50 %v p99 %v (%d samples)", percentile(duringOld, 0.5), percentile(duringOld, 0.99), len(duringOld))
 	// Incremental pass over everything (nothing changed): stats only.
 	t0 := time.Now()
 	s.scan.pass(true)

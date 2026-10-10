@@ -64,9 +64,6 @@ func (mr *mirrorer) kick(machine string) {
 	mr.s.wg.Add(1)
 	go func() {
 		defer mr.s.wg.Done()
-		if !mr.s.opt.Foreground {
-			defer background()()
-		}
 		for {
 			if err := mr.pass(machine); err != nil && !errors.Is(err, errClosed) {
 				mr.s.opt.Logf("history: mirror from %s: %v", machine, err)

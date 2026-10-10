@@ -2808,17 +2808,17 @@ workers; later passes look at Claude's project folders and Codex's last
 three day folders every 2 s and walk everything every 60 s (a full pass
 with nothing new: stats only). Vanished transcripts drop their
 checkpoint; their entry becomes a tombstone unless the same session was
-found elsewhere (Codex's archive moves it). **Throttle** (`throttle.go`;
-each worker on its own locked thread): transcripts written within 14
-days (read first) at normal priority with a duty cycle — after every
-file and every 4 MiB the worker rests as long as it worked, ≤ half a
-core each — so recent search works within seconds; everything older,
-and everything while one of hesperd's agents is `working`/`starting`, in
-macOS's background band (`setpriority(PRIO_DARWIN_THREAD,
-PRIO_DARWIN_BG)`: lowest CPU priority, throttled disk I/O; nice 19 on
-Linux), resting three times as long as it worked while agents work; the
-second worker steps aside then. Closing stops a read within 4 MiB. The
-mirror always runs in the background band.
+found elsewhere (Codex's archive moves it). **Throttle** (`throttle.go`):
+a duty cycle — after every file and every 4 MiB the worker rests as
+long as it worked, ≤ half a core each, three times as long while one of
+hesperd's agents is `working`/`starting` (the second worker steps aside
+then); the last 14 days are read first, so recent search works within
+seconds. Closing stops a read within 4 MiB. No thread of hesperd is put
+in macOS's background band (`PRIO_DARWIN_BG`) or nice 19: such a thread
+gets no CPU on a loaded Mac, and the Go runtime cannot leave one behind
+— the garbage collector's stop-the-world waits for it, and the locks it
+holds (SQLite's, the registry's) stay held. With 19 agents working that
+froze hesperd for good (2026-10-09).
 
 **Project mapping** as agents: `projects.Store.Resolve(cwd)` (deepest
 project, worktrees to their repository, identity by git remote;
@@ -2975,7 +2975,7 @@ key is the pinned transfer key) — resumable from the size it has,
 nothing fetched twice, a transcript whose version (size + mtime) did not
 change is not asked for, one that shrank starts over. A complete copy
 sets this node's `mirrors` mark (so every Mac shows `mirrored`). The
-mirror runs in the background band and waits while agents work. Copies
+mirror waits while agents work. Copies
 of sessions quiet for longer than the window + 2 days, deleted or moved
 are dropped. `sessions.stats.mirrorBytes` is their total.
 
@@ -3026,8 +3026,8 @@ keystrokes = echo through a PTY under `ptyhost` in the same process):
 |---|---|
 | Real data | 1,594 transcripts, 9.36 GB (1,537 Codex rollouts, 57 Claude sessions); 155 of the last 14 days |
 | First full index, unthrottled (normal priority, warm page cache, load ≈ 60) | **16.4 s** (580 MB/s; the last 14 days after 3.2 s); keystroke p50 0.10 ms, but p99 4.1 ms vs 0.27 ms idle — hence the throttle |
-| First full index as shipped (load ≈ 90) | the last 14 days searchable after **46 s**; the older history then fills in in the background band at what the kernel leaves over (0.4–5 MB/s at load 55–90; the whole 9 GB when the Mac is quieter); keystroke p99 **3.73 ms during vs 3.59 ms before** (unchanged at that load), 4.26 ms while in the background band (noise of the load) |
-| Everything in the background band (as while agents work, load ≈ 56) | 0.4 MB/s; keystroke p99 1.69 ms during vs 3.53 ms before (unchanged) |
+| First full index with the background band (no longer shipped; load ≈ 90) | the last 14 days searchable after **46 s**; the older history then fills in in the background band at what the kernel leaves over (0.4–5 MB/s at load 55–90; the whole 9 GB when the Mac is quieter); keystroke p99 **3.73 ms during vs 3.59 ms before** (unchanged at that load), 4.26 ms while in the background band (noise of the load) |
+| Everything in the background band (no longer shipped; as while agents work, load ≈ 56) | 0.4 MB/s; keystroke p99 1.69 ms during vs 3.53 ms before (unchanged) |
 | Full pass with nothing new | 15 ms (1,594 stats) |
 | Incremental: append to a 12 MB transcript | p50 **0.43 ms**, p99 1.2 ms, reading only the new bytes |
 | Index size | 30.0 MB for the 1,594 real sessions (**18.8 MB per 1,000**); 12.4–14.4 MB per 1,000 for synthetic ones at the text caps |

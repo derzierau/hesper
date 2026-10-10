@@ -29,8 +29,8 @@ import (
 // whose size and mtime are unchanged is not opened, an appended one is
 // read from its offset only. .zst files are re-read whole (streamed) when
 // they change. The first full index runs newest first (the last two weeks
-// are searchable within seconds) with a small pool of workers in macOS's
-// background band (CPU and disk throttled); later passes look at recent
+// are searchable within seconds) with a small pool of workers that pace
+// themselves (throttle.go); later passes look at recent
 // folders every ScanEvery and walk everything every FullScanEvery.
 
 type fileInfo struct {
@@ -249,7 +249,6 @@ func (sc *scanner) pass(full bool) {
 			defer wg.Done()
 			var th *throttle
 			if !sc.s.opt.Foreground {
-				defer lockThread()()
 				th = newThrottle(sc.s)
 			}
 			for f := range work {
@@ -261,7 +260,7 @@ func (sc *scanner) pass(full bool) {
 					case <-time.After(500 * time.Millisecond):
 					}
 				}
-				th.begin(f)
+				th.begin()
 				n, err := sc.file(f, th)
 				if err != nil && !errors.Is(err, errClosed) {
 					sc.s.opt.Logf("history: %s: %v", f.path, err)
