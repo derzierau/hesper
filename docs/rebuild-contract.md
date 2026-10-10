@@ -392,6 +392,15 @@ survive the app closing (the daemon owns the PTYs). When the daemon restarts
 (update, reboot), every agent that was running is respawned with its session id
 (resume) in the same cwd and shown as `starting`, then its real state.
 
+**Watchdog** (`internal/lockwatch`): the registry's lock and the shared
+history's lock remember their holder (the caller's stack, taken on Lock).
+A hold longer than 10 s is logged once to `hesperd.log` with the holder's
+stack (`hesperd: watchdog: the registry's lock held for 12s by: …`), and
+its release after it; a gap of more than 10 s in which the whole process
+did not run (a stop-the-world that waited for a thread, or the Mac slept)
+is logged when it resumes. A hang that never resumes logs nothing: for
+that, `kill -QUIT` the daemon: it writes every goroutine to the log.
+
 ## App (part A) behaviour
 
 - **Wall**: every agent from every machine as a live tile (libghostty surface

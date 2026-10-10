@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/derzierau/hesper/relay/internal/lockwatch"
 	"github.com/derzierau/hesper/relay/internal/ptyhost"
 	"github.com/derzierau/hesper/relay/internal/vt"
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -155,7 +156,8 @@ type Registry struct {
 	env     []string
 	g       git
 
-	mu       sync.Mutex
+	mu       lockwatch.Mutex // watched: a hold over 10 s is logged with its holder
+	watch    *lockwatch.Watchdog
 	agents   map[string]*agent // by local id
 	subs     map[*Subscriber]struct{}
 	profiles map[string]wire.Profile
@@ -275,6 +277,10 @@ func Open(opt Options) (*Registry, error) {
 		r.restore(rec)
 	}
 	go r.pruneLoop() // checkpoint.go
+	// The registry's lock is what every hook, list and attach waits on:
+	// a hold over 10 s (and a stall of the whole process) is logged with
+	// the holder's stack.
+	r.watch = lockwatch.Start(lockwatch.Options{Logf: opt.Logf, Stalls: true}, lockwatch.Lock{Name: "the registry's lock", Mu: &r.mu})
 	return r, nil
 }
 
@@ -1249,4 +1255,5 @@ func (r *Registry) Close() {
 	<-r.saverEnd
 	r.writeState()
 	r.reviews().flush() // reviewlog.go
+	r.watch.Stop()
 }
