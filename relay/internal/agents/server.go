@@ -95,6 +95,13 @@ func (s *Server) Serve(ln net.Listener) error {
 	s.mu.Lock()
 	s.ln = ln
 	s.mu.Unlock()
+	// Closed before Serve ran: Close found no listener to close.
+	select {
+	case <-s.done:
+		ln.Close()
+		return nil
+	default:
+	}
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
