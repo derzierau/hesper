@@ -144,6 +144,17 @@ func (g Git) HasChanges(f *Folder, base string) bool {
 	return err == nil && out != ""
 }
 
+// StatePaths are the files Git rewrites when the folder's index or HEAD
+// moves (a stage, a commit, a checkout, a reset): their stat tells,
+// without running Git, that a scan may be out of date.
+func (g Git) StatePaths(f *Folder) ([]string, error) {
+	out, err := g.run(f.Top, "rev-parse", "--path-format=absolute", "--git-path", "index", "--git-path", "HEAD", "--git-path", "logs/HEAD")
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
+}
+
 // Snapshot writes the folder's files (untracked included, ignored ones
 // left out) as a tree, through a copy of the index: the real index is
 // never touched.

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
+	"github.com/derzierau/hesper/relay/internal/lockwatch"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
@@ -69,7 +70,8 @@ type Service struct {
 	db    *DB
 	clock *hlc
 
-	mu       sync.Mutex
+	mu       lockwatch.Mutex // watched: a hold over 10 s is logged with its holder
+	watch    *lockwatch.Watchdog
 	reg      *agents.Registry
 	projects Projects
 	peers    Peers
@@ -157,6 +159,7 @@ func Open(opt Options) (*Service, error) {
 	s.scan = newScanner(s)
 	s.sync = newSyncer(s)
 	s.mirror = newMirrorer(s)
+	s.watch = lockwatch.Start(lockwatch.Options{Logf: opt.Logf}, lockwatch.Lock{Name: "the history's lock", Mu: &s.mu})
 	s.wg.Add(2)
 	go func() { defer s.wg.Done(); s.scan.run() }()
 	go func() { defer s.wg.Done(); s.notifier() }()
@@ -193,9 +196,10 @@ func (s *Service) Close() {
 		w.close()
 	}
 	s.mu.Unlock()
+	s.watch.Stop()
 	// Every loop stops at its next check of stop: between transcripts and
 	// every MiB read (readLines). A reader in the middle of a line on a
-	// background-band thread can take seconds to get there, so Close waits
+	// loaded Mac can take seconds to get there, so Close waits
 	// at most closeWait: the index then closes under it. Its transcript's
 	// entry and checkpoint are one write, which now fails (errClosed), so
 	// the next start reads that transcript again from its last checkpoint;

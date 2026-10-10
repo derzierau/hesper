@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/derzierau/hesper/relay/internal/lockwatch"
 	"github.com/derzierau/hesper/relay/internal/ptyhost"
 	"github.com/derzierau/hesper/relay/internal/vt"
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -155,7 +156,8 @@ type Registry struct {
 	env     []string
 	g       git
 
-	mu       sync.Mutex
+	mu       lockwatch.Mutex // watched: a hold over 10 s is logged with its holder
+	watch    *lockwatch.Watchdog
 	agents   map[string]*agent // by local id
 	subs     map[*Subscriber]struct{}
 	profiles map[string]wire.Profile
@@ -181,6 +183,9 @@ type Registry struct {
 	reviewOnce sync.Once
 	reviewLogs *reviewStore
 	reviewRun  sync.Mutex
+	// review.list's scans of the folders (reviewcache.go).
+	scansOnce sync.Once
+	scans     *reviewCache
 }
 
 type agent struct {
@@ -234,6 +239,9 @@ type agent struct {
 	cpLast    time.Time
 	// closeTo (move work): the agent a moved one became (reason "moved").
 	closeTo string
+	// hooks counts the agent's hook events: its review scan is out of
+	// date once it changed (reviewcache.go).
+	hooks uint64
 }
 
 // Open loads the registry from the state directory and respawns the agents
@@ -275,6 +283,10 @@ func Open(opt Options) (*Registry, error) {
 		r.restore(rec)
 	}
 	go r.pruneLoop() // checkpoint.go
+	// The registry's lock is what every hook, list and attach waits on:
+	// a hold over 10 s (and a stall of the whole process) is logged with
+	// the holder's stack.
+	r.watch = lockwatch.Start(lockwatch.Options{Logf: opt.Logf, Stalls: true}, lockwatch.Lock{Name: "the registry's lock", Mu: &r.mu})
 	return r, nil
 }
 
@@ -333,6 +345,20 @@ func (r *Registry) List() []wire.Agent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.listLocked()
+}
+
+// Working reports whether one of this Mac's agents is working or
+// starting: List's question for pollers (the history's indexer asks
+// every second), without copying every agent under the lock.
+func (r *Registry) Working() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, a := range r.agents {
+		if a.State == wire.StateWorking || a.State == wire.StateStarting {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Registry) listLocked() []wire.Agent {
@@ -1128,6 +1154,7 @@ func (r *Registry) Hook(p wire.HookParams) error {
 	if checkpointable(a.Kind) {
 		evidenceOf = a.local
 	}
+	a.hooks++
 	if !a.sessionSeen && a.SessionID != "" && confirmsSession(event, data) {
 		if sid := payloadSessionID(data); sid == "" || sid == a.SessionID {
 			a.sessionSeen = true
@@ -1235,4 +1262,5 @@ func (r *Registry) Close() {
 	<-r.saverEnd
 	r.writeState()
 	r.reviews().flush() // reviewlog.go
+	r.watch.Stop()
 }
