@@ -4008,6 +4008,25 @@ state, files, added, removed, risk, riskNotes: [string], evidence,
 readyAt, reviewedAt?, base}`; `readyAt` is when the agent settled
 (`stateSince`); `evidence` is `review.evidence`'s freshness.
 
+**Scans** (`reviewcache.go`): an item's Git part (files, lines, base,
+risk) comes from a scan of the folder — snapshot through a copy of the
+index, diff against the base — kept per agent and reused while its key
+holds: the agent's hook count, state since and review base, and the
+stat (mtime, size) of the folder, of the files Git rewrites when the
+index or HEAD moves (`index`, `HEAD`, `logs/HEAD`) and of the files the
+scan found changed. Nothing runs Git to check it; after 2 minutes a scan
+is redone anyway (an edit no hook announced). A settle schedules a scan
+after 1 s (bursts coalesce); callers share an agent's running scan; at
+most 2 scans run at once; a scan has 3 minutes. A failed or killed scan
+is retried after 1 minute, doubling to 30, with up to four times the
+time; the last good scan is listed meanwhile. `review.list` waits up to
+20 s for the scans it needs and answers with what it has;
+`review.changed` follows when a later scan finds something else.
+`review.accept`, `reject` and `sendBack` drop the scan. `review.diff`
+and the actions run Git each time. Nothing of review writes the user's
+index or working tree (`add` only into the copy of the index); only an
+accept (a commit) and a reject (the reverted files) change the folder.
+
 `ReviewFile = {path, oldPath?, status: "A"|"M"|"D"|"R", binary?,
 formattingOnly?, generated?, tooLarge?, order, risk, added, removed,
 hunks: [Hunk]}`; `Hunk = {id: "<file index>:<hunk index>", oldStart,
@@ -4161,7 +4180,8 @@ reject ID --hunk H… [--tree T] [--context N]`, `review send-back ID
 7.
 
 **Notification:** `review.changed {id}` on `agents.subscribe` when an
-agent of this Mac settles with changes in its folder, when a connected
+agent of this Mac settles with changes in its folder, when a scan finds
+its entry changed, when a connected
 Mac's agent settles, and after an accept, reject or send-back through
 this daemon (a hint: the app fetches `review.list` again).
 

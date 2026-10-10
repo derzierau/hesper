@@ -183,6 +183,9 @@ type Registry struct {
 	reviewOnce sync.Once
 	reviewLogs *reviewStore
 	reviewRun  sync.Mutex
+	// review.list's scans of the folders (reviewcache.go).
+	scansOnce sync.Once
+	scans     *reviewCache
 }
 
 type agent struct {
@@ -236,6 +239,9 @@ type agent struct {
 	cpLast    time.Time
 	// closeTo (move work): the agent a moved one became (reason "moved").
 	closeTo string
+	// hooks counts the agent's hook events: its review scan is out of
+	// date once it changed (reviewcache.go).
+	hooks uint64
 }
 
 // Open loads the registry from the state directory and respawns the agents
@@ -1148,6 +1154,7 @@ func (r *Registry) Hook(p wire.HookParams) error {
 	if checkpointable(a.Kind) {
 		evidenceOf = a.local
 	}
+	a.hooks++
 	if !a.sessionSeen && a.SessionID != "" && confirmsSession(event, data) {
 		if sid := payloadSessionID(data); sid == "" || sid == a.SessionID {
 			a.sessionSeen = true
