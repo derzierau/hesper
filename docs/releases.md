@@ -8,21 +8,15 @@ architecture. libghostty is built without libintl as described in licensing.md.
 
 ## Current distribution
 
-Homebrew currently installs **v0.1.4**, the signed and notarized release for
-macOS 14+. Install Claude Code or Codex separately. Local use needs no relay;
-multi-Mac use requires a self-hosted relay and device enrollment.
+Homebrew installs **v0.2.0**, the signed and notarized release for macOS 14+,
+once its cask update is merged. Install Claude Code or Codex separately. Local
+use needs no relay; multi-Mac use requires a self-hosted relay and device
+enrollment.
 
-v0.1.4 includes basic cross-Mac moves, Move Undo, history transfer/fork and
-Claude ↔ Codex handoff. Checkpoint-based moves, live-agent forks, improved
-preflight, folder transfer on launch, scratch projects and native Review/diffs
-are implemented on `main` but not in v0.1.4. The
-[README feature table](../README.md#release-availability) is the availability
-reference. Do not advertise these development features as available through
-Homebrew until a release includes them and its cask update is merged.
-
-A corrected, ready-to-publish [v0.1.4 release note](release-notes-v0.1.4.md)
-replaces the old private-repository installation instructions. Editing this
-file does not change the notes already published on GitHub.
+v0.2.0 adds checkpoint-based moves, live-session forks, folder transfer on
+launch, scratch projects and the native Review inbox to what v0.1.4 shipped.
+Its [release notes](release-notes-v0.2.0.md) are the text to publish on
+GitHub; editing the file later does not change notes already published.
 
 ## One-time credentials
 
@@ -62,10 +56,10 @@ Before publishing the next release:
 - Create a new stable `vX.Y.Z` tag only after those checks pass. Do not reuse
   v0.1.4 or any other published version.
 
-The 2026-10-09 relay run [37921267092](https://github.com/derzierau/hesper/actions/runs/37921267092)
-passed on macOS but failed on Linux: `TestHasTool` could not reopen its test
-daemon (already running), and `TestSessionsForkLargeOverSlowLink` failed its
-placed-transcript size assertion. Root causes and fixes still need verification.
+The Linux failures of relay run [37921267092](https://github.com/derzierau/hesper/actions/runs/37921267092)
+(2026-10-09) were flaky tests, fixed before v0.2.0: `TestHasTool` by #15
+(hesperd stopped serving after an early close) and
+`TestSessionsForkLargeOverSlowLink` by #14 (it now checks lines, not bytes).
 
 The release workflow runs tests again, publishes both notarized zip files and
 SHA256SUMS, then commits `Casks/hesper.rb` with exact archive hashes to the
