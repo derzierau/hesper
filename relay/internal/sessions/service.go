@@ -52,8 +52,11 @@ type Options struct {
 	Workers int
 	// Busy (benchmarks) replaces "one of this Mac's agents is working".
 	Busy func() bool
-	Logf func(format string, args ...any)
-	Now  func() time.Time
+	// Projects maps session folders to projects from the first scan on
+	// (SetProjects later leaves sessions indexed before it unmapped).
+	Projects Projects
+	Logf     func(format string, args ...any)
+	Now      func() time.Time
 }
 
 // Projects is the project registry (internal/projects.Store).
@@ -150,7 +153,7 @@ func Open(opt Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{opt: opt, db: db, clock: &hlc{node: db.node, now: opt.Now}, names: map[string]string{}, watchers: map[*watcher]struct{}{},
-		notes: map[string]bool{}, owned: map[string]bool{}, changed: make(chan struct{}), stop: make(chan struct{})}
+		notes: map[string]bool{}, owned: map[string]bool{}, changed: make(chan struct{}), stop: make(chan struct{}), projects: opt.Projects}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.loadOwned()
 	s.loadNames()
@@ -163,6 +166,10 @@ func Open(opt Options) (*Service, error) {
 	s.wg.Add(2)
 	go func() { defer s.wg.Done(); s.scan.run() }()
 	go func() { defer s.wg.Done(); s.notifier() }()
+	if opt.Projects != nil {
+		s.wg.Add(1)
+		go func() { defer s.wg.Done(); s.watchProjects(opt.Projects) }()
+	}
 	return s, nil
 }
 

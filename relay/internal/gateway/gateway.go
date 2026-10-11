@@ -152,6 +152,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	if !cfg.NoHistory {
 		h := cfg.History
 		h.StateDir, h.ConfigDir, h.ClaudeHome, h.CodexHome, h.UserHome, h.Machine = opt.StateDir, opt.ConfigDir, opt.ClaudeHome, opt.CodexHome, opt.Home, opt.Machine
+		h.Projects = d.Projects
 		if h.Logf == nil {
 			h.Logf = opt.Logf
 		}

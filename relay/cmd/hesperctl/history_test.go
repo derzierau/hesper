@@ -73,7 +73,7 @@ func fullDaemon(t *testing.T) *fullEnv {
 		ScratchRoot: filepath.Join(home, "scratch"), ProjectsRoot: e.root, ConfigDir: config, GH: filepath.Join(dir, "no-gh"),
 		GitEnv: append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")})
 	hist, err := sessions.Open(sessions.Options{StateDir: state, ConfigDir: config, ClaudeHome: claude, CodexHome: codex, UserHome: home, Machine: "L",
-		Foreground: true, ScanEvery: 30 * time.Millisecond, FullScanEvery: 100 * time.Millisecond, Logf: t.Logf})
+		Foreground: true, ScanEvery: 30 * time.Millisecond, FullScanEvery: 100 * time.Millisecond, Logf: t.Logf, Projects: store})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,6 @@ func fullDaemon(t *testing.T) *fullEnv {
 	store.SetReproject(reg.Reproject)
 	store.SetAgents(reg.List)
 	hist.SetRegistry(reg)
-	hist.SetProjects(store)
 	ln, err := agents.Listen(e.sock)
 	if err != nil {
 		t.Fatal(err)
