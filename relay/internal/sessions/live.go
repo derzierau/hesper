@@ -159,15 +159,7 @@ func (s *Service) busy() bool {
 		return s.opt.Busy()
 	}
 	reg := s.registry()
-	if reg == nil {
-		return false
-	}
-	for _, a := range reg.List() {
-		if a.State == wire.StateWorking || a.State == wire.StateStarting {
-			return true
-		}
-	}
-	return false
+	return reg != nil && reg.Working()
 }
 
 // watchAgents follows the registry: sessions hesperd starts are its own

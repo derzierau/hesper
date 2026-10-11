@@ -22,11 +22,9 @@ import (
 // files now, untracked ones included (internal/review, through a copy of
 // the index).
 
-// reviewTimeout bounds one review call's Git work.
+// reviewTimeout bounds one review call's Git work (review.list's scans:
+// reviewcache.go).
 var reviewTimeout = 2 * time.Minute
-
-// reviewParallel bounds the folders review.list looks at at once.
-const reviewParallel = 4
 
 // readyForReview: the states of an agent whose work can be reviewed.
 func readyForReview(state string) bool {
@@ -81,20 +79,12 @@ func (r *Registry) reviewFolder(g review.Git, a wire.Agent) (*review.Folder, str
 }
 
 // settledForReview: a settles (the lock is held); once its folder shows
-// changes, subscribers get review.changed.
+// changes, subscribers get review.changed (reviewcache.go).
 func (r *Registry) settledForReview(a *agent) {
 	if !checkpointable(a.Kind) || r.closing {
 		return
 	}
-	snap := a.Agent
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), reviewTimeout)
-		defer cancel()
-		g := r.reviewGit(ctx)
-		if f, base, err := r.reviewFolder(g, snap); err == nil && g.HasChanges(f, base) {
-			r.NoteReview(snap.ID)
-		}
-	}()
+	r.reviewSettled(a.local)
 }
 
 // reviewAgent is one agent of this Mac for a review method.
@@ -106,75 +96,51 @@ func (r *Registry) reviewAgent(id string) (wire.Agent, error) {
 }
 
 // ReviewList is review.list on this Mac: the agents ready for review,
-// the most recently settled first.
+// the most recently settled first. A folder's Git part comes from its
+// scan (reviewcache.go): reused while nothing changed, else redone, and
+// waited for at most reviewListWait.
 func (r *Registry) ReviewList(ctx context.Context) []wire.ReviewItem {
-	var candidates []wire.Agent
-	for _, a := range r.List() {
-		if checkpointable(a.Kind) && readyForReview(a.State) {
-			candidates = append(candidates, a)
+	candidates, all := r.reviewCandidates()
+	var running []chan struct{}
+	for _, c := range candidates {
+		if ch := r.wantScan(c); ch != nil {
+			running = append(running, ch)
 		}
 	}
-	items := make([]*wire.ReviewItem, len(candidates))
-	sem := make(chan struct{}, reviewParallel)
-	var wg sync.WaitGroup
-	for i, a := range candidates {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			item, err := r.reviewItem(ctx, a)
-			if err != nil {
-				r.opt.Logf("hesperd: review of %s: %v", a.ID, err)
-				return
-			}
-			items[i] = item
-		}()
+	wait := time.NewTimer(reviewListWait)
+	defer wait.Stop()
+waiting:
+	for _, ch := range running {
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			break waiting
+		case <-wait.C:
+			break waiting
+		}
 	}
-	wg.Wait()
+	r.pruneScans(all)
 	list := []wire.ReviewItem{}
-	for _, item := range items {
-		if item != nil {
-			list = append(list, *item)
+	for _, c := range candidates {
+		a := c.a
+		_, local := r.split(a.ID)
+		sc := r.scanned(local)
+		if sc == nil || sc.item == nil {
+			continue
 		}
+		item := *sc.item
+		item.ID, item.Machine, item.Name, item.Kind, item.Project = a.ID, a.Machine, a.Name, a.Kind, a.Project
+		item.Branch, item.Worktree, item.State, item.ReadyAt = a.Branch, a.Worktree, a.State, a.StateSince
+		item.Evidence = r.evidenceOf(a.ID, true).Freshness // reviewevidence.go
+		r.reviews().get(local, func(l *review.Log) {
+			if l.Reviewed != nil {
+				item.ReviewedAt = l.Reviewed.At
+			}
+		})
+		list = append(list, item)
 	}
 	sort.SliceStable(list, func(i, j int) bool { return list[i].ReadyAt.After(list[j].ReadyAt) })
 	return list
-}
-
-// reviewItem is a's entry of review.list; nil when its folder has no
-// changes (or is no Git folder).
-func (r *Registry) reviewItem(ctx context.Context, a wire.Agent) (*wire.ReviewItem, error) {
-	ctx, cancel := context.WithTimeout(ctx, reviewTimeout)
-	defer cancel()
-	g := r.reviewGit(ctx)
-	f, base, err := r.reviewFolder(g, a)
-	if err != nil {
-		return nil, nil
-	}
-	tree, err := g.Snapshot(f)
-	if err != nil {
-		return nil, err
-	}
-	changes, err := g.Changes(f, base, tree)
-	if err != nil || len(changes) == 0 {
-		return nil, err
-	}
-	item := &wire.ReviewItem{ID: a.ID, Machine: a.Machine, Name: a.Name, Kind: a.Kind, Project: a.Project, Branch: a.Branch,
-		Worktree: a.Worktree, State: a.State, Files: len(changes), ReadyAt: a.StateSince, Base: base}
-	for _, c := range changes {
-		item.Added += c.Added
-		item.Removed += c.Removed
-	}
-	item.Risk, item.RiskNotes = review.ChangeRisk(changes)
-	item.Evidence = r.evidenceOf(a.ID, true).Freshness // reviewevidence.go
-	_, local := r.split(a.ID)
-	r.reviews().get(local, func(l *review.Log) {
-		if l.Reviewed != nil {
-			item.ReviewedAt = l.Reviewed.At
-		}
-	})
-	return item, nil
 }
 
 // ReviewDiff is review.diff on this Mac.

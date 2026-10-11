@@ -62,7 +62,7 @@ func TestRealHistoryCloseMidPass(t *testing.T) {
 	t.Logf("closed after %.1f s of indexing (%d of %d transcripts): Close took %v", after, done, total, d.Round(time.Millisecond))
 }
 
-// Close in the middle of the first pass (background band, throttled, a
+// Close in the middle of the first pass (throttled, a
 // busy Mac) returns within a bound, and the next start indexes every
 // transcript, including the one that was being read.
 func TestCloseMidPassThenResume(t *testing.T) {

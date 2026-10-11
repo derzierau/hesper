@@ -33,20 +33,17 @@ that needs you.
 
 ## Release availability
 
-**Homebrew currently installs [v0.1.4](https://github.com/derzierau/hesper/releases/tag/v0.1.4),
-a signed and notarized release for macOS 14+.** This README also describes
-unreleased work on `main`; building from source is required for those features.
+**The current release is [v0.2.0](https://github.com/derzierau/hesper/releases/tag/v0.2.0),
+signed and notarized for macOS 14+ and installed with [Homebrew](#homebrew).**
+Every feature this README describes is in it. New since v0.1.4:
 
-| Feature | v0.1.4 / Homebrew | `main` (unreleased) |
-| --- | --- | --- |
-| Live agent wall, attention controls, remote launches | Available | Available |
-| Basic moves between Macs and Move Undo | Available | Available |
-| History transfer/fork and Claude ↔ Codex handoff | Available | Available |
-| Checkpoint-based moves and improved move preflight | — | Available |
-| Fork a running agent onto another Mac | — | Available |
-| Bring the project folder when starting on another Mac | — | Available |
-| Scratch projects | — | Available |
-| Native Review inbox and diffs | — | Available |
+- Checkpoint-based moves between Macs, with a better preflight
+- Fork a running agent onto another Mac
+- Bring the project folder along when starting on another Mac
+- Scratch projects
+- The native Review inbox, with diffs, evidence and provenance
+
+See the [v0.2.0 release notes](docs/release-notes-v0.2.0.md) for the full list.
 
 One Mac works without a relay. **Multiple Macs currently require a
 self-hosted relay and device setup**; Hesper does not provide a hosted cloud
@@ -84,22 +81,20 @@ Most agent tools tie a session to the machine it started on. In Hesper, work
 moves between your Macs as easily as it moves between windows.
 
 **Hand off a running agent.** Continue on mini (⇧⌘M, ⌘K, or the tile's menu)
-moves an agent to another Mac. Basic moves and Move Undo ship in v0.1.4.
-On `main` (unreleased), Hesper checkpoints its worktree
+moves an agent to another Mac. Hesper checkpoints its worktree
 (staged, unstaged and untracked work, never your own branches or index),
 sends only the changes over your encrypted link, recreates the worktree on
 the same branch there, and resumes the same Claude or Codex conversation.
 One ⌘Z moves it back. Fork on mini keeps the original and starts a twin.
 
-**Start anywhere, even without the folder (`main`, unreleased).** Start a
+**Start anywhere, even without the folder.** Start a
 task for a Mac that doesn't have the project yet, and Hesper brings it along:
 cloned from its remote with your uncommitted changes, or copied whole when there is no remote
 (scratch folders and plain folders included, build output left behind).
 
 **One history across all your Macs.** ⌘Y searches every Claude and Codex
 session on every Mac. Resume one where it ran, continue it on another Mac,
-fork it, or hand a Claude session to Codex. These history actions ship in
-v0.1.4. On `main` (unreleased), when an agent closes, its last
+fork it, or hand a Claude session to Codex. When an agent closes, its last
 checkpoint stays with its session, so you can restore the work later.
 
 **Safe by design.** Every piece of work lives in exactly one place at a time,
@@ -218,7 +213,7 @@ in [docs/remote-shell-contract.md](docs/remote-shell-contract.md) and
   keys. Terminal streams get per-direction keys; a tampered, dropped or
   reordered frame ends the stream. Pairing codes are compared on both screens,
   so a relay that swaps keys is caught.
-- **Checkpoint-based moves (`main`, unreleased).**
+- **Checkpoint-based moves.**
   `hesperctl move ID --to mini` checkpoints the agent's folder, packs the transcript and an incremental git bundle
   (the checkpoint carries the uncommitted and untracked work, never ignored
   files), sends it sealed, and resumes the agent on the target in a worktree
@@ -479,11 +474,8 @@ security issues privately as described in [SECURITY.md](SECURITY.md).
 
 ## Status
 
-Hesper is young and used daily by its author. Signed v0.1.4 releases are
-available through Homebrew and GitHub Releases. Native Review and diffs are
-implemented on `main`, but are not included in v0.1.4. See
-[Release availability](#release-availability) before choosing a build or
-sharing screenshots of development features.
+Hesper is young and used daily by its author. Signed releases are
+available through Homebrew and GitHub Releases; the current one is v0.2.0.
 
 Supported agents are Claude Code, Codex and a plain shell.
 

@@ -209,8 +209,19 @@ func (r *Registry) NoteMoving(m wire.Moving) {
 }
 
 // NoteReview tells the subscribers that take moves that an agent's review
-// changed (review.changed; a hint to fetch review.list again).
+// changed (review.changed; a hint to fetch review.list again): its folder
+// changed (review.accept, …), so its scan is redone (reviewcache.go).
 func (r *Registry) NoteReview(id string) {
+	if !r.IsRemote(id) {
+		_, local := r.split(id)
+		r.forgetScan(local)
+	}
+	r.noteReview(id)
+}
+
+// noteReview is NoteReview without forgetting the scan (a scan's own
+// news).
+func (r *Registry) noteReview(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for s := range r.subs {

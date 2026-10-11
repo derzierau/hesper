@@ -392,6 +392,15 @@ survive the app closing (the daemon owns the PTYs). When the daemon restarts
 (update, reboot), every agent that was running is respawned with its session id
 (resume) in the same cwd and shown as `starting`, then its real state.
 
+**Watchdog** (`internal/lockwatch`): the registry's lock and the shared
+history's lock remember their holder (the caller's stack, taken on Lock).
+A hold longer than 10 s is logged once to `hesperd.log` with the holder's
+stack (`hesperd: watchdog: the registry's lock held for 12s by: …`), and
+its release after it; a gap of more than 10 s in which the whole process
+did not run (a stop-the-world that waited for a thread, or the Mac slept)
+is logged when it resumes. A hang that never resumes logs nothing: for
+that, `kill -QUIT` the daemon: it writes every goroutine to the log.
+
 ## App (part A) behaviour
 
 - **Wall**: every agent from every machine as a live tile (libghostty surface
@@ -2808,17 +2817,17 @@ workers; later passes look at Claude's project folders and Codex's last
 three day folders every 2 s and walk everything every 60 s (a full pass
 with nothing new: stats only). Vanished transcripts drop their
 checkpoint; their entry becomes a tombstone unless the same session was
-found elsewhere (Codex's archive moves it). **Throttle** (`throttle.go`;
-each worker on its own locked thread): transcripts written within 14
-days (read first) at normal priority with a duty cycle — after every
-file and every 4 MiB the worker rests as long as it worked, ≤ half a
-core each — so recent search works within seconds; everything older,
-and everything while one of hesperd's agents is `working`/`starting`, in
-macOS's background band (`setpriority(PRIO_DARWIN_THREAD,
-PRIO_DARWIN_BG)`: lowest CPU priority, throttled disk I/O; nice 19 on
-Linux), resting three times as long as it worked while agents work; the
-second worker steps aside then. Closing stops a read within 4 MiB. The
-mirror always runs in the background band.
+found elsewhere (Codex's archive moves it). **Throttle** (`throttle.go`):
+a duty cycle — after every file and every 4 MiB the worker rests as
+long as it worked, ≤ half a core each, three times as long while one of
+hesperd's agents is `working`/`starting` (the second worker steps aside
+then); the last 14 days are read first, so recent search works within
+seconds. Closing stops a read within 4 MiB. No thread of hesperd is put
+in macOS's background band (`PRIO_DARWIN_BG`) or nice 19: such a thread
+gets no CPU on a loaded Mac, and the Go runtime cannot leave one behind
+— the garbage collector's stop-the-world waits for it, and the locks it
+holds (SQLite's, the registry's) stay held. With 19 agents working that
+froze hesperd for good (2026-10-09).
 
 **Project mapping** as agents: `projects.Store.Resolve(cwd)` (deepest
 project, worktrees to their repository, identity by git remote;
@@ -2975,7 +2984,7 @@ key is the pinned transfer key) — resumable from the size it has,
 nothing fetched twice, a transcript whose version (size + mtime) did not
 change is not asked for, one that shrank starts over. A complete copy
 sets this node's `mirrors` mark (so every Mac shows `mirrored`). The
-mirror runs in the background band and waits while agents work. Copies
+mirror waits while agents work. Copies
 of sessions quiet for longer than the window + 2 days, deleted or moved
 are dropped. `sessions.stats.mirrorBytes` is their total.
 
@@ -3026,8 +3035,8 @@ keystrokes = echo through a PTY under `ptyhost` in the same process):
 |---|---|
 | Real data | 1,594 transcripts, 9.36 GB (1,537 Codex rollouts, 57 Claude sessions); 155 of the last 14 days |
 | First full index, unthrottled (normal priority, warm page cache, load ≈ 60) | **16.4 s** (580 MB/s; the last 14 days after 3.2 s); keystroke p50 0.10 ms, but p99 4.1 ms vs 0.27 ms idle — hence the throttle |
-| First full index as shipped (load ≈ 90) | the last 14 days searchable after **46 s**; the older history then fills in in the background band at what the kernel leaves over (0.4–5 MB/s at load 55–90; the whole 9 GB when the Mac is quieter); keystroke p99 **3.73 ms during vs 3.59 ms before** (unchanged at that load), 4.26 ms while in the background band (noise of the load) |
-| Everything in the background band (as while agents work, load ≈ 56) | 0.4 MB/s; keystroke p99 1.69 ms during vs 3.53 ms before (unchanged) |
+| First full index with the background band (no longer shipped; load ≈ 90) | the last 14 days searchable after **46 s**; the older history then fills in in the background band at what the kernel leaves over (0.4–5 MB/s at load 55–90; the whole 9 GB when the Mac is quieter); keystroke p99 **3.73 ms during vs 3.59 ms before** (unchanged at that load), 4.26 ms while in the background band (noise of the load) |
+| Everything in the background band (no longer shipped; as while agents work, load ≈ 56) | 0.4 MB/s; keystroke p99 1.69 ms during vs 3.53 ms before (unchanged) |
 | Full pass with nothing new | 15 ms (1,594 stats) |
 | Incremental: append to a 12 MB transcript | p50 **0.43 ms**, p99 1.2 ms, reading only the new bytes |
 | Index size | 30.0 MB for the 1,594 real sessions (**18.8 MB per 1,000**); 12.4–14.4 MB per 1,000 for synthetic ones at the text caps |
@@ -3999,6 +4008,25 @@ state, files, added, removed, risk, riskNotes: [string], evidence,
 readyAt, reviewedAt?, base}`; `readyAt` is when the agent settled
 (`stateSince`); `evidence` is `review.evidence`'s freshness.
 
+**Scans** (`reviewcache.go`): an item's Git part (files, lines, base,
+risk) comes from a scan of the folder — snapshot through a copy of the
+index, diff against the base — kept per agent and reused while its key
+holds: the agent's hook count, state since and review base, and the
+stat (mtime, size) of the folder, of the files Git rewrites when the
+index or HEAD moves (`index`, `HEAD`, `logs/HEAD`) and of the files the
+scan found changed. Nothing runs Git to check it; after 2 minutes a scan
+is redone anyway (an edit no hook announced). A settle schedules a scan
+after 1 s (bursts coalesce); callers share an agent's running scan; at
+most 2 scans run at once; a scan has 3 minutes. A failed or killed scan
+is retried after 1 minute, doubling to 30, with up to four times the
+time; the last good scan is listed meanwhile. `review.list` waits up to
+20 s for the scans it needs and answers with what it has;
+`review.changed` follows when a later scan finds something else.
+`review.accept`, `reject` and `sendBack` drop the scan. `review.diff`
+and the actions run Git each time. Nothing of review writes the user's
+index or working tree (`add` only into the copy of the index); only an
+accept (a commit) and a reject (the reverted files) change the folder.
+
 `ReviewFile = {path, oldPath?, status: "A"|"M"|"D"|"R", binary?,
 formattingOnly?, generated?, tooLarge?, order, risk, added, removed,
 hunks: [Hunk]}`; `Hunk = {id: "<file index>:<hunk index>", oldStart,
@@ -4152,7 +4180,8 @@ reject ID --hunk H… [--tree T] [--context N]`, `review send-back ID
 7.
 
 **Notification:** `review.changed {id}` on `agents.subscribe` when an
-agent of this Mac settles with changes in its folder, when a connected
+agent of this Mac settles with changes in its folder, when a scan finds
+its entry changed, when a connected
 Mac's agent settles, and after an accept, reject or send-back through
 this daemon (a hint: the app fetches `review.list` again).
 
