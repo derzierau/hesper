@@ -424,6 +424,19 @@ func TestProjectMapping(t *testing.T) {
 	}
 }
 
+// Projects given to Open map every session from the first scan; no
+// change of the registry is needed to correct it (fakeProjects never
+// signals one).
+func TestProjectMappingFromOpen(t *testing.T) {
+	e := newEnv(t)
+	e.install("claude.jsonl", e.work)
+	e.install("codex.jsonl", filepath.Join(e.home, "push"))
+	e.open(Options{Projects: &fakeProjects{ch: make(chan struct{})}})
+	waitFor(t, "mapped", func() bool {
+		return len(e.search(wire.SessionSearchParams{ProjectID: "p-0123456789abcdef"})) == 1
+	})
+}
+
 // removedProjects: the scratch project at gone was deleted.
 type removedProjects struct {
 	fakeProjects
