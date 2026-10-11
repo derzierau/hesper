@@ -2,12 +2,15 @@ package sessions
 
 import (
 	"bytes"
+	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -136,4 +139,30 @@ func TestCloseMidPassThenResume(t *testing.T) {
 		res, err := s2.Search(wire.SessionSearchParams{Limit: 200})
 		return err == nil && len(res.Items) == n
 	})
+}
+
+// A write racing the index's close (a turn checkpoint during hesperd's
+// shutdown) fails with errClosed instead of sending on a closed channel.
+func TestWriteDuringClose(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		d, err := openDB(filepath.Join(t.TempDir(), "index.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		for j := 0; j < 8; j++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for k := 0; k < 50; k++ {
+					err := d.write(func(tx *sql.Tx) error { return nil })
+					if err != nil && !errors.Is(err, errClosed) {
+						t.Errorf("write: %v", err)
+					}
+				}
+			}()
+		}
+		d.close()
+		wg.Wait()
+	}
 }

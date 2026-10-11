@@ -75,7 +75,9 @@ type DB struct {
 	seqMu sync.Mutex
 	seq   int64
 
+	opsMu   sync.RWMutex // senders hold it for reading; close for writing
 	ops     chan op
+	closed  bool
 	stopped chan struct{}
 	closing sync.Once
 
@@ -153,7 +155,10 @@ func (d *DB) kvInit(k, prefix string) (string, error) {
 
 func (d *DB) close() {
 	d.closing.Do(func() {
+		d.opsMu.Lock()
+		d.closed = true
 		close(d.ops)
+		d.opsMu.Unlock()
 		<-d.stopped
 		d.stmtMu.Lock()
 		for _, s := range d.stmts {
@@ -219,14 +224,15 @@ func (d *DB) writer() {
 }
 
 // write runs fn in the writer's transaction and waits for the commit.
-func (d *DB) write(fn func(tx *sql.Tx) error) (err error) {
+func (d *DB) write(fn func(tx *sql.Tx) error) error {
 	done := make(chan error, 1)
-	defer func() {
-		if recover() != nil {
-			err = errClosed // Close went ahead of a slow reader (Service.Close)
-		}
-	}()
-	d.ops <- op{fn: fn, done: done}
+	d.opsMu.RLock()
+	if d.closed {
+		d.opsMu.RUnlock()
+		return errClosed // Close went ahead of a slow reader (Service.Close)
+	}
+	d.ops <- op{fn: fn, done: done} // the writer drains ops until it is closed
+	d.opsMu.RUnlock()
 	return <-done
 }
 
