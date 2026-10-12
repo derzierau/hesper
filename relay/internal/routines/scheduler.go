@@ -94,20 +94,25 @@ func (s *Scheduler) RunNow(ctx context.Context, id string) (wire.RoutineRun, err
 }
 
 // start begins a run and starts it through the Runner; a start that fails
-// is recorded as a failed run. Otherwise the run's end is recorded when
-// the Runner reports it (or the wait ends with ctx).
+// is recorded as a failed run. Otherwise the run names its agent at once
+// and its end is recorded when the Runner reports it (or the wait ends
+// with ctx).
 func (s *Scheduler) start(ctx context.Context, id string, manual bool) (wire.RoutineRun, error) {
 	r, run, err := s.store.BeginRun(id, manual)
 	if err != nil {
 		return wire.RoutineRun{}, err
 	}
-	ch, err := s.runner.Start(ctx, r, run)
+	agent, ch, err := s.runner.Start(ctx, r, run)
 	if err != nil {
 		run.Outcome, run.Error, run.Ended = wire.RunFailed, err.Error(), s.opt.Now().UTC()
 		if e := s.store.EndRun(id, run); e != nil {
 			s.opt.Logf("hesperd: routine %s: recording the failed run: %v", id, e)
 		}
 		return wire.RoutineRun{}, fmt.Errorf("starting run %d: %w", run.Seq, err)
+	}
+	run.Agent = agent
+	if err := s.store.UpdateRun(id, run); err != nil {
+		s.opt.Logf("hesperd: routine %s: recording run %d's agent: %v", id, run.Seq, err)
 	}
 	go func() {
 		select {

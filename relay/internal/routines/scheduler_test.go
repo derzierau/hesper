@@ -30,18 +30,19 @@ func newFakeRunner() *fakeRunner {
 
 func runKey(id string, seq int) string { return fmt.Sprintf("%s/%d", id, seq) }
 
-func (f *fakeRunner) Start(ctx context.Context, r wire.Routine, run wire.RoutineRun) (<-chan wire.RoutineRun, error) {
+// Start names the agent "L/<id>-<seq>".
+func (f *fakeRunner) Start(ctx context.Context, r wire.Routine, run wire.RoutineRun) (string, <-chan wire.RoutineRun, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.startErr != nil {
-		return nil, f.startErr
+		return "", nil, f.startErr
 	}
 	f.starts = append(f.starts, run)
 	f.routines = append(f.routines, r)
 	ch := make(chan wire.RoutineRun, 1)
 	f.ends[runKey(r.ID, run.Seq)] = ch
 	f.live[r.ID] = true
-	return ch, nil
+	return "L/" + runKey(r.ID, run.Seq), ch, nil
 }
 
 func (f *fakeRunner) Live(id string) bool {
@@ -157,8 +158,12 @@ func TestSchedulerStartsDueRun(t *testing.T) {
 		t.Fatalf("routine given to Start %+v", f.runner.routines[0])
 	}
 	got := f.get("r-a")
-	if got.Runs != 1 || got.LastRun.Outcome != wire.RunRunning || !got.NextRun.Equal(at(t, time.UTC, "2026-03-10 11:00")) {
-		t.Fatalf("after start %+v", got)
+	if got.Runs != 1 || got.LastRun.Outcome != wire.RunRunning || got.LastRun.Agent != "L/r-a/1" || !got.NextRun.Equal(at(t, time.UTC, "2026-03-10 11:00")) {
+		t.Fatalf("after start %+v %+v", got, got.LastRun)
+	}
+	// The running run is a record with its agent from the start.
+	if runs, _ := f.store.Runs("r-a", 0); len(runs) != 1 || runs[0].Outcome != wire.RunRunning || runs[0].Agent != "L/r-a/1" {
+		t.Fatalf("running record %+v", runs)
 	}
 	// The same instant again: nothing more (the clock moved on).
 	f.sched.Step(ctx, f.c.now())
@@ -296,7 +301,7 @@ func TestSchedulerRunNow(t *testing.T) {
 	f.store.SetPaused("r-a", true)
 	ctx := context.Background()
 	run, err := f.sched.RunNow(ctx, "r-a")
-	if err != nil || run.Seq != 1 || !run.Manual || run.Outcome != wire.RunRunning {
+	if err != nil || run.Seq != 1 || !run.Manual || run.Outcome != wire.RunRunning || run.Agent != "L/r-a/1" {
 		t.Fatalf("run now %+v %v", run, err)
 	}
 	// Paused stays paused, the clock untouched; the run is live.

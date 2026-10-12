@@ -230,9 +230,23 @@ func TestStoreRuns(t *testing.T) {
 			if err != nil || run.Seq != 1 || run.Outcome != wire.RunRunning || !run.Started.Equal(c.now()) || run.Manual || r.Runs != 1 || r.LastRun.Seq != 1 {
 				t.Fatalf("begin %+v %+v %v", r, run, err)
 			}
-			// A running run not in the file yet comes first.
+			// A running run is a record from its begin.
 			if runs, _ := s.Runs("r-a", 0); len(runs) != 1 || runs[0].Seq != 1 || runs[0].Outcome != wire.RunRunning {
 				t.Fatalf("running %+v", runs)
+			}
+			if running := s.Running("r-a"); len(running) != 1 || running[0].Seq != 1 {
+				t.Fatalf("running records %+v", running)
+			}
+			// Its agent, once spawned, replaces the record and LastRun.
+			run.Agent = "L/a1"
+			if err := s.UpdateRun("r-a", run); err != nil {
+				t.Fatal(err)
+			}
+			if r, _ = s.Get("r-a"); r.LastRun.Agent != "L/a1" || r.LastRun.Outcome != wire.RunRunning {
+				t.Fatalf("updated %+v", r.LastRun)
+			}
+			if runs, _ := s.Runs("r-a", 0); len(runs) != 1 || runs[0].Agent != "L/a1" || runs[0].Outcome != wire.RunRunning {
+				t.Fatalf("updated record %+v", runs)
 			}
 			c.t = c.t.Add(10 * time.Minute)
 			run.Agent, run.Session, run.Outcome, run.State, run.Message = "L/a1", "s-1", wire.RunDone, wire.StateDone, "all tidy"
@@ -273,6 +287,32 @@ func TestStoreRuns(t *testing.T) {
 			}
 			if runs, _ := s.Runs("r-a", 2); len(runs) != 2 || runs[1].Seq != 3 {
 				t.Fatalf("limit %+v", runs)
+			}
+			// A running record is never trimmed: 5 runs on while 6 and 7
+			// are skipped and 8 begins; 6, the oldest ended, goes.
+			_, run5, _ := s.BeginRun("r-a", false)
+			s.RecordSkipped("r-a", "run 5 is still live", false)
+			s.RecordSkipped("r-a", "run 5 is still live", false)
+			_, run8, _ := s.BeginRun("r-a", false)
+			if runs, _ := s.Runs("r-a", 0); len(runs) != 3 || runs[0].Seq != 8 || runs[1].Seq != 7 || runs[2].Seq != 5 || runs[2].Outcome != wire.RunRunning {
+				t.Fatalf("kept %+v", runs)
+			}
+			if running := s.Running("r-a"); len(running) != 2 || running[0].Seq != 5 || running[1].Seq != 8 {
+				t.Fatalf("running records %+v", running)
+			}
+			// An older run's update leaves LastRun alone; its end too.
+			run5.Agent = "L/a5"
+			s.UpdateRun("r-a", run5)
+			run5.Outcome = wire.RunDone
+			s.EndRun("r-a", run5)
+			run8.Outcome = wire.RunDone
+			s.EndRun("r-a", run8)
+			r, _ = s.Get("r-a")
+			if runs, _ := s.Runs("r-a", 0); r.LastRun.Seq != 8 || r.LastRun.Outcome != wire.RunDone || len(runs) != 3 || runs[2].Seq != 5 || runs[2].Agent != "L/a5" || runs[2].Outcome != wire.RunDone {
+				t.Fatalf("ended %+v %+v", r.LastRun, runs)
+			}
+			if running := s.Running("r-a"); len(running) != 0 {
+				t.Fatalf("running records %+v", running)
 			}
 			if dir != "" {
 				path := filepath.Join(dir, "routines", "r-a.runs.jsonl")

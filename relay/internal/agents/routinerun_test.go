@@ -86,6 +86,11 @@ func TestRoutineRunIsABackgroundAgent(t *testing.T) {
 	if a.RoutineRun != 1 || !a.Background || a.Name != "Tidy · "+r.LastRun.Started.In(time.Local).Format("15:04") || a.Task != "keep working" || a.Project != h.project {
 		t.Fatalf("run agent %+v", a)
 	}
+	// The running run names its agent.
+	var runs []wire.RoutineRun
+	if err := h.call("routines.runs", wire.RoutineRunsParams{ID: "r-tidy"}, &runs); err != nil || len(runs) != 1 || runs[0].Agent != a.ID || runs[0].Outcome != wire.RunRunning || r.LastRun.Agent != a.ID {
+		t.Fatalf("running run %+v %+v %v", runs, r.LastRun, err)
+	}
 	h.waitState(a.ID, wire.StateWorking)
 	if !(routineRunner{h.reg}).Live("r-tidy") {
 		t.Fatal("not live")
@@ -112,7 +117,6 @@ func TestRoutineRunIsABackgroundAgent(t *testing.T) {
 	if (routineRunner{h.reg}).Live("r-tidy") {
 		t.Fatal("still live")
 	}
-	var runs []wire.RoutineRun
 	if err := h.call("routines.runs", wire.RoutineRunsParams{ID: "r-tidy"}, &runs); err != nil || len(runs) != 1 || runs[0].Outcome != wire.RunDone || runs[0].Message != "Interrupted" {
 		t.Fatalf("runs %+v %v", runs, err)
 	}
@@ -172,6 +176,9 @@ func TestRoutineRunNow(t *testing.T) {
 		t.Fatalf("run %+v %v", run, err)
 	}
 	a := h.runAgent("r-hand", 1)
+	if run.Agent != a.ID {
+		t.Fatalf("run %+v names no agent (%s)", run, a.ID)
+	}
 	h.waitState(a.ID, wire.StateWorking)
 	err := h.call("routines.run", wire.IDParams{ID: "r-hand"}, nil)
 	if we, ok := err.(*wire.Error); !ok || we.Code != wire.CodeExists {
@@ -230,17 +237,39 @@ func TestRoutineRunAcrossRestart(t *testing.T) {
 	h := newHarness(t)
 	h.saveRoutine(wire.Routine{ID: "r-back", Every: "1h", Spawn: wire.SpawnParams{Task: "keep working"}})
 	h.saveRoutine(wire.Routine{ID: "r-gone", Every: "1h", Spawn: wire.SpawnParams{Task: "keep working"}})
+	h.saveRoutine(wire.Routine{ID: "r-skip", Every: "1h", Spawn: wire.SpawnParams{Task: "keep working"}})
 	h.stepRoutines()
-	back, gone := h.runAgent("r-back", 1), h.runAgent("r-gone", 1)
+	back, gone, skip := h.runAgent("r-back", 1), h.runAgent("r-gone", 1), h.runAgent("r-skip", 1)
 	h.waitState(back.ID, wire.StateWorking)
 	h.waitState(gone.ID, wire.StateWorking)
+	h.waitState(skip.ID, wire.StateWorking)
+	// r-skip's run 1 is live when run 2 is skipped: LastRun is the skip
+	// (the others are paused for that step; a pause leaves runs alone).
+	for _, id := range []string{"r-back", "r-gone"} {
+		if err := h.call("routines.pause", wire.RoutinePauseParams{ID: id, Paused: true}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.reg.routineSched.Step(context.Background(), time.Now().Add(4*time.Hour))
+	if r := h.routine("r-skip"); r.LastRun.Seq != 2 || r.LastRun.Outcome != wire.RunSkipped {
+		t.Fatalf("skip %+v", r.LastRun)
+	}
 	h.close()
-	// The second run's agent does not come back (it was being closed).
+	// Two agents do not come back (they were being closed).
 	editRecord(t, h, gone.ID, func(rec map[string]any) { rec["closing"] = wire.ReasonClosed })
+	editRecord(t, h, skip.ID, func(rec map[string]any) { rec["closing"] = wire.ReasonClosed })
 	h.open()
 	ended := h.routine("r-gone").LastRun
-	if ended.Outcome != wire.RunExited || ended.Error != "hesperd restarted" || ended.State != wire.StateExited || ended.Ended.IsZero() {
+	if ended.Outcome != wire.RunExited || ended.Error != "hesperd restarted" || ended.State != wire.StateExited || ended.Ended.IsZero() || ended.Agent != gone.ID {
 		t.Fatalf("gone run %+v", ended)
+	}
+	// Run 1 of r-skip, behind the skip, is picked up from the records.
+	var runs []wire.RoutineRun
+	if err := h.call("routines.runs", wire.RoutineRunsParams{ID: "r-skip"}, &runs); err != nil || len(runs) != 2 || runs[1].Seq != 1 || runs[1].Outcome != wire.RunExited || runs[1].Error != "hesperd restarted" || runs[1].Agent != skip.ID {
+		t.Fatalf("skip runs %+v %v", runs, err)
+	}
+	if r := h.routine("r-skip"); r.LastRun.Seq != 2 || r.LastRun.Outcome != wire.RunSkipped || len(h.reg.routines.Running("r-skip")) != 0 {
+		t.Fatalf("skip last run %+v", r.LastRun)
 	}
 	// The first is respawned with its session and re-armed: still
 	// running, idle after the resume is no end; its next turn's end is.

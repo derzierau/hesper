@@ -4342,10 +4342,16 @@ local time, `time.Local`):
 (`{version: 1, routines: […]}`, 0600, atomic; a broken file moves to
 `routines.json.broken`; a routine with a bad id or cadence is dropped
 with a log line) and `routines/<id>.runs.jsonl` (one `RoutineRun` per
-line, oldest first, rewritten with the newest `keepRuns` when it grows
-past that; removed with the routine). ≤ 100 routines. `created`,
-`createdBy`, `runs` and `lastRun` stay from the existing routine on a
-save; `updated` is now. Subscriptions are coalesced per routine like
+line in `seq` order; removed with the routine). A run is a record from
+its begin (`BeginRun` writes it `running`), replaced in place by `seq`
+when its agent is known (`UpdateRun`) and when it ends (`EndRun`); the
+file is rewritten on every write and trimmed to the newest `keepRuns`,
+oldest ended records first — a `running` record is never trimmed, so a
+daemon start finds every run it has to pick up (`Running(id)`).
+`lastRun` is a cache: the record with the highest `seq`. ≤ 100
+routines. `created`, `createdBy`, `runs` and `lastRun` stay from the
+existing routine on a save; `updated` is now. Subscriptions are
+coalesced per routine like
 drafts'; `Changed()` wakes the scheduler whenever a routine's clock
 (`nextRun`, `paused`, saved or removed) changed.
 
@@ -4358,8 +4364,8 @@ server only routes):
 | `routines.save` | `{routine}` | `Routine`: created or replaced, defaults filled, `nextRun` set. `invalid` for a bad routine (the message names the field); `unavailable` for another machine. |
 | `routines.remove` | `{id}` | `{}`; the run records go too. `not_found`. |
 | `routines.pause` | `{id, paused}` | `Routine`: paused (`nextRun` zero) or resumed (`nextRun` from now). |
-| `routines.runs` | `{id, limit?}` | `[RoutineRun]`, newest first, at most `limit` (50); a running `lastRun` not yet recorded comes first. |
-| `routines.run` | `{id}` | `RoutineRun` (running, `manual`): a run by hand, paused or not, without moving the clock. `exists` while a run is live; `not_found`; `unavailable` without the store. The run is bound to the daemon's lifetime, not the call's. |
+| `routines.runs` | `{id, limit?}` | `[RoutineRun]`, newest `seq` first, at most `limit` (50); running runs included, with their `agent`. |
+| `routines.run` | `{id}` | `RoutineRun` (running, `manual`, `agent` set): a run by hand, paused or not, without moving the clock. `exists` while a run is live; `not_found`; `unavailable` without the store. The run is bound to the daemon's lifetime, not the call's. |
 
 On `agents.subscribe` connections, after the drafts: `routines.changed
 {routine}` (first one per routine; a run beginning or ending is one,
@@ -4372,13 +4378,15 @@ timers). For each routine due (`nextRun` ≤ now, not paused, earliest
 first): `catchUp` none and late → skipped, advanced; a live previous run
 → skipped and advanced (`skip`) or stopped (`replace`); then the clock
 is advanced to the next run *before* the run begins, so a slow start
-can never fire twice; `BeginRun` (runs+1, `lastRun` running), the
-Runner's `Start`; a start that fails is a `failed` run with the error.
-When the Runner reports the end, the record is written with what it
-yields (agent, session, ended, outcome, state, message, error); `seq`,
-`started` and `manual` stay the scheduler's. `RunNow(id)` is a manual
-run (`routines.run`): paused or not, never moves the clock, `exists`
-while a run is live. `Run(ctx)` steps, then waits for the earliest
+can never fire twice; `BeginRun` (runs+1, a `running` record and
+`lastRun`), the Runner's `Start`, which returns the spawned agent's id,
+written into the record at once (`UpdateRun`: `routines.run`, `lastRun`
+and `routines.runs` name the agent while it runs); a start that fails is
+a `failed` run with the error. When the Runner reports the end, the
+record is written with what it yields (agent, session, ended, outcome,
+state, message, error); `seq`, `started` and `manual` stay the
+scheduler's. `RunNow(id)` is a manual run (`routines.run`): paused or
+not, never moves the clock, `exists` while a run is live. `Run(ctx)` steps, then waits for the earliest
 `nextRun` (at most `Tick`, 60 s: the safety net for a clock jump or a
 Mac waking from sleep) or `Changed()`.
 
@@ -4396,8 +4404,9 @@ scheduler for its lifetime (`Close` ends it).
   `seq`), persisted, so `agents.list` shows which agents are runs; its
   environment has `HESPER_ROUTINE_ID` and `HESPER_ROUTINE_RUN` next to
   `HESPER_AGENT_ID`, after a respawn too. It starts in the background
-  (`Agent.background`) unless `policy.foreground`. A spawn that fails is
-  the scheduler's `failed` run.
+  (`Agent.background`) unless `policy.foreground`. `Start` returns the
+  agent's id, which the scheduler writes into the running record. A
+  spawn that fails is the scheduler's `failed` run.
 - *The run ends where the agent changes, under the registry's lock*
   (never from a subscriber after the fact: a background agent that
   finished is closed and removed when its process ends). `setState` sees
@@ -4430,15 +4439,20 @@ scheduler for its lifetime (`Close` ends it).
   about the project, not the record. `Stop(id)` closes that agent
   (`agents.close`); no live run is not an error.
 - *Daemon restart* (`resumeRoutineRuns`, in `Open` after `restore` and
-  the store, before the scheduler): for every routine whose `lastRun` is
-  `running`, the agent with its `routine` and `routineRun` is looked
-  for. Found and live (it was respawned with its session; it comes up
+  the store, before the scheduler): for every `running` record of every
+  routine (`Running`; not only `lastRun`: with overlap `skip` the live
+  run sits behind the skipped one), the agent with its `routine` and
+  `routineRun` is looked for. Found and live (it was respawned with its session; it comes up
   starting, then idle, which is no end): the run is re-armed with its
   end hook and what is left of its timeout (at least 10 s); it ends when
   the agent settles, written to the store directly. Found and settled:
   the run ends now with the matching outcome. Gone (it was being closed,
   or removed): `exited` with `error` "hesperd restarted". A daemon stop
   itself never ends a run (the agents stay "running" for the respawn).
+  Accepted gap: a background run whose turn ended in the moment before
+  the daemon stopped (its agent was being closed as finished, so it is
+  not restored) ends `exited` "hesperd restarted" instead of `done`, and
+  its message is lost.
 
 Tests: `internal/routines` (`cadence_test.go`: every rule of `Validate`
 failing and normalised, `Next` in UTC and Europe/Berlin across both DST

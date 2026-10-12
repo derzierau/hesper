@@ -59,7 +59,7 @@ func routineSpawn(r wire.Routine, run wire.RoutineRun, loc *time.Location) wire.
 // Start spawns the run's agent as hesperctl new would (worktree, trust,
 // scratch, profile), marked as the run before its process starts so its
 // environment and its end hook are in place.
-func (rr routineRunner) Start(ctx context.Context, r wire.Routine, run wire.RoutineRun) (<-chan wire.RoutineRun, error) {
+func (rr routineRunner) Start(ctx context.Context, r wire.Routine, run wire.RoutineRun) (string, <-chan wire.RoutineRun, error) {
 	ch := make(chan wire.RoutineRun, 1)
 	rn := &routineRun{seq: run.Seq, started: run.Started, timeout: routineTimeout(r.Policy), end: func(ended wire.RoutineRun) { ch <- ended }}
 	a, err := rr.r.spawn(routineSpawn(r, run, rr.r.routines.Loc()), func(a *agent) {
@@ -67,11 +67,11 @@ func (rr routineRunner) Start(ctx context.Context, r wire.Routine, run wire.Rout
 		a.Background = !r.Policy.Foreground
 	})
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	_, local := rr.r.split(a.ID)
 	rr.r.armRoutineTimeout(local, rn, rn.timeout)
-	return ch, nil
+	return a.ID, ch, nil
 }
 
 // Live: a run of routine id has an agent that has not settled.
@@ -203,20 +203,20 @@ func (r *Registry) endRoutineRun(a *agent, outcome, state, errText string) {
 }
 
 // resumeRoutineRuns picks up the runs that were running when the daemon
-// stopped (Open, after restore): a run whose agent came back live is
-// re-armed with what is left of its timeout; one whose agent is gone or
-// settled is ended in the store (the scheduler was not around).
+// stopped (Open, after restore; every running record, not only LastRun:
+// a skipped run may have followed a live one): a run whose agent came
+// back live is re-armed with what is left of its timeout; one whose agent
+// is gone or settled is ended in the store (the scheduler was not around).
 func (r *Registry) resumeRoutineRuns() {
 	for _, rt := range r.routines.List() {
-		if rt.LastRun == nil || rt.LastRun.Outcome != wire.RunRunning {
-			continue
-		}
-		ended, live := r.resumeRoutineRun(rt, *rt.LastRun)
-		if live {
-			continue
-		}
-		if err := r.routines.EndRun(rt.ID, ended); err != nil {
-			r.opt.Logf("hesperd: routine %s: recording run %d after the restart: %v", rt.ID, ended.Seq, err)
+		for _, run := range r.routines.Running(rt.ID) {
+			ended, live := r.resumeRoutineRun(rt, run)
+			if live {
+				continue
+			}
+			if err := r.routines.EndRun(rt.ID, ended); err != nil {
+				r.opt.Logf("hesperd: routine %s: recording run %d after the restart: %v", rt.ID, ended.Seq, err)
+			}
 		}
 	}
 }

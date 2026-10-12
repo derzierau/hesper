@@ -17,7 +17,8 @@ import (
 
 // Store holds a daemon's routines: dir/routines.json (the list, written
 // atomically, 0600) and dir/routines/<id>.runs.jsonl (one run record per
-// line, the newest KeepRuns kept). Changes reach subscribers coalesced per
+// line in Seq order, from the run's begin; the newest KeepRuns kept, a
+// running record never trimmed). Changes reach subscribers coalesced per
 // routine, as drafts; a change to a routine's clock (NextRun, Paused) also
 // signals Changed for the scheduler.
 type Store struct {
@@ -243,8 +244,8 @@ func (s *Store) SetPaused(id string, paused bool) (wire.Routine, error) {
 	return clone(r), nil
 }
 
-// BeginRun records that run Runs+1 of a routine starts now: LastRun is
-// the running run.
+// BeginRun records that run Runs+1 of a routine starts now: a running
+// record, and LastRun.
 func (s *Store) BeginRun(id string, manual bool) (wire.Routine, wire.RoutineRun, error) {
 	now := s.now().UTC()
 	s.mu.Lock()
@@ -259,48 +260,53 @@ func (s *Store) BeginRun(id string, manual bool) (wire.Routine, wire.RoutineRun,
 	s.routines[id] = r
 	s.notifyLocked(id, &r)
 	s.mu.Unlock()
+	if err := s.putRun(id, run, keepOf(r)); err != nil {
+		s.logf("hesperd: %s: %v", s.runsPath(id), err)
+	}
 	s.save()
 	return clone(r), run, nil
 }
 
-// EndRun records how a run ended: appended to the routine's run records
-// (trimmed to KeepRuns) and, when it is the latest run, set as LastRun.
-// Ended is now when the run left it zero.
-func (s *Store) EndRun(id string, run wire.RoutineRun) error {
-	if run.Ended.IsZero() {
-		run.Ended = s.now().UTC()
-	}
+// UpdateRun replaces a run's record (its Seq) with run: the agent once it
+// is spawned; and then LastRun when it is the latest run (the record
+// first: LastRun is the records' cache).
+func (s *Store) UpdateRun(id string, run wire.RoutineRun) error {
 	s.mu.Lock()
 	r, ok := s.routines[id]
+	s.mu.Unlock()
 	if !ok {
-		s.mu.Unlock()
 		return wire.Errorf(wire.CodeNotFound, "no routine %s", id)
 	}
-	keep := r.Policy.KeepRuns
-	if keep <= 0 {
-		keep = DefaultKeepRuns
+	if err := s.putRun(id, run, keepOf(r)); err != nil {
+		s.logf("hesperd: %s: %v", s.runsPath(id), err)
 	}
-	if s.path == "" {
-		runs := append(s.memRuns[id], run)
-		if len(runs) > keep {
-			runs = runs[len(runs)-keep:]
-		}
-		s.memRuns[id] = runs
-	}
-	if r.LastRun != nil && r.LastRun.Seq == run.Seq {
+	s.mu.Lock()
+	if r, ok = s.routines[id]; ok && r.LastRun != nil && r.LastRun.Seq == run.Seq {
 		latest := run
 		r.LastRun = &latest
 		s.routines[id] = r
 		s.notifyLocked(id, &r)
 	}
 	s.mu.Unlock()
-	if s.path != "" {
-		if err := s.appendRun(id, run, keep); err != nil {
-			s.logf("hesperd: %s: %v", s.runsPath(id), err)
-		}
-	}
 	s.save()
 	return nil
+}
+
+// EndRun records how a run ended (UpdateRun; Ended is now when the run
+// left it zero).
+func (s *Store) EndRun(id string, run wire.RoutineRun) error {
+	if run.Ended.IsZero() {
+		run.Ended = s.now().UTC()
+	}
+	return s.UpdateRun(id, run)
+}
+
+// keepOf is a routine's KeepRuns with the default.
+func keepOf(r wire.Routine) int {
+	if r.Policy.KeepRuns <= 0 {
+		return DefaultKeepRuns
+	}
+	return r.Policy.KeepRuns
 }
 
 // RecordSkipped records a run that never started (BeginRun and EndRun
@@ -337,15 +343,41 @@ func (s *Store) Advance(id string, after time.Time) (wire.Routine, error) {
 	return clone(r), nil
 }
 
-// Runs is a routine's run records, newest first, at most limit (default
-// 50); a running LastRun not yet recorded comes first.
+// Runs is a routine's run records, newest (highest Seq) first, at most
+// limit (default 50).
 func (s *Store) Runs(id string, limit int) ([]wire.RoutineRun, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	runs, err := s.records(id)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(runs, func(i, j int) bool { return runs[i].Seq > runs[j].Seq })
+	if len(runs) > limit {
+		runs = runs[:limit]
+	}
+	return runs, nil
+}
+
+// Running is a routine's records still running, oldest first (none for
+// an unknown routine): what a daemon start has to pick up.
+func (s *Store) Running(id string) []wire.RoutineRun {
+	runs, _ := s.records(id)
+	var out []wire.RoutineRun
+	for _, run := range runs {
+		if run.Outcome == wire.RunRunning {
+			out = append(out, run)
+		}
+	}
+	return out
+}
+
+// records is a routine's run records in Seq order (not_found without the
+// routine).
+func (s *Store) records(id string) ([]wire.RoutineRun, error) {
 	s.mu.Lock()
-	r, ok := s.routines[id]
-	if !ok {
+	if _, ok := s.routines[id]; !ok {
 		s.mu.Unlock()
 		return nil, wire.Errorf(wire.CodeNotFound, "no routine %s", id)
 	}
@@ -357,26 +389,8 @@ func (s *Store) Runs(id string, limit int) ([]wire.RoutineRun, error) {
 	if s.path != "" {
 		runs = s.readRuns(id)
 	}
-	out := make([]wire.RoutineRun, 0, len(runs)+1)
-	if r.LastRun != nil {
-		recorded := false
-		for _, run := range runs {
-			if run.Seq == r.LastRun.Seq {
-				recorded = true
-				break
-			}
-		}
-		if !recorded {
-			out = append(out, *r.LastRun)
-		}
-	}
-	for i := len(runs) - 1; i >= 0 && len(out) < limit; i-- {
-		out = append(out, runs[i])
-	}
-	if len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
+	sort.Slice(runs, func(i, j int) bool { return runs[i].Seq < runs[j].Seq })
+	return runs, nil
 }
 
 // Due is the unpaused routines whose NextRun is at or before now, the
@@ -434,30 +448,56 @@ func (s *Store) save() {
 
 func (s *Store) runsPath(id string) string { return filepath.Join(s.runsDir, id+".runs.jsonl") }
 
-// appendRun adds one line to a routine's run records; past keep lines the
-// file is rewritten with the newest keep.
-func (s *Store) appendRun(id string, run wire.RoutineRun, keep int) error {
-	line, err := json.Marshal(run)
-	if err != nil {
-		return err
+// putRun writes a run into a routine's records (mergeRun) and rewrites
+// the file (it is small: at most keep lines).
+func (s *Store) putRun(id string, run wire.RoutineRun, keep int) error {
+	if s.path == "" {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.memRuns[id] = mergeRun(s.memRuns[id], run, keep)
+		return nil
 	}
-	line = append(line, '\n')
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
-	lines := append(s.readLines(id), line)
-	if len(lines) > keep {
-		lines = lines[len(lines)-keep:]
-		return atomicWrite(s.runsPath(id), bytes.Join(lines, nil), 0o600)
+	var buf bytes.Buffer
+	for _, r := range mergeRun(s.readRuns(id), run, keep) {
+		line, err := json.Marshal(r)
+		if err != nil {
+			return err
+		}
+		buf.Write(append(line, '\n'))
 	}
-	f, err := os.OpenFile(s.runsPath(id), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
-	if err != nil {
-		return err
+	return atomicWrite(s.runsPath(id), buf.Bytes(), 0o600)
+}
+
+// mergeRun puts run into runs: the record with its Seq is replaced, else
+// it is added; the records stay in Seq order and are trimmed to keep,
+// the oldest ended ones first (a running record is never trimmed).
+func mergeRun(runs []wire.RoutineRun, run wire.RoutineRun, keep int) []wire.RoutineRun {
+	replaced := false
+	for i := range runs {
+		if runs[i].Seq == run.Seq {
+			runs[i], replaced = run, true
+			break
+		}
 	}
-	if _, err := f.Write(line); err != nil {
-		f.Close()
-		return err
+	if !replaced {
+		runs = append(runs, run)
 	}
-	return f.Close()
+	sort.Slice(runs, func(i, j int) bool { return runs[i].Seq < runs[j].Seq })
+	for len(runs) > keep {
+		trimmed := false
+		for i, r := range runs {
+			if r.Outcome != wire.RunRunning {
+				runs, trimmed = append(runs[:i], runs[i+1:]...), true
+				break
+			}
+		}
+		if !trimmed {
+			break
+		}
+	}
+	return runs
 }
 
 // readLines is the run records file's lines, each ending in a newline.

@@ -45,12 +45,12 @@ var ID = regexp.MustCompile(`^r-[a-z0-9-]{1,40}$`)
 type Runner interface {
 	// Start spawns run.Seq of r: the agent named after the routine, in
 	// the background unless r.Policy.Foreground, with HESPER_ROUTINE_ID
-	// and HESPER_ROUTINE_RUN in its environment. It returns once the
-	// agent exists; the error is agents.spawn's. The channel yields
-	// exactly one value when the run ended: run with Agent, Session,
-	// Ended, Outcome, State, Message (and Error) filled in. The Runner
-	// enforces r.Policy.Timeout itself (outcome RunTimedOut).
-	Start(ctx context.Context, r wire.Routine, run wire.RoutineRun) (<-chan wire.RoutineRun, error)
+	// and HESPER_ROUTINE_RUN in its environment. It returns the agent's
+	// id once the agent exists; the error is agents.spawn's. The channel
+	// yields exactly one value when the run ended: run with Agent,
+	// Session, Ended, Outcome, State, Message (and Error) filled in. The
+	// Runner enforces r.Policy.Timeout itself (outcome RunTimedOut).
+	Start(ctx context.Context, r wire.Routine, run wire.RoutineRun) (agent string, done <-chan wire.RoutineRun, err error)
 	// Live reports whether a run of routine id is still live (its agent
 	// exists and has not settled).
 	Live(id string) bool
