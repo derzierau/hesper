@@ -178,6 +178,10 @@ func (r *Registry) finishedInBackground(a *agent) {
 // held).
 func (r *Registry) removeLocked(a *agent, reason string) {
 	delete(r.agents, a.local)
+	if a.run != nil && !a.run.ended {
+		// A routine's run closed before it settled (routinerun.go).
+		r.endRoutineRun(a, wire.RunExited, wire.StateExited, "")
+	}
 	if reason == wire.ReasonClosed || reason == wire.ReasonFinishedInBackground {
 		r.adoptChildren(a)
 	}

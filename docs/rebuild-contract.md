@@ -126,6 +126,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `fs.stat` | `{machine?, path}` | `{exists, isDir}` (added, see "Machine and folder agree") |
 | `hook` | `{agent, source: claude\|codex, event, payload}` | `{}` (what hook processes send) |
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
+| `routines.list` / `routines.save` / `routines.remove` / `routines.pause` / `routines.runs` / `routines.run` | see "As built — routines" | saved spawns hesperd starts on a cadence, each run an agent of this daemon (added) |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
@@ -4358,6 +4359,7 @@ server only routes):
 | `routines.remove` | `{id}` | `{}`; the run records go too. `not_found`. |
 | `routines.pause` | `{id, paused}` | `Routine`: paused (`nextRun` zero) or resumed (`nextRun` from now). |
 | `routines.runs` | `{id, limit?}` | `[RoutineRun]`, newest first, at most `limit` (50); a running `lastRun` not yet recorded comes first. |
+| `routines.run` | `{id}` | `RoutineRun` (running, `manual`): a run by hand, paused or not, without moving the clock. `exists` while a run is live; `not_found`; `unavailable` without the store. The run is bound to the daemon's lifetime, not the call's. |
 
 On `agents.subscribe` connections, after the drafts: `routines.changed
 {routine}` (first one per routine; a run beginning or ending is one,
@@ -4380,12 +4382,63 @@ while a run is live. `Run(ctx)` steps, then waits for the earliest
 `nextRun` (at most `Tick`, 60 s: the safety net for a clock jump or a
 Mac waking from sleep) or `Changed()`.
 
-The Runner (`routines.Runner`: `Start`, `Live`, `Stop`), its wiring in
-`internal/agents` (the agent named after the routine, `HESPER_ROUTINE_ID`
-and `HESPER_ROUTINE_RUN` in its environment, the timeout, closing a
-background run that settled, live runs across a daemon restart), the
-start of the scheduler and `routines.run` follow in the next change;
-the registry opens the store at start and leaves a comment at the spot.
+**Runner** (`relay/internal/agents/routinerun.go`; the registry is the
+scheduler's `routines.Runner`). The registry opens the store at start,
+picks up the runs the last daemon left running (below), and runs the
+scheduler for its lifetime (`Close` ends it).
+
+- *A run is an agent.* `Start` spawns `routine.spawn` through the same
+  path as `agents.spawn` (profile and kind resolution, worktree, pre-trust,
+  scratch), with `machine` empty (this Mac), `name` "<routine name> ·
+  HH:MM" (the run's start in the daemon's local time) and `caller`,
+  `parent`, `depth`, `bring` and `draft` cleared. The agent carries
+  `Agent.routine` (the routine's id) and `Agent.routineRun` (the run's
+  `seq`), persisted, so `agents.list` shows which agents are runs; its
+  environment has `HESPER_ROUTINE_ID` and `HESPER_ROUTINE_RUN` next to
+  `HESPER_AGENT_ID`, after a respawn too. It starts in the background
+  (`Agent.background`) unless `policy.foreground`. A spawn that fails is
+  the scheduler's `failed` run.
+- *The run ends where the agent changes, under the registry's lock*
+  (never from a subscriber after the fact: a background agent that
+  finished is closed and removed when its process ends). `setState` sees
+  the first settled state of an agent with a run (`routineSettled`):
+  `done` or `idle` end it `done` only as a turn's end (`turnEnded`: from
+  working, an approval or a question; a resume coming up idle is none),
+  with `message` the agent's final message (`agents.result`; the Stop
+  hook sets it after the state, so it is read under the next lock) and
+  `state` done or idle; `approval` or `question` end it `needs-you` and
+  put a background run back on the walls and in the inbox
+  (`background` false, in the same `agents.changed`); `error` ends it
+  `error` with the attention's title and detail as `error`; the process
+  exiting ends it `exited` (an exit that failed is an `error` with its
+  detail). An agent that leaves the registry before it settled
+  (`removeLocked`: `agents.close`, the scheduler's `Stop`, a move) ends
+  its run `exited`, whatever its interrupt made of its state on the way.
+  `agent`, `session` and `ended` are filled in every case. A run ends
+  exactly once: the user answering the approval and the agent finishing
+  later writes no second record. The agent itself goes on as any agent:
+  a background one that finished is closed (closing agents); one that
+  needs someone stays.
+- *Timeout.* `policy.timeout` arms a timer per run; when it fires on a
+  run still running, the run ends `timed-out` (`error` "timed out after
+  1h0m0s", `state` the agent's state then) and the agent is closed as
+  `agents.close` would (the interrupt, then the hangup), from the timer's
+  goroutine, outside the lock. The timer stops when the run ends.
+- `Live(id)`: an agent with `routine` = id runs (its process is alive)
+  and has not settled (`starting` or `working`). An earlier run's agent
+  that works again (its approval answered) counts: the overlap policy is
+  about the project, not the record. `Stop(id)` closes that agent
+  (`agents.close`); no live run is not an error.
+- *Daemon restart* (`resumeRoutineRuns`, in `Open` after `restore` and
+  the store, before the scheduler): for every routine whose `lastRun` is
+  `running`, the agent with its `routine` and `routineRun` is looked
+  for. Found and live (it was respawned with its session; it comes up
+  starting, then idle, which is no end): the run is re-armed with its
+  end hook and what is left of its timeout (at least 10 s); it ends when
+  the agent settles, written to the store directly. Found and settled:
+  the run ends now with the matching outcome. Gone (it was being closed,
+  or removed): `exited` with `error` "hesperd restarted". A daemon stop
+  itself never ends a run (the agents stay "running" for the respawn).
 
 Tests: `internal/routines` (`cadence_test.go`: every rule of `Validate`
 failing and normalised, `Next` in UTC and Europe/Berlin across both DST
@@ -4396,7 +4449,16 @@ deletes the records, due ordering, subscriptions and `Changed`, 0600;
 skip and replace, catch-up once and none, a failed start, `RunNow`
 paused and live, `Run` with a short tick), `internal/agents/routines_test.go`
 (save, list, pause, runs, remove, codes, another machine, 0600, a
-restart; `routines.changed` / `routines.removed` on a subscription).
+restart; `routines.changed` / `routines.removed` on a subscription),
+`internal/agents/routinerun_test.go` (through the daemon and the fake
+agent, `Step` two hours ahead: a run is a background agent with
+`routine`, `routineRun`, the name, the environment; its turn ends → `done`
+with the message, the agent gone; an approval → `needs-you`, back on the
+walls, no second record; the timeout (`routineTimeout` shortened by the
+test) → `timed-out`, closed; `routines.run` on a paused routine, `manual`,
+`exists` while live, closed by hand → `exited`; overlap skip with the
+live run going on; a restart with a live run re-armed and one whose
+agent is gone; `routineSpawn` and `runLive` as units).
 
 ## Wire names kept from Ghosty
 

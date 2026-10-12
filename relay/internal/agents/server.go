@@ -736,7 +736,7 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return reg.Files().Chunk(p, false)
 	case "drafts.list", "drafts.save", "drafts.remove":
 		return s.drafts.call(method, params)
-	case "routines.list", "routines.save", "routines.remove", "routines.pause", "routines.runs":
+	case "routines.list", "routines.save", "routines.remove", "routines.pause", "routines.runs", "routines.run":
 		return s.routinesCall(method, params) // routines.go
 	case "projects.list", "projects.update", "projects.promote", "projects.remove", "groups.list", "groups.save", "groups.remove",
 		"projects.scratch", "projects.scratchKeep", "projects.scratchArchive", "projects.scratchRestore", "projects.scratchDelete",

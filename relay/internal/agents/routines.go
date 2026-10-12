@@ -8,9 +8,9 @@ import (
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
-// Routines (internal/routines): the registry opens the store; the server
-// routes routines.* to it and sends its changes to subscribers. The
-// scheduler and routines.run come with the runner's wiring.
+// Routines (internal/routines): the registry opens the store and runs
+// the scheduler (routinerun.go); the server routes routines.* to them and
+// sends the store's changes to subscribers.
 
 // routinesCall runs a routines.* method.
 func (s *Server) routinesCall(method string, params json.RawMessage) (any, error) {
@@ -61,6 +61,19 @@ func (s *Server) routinesCall(method string, params json.RawMessage) (any, error
 			return nil, &badParams{errors.New("id is required")}
 		}
 		return store.Runs(p.ID, p.Limit)
+	case "routines.run":
+		var p wire.IDParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		if p.ID == "" {
+			return nil, &badParams{errors.New("id is required")}
+		}
+		if s.reg.routineSched == nil {
+			return nil, wire.Errorf(wire.CodeUnavailable, "routines are not available")
+		}
+		// The daemon's lifetime bounds the run, not this call.
+		return s.reg.routineSched.RunNow(s.reg.routineCtx, p.ID)
 	}
 	return nil, &noMethod{method}
 }
