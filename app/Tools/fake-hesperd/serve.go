@@ -39,6 +39,9 @@ type Agent struct {
 	Created    string         `json:"created"`
 	PID        int            `json:"pid"`
 	Exit       *ExitInfo      `json:"exit"`
+	// Routine and RoutineRun: this agent is a run of that routine (routines.go).
+	Routine    string `json:"routine,omitempty"`
+	RoutineRun int    `json:"routineRun,omitempty"`
 }
 
 // ExitInfo is how part D reports an ended process.
@@ -96,6 +99,8 @@ type daemon struct {
 	groups   map[string]*Group
 	// sessions.go (shared history)
 	sess *sessionStore
+	// routines.go
+	routines *routineStore
 }
 
 func runServe(args []string) error {
@@ -113,6 +118,8 @@ func runServe(args []string) error {
 	nSessions := fs.Int("sessions", 40, "seed this many history sessions (sessions.*)")
 	noSessions := fs.Bool("no-sessions", false, "answer sessions.* with -32601 (an older hesperd)")
 	indexingMs := fs.Int("indexing-ms", 0, "imitate the first index for this long (sessions.indexing)")
+	nRoutines := fs.Int("routines", 0, "seed this many routines (routines.*)")
+	noRoutines := fs.Bool("no-routines", false, "answer routines.* with -32601 (an older hesperd)")
 	_ = fs.Parse(args)
 	var seedSizes [][2]int
 	for _, s := range strings.Split(*sizes, ",") {
@@ -141,6 +148,7 @@ func runServe(args []string) error {
 		projects: map[string]*Project{}, groups: map[string]*Group{}}
 	d.loadDrafts()
 	d.sess = &sessionStore{byID: map[string]*Session{}, disabled: *noSessions}
+	d.routines = &routineStore{byID: map[string]*Routine{}, runs: map[string][]RoutineRun{}, disabled: *noRoutines}
 	demoProjects := *projectsSeed == "demo"
 	if demoProjects {
 		d.seedDemoProjects()
@@ -174,6 +182,9 @@ func runServe(args []string) error {
 			go d.runIndexing(*nSessions, time.Duration(*indexingMs)*time.Millisecond)
 		}
 	}
+	if !*noRoutines {
+		d.seedRoutines(*nRoutines)
+	}
 	if *demo {
 		go func() { time.Sleep(time.Second); d.demoStates() }()
 	}
@@ -202,18 +213,21 @@ func newID() string {
 }
 
 type spawnParams struct {
-	Machine  string `json:"machine"`
-	Profile  string `json:"profile"`
-	Kind     string `json:"kind"`
+	Machine  string `json:"machine,omitempty"`
+	Profile  string `json:"profile,omitempty"`
+	Kind     string `json:"kind,omitempty"`
 	Project  string `json:"project"`
 	Task     string `json:"task"`
-	Name     string `json:"name"`
-	Worktree any    `json:"worktree"`
-	Branch   string `json:"branch"`
+	Name     string `json:"name,omitempty"`
+	Worktree any    `json:"worktree,omitempty"`
+	Branch   string `json:"branch,omitempty"`
 	// Seeded agents only: the PTY's size (else --cols x --rows).
 	cols, rows int
 	// sessions.resume: the session the agent continues (sessions.go).
 	sessionID string
+	// A routine's run: the routine and the run's seq (routines.go).
+	routine    string
+	routineRun int
 }
 
 var profiles = map[string]map[string]any{
@@ -269,6 +283,7 @@ func (d *daemon) spawn(p spawnParams) (*Agent, error) {
 		ID: machine + "/" + newID(), Machine: machine, Kind: p.Kind, Profile: p.Profile, Name: name, Task: p.Task,
 		Project: p.Project, Branch: p.Branch, State: "starting", StateSince: now(), Created: now(),
 		Size: map[string]int{"cols": d.tuiCols, "rows": d.tuiRows}, SessionID: "fake-" + newID(),
+		Routine: p.routine, RoutineRun: p.routineRun,
 	}
 	if p.sessionID != "" {
 		a.SessionID = p.sessionID
@@ -296,7 +311,12 @@ func (d *daemon) spawn(p spawnParams) (*Agent, error) {
 	d.agentAddedSession(a) // shared history (sessions.go)
 	go func() {
 		time.Sleep(600 * time.Millisecond)
-		d.setState(a.ID, "working", nil, "")
+		d.mu.Lock()
+		starting := ap.a.State == "starting" // a routine's run may have ended already
+		d.mu.Unlock()
+		if starting {
+			d.setState(a.ID, "working", nil, "")
+		}
 	}()
 	return a, nil
 }
@@ -582,6 +602,12 @@ func (d *daemon) control(c net.Conn, br *bufio.Reader, first []byte) {
 					b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "drafts.changed", "params": map[string]any{"draft": x}})
 					snapshot = append(snapshot, b)
 				}
+				if d.routinesEnabled() {
+					for _, r := range d.routineList() {
+						b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "routines.changed", "params": map[string]any{"routine": r}})
+						snapshot = append(snapshot, b)
+					}
+				}
 				d.subs[sub] = true
 				d.mu.Unlock()
 				for _, b := range snapshot {
@@ -847,6 +873,10 @@ func (d *daemon) call(req rpcRequest) (any, *rpcError) {
 		rate, _ := p["rate"].(float64)
 		go d.sessionsFlood(secs, int(rate))
 		return map[string]any{}, nil
+	case "routines.list", "routines.save", "routines.remove", "routines.pause", "routines.runs", "routines.run":
+		return d.routineCall(req.Method, req.Params)
+	case "fake.routineCalls", "fake.routineRun": // test-only: the routines.* calls so far; a run ending as told (routines.go)
+		return d.routineFakeCall(req.Method, req.Params)
 	case "projects.list", "groups.list", "projects.update", "projects.promote", "projects.remove", "groups.save", "groups.remove":
 		return d.projectCall(req.Method, req.Params)
 	// ---- test-only, outside the contract ----

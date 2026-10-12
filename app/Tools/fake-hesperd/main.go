@@ -5,7 +5,7 @@
 // $HESPER_STATE_DIR, and runs fake TUIs instead of claude/codex. It never
 // touches the live state dir, LaunchAgents or real agents.
 //
-//	fake-hesperd serve [--agents N] [--tui agent|flood] [--fps N] [--scenario] [--sizes 120x40,200x60]
+//	fake-hesperd serve [--agents N] [--tui agent|flood] [--fps N] [--scenario] [--sizes 120x40,200x60] [--routines N | --no-routines]
 //	fake-hesperd attach <id> [--ro] [--owner] [--view] [--view-rows R]
 //	fake-hesperd tui [--mode agent|flood] [--name X] [--fps N]
 package main
