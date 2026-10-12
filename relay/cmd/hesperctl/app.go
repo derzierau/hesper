@@ -88,6 +88,9 @@ func init() {
 		{Name: "open inbox", Summary: "Open the inbox of agents that need you (⌘J)", Usage: "open inbox",
 			Help: "On the frontmost wall; with nobody needing you the app says so.\n\n" + noLaunchHelp, Output: "{wall, needsYou}",
 			Run: openInbox},
+		{Name: "open routines", Summary: "Open the Routines panel in Hesper.app (⌘⇧R)", Usage: "open routines [ID]",
+			Help: "The routines (hesperctl routine ls) on the frontmost wall; with ID that routine selected.\n\n" + noLaunchHelp, Output: "{wall, routine}",
+			Run: openRoutines},
 		{Name: "wall show", Aliases: []string{"wall"}, ReadOnly: true, Summary: "Show the walls: scope, layout, grouping, density, bands, focus",
 			Usage: "wall show [--wall W] [--json]",
 			Help:  "Every wall in desk order (home first), the bands of walls that show bands, the current desk and what has the focus. --json prints the app's whole state (--wall W: that wall only). " + wallHelp + "\n\n" + noLaunchHelp,
@@ -294,6 +297,26 @@ func openInbox(ctx context.Context, f *flag.FlagSet, args []string) error {
 		}
 		return appOpen(ctx, c, *asJSON, *noLaunch, map[string]any{"inbox": true}, func(r map[string]any) string {
 			return fmt.Sprintf("inbox on %v: %v need you", r["wall"], r["needsYou"])
+		})
+	})
+}
+
+func openRoutines(ctx context.Context, f *flag.FlagSet, args []string) error {
+	asJSON := jsonFlag(f)
+	noLaunch := noLaunchFlag(f)
+	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, pos []string) error {
+		if len(pos) > 1 {
+			return usagef("open routines takes at most one routine id")
+		}
+		params := map[string]any{"routines": true}
+		if len(pos) == 1 {
+			params["routines"] = pos[0]
+		}
+		return appOpen(ctx, c, *asJSON, *noLaunch, params, func(r map[string]any) string {
+			if id, _ := r["routine"].(string); id != "" {
+				return fmt.Sprintf("routines on %v: %s", r["wall"], id)
+			}
+			return fmt.Sprintf("routines on %v", r["wall"])
 		})
 	})
 }

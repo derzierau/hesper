@@ -106,6 +106,8 @@ func TestAppCommandsSendTheirParams(t *testing.T) {
 		{[]string{"open", "new", "--task", "hi", "--worktree", "--machine", "M"}, "app.open", `{"composer":{"machine":"M","task":"hi","worktree":true}}`},
 		{[]string{"open", "history", "login", "bug"}, "app.open", `{"history":{"query":"login bug"}}`},
 		{[]string{"open", "inbox"}, "app.open", `{"inbox":true}`},
+		{[]string{"open", "routines"}, "app.open", `{"routines":true}`},
+		{[]string{"open", "routines", "r-digest"}, "app.open", `{"routines":"r-digest"}`},
 		{[]string{"wall", "set", "--arrangement", "columns", "--density", "dense", "--collapse", "a", "--collapse", "b,c", "--expand", "all", "--sidebar", "off", "--home"}, "app.wall.set",
 			`{"arrangement":"columns","collapse":["a","b","c"],"density":"dense","expand":["all"],"home":true,"sidebar":false}`},
 		{[]string{"wall", "set", "--wall", "2", "--scope", "needs-you", "--band-order", "p:a,p:b", "--grouping", "project", "--own-walls", "full"}, "app.wall.set",

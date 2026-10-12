@@ -349,6 +349,7 @@ final class AppModel {
         let transitions = registry.apply(e)
         if !isMirror { closingAfter(e, before: before) }
         if !isMirror { reviewSaw(e) } // review: the list follows agents settling
+        if !isMirror { routinesSaw(e) } // routines: the list after a connect
         switch e {
         case .connected:
             connectionMessage = nil
@@ -592,6 +593,8 @@ final class AppModel {
             toggleHistory()
         case .review: // review (⌘R)
             toggleReview()
+        case .routines: // routines (⌘⇧R)
+            toggleRoutines()
         case .passThrough, .none:
             break
         }

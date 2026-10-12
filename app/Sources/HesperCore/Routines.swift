@@ -394,12 +394,14 @@ public enum RoutineKeyAction: Equatable, Sendable {
 }
 
 public enum RoutineKeys {
-    public static func route(_ k: KeyChord) -> RoutineKeyAction {
+    /// `keyCode`: ⌫ (51) and ⌦ (117) arrive as characters, not as `.delete`.
+    public static func route(_ k: KeyChord, keyCode: UInt16? = nil) -> RoutineKeyAction {
         if k.command && !k.option && !k.control {
             if k.shift, k.key == .char("r") || k.key == .char("R") { return .close }
             return .pass
         }
         if k.command || k.control || k.option { return .pass }
+        if keyCode == 51 || keyCode == 117 { return .remove }
         switch k.key {
         case .escape: return .close
         case .up: return .previous

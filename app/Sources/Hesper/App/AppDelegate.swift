@@ -193,6 +193,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add("History", "y", .command, .history) // shared history (hidden while hesperd has no sessions.*)
         HistoryMenu.track(m.items.last!, model: model)
         add("Review", "r", .command, .review) // review: finished work on every Mac
+        add("Routines…", "r", [.command, .shift], .routines) // routines (hidden while hesperd has no routines.*)
+        RoutinesMenu.track(m.items.last!, model: model)
         m.addItem(.separator())
         add("Open / Back to Wall", "\r", .command, .toggleFocus)
         m.addItem(.separator())

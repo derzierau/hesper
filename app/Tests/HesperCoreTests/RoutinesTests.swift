@@ -197,6 +197,8 @@ struct RoutinesTests {
         #expect(RoutineKeys.route(KeyChord(.char("P"), shift: true)) == .togglePause)
         #expect(RoutineKeys.route(KeyChord(.char("o"))) == .open)
         #expect(RoutineKeys.route(KeyChord(.delete)) == .remove)
+        #expect(RoutineKeys.route(KeyChord(.char("\u{7f}")), keyCode: 51) == .remove) // ⌫ as AppKit sends it
+        #expect(RoutineKeys.route(KeyChord(.char("\u{7f}"), command: true), keyCode: 51) == .pass)
         #expect(RoutineKeys.route(KeyChord(.escape)) == .close)
         #expect(RoutineKeys.route(KeyChord(.char("r"), command: true, shift: true)) == .close)
         #expect(RoutineKeys.route(KeyChord(.char("R"), command: true, shift: true)) == .close)
@@ -206,5 +208,12 @@ struct RoutinesTests {
         #expect(RoutineKeys.route(KeyChord(.enter, option: true)) == .pass)
         #expect(RoutineKeys.route(KeyChord(.char("p"), control: true)) == .pass)
         #expect(RoutineKeys.route(KeyChord(.char("x"))) == .pass)
+    }
+
+    @Test func routerHasTheShortcut() {
+        #expect(KeyRouter.route(KeyChord(.char("r"), command: true, shift: true), mode: .wall, selectedState: nil) == .routines)
+        #expect(KeyRouter.route(KeyChord(.char("R"), command: true, shift: true), mode: .focus, selectedState: .working) == .routines)
+        #expect(KeyRouter.route(KeyChord(.char("r"), command: true, shift: true), mode: .compose, selectedState: nil) == .routines)
+        #expect(KeyRouter.route(KeyChord(.char("r"), command: true), mode: .wall, selectedState: nil) == .review) // ⌘R stays Review's
     }
 }

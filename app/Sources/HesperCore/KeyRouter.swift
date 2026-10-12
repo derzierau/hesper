@@ -53,6 +53,8 @@ public enum AppCommand: Equatable, Sendable {
     /// ⌘R: the review sheet (finished work on every Mac); ⏎ on a finished
     /// tile that is ready to review opens it there.
     case review
+    /// ⌘⇧R: the routines panel (saved spawns hesperd runs on a cadence).
+    case routines
     /// Belongs to the terminal (focus mode).
     case passThrough
     case none
@@ -109,6 +111,7 @@ public enum KeyRouter {
             case .char("0") where !k.shift: return .toggleSidebar
             case .char("y") where !k.shift: return .history
             case .char("r") where !k.shift: return .review
+            case .char("r"), .char("R"): return .routines
             default: return mode == .focus ? .passThrough : .none
             }
         }
@@ -167,6 +170,7 @@ public enum KeyRouter {
             case .char("k") where !k.shift: return .palette
             case .char("y") where !k.shift: return .history
             case .char("r") where !k.shift: return .review
+            case .char("r"), .char("R"): return .routines
             default: return .passThrough
             }
         }

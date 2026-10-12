@@ -211,6 +211,15 @@ final class AppControl {
             let n = primary.counts.needingYou
             if w.model.popover != .attention { w.model.toggleAttentionQueue() } // ⌘J
             return ["wall": .string(w.id), "needsYou": .number(Double(n))]
+
+        case .routines(let id):
+            let w = manager.activeWall
+            guard w.model.routinesAvailable else { throw AppControlError("unavailable", "Routines need a hesperd with routines.*") }
+            if let id, w.model.routinesHub.routine(id) == nil { throw AppControlError.notFound("no routine \(id) (hesperctl routine ls lists them)") }
+            manager.bringForward(w.window)
+            w.model.openRoutines(select: id) // ⌘⇧R (on that routine, as ⌘K's Routines row)
+            NSApp.activate(ignoringOtherApps: true)
+            return ["wall": .string(w.id), "routine": id.map { .string($0) } ?? .null]
         }
     }
 

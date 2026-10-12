@@ -41,6 +41,12 @@ import Testing
         #expect(try AppOpenRequest.parse(["history": true]).target == .history(query: nil))
         #expect(try AppOpenRequest.parse(["history": "redirect"]).target == .history(query: "redirect"))
         #expect(try AppOpenRequest.parse(["inbox": true]).target == .inbox)
+        #expect(try AppOpenRequest.parse(["routines": true]).target == .routines(select: nil))
+        #expect(try AppOpenRequest.parse(["routines": "r-digest"]).target == .routines(select: "r-digest"))
+        #expect(try AppOpenRequest.parse(["routines": ["id": "r-digest"]]).target == .routines(select: "r-digest"))
+        #expect(try AppOpenRequest.parse(["routines": false]).target == .wall(nil, scope: nil, newWall: false))
+        #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["routines": true, "inbox": true]) }
+        #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["routines": 7]) }
     }
 
     @Test func wallTargetsLeaveTheFocusView() throws {
@@ -52,6 +58,7 @@ import Testing
         #expect(try !AppOpenRequest.parse(["agent": "a"]).target.showsWall)
         #expect(try !AppOpenRequest.parse(["agent": "a", "mode": "window"]).target.showsWall)
         #expect(try !AppOpenRequest.parse(["inbox": true]).target.showsWall)
+        #expect(try !AppOpenRequest.parse(["routines": true]).target.showsWall)
     }
 
     @Test func agentNames() throws {

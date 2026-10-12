@@ -45,6 +45,7 @@ enum HistoryPanelHost {
         let hub = HistoryHub.shared(for: model)
         guard hub.supported == true else { NSSound.beep(); return }
         guard let e = entries[ObjectIdentifier(model)], let root = e.root else { return }
+        if RoutinesPanelHost.isOpen(model) { RoutinesPanelHost.panel(for: model)?.close() } // routines
         let p = e.panel ?? HistoryPanel(model: model, root: root)
         e.panel = p
         p.open(scope: scope, select: select, text: text)
