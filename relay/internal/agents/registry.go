@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -625,10 +626,16 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		deliverLater = true
 	}
 	argv := r.argv(a, profile, resume, deliverLater)
-	env := agentEnv(r.env, map[string]string{
+	vars := map[string]string{
 		"TERM": "xterm-256color", "COLORTERM": "truecolor", "TERM_PROGRAM": "hesperd",
 		"HESPER_AGENT_ID": a.ID, "HESPER_SOCKET": r.opt.Socket,
-	})
+	}
+	if a.Routine != "" {
+		// routinerun.go: a routine's run knows its routine, after a
+		// respawn too.
+		vars["HESPER_ROUTINE_ID"], vars["HESPER_ROUTINE_RUN"] = a.Routine, strconv.Itoa(a.RoutineRun)
+	}
+	env := agentEnv(r.env, vars)
 	a.gen++
 	gen, local := a.gen, a.local
 	cfg := ptyhost.Config{

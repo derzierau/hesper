@@ -95,6 +95,10 @@ type Agent struct {
 	// Track (shells only): hesperd follows the shell's commands, working
 	// while one runs (hesperctl new --kind shell --track). Persisted.
 	Track bool `json:"track,omitempty"`
+	// Routine (routines) names the routine this agent is a run of, and
+	// RoutineRun the run's number (wire.RoutineRun.Seq). Persisted.
+	Routine    string `json:"routine,omitempty"`
+	RoutineRun int    `json:"routineRun,omitempty"`
 	// Checkpoint (move work) is the agent's last checkpoint (Git folders
 	// only; omitted before the first and for other folders). Persisted.
 	Checkpoint *Checkpoint `json:"checkpoint,omitempty"`
