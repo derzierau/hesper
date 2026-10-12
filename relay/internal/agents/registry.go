@@ -22,6 +22,7 @@ import (
 
 	"github.com/derzierau/hesper/relay/internal/lockwatch"
 	"github.com/derzierau/hesper/relay/internal/ptyhost"
+	"github.com/derzierau/hesper/relay/internal/routines"
 	"github.com/derzierau/hesper/relay/internal/vt"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -169,7 +170,8 @@ type Registry struct {
 	closing   bool
 	saveCh    chan struct{}
 	saverEnd  chan struct{}
-	quit      chan struct{} // closed by Close (pruneLoop)
+	quit      chan struct{}   // closed by Close (pruneLoop)
+	routines  *routines.Store // routines.go; nil: off
 
 	// checkpoints (checkpoint.go): hooks, one checkpoint at a time, the
 	// list of repositories with checkpoints.
@@ -283,12 +285,20 @@ func Open(opt Options) (*Registry, error) {
 		r.restore(rec)
 	}
 	go r.pruneLoop() // checkpoint.go
+	// routines.go: the store; the scheduler is started by the runner's
+	// wiring (it needs the Runner).
+	if r.routines, err = routines.Open(routines.StoreOptions{Dir: opt.StateDir, Loc: time.Local, Logf: opt.Logf}); err != nil {
+		opt.Logf("hesperd: %v (routines off)", err)
+	}
 	// The registry's lock is what every hook, list and attach waits on:
 	// a hold over 10 s (and a stall of the whole process) is logged with
 	// the holder's stack.
 	r.watch = lockwatch.Start(lockwatch.Options{Logf: opt.Logf, Stalls: true}, lockwatch.Lock{Name: "the registry's lock", Mu: &r.mu})
 	return r, nil
 }
+
+// Routines is the routine store (nil when it could not be opened).
+func (r *Registry) Routines() *routines.Store { return r.routines }
 
 // Machine is this Mac's short name.
 func (r *Registry) Machine() string { return r.machine }
