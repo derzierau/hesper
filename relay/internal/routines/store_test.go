@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,11 +14,32 @@ import (
 )
 
 // clock is a fake clock the tests move by hand.
-type clock struct{ t time.Time }
+type clock struct {
+	mu sync.Mutex
+	t  time.Time
+}
 
-func (c *clock) now() time.Time { return c.t }
+func (c *clock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
 
-func newClock(t *testing.T, s string) *clock { return &clock{at(t, time.UTC, s)} }
+func (c *clock) set(t time.Time) {
+	c.mu.Lock()
+	c.t = t
+	c.mu.Unlock()
+}
+
+// add moves the clock by d and returns the new time.
+func (c *clock) add(d time.Duration) time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+	return c.t
+}
+
+func newClock(t *testing.T, s string) *clock { return &clock{t: at(t, time.UTC, s)} }
 
 func openStore(t *testing.T, dir string, c *clock) *Store {
 	t.Helper()
@@ -44,7 +66,7 @@ func TestStoreSaveListRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ID.MatchString(r.ID) || r.Name != strings.TrimPrefix(r.ID, "r-") || !r.Created.Equal(c.t) || !r.Updated.Equal(c.t) || r.CreatedBy != "local" {
+	if !ID.MatchString(r.ID) || r.Name != strings.TrimPrefix(r.ID, "r-") || !r.Created.Equal(c.now()) || !r.Updated.Equal(c.now()) || r.CreatedBy != "local" {
 		t.Fatalf("saved %+v", r)
 	}
 	if !r.NextRun.Equal(at(t, time.UTC, "2026-03-10 09:05")) || r.Policy.Timeout != "1h" {
@@ -61,7 +83,7 @@ func TestStoreSaveListRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.Name != "Tidy" || !again.Created.Equal(r.Created) || again.CreatedBy != "local" || !again.Updated.Equal(c.t) || again.Runs != 1 || again.LastRun == nil || again.LastRun.Seq != 1 {
+	if again.Name != "Tidy" || !again.Created.Equal(r.Created) || again.CreatedBy != "local" || !again.Updated.Equal(c.now()) || again.Runs != 1 || again.LastRun == nil || again.LastRun.Seq != 1 {
 		t.Fatalf("resave %+v", again)
 	}
 	// A second routine, created later, lists after the first.
@@ -91,7 +113,7 @@ func TestStoreSaveListRestart(t *testing.T) {
 	// Restart with the clock a day on: the first routine's NextRun is past
 	// and kept (due: its policy catches up), its run count and running
 	// LastRun survive; the second's future NextRun is recomputed.
-	c.t = at(t, time.UTC, "2026-03-11 12:00")
+	c.set(at(t, time.UTC, "2026-03-11 12:00"))
 	s2 := openStore(t, dir, c)
 	got, err := s2.Get(r.ID)
 	if err != nil {
@@ -100,11 +122,11 @@ func TestStoreSaveListRestart(t *testing.T) {
 	if got.Runs != 1 || got.LastRun == nil || got.LastRun.Outcome != wire.RunRunning || !got.NextRun.Equal(again.NextRun) || got.Name != "Tidy" {
 		t.Fatalf("after restart %+v", got)
 	}
-	if due := s2.Due(c.t); len(due) != 2 || due[0].ID != r.ID {
+	if due := s2.Due(c.now()); len(due) != 2 || due[0].ID != r.ID {
 		t.Fatalf("due %+v", due)
 	}
 	// Reopened with the clock before the saved NextRun: recomputed from now.
-	c.t = at(t, time.UTC, "2026-03-09 12:00")
+	c.set(at(t, time.UTC, "2026-03-09 12:00"))
 	s3 := openStore(t, dir, c)
 	got, _ = s3.Get(second.ID)
 	if !got.NextRun.Equal(at(t, time.UTC, "2026-03-09 18:00")) {
@@ -155,7 +177,7 @@ func TestStorePauseAdvanceDue(t *testing.T) {
 	if !a.NextRun.Equal(at(t, time.UTC, "2026-03-10 10:00")) || !b.NextRun.Equal(at(t, time.UTC, "2026-03-10 09:30")) {
 		t.Fatalf("next %v %v", a.NextRun, b.NextRun)
 	}
-	if due := s.Due(c.t); len(due) != 0 {
+	if due := s.Due(c.now()); len(due) != 0 {
 		t.Fatalf("due now %+v", due)
 	}
 	// Both due: the earliest NextRun first.
@@ -163,15 +185,15 @@ func TestStorePauseAdvanceDue(t *testing.T) {
 		t.Fatalf("due %+v", due)
 	}
 	// Paused: NextRun zero, never due, Advance leaves it; resumed from now.
-	c.t = at(t, time.UTC, "2026-03-10 09:10")
+	c.set(at(t, time.UTC, "2026-03-10 09:10"))
 	p, err := s.SetPaused("r-a", true)
-	if err != nil || !p.Paused || !p.NextRun.IsZero() || !p.Updated.Equal(c.t) {
+	if err != nil || !p.Paused || !p.NextRun.IsZero() || !p.Updated.Equal(c.now()) {
 		t.Fatalf("paused %+v %v", p, err)
 	}
 	if due := s.Due(at(t, time.UTC, "2026-03-11 00:00")); len(due) != 1 || due[0].ID != "r-b" {
 		t.Fatalf("due while paused %+v", due)
 	}
-	if adv, _ := s.Advance("r-a", c.t); !adv.NextRun.IsZero() {
+	if adv, _ := s.Advance("r-a", c.now()); !adv.NextRun.IsZero() {
 		t.Fatalf("advanced while paused %v", adv.NextRun)
 	}
 	// A paused routine saved again stays paused with a zero NextRun.
@@ -188,7 +210,7 @@ func TestStorePauseAdvanceDue(t *testing.T) {
 	if _, err := s.SetPaused("r-nope", true); code(err) != wire.CodeNotFound {
 		t.Fatal(err)
 	}
-	if _, err := s.Advance("r-nope", c.t); code(err) != wire.CodeNotFound {
+	if _, err := s.Advance("r-nope", c.now()); code(err) != wire.CodeNotFound {
 		t.Fatal(err)
 	}
 }
@@ -205,7 +227,7 @@ func TestStoreRuns(t *testing.T) {
 				t.Fatalf("no runs yet: %+v %v", runs, err)
 			}
 			r, run, err := s.BeginRun("r-a", false)
-			if err != nil || run.Seq != 1 || run.Outcome != wire.RunRunning || !run.Started.Equal(c.t) || run.Manual || r.Runs != 1 || r.LastRun.Seq != 1 {
+			if err != nil || run.Seq != 1 || run.Outcome != wire.RunRunning || !run.Started.Equal(c.now()) || run.Manual || r.Runs != 1 || r.LastRun.Seq != 1 {
 				t.Fatalf("begin %+v %+v %v", r, run, err)
 			}
 			// A running run not in the file yet comes first.
@@ -218,7 +240,7 @@ func TestStoreRuns(t *testing.T) {
 				t.Fatal(err)
 			}
 			r, _ = s.Get("r-a")
-			if r.LastRun.Outcome != wire.RunDone || !r.LastRun.Ended.Equal(c.t) || r.LastRun.Agent != "L/a1" || r.LastRun.Message != "all tidy" {
+			if r.LastRun.Outcome != wire.RunDone || !r.LastRun.Ended.Equal(c.now()) || r.LastRun.Agent != "L/a1" || r.LastRun.Message != "all tidy" {
 				t.Fatalf("ended %+v", r.LastRun)
 			}
 			if runs, _ := s.Runs("r-a", 0); len(runs) != 1 || runs[0].Seq != 1 || runs[0].Session != "s-1" || runs[0].Outcome != wire.RunDone {
