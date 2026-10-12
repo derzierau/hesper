@@ -339,6 +339,7 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 	}
 	sub := c.s.reg.SubscribeMoves()
 	c.subscribeDrafts(wg)
+	c.subscribeRoutines(wg)
 	wg.Add(1)
 	go func() { defer wg.Done(); c.watchProjects() }() // projects step 1
 	wg.Add(1)
@@ -735,6 +736,8 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return reg.Files().Chunk(p, false)
 	case "drafts.list", "drafts.save", "drafts.remove":
 		return s.drafts.call(method, params)
+	case "routines.list", "routines.save", "routines.remove", "routines.pause", "routines.runs", "routines.run":
+		return s.routinesCall(method, params) // routines.go
 	case "projects.list", "projects.update", "projects.promote", "projects.remove", "groups.list", "groups.save", "groups.remove",
 		"projects.scratch", "projects.scratchKeep", "projects.scratchArchive", "projects.scratchRestore", "projects.scratchDelete",
 		"projects.scratchSettings", "settings.get", "settings.set": // scratch projects

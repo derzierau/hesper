@@ -126,6 +126,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `fs.stat` | `{machine?, path}` | `{exists, isDir}` (added, see "Machine and folder agree") |
 | `hook` | `{agent, source: claude\|codex, event, payload}` | `{}` (what hook processes send) |
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
+| `routines.list` / `routines.save` / `routines.remove` / `routines.pause` / `routines.runs` / `routines.run` | see "As built — routines" | saved spawns hesperd starts on a cadence, each run an agent of this daemon (added) |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
@@ -368,7 +369,8 @@ the registry; the parents are aliases: `open ID` = `open agent ID`,
 [--window|--tab|--select]` (also `open ID`), `open wall [--wall W]
 [--scope S] [--new]`, `open new [--project P] [--task T | TASK…] [--kind
 K] [--profile P] [--machine M] [--worktree] [--branch B] [--wall W]`,
-`open history [QUERY…]`, `open inbox`; `wall [show] [--wall W]` (a table
+`open history [QUERY…]`, `open inbox`, `open routines [ID]`; `wall [show]
+[--wall W]` (a table
 and the bands; `--json`: the whole `app.state`), `wall set [--wall W]
 [--arrangement A] [--grouping G] [--density D] [--collapse BAND]…
 [--expand BAND]… [--band-order B,…] [--scope S] [--sidebar on|off]
@@ -4279,6 +4281,304 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
 
 **Status: built and unit-tested headless only.** Not run against a
 real hesperd with `review.*` yet, and no UI suite covers the sheet.
+
+### As built — routines (daemon: internal/routines, pkg/wire/routines.go)
+
+A routine is a saved `agents.spawn` that hesperd starts on a cadence.
+Each run is an ordinary agent of this daemon, named after the routine,
+in the background unless the routine says otherwise, closed once it
+settles (closing agents); its session stays in the shared history, its
+diff in review. The daemon of the machine named in `machine` owns the
+routine and its clock; the local socket serves `routines.*`
+(`hesperctl routine`). Phase 1 is the local machine only: a `machine`
+that is not this Mac's is `unavailable`.
+
+**Data model** (`pkg/wire/routines.go`): `Routine {id: "r-…" (1–40 of
+[a-z0-9-]; an empty id gets one), name (default: the id without "r-"),
+machine? (empty: this Mac), spawn: SpawnParams, every?, offset?, at?:
+["HH:MM"], policy, paused?, createdBy ("local" from the local socket),
+created, updated, runs (every run begun), lastRun?: RoutineRun,
+nextRun (UTC; zero while paused)}`. `spawn.task` is ≤ 256 KiB,
+`spawn.project` an absolute path on `machine`; `spawn.kind`, if set, is
+claude, codex or shell; `spawn.machine` is empty or `machine`; its
+`name`, `caller`, `parent`, `depth`, `bring` and `draft` are the
+daemon's and cleared. `RunPolicy {timeout ("1h"; 1m–24h), overlap
+("skip" | "replace"), catchUp ("once" | "none"), foreground?, keepRuns
+(200; ≤ 1000)}`. `RoutineRun {seq (from 1), started, ended?, agent?,
+session?, outcome, state?, message?, error?, manual?}`; outcomes
+`running`, `done`, `needs-you`, `exited`, `error`, `timed-out`,
+`skipped` (not started: the previous run was live, or the clock too
+late; `error` says which), `failed` (the spawn failed; `error` says
+why). Durations keep the text they were given ("1h" stays "1h").
+
+**Cadence** (exactly one of `every` and `at`, read in the daemon's
+local time, `time.Local`):
+
+- `every` (1m–168h) runs at local midnight + `offset` + k·every, k ≥ 0,
+  while that is still the same local day, and starts over at the next
+  midnight: "7h" runs at 00:00, 07:00, 14:00, 21:00, then 00:00 again.
+  `offset` (default "0s") is shorter than `every`: "1h" with "5m" runs
+  at :05 past every hour. Midnights come from `time.Date` in the
+  location and the steps are real durations, so the day of a DST change
+  has 23 or 25 hourly runs and the anchor holds; "24h" on the 25-hour
+  day runs a second time at 23:00 (a daily routine is `at`).
+- `at` lists wall-clock times "HH:MM" (24h), deduplicated and sorted;
+  the next run is today's earliest after now, else tomorrow's.
+- `nextRun` is the first instant strictly after the clock's reference
+  (now when saved, resumed or started; the run's instant when the
+  clock fires). A save recomputes it; a paused routine has none.
+- Catch-up: when the clock fires late (the Mac slept, hesperd was down,
+  the daemon was busy), `once` runs once now and resumes the cadence
+  from now; `none` records a `skipped` run ("late by 3h0m0s") when the
+  clock is more than one `every` (`at`: more than an hour) past the due
+  time, else runs. The store keeps a saved `nextRun` that is already
+  due when hesperd starts, so a run missed while it was down is caught
+  up as the policy says; a future one is recomputed.
+- Overlap: when the previous run is still live, `skip` records a
+  `skipped` run ("run 3 is still live") and moves on; `replace` closes
+  the live run first (its late end still goes to the records, without
+  touching the new `lastRun`).
+
+**Store** (`internal/routines/store.go`): `$HESPER_STATE_DIR/routines.json`
+(`{version: 1, routines: […]}`, 0600, atomic; a broken file moves to
+`routines.json.broken`; a routine with a bad id or cadence is dropped
+with a log line) and `routines/<id>.runs.jsonl` (one `RoutineRun` per
+line in `seq` order; removed with the routine). A run is a record from
+its begin (`BeginRun` writes it `running`), replaced in place by `seq`
+when its agent is known (`UpdateRun`) and when it ends (`EndRun`); the
+file is rewritten on every write and trimmed to the newest `keepRuns`,
+oldest ended records first — a `running` record is never trimmed, so a
+daemon start finds every run it has to pick up (`Running(id)`).
+`lastRun` is a cache: the record with the highest `seq`. ≤ 100
+routines. `created`, `createdBy`, `runs` and `lastRun` stay from the
+existing routine on a save; `updated` is now. Subscriptions are
+coalesced per routine like
+drafts'; `Changed()` wakes the scheduler whenever a routine's clock
+(`nextRun`, `paused`, saved or removed) changed.
+
+**Methods** (local socket; `relay/internal/agents/routines.go`, the
+server only routes):
+
+| Method | Params | Result / effect |
+|---|---|---|
+| `routines.list` | — | `[Routine]`, oldest first. |
+| `routines.save` | `{routine}` | `Routine`: created or replaced, defaults filled, `nextRun` set. `invalid` for a bad routine (the message names the field); `unavailable` for another machine. |
+| `routines.remove` | `{id}` | `{}`; the run records go too. `not_found`. |
+| `routines.pause` | `{id, paused}` | `Routine`: paused (`nextRun` zero) or resumed (`nextRun` from now). |
+| `routines.runs` | `{id, limit?}` | `[RoutineRun]`, newest `seq` first, at most `limit` (50); running runs included, with their `agent`. |
+| `routines.run` | `{id}` | `RoutineRun` (running, `manual`, `agent` set): a run by hand, paused or not, without moving the clock. `exists` while a run is live; `not_found`; `unavailable` without the store. The run is bound to the daemon's lifetime, not the call's. |
+
+On `agents.subscribe` connections, after the drafts: `routines.changed
+{routine}` (first one per routine; a run beginning or ending is one,
+with `lastRun` and `nextRun`) and `routines.removed {id}`. A daemon
+whose store could not open logs it and answers `unavailable`.
+
+**Scheduler** (`internal/routines/scheduler.go`; `Step(ctx, now)` is the
+whole decision for one instant, public so tests drive it without
+timers). For each routine due (`nextRun` ≤ now, not paused, earliest
+first): `catchUp` none and late → skipped, advanced; a live previous run
+→ skipped and advanced (`skip`) or stopped (`replace`); then the clock
+is advanced to the next run *before* the run begins, so a slow start
+can never fire twice; `BeginRun` (runs+1, a `running` record and
+`lastRun`), the Runner's `Start`, which returns the spawned agent's id,
+written into the record at once (`UpdateRun`: `routines.run`, `lastRun`
+and `routines.runs` name the agent while it runs); a start that fails is
+a `failed` run with the error. When the Runner reports the end, the
+record is written with what it yields (agent, session, ended, outcome,
+state, message, error); `seq`, `started` and `manual` stay the
+scheduler's. `RunNow(id)` is a manual run (`routines.run`): paused or
+not, never moves the clock, `exists` while a run is live. `Run(ctx)` steps, then waits for the earliest
+`nextRun` (at most `Tick`, 60 s: the safety net for a clock jump or a
+Mac waking from sleep) or `Changed()`.
+
+**Runner** (`relay/internal/agents/routinerun.go`; the registry is the
+scheduler's `routines.Runner`). The registry opens the store at start,
+picks up the runs the last daemon left running (below), and runs the
+scheduler for its lifetime (`Close` ends it).
+
+- *A run is an agent.* `Start` spawns `routine.spawn` through the same
+  path as `agents.spawn` (profile and kind resolution, worktree, pre-trust,
+  scratch), with `machine` empty (this Mac), `name` "<routine name> ·
+  HH:MM" (the run's start in the daemon's local time) and `caller`,
+  `parent`, `depth`, `bring` and `draft` cleared. The agent carries
+  `Agent.routine` (the routine's id) and `Agent.routineRun` (the run's
+  `seq`), persisted, so `agents.list` shows which agents are runs; its
+  environment has `HESPER_ROUTINE_ID` and `HESPER_ROUTINE_RUN` next to
+  `HESPER_AGENT_ID`, after a respawn too. It starts in the background
+  (`Agent.background`) unless `policy.foreground`. `Start` returns the
+  agent's id, which the scheduler writes into the running record. A
+  spawn that fails is the scheduler's `failed` run.
+- *The run ends where the agent changes, under the registry's lock*
+  (never from a subscriber after the fact: a background agent that
+  finished is closed and removed when its process ends). `setState` sees
+  the first settled state of an agent with a run (`routineSettled`):
+  `done` or `idle` end it `done` only as a turn's end (`turnEnded`: from
+  working, an approval or a question; a resume coming up idle is none),
+  with `message` the agent's final message (`agents.result`; the Stop
+  hook sets it after the state, so it is read under the next lock) and
+  `state` done or idle; `approval` or `question` end it `needs-you` and
+  put a background run back on the walls and in the inbox
+  (`background` false, in the same `agents.changed`); `error` ends it
+  `error` with the attention's title and detail as `error`; the process
+  exiting ends it `exited` (an exit that failed is an `error` with its
+  detail). An agent that leaves the registry before it settled
+  (`removeLocked`: `agents.close`, the scheduler's `Stop`, a move) ends
+  its run `exited`, whatever its interrupt made of its state on the way.
+  `agent`, `session` and `ended` are filled in every case. A run ends
+  exactly once: the user answering the approval and the agent finishing
+  later writes no second record. The agent itself goes on as any agent:
+  a background one that finished is closed (closing agents); one that
+  needs someone stays.
+- *Timeout.* `policy.timeout` arms a timer per run; when it fires on a
+  run still running, the run ends `timed-out` (`error` "timed out after
+  1h0m0s", `state` the agent's state then) and the agent is closed as
+  `agents.close` would (the interrupt, then the hangup), from the timer's
+  goroutine, outside the lock. The timer stops when the run ends.
+- `Live(id)`: an agent with `routine` = id runs (its process is alive)
+  and has not settled (`starting` or `working`). An earlier run's agent
+  that works again (its approval answered) counts: the overlap policy is
+  about the project, not the record. `Stop(id)` closes that agent
+  (`agents.close`); no live run is not an error.
+- *Daemon restart* (`resumeRoutineRuns`, in `Open` after `restore` and
+  the store, before the scheduler): for every `running` record of every
+  routine (`Running`; not only `lastRun`: with overlap `skip` the live
+  run sits behind the skipped one), the agent with its `routine` and
+  `routineRun` is looked for. Found and live (it was respawned with its session; it comes up
+  starting, then idle, which is no end): the run is re-armed with its
+  end hook and what is left of its timeout (at least 10 s); it ends when
+  the agent settles, written to the store directly. Found and settled:
+  the run ends now with the matching outcome. Gone (it was being closed,
+  or removed): `exited` with `error` "hesperd restarted". A daemon stop
+  itself never ends a run (the agents stay "running" for the respawn).
+  Accepted gap: a background run whose turn ended in the moment before
+  the daemon stopped (its agent was being closed as finished, so it is
+  not restored) ends `exited` "hesperd restarted" instead of `done`, and
+  its message is lost.
+
+Tests: `internal/routines` (`cadence_test.go`: every rule of `Validate`
+failing and normalised, `Next` in UTC and Europe/Berlin across both DST
+changes, `Late`; `store_test.go`: round trip through a real directory
+with a restart, broken file, limits, runs ordering and trimming, remove
+deletes the records, due ordering, subscriptions and `Changed`, 0600;
+`scheduler_test.go`: a fake Runner and clock — due → started → ended,
+skip and replace, catch-up once and none, a failed start, `RunNow`
+paused and live, `Run` with a short tick), `internal/agents/routines_test.go`
+(save, list, pause, runs, remove, codes, another machine, 0600, a
+restart; `routines.changed` / `routines.removed` on a subscription),
+`internal/agents/routinerun_test.go` (through the daemon and the fake
+agent, `Step` two hours ahead: a run is a background agent with
+`routine`, `routineRun`, the name, the environment; its turn ends → `done`
+with the message, the agent gone; an approval → `needs-you`, back on the
+walls, no second record; the timeout (`routineTimeout` shortened by the
+test) → `timed-out`, closed; `routines.run` on a paused routine, `manual`,
+`exists` while live, closed by hand → `exited`; overlap skip with the
+live run going on; a restart with a live run re-armed and one whose
+agent is gone; `routineSpawn` and `runLive` as units).
+
+### As built — routines (app)
+
+Wire: the `routines.*` methods and notifications (hesperd, above).
+Code: pure rules in `HesperCore/Routines.swift` (wire types decoded by
+hand from `JSONValue`, lenient: an unknown outcome keeps its text and
+reads as neutral, missing policy fields take hesperd's defaults, the
+spawn is kept as it came so a save sends it back whole;
+`DaemonClient.routines*` calls; `RoutinesSupport`; `RoutineText`
+(cadence, next and last run, tone, summary line, duration, policy),
+`RoutineList.ranked`, `RoutineKeys`); the app in
+`Sources/Hesper/Routines/` (`RoutinesHub`, `RoutinesPanel` with
+`RoutinesPanelHost`, `RoutinesSession` and `RoutineLook`,
+`RoutineParts`, `RoutinesSelfTest`).
+
+- **⌘⇧R** (Agents › Routines…) opens the panel over the wall like
+  Review and History: a Night scrim and one opaque Panel of History's
+  size, min(1100, 86%) × min(760, 80%) of the window. Left the routines
+  (a lazy `NSTableView`, rows drawn directly): the last run's state
+  mark, name, "mini · every 1h +5m · in 12m", the last run's outcome
+  trailing ("done 48m ago", "running", "needs you", "timed out 2h
+  ago", "never ran"). Right the selected routine (SwiftUI): the chip,
+  name, Mac · cadence · next run; Run now ⏎, Pause / Resume P, Open run
+  O, Remove ⌫; a status line; the task's first four lines, project,
+  Mac, kind, how many runs so far, the policy line ("timeout 1h ·
+  overlap skip · catch up once · background · keeps 200 runs"); its
+  runs newest first in a `LazyVStack` (`#seq`, the chip, when,
+  duration, "by hand", the agent's name when it is on a wall, the
+  message's first line or the error). ⌘K, ⌘Y, ⌘R and ⌘J close it and
+  go on; opening Review or History closes it; a click on the scrim
+  closes. Empty: "No routines yet. Save one with hesperctl routine
+  save…".
+- **Order** (`RoutineList.ranked`): a run waiting for someone first
+  (the newest first), then the running ones, then by the next run,
+  soonest first; paused and unscheduled last; then by name. A run that
+  ends `needs-you` moves its routine to the top.
+- **Chip** (`RoutineText.tone` → `RoutineLook`): done is `done`, needs
+  you `signal` (the mark pulses), error / timed out / failed `error`,
+  running `working`, everything else `dim` (exited slashed). A `Pill`
+  with the mark, tinted at 14%.
+- **Actions**: ⏎ `routines.run` (the run shows `running` from the
+  `routines.changed`, then its outcome; `exists` — a run is live —
+  is an inline note, not an error); P `routines.pause {paused}` (a
+  paused row says "paused", no next run); O opens the last run (or the
+  run row clicked): a running or needs-you run → its agent's tile
+  (`goTo`, a background one comes back), an ended run → its session
+  in History by `session` id (`sessions.show`, else a History search
+  for the id), a skipped or failed run → a note; ⌫ asks in the status
+  line ("Remove X and its runs? ⌫ again removes it · esc keeps it"),
+  the second ⌫ calls `routines.remove` and the row goes at once (no
+  system alert). Errors show in the status line; a removal toasts.
+- **Keys** (`RoutineKeys`): ↑↓ select, ⏎ run now, P pause / resume, O
+  open, ⌫ (also ⌦) remove, esc close (or cancel the confirm), ⌘⇧R
+  close.
+- **Hub** (`RoutinesHub`, one per connection like ReviewHub):
+  `routines.list` after a connect and, debounced 300 ms, on every
+  `routines.changed` / `routines.removed` (their own
+  `DaemonClient.onRoutineNotification`, decoded on the reader thread to
+  the id only); the list ranked off the main thread. The selected
+  routine's runs (`routines.runs {limit: 1000}`) are fetched when it
+  is selected and again on its `routines.changed`. A pause's or
+  remove's answer is applied at once; the next list agrees.
+- **Degrades**: `routines.list` answering -32601 ("Unknown method"
+  through the relay) means no routines: the menu item is hidden, ⌘⇧R
+  toasts "Routines need a newer hesperd on this Mac", no ⌘K section,
+  no "Show Routines" in the sidebar, `app.open {routines}` answers
+  `unavailable`. Unknown while disconnected (the menu item hidden).
+- **Entry points**: Agents › Routines… (⌘⇧R, the free chord next to
+  ⌘R); ⌘K's "Routines" section (after History: every routine ranked,
+  "mini · every 1h +5m · in 12m · done 48m ago", ⏎ opens the panel on
+  it); the project sidebar's context menu "Show Routines (⌘⇧R)" next
+  to "Show History (⌘Y)"; `hesperctl open routines [ID]` → `app.open
+  {routines: true | ID | {id}}` (`AppOpenRequest.Target.routines`;
+  `not_found` for an unknown id, `unavailable` without routines.*;
+  answers `{wall, routine}`).
+- Nothing on the main actor blocks: calls and decoding run in detached
+  tasks; the list redraws on the hub's observable changes only.
+
+**Tests.** HesperCore `RoutinesTests` (13): the wire fixture shaped
+like `wire.Routine` decoded and round-tripped (spawn whole, policy),
+lenient decode (defaults, unknown outcome, `{runs}`), run params,
+support (-32601, "Unknown method", other errors), cadence / next / last
+texts, tones, summary line (first line, error fallback, 80 chars),
+duration and policy, the ranking, the keys and ⌘⇧R in `KeyRouter`;
+`AppControlTests` parse `routines`. UI `make -C app test-ui-routines`
+(`Tools/run-routines.sh test`, `RoutinesSelfTest`, fake daemon
+`--routines 5`; **not run yet**: written against the fake's hooks
+`fake.routineCalls` and `fake.routineRun`): the menu item and its
+chord, the seeded needs-you agent at its approval, ⌘⇧R with the five
+routines in rank order and the first's runs, ↓, ⏎ → `routines.run`
+seen, running then done with the fake's message and its agent named
+after the routine, ⏎ while live → the `exists` note, `fake.routineRun
+{needs-you}` → the chip and the routine at the top, P → `routines.pause`
+twice, O on a needs-you run → its agent, ⌫ esc keeps, ⌫ ⌫ →
+`routines.remove` and the row gone, ⌘Y swaps to History, esc, ⌘K's
+Routines section (narrowed by typing, ⏎ opens the panel on it),
+`app.open {routines}` with an id, an unknown id and `true`; then
+against `--no-routines`: unsupported, the menu item hidden, ⌘⇧R toasts,
+no ⌘K section, `app.open` unavailable. Screenshots (`SHOTS=dir`):
+routines-panel, routines-needs-you, palette-routines.
+
+**Not done here:** saving or editing a routine in the app (hesperctl
+routine save does it); per-Mac routines (phase 1 is the local
+daemon); a routines pill on the wall or a notification when a run
+needs someone (its agent comes to the wall and the inbox as any agent).
 
 ## Wire names kept from Ghosty
 

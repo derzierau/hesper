@@ -160,3 +160,44 @@ SESSION ids look like `mini:claude:5b0c1d2e-…`. Pages hold at most 50;
 `drafts ls|save|rm` (a draft is a prepared agent the user starts from the
 app: a good way to *suggest* work without starting it), `profiles` (how
 agents start; `--profile` on `new`).
+
+## Routines
+
+A routine is a saved `new` that hesperd runs on a cadence, on the Mac that
+keeps it (`--machine`, default this one). Each run is an ordinary agent
+named after the routine, in the background: hidden until it needs someone,
+closed when it settles. Its session stays in History and its changes in
+`review ls`.
+
+```sh
+hesperctl routine save --json --project ~/src/app --every 1h --offset 5m --name floors "…task…"
+hesperctl routine save --json --project app --at 07:30 --at 18:00 --kind codex --worktree --task-file nightly.md
+hesperctl routine ls --json                       # cadence, nextRun, lastRun.outcome
+hesperctl routine show floors --json              # every field and the last 10 runs
+hesperctl routine runs floors --json --limit 20   # newest first
+hesperctl routine run floors --json               # a run now, by hand (also while paused)
+hesperctl routine save --id r-floors --every "" --at 09:00   # change: only the flags given; "" clears
+hesperctl routine pause floors; hesperctl routine resume floors
+hesperctl routine rm floors
+```
+
+- Cadence, exactly one: `--every D` (1m to 168h, from local midnight plus
+  `--offset D`: `--every 1h --offset 5m` is :05 past every hour) or `--at
+  HH:MM`, repeatable, local time. hesperd validates both (exit 1, `invalid`).
+- Policy: `--timeout D` ends a run still working after D (default 1h;
+  outcome `timed-out`); `--overlap skip|replace` says what the clock does
+  while the previous run is live (skip it, the default, or close it
+  first); `--catch-up once|none` says what happens when the clock fires
+  late because the Mac slept (run once now, the default, or skip);
+  `--foreground` shows each run's tile like any agent and keeps it when it
+  settles; `--keep-runs N` bounds the run records (default 200).
+- `routine runs` shows every outcome: `done`, `needs-you` (the run stopped
+  at an approval or question), `exited`, `error`, `timed-out`, `skipped`,
+  `failed` (the spawn failed; `error` says why), with the agent's final
+  message.
+- A run that stops at an approval or question is an agent like any other:
+  `hesperctl ls` shows it as needing the user, with its `attention`; drive
+  or answer it as in "Drive an agent" (and only with the user's consent).
+- `routine pause` is the kill switch: the clock stops starting it, a live
+  run is left alone, `routine run` still works. `routine rm` removes the
+  routine and its run records; a live run keeps running.

@@ -156,6 +156,8 @@ public struct AppOpenRequest: Equatable, Sendable {
         case history(query: String?)
         /// The ⌘J inbox (agents needing you).
         case inbox
+        /// The Routines panel (⌘⇧R), on `select` when given.
+        case routines(select: String?)
 
         /// The wall it shows leaves its focus view first (⌘Esc): showing
         /// a wall or a composer means the wall, not the focused agent.
@@ -163,7 +165,7 @@ public struct AppOpenRequest: Equatable, Sendable {
             switch self {
             case .wall, .composer: return true
             case .agent(_, let mode): return mode == .wall
-            case .history, .inbox: return false
+            case .history, .inbox, .routines: return false
             }
         }
     }
@@ -171,7 +173,7 @@ public struct AppOpenRequest: Equatable, Sendable {
     public var target: Target
     public init(target: Target) { self.target = target }
 
-    /// `{agent?, mode?, wall?, scope?, newWall?, composer?, history?, inbox?}`.
+    /// `{agent?, mode?, wall?, scope?, newWall?, composer?, history?, inbox?, routines?}`.
     public static func parse(_ p: JSONValue) throws -> AppOpenRequest {
         try p.checkObject()
         let agent = try p.string("agent")
@@ -199,15 +201,26 @@ public struct AppOpenRequest: Equatable, Sendable {
         }
         var composer: ComposerPrefill?
         if let c = p["composer"], c != .null { composer = try ComposerPrefill.parse(c) }
+        var routines: String??
+        if let r = p["routines"], r != .null {
+            switch r {
+            case .bool(true): routines = .some(nil)
+            case .bool(false): routines = nil
+            case .string(let id): routines = .some(id.isEmpty ? nil : id)
+            case .object: routines = .some(try r.string("id"))
+            default: throw AppControlError.invalid("routines must be {id} or true")
+            }
+        }
 
-        let picked = [agent != nil, composer != nil, history != nil, inbox].filter { $0 }.count
-        guard picked <= 1 else { throw AppControlError.invalid("open one thing: agent, composer, history or inbox") }
+        let picked = [agent != nil, composer != nil, history != nil, inbox, routines != nil].filter { $0 }.count
+        guard picked <= 1 else { throw AppControlError.invalid("open one thing: agent, composer, history, inbox or routines") }
         if let agent {
             return AppOpenRequest(target: .agent(agent, mode ?? .focus))
         }
         if let composer { return AppOpenRequest(target: .composer(composer, wall: wall)) }
         if let history { return AppOpenRequest(target: .history(query: history)) }
         if inbox { return AppOpenRequest(target: .inbox) }
+        if let routines { return AppOpenRequest(target: .routines(select: routines)) }
         if let mode, mode != .wall { throw AppControlError.invalid("mode \(mode.rawValue) needs an agent") }
         return AppOpenRequest(target: .wall(wallText.map(WallRef.init), scope: scope, newWall: try p.bool("newWall") ?? false))
     }

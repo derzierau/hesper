@@ -36,6 +36,9 @@ Do not guess flags.
 - **Settled:** done, idle, exited, approval, question or error: the agent
   no longer works on its own. `wait --until settled` and `new --wait` stop
   there.
+- **Routines:** a saved `new` hesperd runs on a cadence (`routine
+  ls|save|run|runs|pause`); each run is a background agent whose session is
+  in History.
 
 ## Rules for every call
 
@@ -136,6 +139,14 @@ hesperctl history show SESSION --json        # prompts, answer, todos, changed f
 hesperctl history resume SESSION --json      # new agent; exit 7 if it runs already
 hesperctl history continue-as SESSION --kind codex --json   # hand a Claude session to Codex
 hesperctl history brief SESSION              # a brief to paste into another agent
+```
+
+**Schedule a recurring run**
+```sh
+hesperctl routine save --json --project ~/src/app --every 1h --offset 5m --name floors "run the linter; fix what it finds; commit"
+hesperctl routine save --json --project ~/src/app --at 07:30 --at 18:00 --worktree --task-file nightly.md
+hesperctl routine runs floors --json      # outcomes: done, needs-you, error, timed-out, skipped
+hesperctl routine pause floors            # the kill switch; resume turns the clock back on
 ```
 
 **App layout:** if available (`hesperctl help open`), `open`, `wall` and

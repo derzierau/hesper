@@ -382,6 +382,9 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
         if model.historyAvailable, row.kind != .group { // shared history
             add("Show History (⌘Y)") { [weak model] in model?.toggleHistory(scope: row.projectID.map(HistoryScope.project) ?? .all) }
         }
+        if model.routinesAvailable, row.kind != .group { // routines
+            add("Show Routines (⌘⇧R)") { [weak model] in model?.openRoutines(select: nil) }
+        }
         guard row.kind != .all else { return menu }
         menu.addItem(.separator())
         let editable = catalog.supported

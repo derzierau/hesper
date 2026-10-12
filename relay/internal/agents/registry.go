@@ -6,6 +6,7 @@
 package agents
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -16,12 +17,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/lockwatch"
 	"github.com/derzierau/hesper/relay/internal/ptyhost"
+	"github.com/derzierau/hesper/relay/internal/routines"
 	"github.com/derzierau/hesper/relay/internal/vt"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -169,7 +172,13 @@ type Registry struct {
 	closing   bool
 	saveCh    chan struct{}
 	saverEnd  chan struct{}
-	quit      chan struct{} // closed by Close (pruneLoop)
+	quit      chan struct{}   // closed by Close (pruneLoop)
+	routines  *routines.Store // routines.go; nil: off
+	// routinerun.go: the scheduler, run for the daemon's lifetime
+	// (routineCtx; routineStop ends it in Close).
+	routineSched *routines.Scheduler
+	routineCtx   context.Context
+	routineStop  context.CancelFunc
 
 	// checkpoints (checkpoint.go): hooks, one checkpoint at a time, the
 	// list of repositories with checkpoints.
@@ -242,6 +251,9 @@ type agent struct {
 	// hooks counts the agent's hook events: its review scan is out of
 	// date once it changed (reviewcache.go).
 	hooks uint64
+	// run (routinerun.go): the routine's run this agent is, until it
+	// ended; nil for other agents.
+	run *routineRun
 }
 
 // Open loads the registry from the state directory and respawns the agents
@@ -283,12 +295,25 @@ func Open(opt Options) (*Registry, error) {
 		r.restore(rec)
 	}
 	go r.pruneLoop() // checkpoint.go
+	// routines.go: the store; routinerun.go: the runs left running by
+	// the last daemon, then the scheduler on the registry as its Runner.
+	if r.routines, err = routines.Open(routines.StoreOptions{Dir: opt.StateDir, Loc: time.Local, Logf: opt.Logf}); err != nil {
+		opt.Logf("hesperd: %v (routines off)", err)
+	} else {
+		r.resumeRoutineRuns()
+		r.routineCtx, r.routineStop = context.WithCancel(context.Background())
+		r.routineSched = routines.NewScheduler(r.routines, routineRunner{r}, routines.Options{Logf: opt.Logf})
+		go r.routineSched.Run(r.routineCtx)
+	}
 	// The registry's lock is what every hook, list and attach waits on:
 	// a hold over 10 s (and a stall of the whole process) is logged with
 	// the holder's stack.
 	r.watch = lockwatch.Start(lockwatch.Options{Logf: opt.Logf, Stalls: true}, lockwatch.Lock{Name: "the registry's lock", Mu: &r.mu})
 	return r, nil
 }
+
+// Routines is the routine store (nil when it could not be opened).
+func (r *Registry) Routines() *routines.Store { return r.routines }
 
 // Machine is this Mac's short name.
 func (r *Registry) Machine() string { return r.machine }
@@ -428,7 +453,11 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 	if readyForReview(state) && !readyForReview(a.State) {
 		r.settledForReview(a) // review.go
 	}
+	from := a.State
 	a.State, a.Attention = state, att
+	if a.run != nil {
+		r.routineSettled(a, from, state) // routinerun.go
+	}
 	r.changed(a)
 	if finished {
 		r.finishedInBackground(a) // close.go
@@ -453,6 +482,12 @@ func (r *Registry) changed(a *agent) {
 
 // Spawn starts a new agent.
 func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
+	return r.spawn(p, nil)
+}
+
+// spawn is Spawn with a hook that sees the agent before its process
+// starts (the lock is held): a routine's run marks itself (routinerun.go).
+func (r *Registry) spawn(p wire.SpawnParams, prepare func(a *agent)) (wire.Agent, error) {
 	if p.Machine != "" && p.Machine != r.machine {
 		return wire.Agent{}, wire.Errorf(wire.CodeUnavailable, "machine %s is not connected", p.Machine)
 	}
@@ -551,6 +586,9 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 	if a.Kind == wire.KindShell {
 		a.shellTask = task // typed once the prompt is ready (shell.go)
 	}
+	if prepare != nil {
+		prepare(a)
+	}
 	r.agents[local] = a
 	if err := r.start(a, profile, false); err != nil {
 		delete(r.agents, local)
@@ -615,10 +653,16 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		deliverLater = true
 	}
 	argv := r.argv(a, profile, resume, deliverLater)
-	env := agentEnv(r.env, map[string]string{
+	vars := map[string]string{
 		"TERM": "xterm-256color", "COLORTERM": "truecolor", "TERM_PROGRAM": "hesperd",
 		"HESPER_AGENT_ID": a.ID, "HESPER_SOCKET": r.opt.Socket,
-	})
+	}
+	if a.Routine != "" {
+		// routinerun.go: a routine's run knows its routine, after a
+		// respawn too.
+		vars["HESPER_ROUTINE_ID"], vars["HESPER_ROUTINE_RUN"] = a.Routine, strconv.Itoa(a.RoutineRun)
+	}
+	env := agentEnv(r.env, vars)
 	a.gen++
 	gen, local := a.gen, a.local
 	cfg := ptyhost.Config{
@@ -1240,6 +1284,9 @@ func (r *Registry) Close() {
 	}
 	r.closing = true
 	close(r.quit)
+	if r.routineStop != nil {
+		r.routineStop() // routinerun.go: the running runs stay running for the next daemon
+	}
 	var terms []*ptyhost.Term
 	for _, a := range r.agents {
 		if a.term != nil && a.Exit == nil {

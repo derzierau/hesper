@@ -445,7 +445,7 @@ Touch ID on the Mac that sends it.
 | Path | |
 |---|---|
 | `/Applications/Hesper.app` (Homebrew), `~/Applications/Hesper.app` (source install) | The app, with `hesperd`, `hesperctl` and `hesper-keys` in `Contents/MacOS` |
-| `~/.local/state/hesper/` | `hesperd.sock`, `agents.json`, `projects.json`, logs, relay credentials and device keys |
+| `~/.local/state/hesper/` | `hesperd.sock`, `agents.json`, `projects.json`, `routines.json` (and `routines/` run records), logs, relay credentials and device keys |
 | `~/.config/hesper/` | `profiles.json` (launch profiles), `settings.json`, `machines.json` |
 | `~/Library/LaunchAgents/de.olezierau.hesperd.plist` | The daemon |
 | `~/worktrees/<project>/<task>` | Agent worktrees (`HESPER_WORKTREE_ROOT`) |

@@ -150,6 +150,7 @@ extension AppModel {
         closePopover()
         showPalette = false
         if HistoryPanelHost.isOpen(self) { HistoryPanelHost.panel(for: self)?.close() }
+        if RoutinesPanelHost.isOpen(self) { RoutinesPanelHost.panel(for: self)?.close() } // routines
     }
 
     /// Every daemon event (marked integration point in `handle`): an

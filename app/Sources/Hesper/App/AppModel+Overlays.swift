@@ -581,6 +581,7 @@ extension AppModel {
                                    run: { [weak self] in self?.showPalette = false; self?.arrangement = a }))
         }
         out += historyPaletteItems() // shared history: "History" (async FTS results)
+        out += routinesPaletteItems() // routines: "Routines" (⏎ opens the panel on one)
         out.append(OverlayItem(id: "s:settings", section: "Settings", title: "Settings…", detail: "⌘,", run: { [weak self] in self?.showPalette = false; self?.onShowSettings?() }))
         for n in [60, 80, 100] {
             out.append(OverlayItem(id: "s:min\(n)", section: "Settings", title: "Minimum card width: \(n) characters", checked: minChars == n,
@@ -646,9 +647,10 @@ extension AppModel {
         case "Actions", "Scratch": return 2
         case "Projects": return 3
         case "History": return 4 // shared history
-        case "Machines": return 5
-        case "Layouts": return 6
-        default: return 7
+        case "Routines": return 5
+        case "Machines": return 6
+        case "Layouts": return 7
+        default: return 8
         }
     }
 
