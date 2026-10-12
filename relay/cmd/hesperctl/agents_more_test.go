@@ -416,6 +416,73 @@ func TestEvents(t *testing.T) {
 	}
 }
 
+// events --kinds routines: a routine saved while listening is a
+// routines.changed line; removing it a routines.removed.
+func TestEventsRoutines(t *testing.T) {
+	w := newMoreWorld(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	// The routine is saved and removed on a connection of its own (not
+	// through hesperctl: its stdout is the events stream).
+	c, err := wire.Dial(ctx, w.sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	var id string
+	out := capture(t, func() {
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			var r wire.Routine
+			save := wire.RoutineSaveParams{Routine: wire.Routine{Name: "floors", Every: "1h", Spawn: wire.SpawnParams{Project: w.project, Task: "sweep"}}}
+			if err := c.Call(ctx, "routines.save", save, &r); err != nil {
+				t.Error(err)
+			}
+			id = r.ID
+			if err := c.Call(ctx, "routines.remove", wire.IDParams{ID: id}, nil); err != nil {
+				t.Error(err)
+			}
+			time.Sleep(300 * time.Millisecond)
+			cancel()
+		}()
+		err = run(ctx, w.args([]string{"events", "--kinds", "routines"}))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out) == "" {
+		t.Fatal("no events")
+	}
+	var methods []string
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		var n struct {
+			Method string `json:"method"`
+			Params struct {
+				Routine wire.Routine `json:"routine"`
+				ID      string       `json:"id"`
+			} `json:"params"`
+		}
+		if err := json.Unmarshal([]byte(l), &n); err != nil {
+			t.Fatalf("event %q: %v", l, err)
+		}
+		switch n.Method {
+		case wire.NoteRoutineChanged:
+			if n.Params.Routine.ID != id || n.Params.Routine.Name != "floors" {
+				t.Errorf("changed: %+v", n.Params.Routine)
+			}
+		case wire.NoteRoutineRemoved:
+			if n.Params.ID != id {
+				t.Errorf("removed: %+v", n.Params)
+			}
+		default:
+			t.Errorf("event %q: not a routines.* notification", l)
+		}
+		methods = append(methods, n.Method)
+	}
+	if !slices.Equal(methods, []string{wire.NoteRoutineChanged, wire.NoteRoutineRemoved}) {
+		t.Fatalf("methods %v\n%s", methods, out)
+	}
+}
+
 func TestAttachFile(t *testing.T) {
 	w := newMoreWorld(t)
 	a := w.spawn("files")
