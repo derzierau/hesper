@@ -11,6 +11,7 @@
 #   make test-ui-desks  desks per display setup, pointers (SHOTS=dir)
 #   make perf-walls the same agents on 1 wall, then 3 walls (PERF_WALLS)
 #   make test-ui-history  shared history: ⌘Y, card actions, ghost cards, ⌘K (SHOTS=dir)
+#   make test-ui-routines  routines: ⌘⇧R, run now, pause, remove, ⌘K, open target (SHOTS=dir)
 #   make perf-history  History's budgets, then the wall with History open + events
 #   make run        run against the fake daemon (DAEMON=live: the real socket)
 #   make layout     layout dump + screenshot (AGENTS, WINDOW_SIZE, ARRANGEMENT, SHOW, SHOT)
@@ -37,7 +38,7 @@ PERF_FPS ?= 120
 PERF_SECONDS ?= 10
 DAEMON ?= fake
 
-.PHONY: test-ui-history perf-history test-ui-desks test-ui-projects test-ui-windows perf-walls layout layout-matrix build app bin fake test test-unit test-fake test-ui test-ui-real perf run clean icon icon-preview
+.PHONY: test-ui-routines test-ui-history perf-history test-ui-desks test-ui-projects test-ui-windows perf-walls layout layout-matrix build app bin fake test test-unit test-fake test-ui test-ui-real perf run clean icon icon-preview
 
 build: app fake
 
@@ -85,7 +86,7 @@ app: bin build/AppIcon.icns
 	codesign --verify --strict $(APP)
 	@echo "built $(APP)"
 
-test: test-unit test-fake test-ui test-ui-windows test-ui-projects test-ui-desks test-ui-history
+test: test-unit test-fake test-ui test-ui-windows test-ui-projects test-ui-desks test-ui-history test-ui-routines
 
 test-unit:
 	swift test
@@ -111,6 +112,11 @@ test-ui-desks: build
 # the same app against a daemon without sessions.* (History hidden).
 test-ui-history: build
 	SHOTS=$(SHOTS) Tools/run-history.sh test
+
+# Routines: the panel and its actions against the fake's routines (SHOTS=dir),
+# then the same app against a daemon without routines.* (every entry hidden).
+test-ui-routines: build
+	SHOTS=$(SHOTS) Tools/run-routines.sh test
 
 # History's budgets (3000 sessions), then the wall's numbers with History
 # open while sessions.changed/indexing stream (PERF_HISTORY=1), and without.

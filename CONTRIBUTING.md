@@ -36,6 +36,7 @@ macOS app (needs `make -C relay build` first):
 make -C app test-unit test-fake   # unit tests, fake daemon vet
 make -C app build                 # build/Hesper.app, ad-hoc signed
 make -C app test-ui               # launches the app against the fake daemon
+make -C app test-ui-routines      # the Routines panel against the fake daemon's routines
 ```
 
 `make -C app test` runs every UI smoke test; `app/Makefile` lists the rest.

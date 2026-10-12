@@ -4475,6 +4475,111 @@ test) → `timed-out`, closed; `routines.run` on a paused routine, `manual`,
 live run going on; a restart with a live run re-armed and one whose
 agent is gone; `routineSpawn` and `runLive` as units).
 
+### As built — routines (app)
+
+Wire: the `routines.*` methods and notifications (hesperd, above).
+Code: pure rules in `HesperCore/Routines.swift` (wire types decoded by
+hand from `JSONValue`, lenient: an unknown outcome keeps its text and
+reads as neutral, missing policy fields take hesperd's defaults, the
+spawn is kept as it came so a save sends it back whole;
+`DaemonClient.routines*` calls; `RoutinesSupport`; `RoutineText`
+(cadence, next and last run, tone, summary line, duration, policy),
+`RoutineList.ranked`, `RoutineKeys`); the app in
+`Sources/Hesper/Routines/` (`RoutinesHub`, `RoutinesPanel` with
+`RoutinesPanelHost`, `RoutinesSession` and `RoutineLook`,
+`RoutineParts`, `RoutinesSelfTest`).
+
+- **⌘⇧R** (Agents › Routines…) opens the panel over the wall like
+  Review and History: a Night scrim and one opaque Panel of History's
+  size, min(1100, 86%) × min(760, 80%) of the window. Left the routines
+  (a lazy `NSTableView`, rows drawn directly): the last run's state
+  mark, name, "mini · every 1h +5m · in 12m", the last run's outcome
+  trailing ("done 48m ago", "running", "needs you", "timed out 2h
+  ago", "never ran"). Right the selected routine (SwiftUI): the chip,
+  name, Mac · cadence · next run; Run now ⏎, Pause / Resume P, Open run
+  O, Remove ⌫; a status line; the task's first four lines, project,
+  Mac, kind, how many runs so far, the policy line ("timeout 1h ·
+  overlap skip · catch up once · background · keeps 200 runs"); its
+  runs newest first in a `LazyVStack` (`#seq`, the chip, when,
+  duration, "by hand", the agent's name when it is on a wall, the
+  message's first line or the error). ⌘K, ⌘Y, ⌘R and ⌘J close it and
+  go on; opening Review or History closes it; a click on the scrim
+  closes. Empty: "No routines yet. Save one with hesperctl routine
+  save…".
+- **Order** (`RoutineList.ranked`): a run waiting for someone first
+  (the newest first), then the running ones, then by the next run,
+  soonest first; paused and unscheduled last; then by name. A run that
+  ends `needs-you` moves its routine to the top.
+- **Chip** (`RoutineText.tone` → `RoutineLook`): done is `done`, needs
+  you `signal` (the mark pulses), error / timed out / failed `error`,
+  running `working`, everything else `dim` (exited slashed). A `Pill`
+  with the mark, tinted at 14%.
+- **Actions**: ⏎ `routines.run` (the run shows `running` from the
+  `routines.changed`, then its outcome; `exists` — a run is live —
+  is an inline note, not an error); P `routines.pause {paused}` (a
+  paused row says "paused", no next run); O opens the last run (or the
+  run row clicked): a running or needs-you run → its agent's tile
+  (`goTo`, a background one comes back), an ended run → its session
+  in History by `session` id (`sessions.show`, else a History search
+  for the id), a skipped or failed run → a note; ⌫ asks in the status
+  line ("Remove X and its runs? ⌫ again removes it · esc keeps it"),
+  the second ⌫ calls `routines.remove` and the row goes at once (no
+  system alert). Errors show in the status line; a removal toasts.
+- **Keys** (`RoutineKeys`): ↑↓ select, ⏎ run now, P pause / resume, O
+  open, ⌫ (also ⌦) remove, esc close (or cancel the confirm), ⌘⇧R
+  close.
+- **Hub** (`RoutinesHub`, one per connection like ReviewHub):
+  `routines.list` after a connect and, debounced 300 ms, on every
+  `routines.changed` / `routines.removed` (their own
+  `DaemonClient.onRoutineNotification`, decoded on the reader thread to
+  the id only); the list ranked off the main thread. The selected
+  routine's runs (`routines.runs {limit: 1000}`) are fetched when it
+  is selected and again on its `routines.changed`. A pause's or
+  remove's answer is applied at once; the next list agrees.
+- **Degrades**: `routines.list` answering -32601 ("Unknown method"
+  through the relay) means no routines: the menu item is hidden, ⌘⇧R
+  toasts "Routines need a newer hesperd on this Mac", no ⌘K section,
+  no "Show Routines" in the sidebar, `app.open {routines}` answers
+  `unavailable`. Unknown while disconnected (the menu item hidden).
+- **Entry points**: Agents › Routines… (⌘⇧R, the free chord next to
+  ⌘R); ⌘K's "Routines" section (after History: every routine ranked,
+  "mini · every 1h +5m · in 12m · done 48m ago", ⏎ opens the panel on
+  it); the project sidebar's context menu "Show Routines (⌘⇧R)" next
+  to "Show History (⌘Y)"; `hesperctl open routines [ID]` → `app.open
+  {routines: true | ID | {id}}` (`AppOpenRequest.Target.routines`;
+  `not_found` for an unknown id, `unavailable` without routines.*;
+  answers `{wall, routine}`).
+- Nothing on the main actor blocks: calls and decoding run in detached
+  tasks; the list redraws on the hub's observable changes only.
+
+**Tests.** HesperCore `RoutinesTests` (13): the wire fixture shaped
+like `wire.Routine` decoded and round-tripped (spawn whole, policy),
+lenient decode (defaults, unknown outcome, `{runs}`), run params,
+support (-32601, "Unknown method", other errors), cadence / next / last
+texts, tones, summary line (first line, error fallback, 80 chars),
+duration and policy, the ranking, the keys and ⌘⇧R in `KeyRouter`;
+`AppControlTests` parse `routines`. UI `make -C app test-ui-routines`
+(`Tools/run-routines.sh test`, `RoutinesSelfTest`, fake daemon
+`--routines 5`; **not run yet**: written against the fake's hooks
+`fake.routineCalls` and `fake.routineRun`): the menu item and its
+chord, the seeded needs-you agent at its approval, ⌘⇧R with the five
+routines in rank order and the first's runs, ↓, ⏎ → `routines.run`
+seen, running then done with the fake's message and its agent named
+after the routine, ⏎ while live → the `exists` note, `fake.routineRun
+{needs-you}` → the chip and the routine at the top, P → `routines.pause`
+twice, O on a needs-you run → its agent, ⌫ esc keeps, ⌫ ⌫ →
+`routines.remove` and the row gone, ⌘Y swaps to History, esc, ⌘K's
+Routines section (narrowed by typing, ⏎ opens the panel on it),
+`app.open {routines}` with an id, an unknown id and `true`; then
+against `--no-routines`: unsupported, the menu item hidden, ⌘⇧R toasts,
+no ⌘K section, `app.open` unavailable. Screenshots (`SHOTS=dir`):
+routines-panel, routines-needs-you, palette-routines.
+
+**Not done here:** saving or editing a routine in the app (hesperctl
+routine save does it); per-Mac routines (phase 1 is the local
+daemon); a routines pill on the wall or a notification when a run
+needs someone (its agent comes to the wall and the inbox as any agent).
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

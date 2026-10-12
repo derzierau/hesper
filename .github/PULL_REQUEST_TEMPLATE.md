@@ -10,6 +10,7 @@
 
 - [ ] `gofmt` and `make -C relay build test check` pass (if `relay/` changed)
 - [ ] `make -C app test-unit test-fake build` pass (if `app/` changed)
+- [ ] `make -C app test-ui-routines` passes (if the Routines panel or `routines.*` in the fake changed)
 - [ ] `scripts/test-install.sh` passes (if `install.sh` changed)
 - [ ] Docs updated where behavior changed
 - [ ] Each commit is one change with an `<area>: …` subject (CONTRIBUTING.md)
