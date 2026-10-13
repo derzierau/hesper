@@ -97,7 +97,7 @@ final class QuickLaunchController {
         tv.onCommand = { [weak self] cmd in self?.handle(cmd) ?? false }
         panel.onKey = { [weak self] cmd in self?.handle(cmd) ?? false }
         composer.onReplaceText = { [weak tv] text, caret in tv?.replaceAll(with: text, caret: caret) }
-        footer.rootView = DraftFooter(composer: composer, quick: true, onStart: { [weak self] in self?.start() })
+        footer.rootView = DraftFooter(composer: composer, quick: true, onStart: { [weak self] in self?.start() }, onLeave: { [weak self] in self?.hide() })
         observeChanges { [weak self] in self?.refresh() }
     }
 

@@ -1736,6 +1736,20 @@ terminal takes it back at any time. A strip that is not first responder
 (`deny.cancel`) folds the field back, the same as the field's own ⏎ and
 esc.
 
+**Draft tile** (`UI/Composer.swift`, pure `DraftStartControl`). The
+header ends in × "Discard draft (⌘W)" (`draft.discard`; gone at once,
+undo brings a non-empty one back, nothing asks). The footer keeps the
+"@ machine · # folder · / tool" hint and otherwise holds controls only:
+Keep esc (`draft.leave`, parks the draft; the quick launch panel says
+Close esc and hides) and the Start control, a split button: Start ⌘⏎
+(primary, `working`; `draft.start`; "Starting…" / "Bringing…" while it
+works, disabled without a folder) and a ▾ (`draft.startMenu`) whose menu
+offers "Start and open another ⌥⏎" (`draft.startNext`); the quick launch
+panel closes after starting and has no ▾ (`DraftStartControl.menu(quick:)`).
+The worktree chip is a toggle on click (`toggleWorktree`, its key cap
+⌥⌘B); a ~branch token in the task still picks the branch, and the branch
+popover keeps its rows. Tests: `DraftStartControlTests`.
+
 #### As built — drop to attach
 
 Request: "We are unable to drag and drop files into the terminals. Make
