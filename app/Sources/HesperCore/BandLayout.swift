@@ -344,3 +344,40 @@ extension WallLayout {
         bands.first { x >= $0.frame.x && x <= $0.frame.maxX && y >= $0.frame.y && y <= $0.frame.maxY }
     }
 }
+
+// MARK: Band header menu
+
+/// The band heading's ⋯ and right-click menu: the header's gestures as
+/// named items (a click collapses, ⌥-click collapses the others, ＋ and ↗,
+/// a drag moves), so each has a pointer path and a VoiceOver action.
+/// Sections are separated by a line; an item that cannot apply is
+/// disabled (the first band's Move Up) or left out (↗ without a scope).
+public enum BandMenu {
+    public enum Action: Equatable, Sendable { case toggleCollapse, collapseOthers, newAgent, openAsWall, moveUp, moveDown }
+
+    public struct Item: Equatable, Sendable {
+        public let action: Action
+        public let title: String
+        public let enabled: Bool
+        /// The chord shown next to it (New Agent Here: the registry's ⌘N).
+        public let chord: KeyChord?
+
+        init(_ action: Action, _ title: String, enabled: Bool = true, chord: KeyChord? = nil) {
+            self.action = action; self.title = title; self.enabled = enabled; self.chord = chord
+        }
+    }
+
+    /// - Parameters:
+    ///   - index: the band's place among the wall's `count` bands.
+    ///   - canOpenWall: ↗ applies (a window layer, and the band has a scope).
+    ///   - pointer: a pointer line (its project's own wall): Show Its Wall
+    ///     and the moves only.
+    public static func sections(collapsed: Bool, index: Int, count: Int, canOpenWall: Bool, pointer: Bool = false) -> [[Item]] {
+        let moves = [Item(.moveUp, "Move Up", enabled: index > 0), Item(.moveDown, "Move Down", enabled: index < count - 1)]
+        if pointer { return [[Item(.openAsWall, "Show Its Wall")], moves] }
+        var actions = [Item(.newAgent, "New Agent Here", chord: CommandRegistry.command(.newAgent)?.chord)]
+        if canOpenWall { actions.append(Item(.openAsWall, "Open as Wall")) }
+        return [[Item(.toggleCollapse, collapsed ? "Expand" : "Collapse"), Item(.collapseOthers, "Collapse Others", enabled: count > 1)],
+                actions, moves]
+    }
+}

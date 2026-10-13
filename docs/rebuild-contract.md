@@ -1894,7 +1894,13 @@ for other/scratch). A **click collapses** the band to one header line
 **⌥-click** collapses every other band. A collapsed header carries the
 attention ring (rose border + glow) and a "N needs you" badge. **Header
 drag reorders** the bands: the header follows the mouse, the band under
-it lights up, the drop sets the wall's band order. Chosen: **per wall in
+it lights up, the drop sets the wall's band order. A **⋯ button and a
+right-click** on the header open the same menu (`BandMenu`, pure): Collapse
+/ Expand, Collapse Others, New Agent Here (⌘N), Open as Wall (left out
+without a scope), Move Up / Move Down (disabled at the ends); a pointer
+line offers Show Its Wall and the moves. VoiceOver gets the enabled
+items as custom actions on the header. **⌥⌘↑ / ⌥⌘↓** (View ▸ Previous
+/ Next Band, everywhere) and ⌥↑ / ⌥↓ on the wall both jump bands. Chosen: **per wall in
 windows.json** (not `groups.save`): grouping by project or branch has no
 group to store an order in, two walls may want different orders, and a
 group's `order` is shared with the other Mac. Selecting / activating a

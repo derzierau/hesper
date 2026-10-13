@@ -8,7 +8,9 @@ import SwiftUI
 // the needs-you pill when collapsed, ＋ new agent here, ↗ open as wall)
 // with a hairline below. No backdrop. A click on the heading collapses /
 // expands it (⌥-click: every other band collapses); dragging it reorders
-// the bands of this wall.
+// the bands of this wall. The ⋯ button and a right-click open the same
+// menu (HesperCore `BandMenu`): Collapse / Expand, Collapse Others, New
+// Agent Here, Open as Wall, Move Up / Down.
 
 /// A band's drop target while a heading is dragged (hidden otherwise: bands
 /// have no backdrop).
@@ -113,11 +115,13 @@ struct BandHeaderContent: View {
     }
 }
 
-/// A band's heading: the label (SwiftUI), ＋ / ↗ IconButtons and a hairline
-/// below the row (`working`, 2 pt, while focused: ⌘N opens a draft here).
-/// Hover raises the row (`surface`). Clicks collapse, drags reorder
-/// (reported to the wall). The view spans the layout's header rect; the
-/// row is its top `bandHeading`, the rest is space before the cards.
+/// A band's heading: the label (SwiftUI), ＋ / ↗ / ⋯ IconButtons and a
+/// hairline below the row (`working`, 2 pt, while focused: ⌘N opens a
+/// draft here). Hover raises the row (`surface`). Clicks collapse, drags
+/// reorder (reported to the wall); ⋯ and a right-click open the band
+/// menu (`onMenu` gets the chosen action). The view spans the layout's
+/// header rect; the row is its top `bandHeading`, the rest is space
+/// before the cards.
 @MainActor
 final class BandHeaderView: NSView {
     let key: String
@@ -126,12 +130,18 @@ final class BandHeaderView: NSView {
     private let hairline = NSView()
     let plus = IconButtonView(symbol: "plus", help: "New agent here", shortcut: "⌘N", target: nil, action: nil)
     let open = IconButtonView(symbol: "arrow.up.right.square", help: "Open as a wall", target: nil, action: nil)
+    let more = IconButtonView(symbol: "ellipsis", help: "Band actions", target: nil, action: nil)
     private(set) var band: Band?
     private(set) var collapsed = false
     private(set) var needsYou = 0
     var onToggle: ((Bool) -> Void)?
     var onNew: (() -> Void)?
     var onOpenWall: (() -> Void)?
+    /// The ⋯ / right-click menu's choice.
+    var onMenu: ((BandMenu.Action) -> Void)?
+    /// The menu's inputs from the last `apply`.
+    private var position = (index: 0, count: 1)
+    private var canOpenWall = false
     /// Drag: began / moved (wall point) / ended (wall point).
     var onDrag: ((DragPhase, NSPoint) -> Void)?
     enum DragPhase { case began, moved, ended }
@@ -152,7 +162,7 @@ final class BandHeaderView: NSView {
         addSubview(row)
         addSubview(hairline)
         addSubview(label)
-        for (b, id) in [(plus, "new"), (open, "open")] {
+        for (b, id) in [(plus, "new"), (open, "open"), (more, "more")] {
             b.target = self
             b.action = #selector(button(_:))
             b.setAccessibilityIdentifier("band.\(key).\(id)")
@@ -168,11 +178,15 @@ final class BandHeaderView: NSView {
 
     private(set) var focused = false
 
-    func apply(_ b: Band, counts: (total: Int, active: Int, needsYou: Int, quiet: Int), collapsed: Bool, canOpenWall: Bool, focused: Bool = false) {
+    /// - Parameter index: the band's place among the wall's `count` bands (the menu's moves).
+    func apply(_ b: Band, counts: (total: Int, active: Int, needsYou: Int, quiet: Int), collapsed: Bool, canOpenWall: Bool, focused: Bool = false,
+               index: Int = 0, count: Int = 1) {
         self.focused = focused
         band = b
         self.collapsed = collapsed
         needsYou = counts.needsYou
+        position = (index, count)
+        self.canOpenWall = canOpenWall && b.pointer == nil && b.wallScope != nil
         label.rootView = BandHeaderContent(title: b.displayTitle, subtitle: b.subtitle, colorHex: b.colorHex, total: counts.total, active: counts.active,
                                            needsYou: counts.needsYou, collapsed: collapsed, compact: bounds.width < Self.compactWidth, pointer: b.pointer != nil)
         // A pointer line (its project has its own wall): no ＋ / ↗; a
@@ -233,18 +247,61 @@ final class BandHeaderView: NSView {
         let line: CGFloat = 2
         hairline.isHidden = !focusRing
         hairline.frame = NSRect(x: pad, y: h - line, width: w, height: line)
-        open.frame = NSRect(x: pad + w - s, y: y, width: s, height: s)
-        plus.frame = NSRect(x: (open.isHidden ? pad + w : open.frame.minX - DS.Spacing.xxs) - s, y: y, width: s, height: s)
+        more.frame = NSRect(x: pad + w - s, y: y, width: s, height: s)
+        open.frame = NSRect(x: more.frame.minX - DS.Spacing.xxs - s, y: y, width: s, height: s)
+        plus.frame = NSRect(x: (open.isHidden ? more.frame.minX : open.frame.minX) - DS.Spacing.xxs - s, y: y, width: s, height: s)
         label.frame = NSRect(x: pad, y: 0, width: max(0, plus.frame.minX - DS.Spacing.xs - pad), height: h)
     }
 
     @objc private func button(_ sender: NSButton) {
-        if sender === plus { onNew?() } else { onOpenWall?() }
+        if sender === plus { onNew?() } else if sender === open { onOpenWall?() } else { showMenu() }
+    }
+
+    /// The ⋯ button: the band menu below it.
+    private func showMenu() {
+        contextMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: more.bounds.maxY + DS.Spacing.xxs), in: more)
+    }
+
+    /// The band menu (⋯, right-click): BandMenu's sections as items, each
+    /// reported through `onMenu`.
+    func contextMenu() -> NSMenu {
+        let menu = NSMenu()
+        let sections = BandMenu.sections(collapsed: collapsed, index: position.index, count: position.count, canOpenWall: canOpenWall,
+                                         pointer: band?.pointer != nil)
+        for (i, section) in sections.enumerated() {
+            if i > 0 { menu.addItem(.separator()) }
+            for item in section {
+                let act = MenuAction { [weak self] in self?.onMenu?(item.action) }
+                let mi = NSMenuItem(title: item.title, action: item.enabled ? #selector(MenuAction.run) : nil, keyEquivalent: "")
+                mi.target = act
+                mi.representedObject = act
+                mi.isEnabled = item.enabled
+                if let chord = item.chord, let (key, mods) = MenuBuilder.keyEquivalent(chord) {
+                    mi.keyEquivalent = key
+                    mi.keyEquivalentModifierMask = mods
+                }
+                mi.setAccessibilityIdentifier("band.\(key).menu.\(item.action)")
+                menu.addItem(mi)
+            }
+        }
+        return menu
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? { contextMenu() }
+
+    /// VoiceOver: the menu's enabled items as custom actions on the heading.
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        contextMenu().items.filter { $0.isEnabled && !$0.isSeparatorItem }.map { mi in
+            NSAccessibilityCustomAction(name: mi.title) {
+                guard let action = mi.action else { return false }
+                return NSApp.sendAction(action, to: mi.target, from: mi)
+            }
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let p = convert(point, from: superview)
-        for b in [plus, open] where !b.isHidden && b.frame.contains(p) { return b }
+        for b in [plus, open, more] where !b.isHidden && b.frame.contains(p) { return b }
         return bounds.contains(p) ? self : nil
     }
 

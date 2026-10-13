@@ -863,7 +863,7 @@ final class WallView: NSView {
             bandHeaders.removeValue(forKey: k)?.removeFromSuperview()
             backdrops.removeValue(forKey: k)?.removeFromSuperview()
         }
-        for b in view.bands {
+        for (i, b) in view.bands.enumerated() {
             let h: BandHeaderView
             if let x = bandHeaders[b.key] {
                 h = x
@@ -884,6 +884,22 @@ final class WallView: NSView {
                     model.sidebarAction?(.newWall(s))
                 }
                 h.onDrag = { [weak self] phase, p in self?.bandDrag(key, phase, p) }
+                // The ⋯ / right-click menu: the header's gestures by name.
+                h.onMenu = { [weak self, weak model, weak h] action in
+                    guard let self, let model, let h else { return }
+                    switch action {
+                    case .toggleCollapse: h.onToggle?(false)
+                    case .collapseOthers: h.onToggle?(true)
+                    case .newAgent: h.onNew?()
+                    case .openAsWall:
+                        if let p = model.resolvedView.band(key: key)?.pointer { model.openPointer?(p.wall) } else { h.onOpenWall?() }
+                    case .moveUp, .moveDown:
+                        guard let i = model.resolvedView.bands.firstIndex(where: { $0.key == key }) else { return }
+                        model.moveBand(key, to: i + (action == .moveUp ? -1 : 1))
+                        self.animateNext = true
+                        self.needsLayout = true
+                    }
+                }
                 bandHeaders[b.key] = h
                 addSubview(h)
                 let bd = BandBackdropView()
@@ -891,7 +907,7 @@ final class WallView: NSView {
                 addSubview(bd, positioned: .below, relativeTo: subviews.first)
             }
             h.apply(b, counts: model.bandCounts(b), collapsed: model.isCollapsed(b), canOpenWall: model.sidebarAction != nil,
-                    focused: model.focusedBandKey == b.key)
+                    focused: model.focusedBandKey == b.key, index: i, count: view.bands.count)
             backdrops[b.key]?.colorHex = b.colorHex
         }
     }

@@ -4,8 +4,8 @@ import HesperCore
 /// Projects (views) UI test (`make -C app test-ui-projects`,
 /// Tools/run-projects.sh): the real app against the fake daemon seeded with
 /// `--projects demo` (two groups, a repository with a package, a scratch
-/// folder, 10 agents). Drives bands, collapse, ＋ in a band, the sidebar
-/// (click, ⌥-click), the home wall's needs-you strip, band navigation,
+/// folder, 10 agents). Drives bands, collapse, the band ⋯ menu, ＋ in a
+/// band, the sidebar (click, ⌥-click), the home wall's needs-you strip, band navigation,
 /// layouts per arrangement, agent window titles, persistence; screenshots
 /// with `--projects-shots DIR`.
 @MainActor
@@ -157,6 +157,30 @@ final class ProjectsSelfTest {
             shot(main.window, "collapsed-others")
             model.collapsedBands = []
             await Harness.sleep(0.6)
+        }
+        // 4b. The header's ⋯ / right-click menu names the same gestures.
+        if let h = wall.bandHeaders[tools.key] {
+            func run(_ title: String) -> Bool {
+                guard let i = h.contextMenu().items.first(where: { $0.title == title }), let a = i.action else { return false }
+                return NSApp.sendAction(a, to: i.target, from: i)
+            }
+            let titles = h.contextMenu().items.filter { !$0.isSeparatorItem }.map(\.title)
+            check("band ⋯ menu: Collapse, Collapse Others, New Agent Here, Open as Wall, Move Up / Down",
+                  titles == ["Collapse", "Collapse Others", "New Agent Here", "Open as Wall", "Move Up", "Move Down"], titles.joined(separator: ", "))
+            check("menu Collapse collapses the band", run("Collapse") && model.collapsedBands == [tools.key], "\(model.collapsedBands)")
+            await Harness.sleep(0.4)
+            check("the menu then says Expand; Expand opens it", h.contextMenu().items.first?.title == "Expand" && run("Expand") && model.collapsedBands.isEmpty)
+            await Harness.sleep(0.4)
+            let order = wall.view.bands.map(\.key)
+            check("menu Move Up puts the band before the previous one", run("Move Up") && wall.view.bands.map(\.key) == [tools.key, acme.key, "g:~scratch"],
+                  wall.view.bands.map(\.key).joined(separator: ", "))
+            await Harness.sleep(0.6)
+            check("Move Up on the first band is disabled; Move Down brings it back",
+                  h.contextMenu().items.first { $0.title == "Move Up" }?.isEnabled == false && run("Move Down") && wall.view.bands.map(\.key) == order,
+                  wall.view.bands.map(\.key).joined(separator: ", "))
+            await Harness.sleep(0.6)
+            check("VoiceOver gets the enabled items as custom actions",
+                  (h.accessibilityCustomActions() ?? []).map(\.name) == ["Collapse", "Collapse Others", "New Agent Here", "Open as Wall", "Move Up", "Move Down"])
         }
 
         // 5. ＋ in a band: a draft there with the band's project.
