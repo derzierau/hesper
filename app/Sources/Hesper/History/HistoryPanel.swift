@@ -124,7 +124,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     private let progressFill = NSView()
     private let countLabel = NSTextField(labelWithString: "")
     private let filters = FilterRow()
-    let table = NSTableView()
+    let table = HistoryTable()
     private let scroll = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "")
     private let divider = NSView()
@@ -254,6 +254,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         table.delegate = self
         table.target = self
         table.doubleAction = #selector(doubleClicked)
+        table.contextMenu = { [weak self] row in self?.rowMenu(row) }
         table.setAccessibilityIdentifier("history.list")
         table.setAccessibilityLabel("Sessions")
         scroll.documentView = table
@@ -787,7 +788,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         let names = machineNames()
         var t = SearchLook.plain(SessionCardText(s, changes: changes, loadingChanges: changes == nil, local: model.localMachine, machines: names), s)
         t.subtitle = SearchLook.previewMeta(s, machines: names)
-        // The search surface's keys: ⏎ resume, ⌥⏎ fork, ⌘⏎ continue on the
+        // The search surface's keys: ⏎ resume, ⌥⏎ fork, M continue on the
         // other Mac (a live agent: moves it with its work), R restore checkpoint.
         let moveTo = model.liveMoveTarget(s)?.to
         t.actions = SearchPreview.actions(s, card: t, local: model.localMachine, online: onlineMachines, machines: names,
@@ -841,7 +842,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
             // panel for the palette (the window's, as in Review; ⇥ is the
             // All scope with the query); the rest (⌘Z, ⌘W…) the window's.
             guard chord.command else { return false }
-            if chord.key == .char("k") && !chord.option && !chord.control { close(); return false }
+            if SearchKeys.opensPalette(chord) { close(); return false }
             if action == .history(.pass) { return false }
         } else if chord.command {
             return false // performKeyEquivalent handles ⌘ chords
@@ -856,6 +857,12 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         case .history(let h): perform(h)
         case .switchScope: switchScope()
         case .toggleFocus: perform(searchHasFocus ? .focusList : .focusSearch(nil))
+        case .openFullSize:
+            // ⌘⏎: ⏎'s resume, then the agent full size.
+            guard let s = selectedSession else { NSSound.beep(); return }
+            if s.live?.external == true && s.liveAgentID == nil { act(.resume, on: s); return }
+            let changes = shownDetail?.id == s.id ? shownDetail?.changes : nil
+            HistoryActions(model: model, hub: hub).resume(s, here: false, changes: changes, focus: true) { [weak self] in self?.close() }
         case .continueOnOtherMac:
             guard let s = selectedSession else { NSSound.beep(); return }
             continueOnOtherMac(s)
@@ -936,7 +943,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         }
     }
 
-    /// ⌘⏎: resume on the other Mac (another Mac's session comes here; this
+    /// M: resume on the other Mac (another Mac's session comes here; this
     /// Mac's goes to the other one). Moves ownership (sessions.resume {machine}).
     private func continueOnOtherMac(_ s: Session) {
         if let m = model.liveMoveTarget(s) {
@@ -998,12 +1005,51 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         if isOpen { window?.makeFirstResponder(table) }
     }
 
+    /// A row's right-click menu: the preview's verbs for that session
+    /// (the row is selected first, so the menu and the keys agree).
+    private func rowMenu(_ row: Int) -> NSMenu? {
+        guard rows.indices.contains(row) else { return nil }
+        if table.selectedRow != row { select(row: row) }
+        guard let actions = card.text?.actions else { return nil }
+        let m = NSMenu()
+        m.autoenablesItems = false
+        for a in SearchPreview.menu(for: actions) {
+            let item = NSMenuItem(title: a.title, action: #selector(menuChose(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = a.key
+            // The key cap, as a plain character where the menu can show one.
+            if let k = KeyChord(label: a.key), let (key, mods) = MenuBuilder.keyEquivalent(k) {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = mods
+            }
+            m.addItem(item)
+        }
+        return m
+    }
+
+    @objc private func menuChose(_ item: NSMenuItem) {
+        guard let key = item.representedObject as? String else { return }
+        perform(SessionCardModel.action(key))
+    }
+
     deinit {
         MainActor.assumeIsolated { hub.unobserve(observer) }
     }
 }
 
 // MARK: Rows
+
+/// The list: a right-click asks `contextMenu` for the row under the
+/// pointer (nil: no menu).
+final class HistoryTable: NSTableView {
+    var contextMenu: ((Int) -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        guard row >= 0 else { return nil }
+        return contextMenu?(row)
+    }
+}
 
 /// A row's background: the selection (`working` at 14%, radius
 /// `control`); nothing otherwise.

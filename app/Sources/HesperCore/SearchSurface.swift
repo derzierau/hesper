@@ -20,7 +20,10 @@ public enum SearchScope: String, CaseIterable, Sendable {
 public enum SearchKeyAction: Equatable, Sendable {
     /// What the History list does with it (↑↓, ⏎ resume, ⌥⏎ fork, letters…).
     case history(HistoryKeyAction)
-    /// ⌘⏎: resume on the other Mac (moves ownership; `SearchPreview.continueTarget`).
+    /// ⌘⏎: resume (as ⏎), then open the agent full size.
+    case openFullSize
+    /// M (the list): resume on the other Mac (moves ownership;
+    /// `SearchPreview.continueTarget`).
     case continueOnOtherMac
     /// R (the list) / the preview's button: a gone agent's checkpoint as a
     /// worktree again (`SearchPreview.restoreOffered`).
@@ -39,6 +42,7 @@ public enum SearchKeys {
     /// else the panel's (`HistoryKeys`).
     public static func action(for id: CommandID) -> SearchKeyAction? {
         switch id {
+        case .historyOpenFullSize: return .openFullSize
         case .historyContinueOnOtherMac: return .continueOnOtherMac
         case .historyRestoreCheckpoint: return .restoreCheckpoint
         case .historySwitchScope: return .switchScope
@@ -47,16 +51,17 @@ public enum SearchKeys {
         }
     }
 
-    /// The History scope's key table: ⏎ resume, ⌥⏎ fork, ⌘⏎ continue on
-    /// the other Mac, ⇥ All scope, ⇧⇥ field ↔ list, R (the list) restore;
-    /// everything else as `HistoryKeys` (↑↓, esc, ⌘F, ⌘C, F C A ⌫ in the
-    /// list…).
+    /// The History scope's key table: ⏎ resume, ⌘⏎ resume and open full
+    /// size, ⌥⏎ fork, ⇥ All scope, ⇧⇥ field ↔ list, M (the list) continue
+    /// on the other Mac, R (the list) restore; everything else as
+    /// `HistoryKeys` (↑↓, esc, ⌘F, ⌘C, F C A ⌫ in the list…).
     public static func history(_ k: KeyChord, keyCode: UInt16 = 0, characters: String?, focus: HistoryFocus,
                                fieldHasSelection: Bool = false) -> SearchKeyAction {
         if let id = CommandRegistry.resolve(k, in: .history) {
             switch id {
             case .historyFork: return .history(.fork)
-            case .historyContinueOnOtherMac: return .continueOnOtherMac
+            case .historyOpenFullSize: return .openFullSize
+            case .historyContinueOnOtherMac where focus == .list: return .continueOnOtherMac
             case .historySwitchScope: return .switchScope
             case .historyToggleFocus: return .toggleFocus
             case .historyRestoreCheckpoint where focus == .list: return .restoreCheckpoint
@@ -64,6 +69,12 @@ public enum SearchKeys {
             }
         }
         return .history(HistoryKeys.route(k, keyCode: keyCode, characters: characters, focus: focus, fieldHasSelection: fieldHasSelection))
+    }
+
+    /// ⌘K in the History sheet: the sheet closes and the window opens the
+    /// palette (the registry's everywhere binding, not the sheet's).
+    public static func opensPalette(_ k: KeyChord) -> Bool {
+        CommandRegistry.resolve(k, in: .history) == .palette
     }
 
     /// A palette detail that is a shortcut ("⌘N", "⌥⌘1", "⌘,") is drawn as
@@ -178,7 +189,7 @@ public enum SearchPreview {
     /// The preview's "Restore scratch" button (no key of its own).
     public static let restoreScratchKey = "↺"
 
-    /// ⌘⏎'s target: a session from another Mac comes here (`local`); one
+    /// M's target: a session from another Mac comes here (`local`); one
     /// of this Mac goes to the first other Mac online. nil: it can't move
     /// (live, moved already, or no other Mac).
     public static func continueTarget(_ s: Session, local: String, online: [String]) -> String? {
@@ -187,7 +198,7 @@ public enum SearchPreview {
         return online.first { $0 != local && $0 != s.machine }
     }
 
-    /// ⌘⏎ on a live session: its agent moves (agents.move) to the first
+    /// M on a live session: its agent moves (agents.move) to the first
     /// Mac it can go to; nil: not live here, or it can't move.
     public static func moveTarget(_ s: Session, agent: Agent?, machines: [Machine], supported: Bool?) -> String? {
         guard s.isLive, let a = agent, a.id == s.liveAgentID else { return nil }
@@ -200,17 +211,18 @@ public enum SearchPreview {
         s.checkpoint != nil && !s.isLive && supported != false
     }
 
-    /// The preview's actions with their keys: ⏎ resume (as the card says
-    /// it), ⌥⏎ fork, ⌘⏎ continue on the other Mac (a live agent: moves it,
-    /// `moveTo`), then R restore checkpoint, C continue in the other tool,
-    /// A archive, ⌫ delete, ⌘C copy id.
+    /// The preview's actions with their keys, each a KeyButton: ⏎ resume
+    /// (as the card says it), ⌥⏎ fork, M continue on the other Mac (a
+    /// live agent: moves it, `moveTo`), then R restore checkpoint, C
+    /// continue in the other tool, A archive, ⌫ delete, ⌘C copy id. The
+    /// row menu and the footer are cut from this list (`menu`, `footer`).
     public static func actions(_ s: Session, card: SessionCardText, local: String, online: [String], machines: [String: String],
                                moveTo: String? = nil, restore: Bool = false, restoreScratch: Bool = false) -> [SessionCardText.Action] {
         var out: [SessionCardText.Action] = []
         if let first = card.actions.first { out.append(first) }
         out.append(.init(key: "⌥⏎", title: "Fork", primary: false))
         if let t = moveTo ?? continueTarget(s, local: local, online: online) {
-            out.append(.init(key: "⌘⏎", title: "Continue on \(SessionFormat.machineName(t, machines))", primary: false))
+            out.append(.init(key: "M", title: "Continue on \(SessionFormat.machineName(t, machines))", primary: false))
         }
         if restore { out.append(.init(key: "R", title: "Restore checkpoint", primary: false)) }
         if restoreScratch { out.append(.init(key: SearchPreview.restoreScratchKey, title: "Restore scratch", primary: false)) }
@@ -221,16 +233,39 @@ public enum SearchPreview {
         return out
     }
 
-    /// ⌘⏎'s consequence, under the actions.
+    /// M's consequence, under the actions.
     public static func continueNote(_ s: Session, local: String, online: [String], machines: [String: String], moveTo: String? = nil) -> String? {
         if let moveTo {
             let to = SessionFormat.machineName(moveTo, machines)
-            return "⌘⏎ moves it to \(to) with its worktree, uncommitted changes and conversation; it closes here"
+            return "M moves it to \(to) with its worktree, uncommitted changes and conversation; it closes here"
         }
         guard let t = continueTarget(s, local: local, online: online) else { return nil }
         let from = SessionFormat.machineName(s.machine.isEmpty ? local : s.machine, machines)
         let to = SessionFormat.machineName(t, machines)
-        return "⌘⏎ continues on \(to), moves ownership; uncommitted work comes along if \(from) is reachable"
+        return "M continues on \(to), moves ownership; uncommitted work comes along if \(from) is reachable"
+    }
+
+    /// The row's right-click menu: the preview's verbs (the ⏎ entry that
+    /// only says the session runs outside Hesper is not one).
+    public static func menu(for actions: [SessionCardText.Action]) -> [SessionCardText.Action] {
+        actions.filter { !($0.key == "⏎" && $0.title == SessionCardText.outsideTitle) }
+    }
+
+    /// The sheet's footer, acting on the selection: the preview's ⏎ and
+    /// ⌥⏎ verbs as it names them, then ⌘⏎ "Open full size" (resume, then
+    /// focus) when ⏎ resumes. With nothing selected: the same, disabled.
+    public static let footerDefault: [SessionCardText.Action] = [
+        .init(key: "⏎", title: "Resume", primary: true), .init(key: "⌥⏎", title: "Fork", primary: false),
+        .init(key: "⌘⏎", title: "Open full size", primary: false),
+    ]
+
+    public static func footer(for actions: [SessionCardText.Action]) -> [SessionCardText.Action] {
+        let verbs = menu(for: actions)
+        var out: [SessionCardText.Action] = []
+        if let a = verbs.first(where: { $0.key == "⏎" }) { out.append(a) }
+        if let a = verbs.first(where: { $0.key == "⌥⏎" }) { out.append(a) }
+        if !out.isEmpty, out[0].key == "⏎" { out.append(footerDefault[2]) }
+        return out
     }
 }
 

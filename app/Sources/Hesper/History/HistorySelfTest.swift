@@ -211,9 +211,9 @@ final class HistorySelfTest {
         let details = await Harness.wait(3) { p.card.text?.changed != nil }
         check("changed files, uncommitted, ahead/behind arrive from sessions.show", details && p.card.text?.changed?.contains("rail.py") == true
               && p.card.text?.branch.contains("ahead") == true, p.card.text?.changed ?? "")
-        check("actions: ⏎ Resume on mini, ⌥⏎ Fork, ⌘⏎ Continue on laptop with its note",
+        check("actions: ⏎ Resume on mini, ⌥⏎ Fork, M Continue on laptop with its note",
               p.card.text?.actions.first?.title == "Resume on mini" && p.card.text?.actions.contains { $0.key == "⌥⏎" && $0.title == "Fork" } == true
-                && p.card.text?.actions.contains { $0.key == "⌘⏎" && $0.title == "Continue on laptop" } == true
+                && p.card.text?.actions.contains { $0.key == "M" && $0.title == "Continue on laptop" } == true
                 && p.card.text?.resumeHereNote?.contains("uncommitted work comes along if mini is reachable") == true)
         await Harness.sleep(0.3)
         shot("history-card")
@@ -235,16 +235,17 @@ final class HistorySelfTest {
               cs.map(\.method).joined(separator: ","))
         check("the panel closes after starting", p.isOpen == false)
 
-        // ⌘⏎: continue on the other Mac (a mini session comes here; moves ownership).
+        // M (in the list): continue on the other Mac (a mini session comes here; moves ownership).
         await openHistory()
         _ = await settled()
         if let i = p.list.items.firstIndex(where: { $0.id == s.id }) { p.select(row: i) }
+        p.perform(.focusList)
         let before2 = Set(model.registry.agents.keys)
-        key("\r", 36, .command)
+        key("m", 46)
         let here = await Harness.wait(4) { Set(self.model.registry.agents.keys).subtracting(before2).count == 1 }
         cs = await calls()
         let newID = Set(model.registry.agents.keys).subtracting(before2).first ?? ""
-        check("⌘⏎ continues on the other Mac (here): sessions.resume {machine: L}", here && cs.contains { $0.method == "sessions.resume" && $0.params["machine"]?.stringValue == "L" }
+        check("M continues on the other Mac (here): sessions.resume {machine: L}", here && cs.contains { $0.method == "sessions.resume" && $0.params["machine"]?.stringValue == "L" }
               && model.agent(newID)?.machine == "L", cs.map { "\($0.method) \($0.params)" }.joined(separator: "; "))
         check("the result's note shows (what came along)", model.toast?.text.contains("uncommitted work came along") == true, model.toast?.text ?? "nil")
         let overlay = await Harness.wait(2) { self.main.root.wall.tiles[newID]?.subviews.contains { $0 is SessionCardOverlay } == true }

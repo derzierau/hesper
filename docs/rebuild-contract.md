@@ -3114,32 +3114,37 @@ tile's rendering both ways). The tiles keep rendering underneath (wall
 numbers below); toasts and undo stay above the panel; a click on the
 scrim closes; state (query, filters, list, selection) survives closing.
 
-Layout: left the project sidebar (the same `SidebarRowContent` rows as
-⌘0) with session counts: All sessions, groups → projects (a package's
-sessions count for its repository), other projects, and "Scratch" /
-"Elsewhere (folder gone)" rows when the daemon counts them; top the
-search field (live FTS as you type, 60 ms debounce) and chips (this
-project — the selected card's or the wall's —, all projects, Claude,
-Codex, one per Mac, time any/24 h/7 days/30 days, live in Hesper,
-external, archived, moved to another Mac); the list (kind badge, title,
-Mac · branch · turns · tokens, the FTS snippet with its `[matches]`
-highlighted or the last exchange, when and state: ended / ● live in
-Hesper / ● running outside / external / moved to M / mirrored on N
-Macs); right the "where you left off" card; the footer: count, the first
-index's progress (`sessions.indexing`, also from `stats.indexing`) and
-the keys.
+Layout, in the `SheetChrome` frame (`docs/design-system.md`): the title
+row (History, the session count as a Pill, the `esc` key cap and a close
+×; a click on the scrim closes too); the toolbar (the scope segments All
+· History with ⇥, the filter Pills: this project — the selected card's
+or the wall's —, all projects, Claude, Codex, one per Mac, time any/24
+h/7 days/30 days, live in Hesper, external, archived, moved to another
+Mac; on the right "more below" while another page waits, or the first
+index's progress from `sessions.indexing` / `stats.indexing`); the
+search field (live FTS as you type, 60 ms debounce); the list (kind
+badge, title, Mac · branch · turns · tokens, the FTS snippet with its
+`[matches]` highlighted or the last exchange, when and state: ended / ●
+live in Hesper / ● running outside / external / moved to M / mirrored on
+N Macs; a right-click on a row shows the preview's verbs as a menu with
+their key caps, double-click resumes); right the "where you left off"
+card; the footer: KeyButtons acting on the selection.
 
 **The card** renders at once from the row's fields (title, Kind on Mac ·
 folder, you asked, it answered, open todos, branch) and fills the git
 line from `sessions.show` 120 ms after the selection settles (changed
 files +/−, uncommitted, ahead/behind, folder on M / folder gone) into a
-slot reserved for it: nothing moves. Actions with keys: **⏎** Resume (on
+slot reserved for it: nothing moves. Actions, one KeyButton each with
+its key cap (`SearchPreview.actions`; the row menu and the footer are
+cut from the same list, `SearchPreview.menu` / `footer`, so the three
+never disagree): **⏎** Resume (on
 its Mac; "Open (live)" when hesperd runs it → that agent's tile or
 window; "Open on M" for a moved entry, which hesperd resumes on the new
-home; running outside Hesper → a toast), **⌥⏎** Fork, **⌘⏎** Continue
-on the other Mac ("continues on laptop, moves ownership; uncommitted
-work comes along if mini is reachable"; `sessions.resume {id, machine:
-this Mac}`), **C** Continue in Claude/Codex (the card turns into the brief from
+home; running outside Hesper → a note instead of a button), **⌥⏎** Fork,
+**M** Continue on the other Mac ("continues on laptop, moves ownership;
+uncommitted work comes along if mini is reachable"; `sessions.resume
+{id, machine: this Mac}`; a live agent moves with its work), **C**
+Continue in Claude/Codex (the card turns into the brief from
 `sessions.brief`, editable, the other kind preselected; ⌘⏎ starts:
 unedited → `sessions.continueAs {id, kind}`; edited → `agents.spawn`
 of that kind in the session's folder on its Mac with the edited text,
@@ -3154,11 +3159,15 @@ two lines (at least 0.8 s, at most 12 s, typing into it hides it).
 
 **Keys** (`HistoryKeys`, the overlay family's): ↑↓ select (also from the
 search field), ⌘↑ ⌘↓ / Home End first / last, page up/down, ⏎ resume,
-⌥⏎ fork, ⌘⏎ continue on the other Mac, ⇥ the All scope with the query
-(⇧⇥ field ↔ list, where F C A ⌫ act; typing any other character goes
-back to the search with it), ⌘F the search, ⌘C copy id (the field's own
-copy when text is selected), esc / ⌘Y close; ⌘K closes the panel for
-the palette; ⌘Z, ⌘W… stay the window's. A toast never takes the keyboard from the panel.
+⌘⏎ resume and open the agent full size (focus), ⌥⏎ fork, ⇥ the All
+scope with the query (⇧⇥ field ↔ list, where F C A M R ⌫ act; typing
+any other character goes back to the search with it), ⌘F the search, ⌘C
+copy id (the field's own copy when text is selected), esc / ⌘Y close;
+⌘K closes the panel for the palette (`SearchKeys.opensPalette`, the
+registry's everywhere binding); ⌘Z, ⌘W… stay the window's. A toast never takes the keyboard from the panel.
+Every key sits on a control: the preview's buttons, the row's
+right-click menu, the footer (Resume ⏎, Fork ⌥⏎, Open full size ⌘⏎,
+disabled with nothing selected) and the title row's close ×.
 
 **Ghost cards.** A removed agent (⌘W on an ended one) becomes a dashed
 card in its place on its band's shelf at once (its undo window: ⏎ =

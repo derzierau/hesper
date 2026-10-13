@@ -37,9 +37,9 @@ import Testing
         e[.closeTrayItem] = "the background tray's rows carry ⌘W"
         for id in [CommandID.inboxPrimary, .inboxOpen, .inboxMoveElsewhere] { e[id] = "inbox rows carry the key caps" }
         for n in 0..<9 { e[.inboxAnswer(n)] = "inbox rows number their answers" }
-        for id in [CommandID.historyResume, .historyFork, .historyContinueOnOtherMac, .historyContinueOther, .historyArchive, .historyDelete,
-                   .historyRestoreCheckpoint, .historySwitchScope, .historyToggleFocus, .historyFirst, .historyLast] {
-            e[id] = "History's toolbar and preview buttons carry the keys"
+        for id in [CommandID.historyResume, .historyOpenFullSize, .historyFork, .historyContinueOnOtherMac, .historyContinueOther, .historyArchive,
+                   .historyDelete, .historyRestoreCheckpoint, .historySwitchScope, .historyToggleFocus, .historyFirst, .historyLast] {
+            e[id] = "History's toolbar, preview buttons, row menu and footer carry the keys"
         }
         for id in [CommandID.reviewAccept, .reviewSendBack, .reviewProvenance, .reviewToggleFold, .reviewNextHunk, .reviewPreviousHunk,
                    .reviewNextFile, .reviewPreviousFile, .reviewSeen, .reviewReject, .reviewNote, .reviewBulkAccept] {
