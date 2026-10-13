@@ -142,6 +142,49 @@ import Testing
         }
     }
 
+    // MARK: Routers
+
+    /// Every registry chord, in every surface it is live in, comes out of
+    /// that surface's router as the registered command (or as "not mine"
+    /// where the surface has no action for it: the menu runs it).
+    @Test func routersResolveEveryRegisteredChord() {
+        for c in CommandRegistry.all {
+            for b in c.bindings {
+                for s in Surface.concrete where CommandRegistry.live(b, in: s) {
+                    check(c.id, b.chord, in: s)
+                }
+            }
+        }
+    }
+
+    private func check(_ id: CommandID, _ k: KeyChord, in s: Surface) {
+        let typed: String? = { if case .char(let ch) = k.key, k.plain { return k.shift ? String(ch).uppercased() : String(ch) }; return nil }()
+        let app = KeyRouter.command(for: id)
+        let where_ = Comment(rawValue: "\(id) \(k.label) in \(s)")
+        switch s {
+        case .wall:
+            let state: AgentState = { if case .answer = id { return .approval }; return id == .denyWithMessage ? .approval : .working }()
+            #expect(KeyRouter.route(k, mode: .wall, selectedState: state) == (app ?? .none), where_)
+        case .focus, .agentWindow:
+            #expect(KeyRouter.route(k, mode: .focus, selectedState: .working) == (app ?? .passThrough), where_)
+        case .activeTile:
+            #expect(KeyRouter.routeActiveTile(k) == (app ?? .passThrough), where_)
+        case .composer, .quickLaunch:
+            let expected: AppCommand = id == .undo ? .passThrough : (app ?? .passThrough) // ⌘Z is the text's undo
+            #expect(KeyRouter.route(k, mode: .compose, selectedState: nil) == expected, where_)
+        case .palette, .popover:
+            #expect(OverlayKeys.route(k, characters: typed, surface: s) == (OverlayKeys.action(for: id) ?? .pass), where_)
+        case .inbox:
+            #expect(InboxKeys.route(OverlayKeys.route(k, characters: typed, surface: .inbox)) == (InboxKeys.action(for: id) ?? .none), where_)
+        case .history:
+            #expect(SearchKeys.history(k, characters: typed, focus: .list) == (SearchKeys.action(for: id) ?? .history(.pass)), where_)
+        case .review:
+            #expect(ReviewKeys.route(k) == (ReviewKeys.action(for: id) ?? .pass), where_)
+        case .settings, .everywhere:
+            break // no router: the menu's key equivalents
+        }
+    }
+
     // MARK: Chords
 
     @Test func labelsRoundTrip() {

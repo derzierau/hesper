@@ -108,6 +108,42 @@ public enum AppCommand: Equatable, Sendable {
 /// Plain ← → in focus always belong to the agent; ⌥⌘← ⌥⌘→ step to the
 /// previous / next agent everywhere.
 public enum KeyRouter {
+    /// The AppCommand a registry command runs (nil: not the router's, the
+    /// menu or a panel handles it).
+    public static func command(for id: CommandID) -> AppCommand? {
+        switch id {
+        case .newAgent: return .newAgent
+        case .nextAttention: return .nextAttention
+        case .palette: return .palette
+        case .toggleFocus: return .toggleFocus
+        case .exitFocus: return .exitFocus
+        case .stepPrevious: return .stepPrevious
+        case .stepNext: return .stepNext
+        case .closeAgent: return .closeAgent
+        case .backgroundAgent: return .backgroundAgent
+        case .killAgent: return .killAgent
+        case .tidyUp: return .tidyUp
+        case .reopenClosed: return .reopenClosed
+        case .moveAgent: return .moveAgent
+        case .undo: return .undo
+        case .arrangement(let i): return .arrangement(i)
+        case .cycleArrangement: return .cycleArrangement
+        case .jumpBand(let d): return .jumpBand(d)
+        case .toggleSidebar: return .toggleSidebar
+        case .history: return .history
+        case .review: return .review
+        case .select(let m): return .select(m)
+        case .activateTile: return .activateTile
+        case .answer(let d): return .answer(d)
+        case .denyWithMessage: return .denyWithMessage
+        case .startDraft: return .startDraft
+        case .startDraftAndNew: return .startDraftAndNew
+        case .toggleWorktree: return .toggleWorktree
+        case .leaveDraft: return .leaveDraft
+        default: return nil
+        }
+    }
+
     /// - Parameter typed: the text the key produced (`NSEvent.characters`);
     ///   a printable one on a selected agent or draft is `.typeInto`.
     /// - Parameter selectedReviewable: the selected agent is ready to
@@ -115,103 +151,44 @@ public enum KeyRouter {
     public static func route(_ k: KeyChord, mode: AppMode, selectedState: AgentState?, selectedIsDraft: Bool = false, selectedTrust: Bool = false,
                              selectedAnswers: [Decision] = [], typed: String? = nil, selectedReviewable: Bool = false) -> AppCommand {
         if mode == .compose { return compose(k) }
-        if k.command && k.option && !k.control && !k.shift {
-            switch k.key {
-            case .char(let c) where WallArrangement.numbered(Int(String(c)) ?? 0) != nil: return .arrangement(Int(String(c))! - 1)
-            case .char("l"), .char("L"): return .cycleArrangement
-            case .char("w"), .char("W"): return .backgroundAgent
-            case .left: return .stepPrevious
-            case .right: return .stepNext
-            default: return mode == .focus ? .passThrough : .none
+        if let id = CommandRegistry.resolve(k, in: mode == .focus ? .focus : .wall), let cmd = command(for: id) {
+            switch cmd {
+            case .activateTile:
+                // Precedence on the selected tile: a draft edits; a tile that
+                // needs you answers (⏎ = Allow / the first answer); otherwise
+                // ⏎ starts typing into it.
+                if selectedIsDraft { return .editDraft }
+                if let first = selectedAnswers.first, selectedState == .question { return .answer(first) }
+                if selectedTrust && selectedState == .question { return .answer(.trust) }
+                if selectedReviewable && !(selectedState?.needsAttention ?? false) { return .review }
+                return selectedState == .approval ? .answer(.allow) : (selectedState == nil ? .none : .activateTile)
+            case .answer, .denyWithMessage:
+                if selectedState == .approval { return cmd } // else A / N type into the tile
+            default:
+                return cmd
             }
         }
-        if k.command && k.control && !k.option && !k.shift, k.key == .char("w") || k.key == .char("W") { return .killAgent }
-        if k.command && !k.option && !k.control {
-            switch k.key {
-            case .char("n") where !k.shift: return .newAgent
-            case .char("j") where !k.shift: return .nextAttention
-            case .char("k") where !k.shift: return .palette
-            case .enter: return .toggleFocus
-            case .escape: return .exitFocus // focus: back to the wall; wall: the active tile back to selected
-            case .char("w") where !k.shift: return .closeAgent
-            case .char("w"), .char("W"): return .tidyUp
-            case .char("t") where k.shift, .char("T"): return .reopenClosed
-            case .char("m") where k.shift: return .moveAgent
-            case .char("M"): return .moveAgent
-            case .char("z") where !k.shift: return .undo
-            case .char("0") where !k.shift: return .toggleSidebar
-            case .char("y") where !k.shift: return .history
-            case .char("r") where !k.shift: return .review
-            default: return mode == .focus ? .passThrough : .none
-            }
-        }
+        // Not the app's. In focus everything else is the agent's; on the
+        // wall a printable key types into the selected tile (activates it).
         if mode == .focus { return .passThrough }
-        if k.option && !k.command && !k.control && !k.shift && (k.key == .up || k.key == .down) {
-            return .jumpBand(k.key == .up ? -1 : 1)
-        }
         if k.command || k.control { return .none }
         let hasTarget = selectedState != nil || selectedIsDraft
         let text = typed.flatMap { TerminalKeys.isPrintable($0) ? $0 : nil }
-        // ⌥-keys only type (⌥L is @ on German keyboards).
-        if k.option { return hasTarget ? text.map(AppCommand.typeInto) ?? .none : .none }
-        let approval = selectedState == .approval
-        switch k.key {
-        case .left: return .select(.left)
-        case .right: return .select(.right)
-        case .up: return .select(.up)
-        case .down: return .select(.down)
-        case .home: return .select(.first)
-        case .end: return .select(.last)
-        case .tab: return k.shift ? .stepPrevious : .stepNext
-        case .enter:
-            // Precedence on the selected tile: a draft edits; a tile that
-            // needs you answers (⏎ = Allow / the first answer); otherwise
-            // ⏎ starts typing into it.
-            if selectedIsDraft { return .editDraft }
-            if let first = selectedAnswers.first, selectedState == .question { return .answer(first) }
-            if selectedTrust && selectedState == .question { return .answer(.trust) }
-            if selectedReviewable && !(selectedState?.needsAttention ?? false) { return .review }
-            return approval ? .answer(.allow) : (selectedState == nil ? .none : .activateTile)
-        case .char("a") where approval, .char("A") where approval: return .answer(.always)
-        case .char("n") where approval, .char("N") where approval: return .denyWithMessage
-        default: return hasTarget ? text.map(AppCommand.typeInto) ?? .none : .none
-        }
+        return hasTarget ? text.map(AppCommand.typeInto) ?? .none : .none
     }
 
     /// The active wall tile has the keyboard: like focus, every key goes to
     /// the agent (Esc, ⏎, arrows, ⌃-keys, ⌘C/⌘V) except the app's ⌘
     /// shortcuts; ⌘Esc leaves the tile (exitFocus), ⌘↩ opens it full size.
     public static func routeActiveTile(_ k: KeyChord) -> AppCommand {
-        route(k, mode: .focus, selectedState: nil)
+        CommandRegistry.resolve(k, in: .activeTile).flatMap(command(for:)) ?? .passThrough
     }
 
-    /// Typing in a composer: only these keys are the app's; everything
-    /// else edits the text.
+    /// Typing in a composer: only the registry's composer keys are the
+    /// app's; everything else edits the text. ⌘Z is the text's undo (Edit ▸
+    /// Undo reaches the field through the responder chain).
     static func compose(_ k: KeyChord) -> AppCommand {
-        if k.command && !k.option && !k.control {
-            switch k.key {
-            case .enter: return .startDraft
-            case .char("w") where k.shift, .char("W"): return .tidyUp // as everywhere; the worktree toggle is ⌥⌘B
-            case .char("w"): return .closeAgent
-            case .char("t") where k.shift, .char("T"): return .reopenClosed
-            case .char("n") where !k.shift: return .newAgent
-            case .char("j") where !k.shift: return .nextAttention
-            case .char("k") where !k.shift: return .palette
-            case .char("y") where !k.shift: return .history
-            case .char("r") where !k.shift: return .review
-            default: return .passThrough
-            }
-        }
-        if k.command && k.option && !k.control && !k.shift {
-            switch k.key {
-            case .char(let c) where WallArrangement.numbered(Int(String(c)) ?? 0) != nil: return .arrangement(Int(String(c))! - 1)
-            case .char("l"), .char("L"): return .cycleArrangement
-            case .char("b"), .char("B"): return .toggleWorktree
-            default: return .passThrough
-            }
-        }
-        if k.option && !k.command && !k.control && k.key == .enter { return .startDraftAndNew }
-        if k.key == .escape && !k.command && !k.option && !k.control && !k.shift { return .leaveDraft }
-        return .passThrough
+        guard let id = CommandRegistry.resolve(k, in: .composer), let cmd = command(for: id), cmd != .undo else { return .passThrough }
+        return cmd
     }
 }

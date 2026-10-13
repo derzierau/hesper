@@ -13,19 +13,26 @@ public enum OverlayKeyAction: Equatable, Sendable {
 }
 
 public enum OverlayKeys {
-    public static func route(_ k: KeyChord, characters: String? = nil) -> OverlayKeyAction {
-        switch k.key {
-        case .up where !k.command: return .up
-        case .down where !k.command: return .down
-        case .char("p") where k.control && !k.command: return .up
-        case .char("n") where k.control && !k.command: return .down
-        case .enter where k.command: return .alternate
-        case .enter where !k.option && !k.control: return .activate
-        case .tab where !k.command: return k.shift ? .back : .actOn
-        case .escape where !k.command: return .close
-        case .delete where !k.command && !k.option: return .deleteBackward
-        default: break
+    /// The action a registry command is in an overlay (nil: not the
+    /// overlay's, it passes).
+    public static func action(for id: CommandID) -> OverlayKeyAction? {
+        switch id {
+        case .moveUp: return .up
+        case .moveDown: return .down
+        case .overlayActivate, .inboxPrimary: return .activate
+        case .overlayAlternate, .inboxOpen: return .alternate
+        case .overlayActOn: return .actOn
+        case .overlayBack: return .back
+        case .closeOverlay: return .close
+        case .overlayDeleteBackward: return .deleteBackward
+        default: return nil
         }
+    }
+
+    /// - Parameter surface: `.palette`, `.popover` or `.inbox` (the
+    ///   registry's surface the overlay is).
+    public static func route(_ k: KeyChord, characters: String? = nil, surface: Surface = .palette) -> OverlayKeyAction {
+        if let id = CommandRegistry.resolve(k, in: surface), let a = action(for: id) { return a }
         if k.command || k.control { return .pass }
         if let c = characters, !c.isEmpty, c.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && $0.value < 0xF700 }) {
             return .type(c)

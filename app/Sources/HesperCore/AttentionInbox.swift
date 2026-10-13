@@ -146,6 +146,21 @@ public enum InboxKeyAction: Equatable, Sendable {
 }
 
 public enum InboxKeys {
+    /// The inbox's own verbs (the letters; ↑↓ ⏎ ⌘⏎ esc arrive resolved
+    /// by OverlayKeys).
+    public static func action(for id: CommandID) -> InboxKeyAction? {
+        switch id {
+        case .moveDown: return .move(1)
+        case .moveUp: return .move(-1)
+        case .inboxMoveElsewhere: return .moveElsewhere
+        case .inboxAnswer(let n): return .answer(n)
+        case .inboxPrimary: return .primary
+        case .inboxOpen: return .open
+        case .closeOverlay: return .close
+        default: return nil
+        }
+    }
+
     public static func route(_ action: OverlayKeyAction) -> InboxKeyAction {
         switch action {
         case .up: return .move(-1)
@@ -154,14 +169,9 @@ public enum InboxKeys {
         case .alternate: return .open
         case .close: return .close
         case .type(let s):
-            switch s {
-            case "j", "J": return .move(1)
-            case "k", "K": return .move(-1)
-            case "m", "M": return .moveElsewhere
-            default:
-                if s.count == 1, let n = Int(s), (1...9).contains(n) { return .answer(n - 1) }
-                return .none
-            }
+            // J K 1–9 M: typed letters, looked up in the inbox's surface.
+            guard s.count == 1, let c = s.first, let id = CommandRegistry.resolve(KeyChord(.char(c)), in: .inbox) else { return .none }
+            return Self.action(for: id) ?? .none
         case .actOn, .back, .deleteBackward, .pass:
             return .none
         }

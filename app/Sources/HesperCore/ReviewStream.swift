@@ -387,42 +387,36 @@ public enum ReviewKeyAction: Equatable, Sendable {
 }
 
 public enum ReviewKeys {
+    /// The sheet's action for a registry command (nil: not the sheet's,
+    /// it passes; ⌘R and esc close).
+    public static func action(for id: CommandID) -> ReviewKeyAction? {
+        switch id {
+        case .moveUp: return .previousItem
+        case .moveDown: return .nextItem
+        case .reviewNextHunk: return .nextHunk
+        case .reviewPreviousHunk: return .previousHunk
+        case .reviewNextFile: return .nextFile
+        case .reviewPreviousFile: return .previousFile
+        case .reviewSeen: return .seen
+        case .reviewReject: return .reject
+        case .reviewNote: return .note
+        case .reviewToggleFold: return .toggleFold
+        case .reviewSendBack: return .sendBack
+        case .reviewAccept: return .accept
+        case .reviewProvenance: return .provenance
+        case .reviewBulkAccept: return .bulkAccept
+        case .closeOverlay, .review: return .close
+        default: return nil
+        }
+    }
+
     public static func route(_ k: KeyChord, editingNote: Bool = false) -> ReviewKeyAction {
         if editingNote {
             if k.key == .escape && !k.command && !k.option && !k.control { return .cancelNote }
             if k.key == .enter && (k.command || k.shift) && !k.option && !k.control { return .saveNote }
             return .pass
         }
-        if k.command && !k.option && !k.control && !k.shift {
-            switch k.key {
-            case .enter: return .accept
-            case .char("r"), .char("R"): return .close
-            default: return .pass
-            }
-        }
-        if k.command || k.control { return .pass }
-        if k.option {
-            return k.key == .enter && !k.shift ? .provenance : .pass
-        }
-        switch k.key {
-        case .escape: return .close
-        case .up: return .previousItem
-        case .down: return .nextItem
-        case .enter: return k.shift ? .sendBack : .toggleFold
-        case .char(let c):
-            switch (c, k.shift) {
-            case ("j", false): return .nextHunk
-            case ("k", false): return .previousHunk
-            case ("n", false): return .nextFile
-            case ("N", _), ("n", true): return .previousFile
-            case ("v", false), ("V", _): return .seen
-            case ("x", false), ("X", _): return .reject
-            case ("c", false), ("C", _): return .note
-            case ("A", _), ("a", true): return .bulkAccept
-            default: return .pass
-            }
-        default: return .pass
-        }
+        return CommandRegistry.resolve(k, in: .review).flatMap(action(for:)) ?? .pass
     }
 }
 

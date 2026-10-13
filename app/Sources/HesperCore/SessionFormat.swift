@@ -315,43 +315,51 @@ public enum HistoryKeyAction: Equatable, Sendable {
 /// The History panel's key table (consistent with the overlay family: ↑↓
 /// select, ⏎ do, ⌥⏎ the alternative, ⇥ act on, esc close, typing filters).
 public enum HistoryKeys {
+    /// The panel's action for a registry command (nil: not the panel's).
+    /// Edit ▸ Copy copies the session id when no text is selected; ⌘Y
+    /// toggles the panel closed.
+    public static func action(for id: CommandID) -> HistoryKeyAction? {
+        switch id {
+        case .moveUp: return .up
+        case .moveDown: return .down
+        case .historyFirst: return .first
+        case .historyLast: return .last
+        case .historyResume: return .resume
+        case .historyFork: return .fork
+        // On its own (without SearchKeys' scopes) ⇥ moves field ↔ list.
+        case .historySwitchScope: return .focusList
+        case .historyToggleFocus: return .focusSearch(nil)
+        case .historyContinueOther: return .continueOther
+        case .historyArchive: return .archive
+        case .historyDelete: return .delete
+        case .copy: return .copyID
+        case .find: return .focusSearch(nil)
+        case .closeOverlay, .history: return .close
+        default: return nil
+        }
+    }
+
     /// - Parameters:
-    ///   - keyCode: 51 = ⌫ (delete), 117 = ⌦, 116/121 page up/down.
+    ///   - keyCode: 51 = ⌫, 117 = ⌦ (delete), 116/121 page up/down (the
+    ///     latter have no `Key` of their own).
     ///   - fieldHasSelection: ⌘C copies the field's selected text then.
     public static func route(_ k: KeyChord, keyCode: UInt16 = 0, characters: String?, focus: HistoryFocus, fieldHasSelection: Bool = false) -> HistoryKeyAction {
-        if k.command && !k.option && !k.control {
-            switch k.key {
-            case .char("f"), .char("F"): return .focusSearch(nil)
-            case .char("c"), .char("C"): return focus == .list || !fieldHasSelection ? .copyID : .pass
-            case .char("y"), .char("Y"): return .close // ⌘Y toggles
-            case .up: return .first
-            case .down: return .last
-            default: return .pass
+        if k.control { return .pass }
+        if k.key == .enter && k.option { return .pass } // ⌥⏎: SearchKeys' fork
+        if let id = CommandRegistry.resolve(k, in: .history), let a = action(for: id) {
+            // Plain letters, Home, End and ⌫ are verbs only in the list; in
+            // the search field they edit the text.
+            let listOnly = !k.command && (k.isLetter || k.key == .home || k.key == .end || k.key == .delete)
+            if !listOnly || focus == .list {
+                if a == .copyID { return focus == .list || !fieldHasSelection ? .copyID : .pass }
+                return a
             }
         }
-        if k.control { return .pass }
-        switch k.key {
-        case .up: return .up
-        case .down: return .down
-        case .home where focus == .list: return .first
-        case .end where focus == .list: return .last
-        case .enter where !k.option: return .resume
-        case .escape: return .close
-        case .tab: return k.shift ? .focusSearch(nil) : .focusList
-        default: break
-        }
+        if k.command { return .pass }
         if keyCode == 116 { return .pageUp }
         if keyCode == 121 { return .pageDown }
         guard focus == .list else { return .pass }
         if keyCode == 51 || keyCode == 117 { return .delete }
-        if !k.option, case .char(let c) = k.key {
-            switch c {
-            case "f", "F": return .fork
-            case "c", "C": return .continueOther
-            case "a", "A": return .archive
-            default: break
-            }
-        }
         if let c = characters, !c.isEmpty, c.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && $0.value < 0xF700 }) {
             return .focusSearch(c)
         }

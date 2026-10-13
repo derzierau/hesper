@@ -35,21 +35,34 @@ public enum SearchKeyAction: Equatable, Sendable {
 }
 
 public enum SearchKeys {
+    /// The History scope's action for a registry command: its own verbs,
+    /// else the panel's (`HistoryKeys`).
+    public static func action(for id: CommandID) -> SearchKeyAction? {
+        switch id {
+        case .historyContinueOnOtherMac: return .continueOnOtherMac
+        case .historyRestoreCheckpoint: return .restoreCheckpoint
+        case .historySwitchScope: return .switchScope
+        case .historyToggleFocus: return .toggleFocus
+        default: return HistoryKeys.action(for: id).map { .history($0) }
+        }
+    }
+
     /// The History scope's key table: ⏎ resume, ⌥⏎ fork, ⌘⏎ continue on
-    /// the other Mac, ⇥ All scope, ⇧⇥ field ↔ list; everything else as
-    /// `HistoryKeys` (↑↓, esc, ⌘F, ⌘C, F C A ⌫ in the list…).
+    /// the other Mac, ⇥ All scope, ⇧⇥ field ↔ list, R (the list) restore;
+    /// everything else as `HistoryKeys` (↑↓, esc, ⌘F, ⌘C, F C A ⌫ in the
+    /// list…).
     public static func history(_ k: KeyChord, keyCode: UInt16 = 0, characters: String?, focus: HistoryFocus,
                                fieldHasSelection: Bool = false) -> SearchKeyAction {
-        if k.key == .enter && !k.control && !k.shift {
-            switch (k.command, k.option) {
-            case (false, false): return .history(.resume)
-            case (false, true): return .history(.fork)
-            case (true, false): return .continueOnOtherMac
-            default: return .history(.pass)
+        if let id = CommandRegistry.resolve(k, in: .history) {
+            switch id {
+            case .historyFork: return .history(.fork)
+            case .historyContinueOnOtherMac: return .continueOnOtherMac
+            case .historySwitchScope: return .switchScope
+            case .historyToggleFocus: return .toggleFocus
+            case .historyRestoreCheckpoint where focus == .list: return .restoreCheckpoint
+            default: break
             }
         }
-        if k.key == .tab && !k.command && !k.option && !k.control { return k.shift ? .toggleFocus : .switchScope }
-        if focus == .list, !k.command && !k.option && !k.control, k.key == .char("r") || k.key == .char("R") { return .restoreCheckpoint }
         return .history(HistoryKeys.route(k, keyCode: keyCode, characters: characters, focus: focus, fieldHasSelection: fieldHasSelection))
     }
 

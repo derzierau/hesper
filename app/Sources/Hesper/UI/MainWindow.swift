@@ -109,7 +109,8 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
         if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, ReviewPanelHost.handleKey(event, window: self) { return } // review
         if event.type == .keyDown, let model {
             let chord = KeyChord(event: event)
-            let action = OverlayKeys.route(chord, characters: event.characters)
+            let surface: Surface = model.showPalette ? .palette : model.popover == .attention ? .inbox : .popover
+            let action = OverlayKeys.route(chord, characters: event.characters, surface: surface)
             if model.showPalette {
                 switch action {
                 case .up, .down, .activate, .actOn, .back, .close:

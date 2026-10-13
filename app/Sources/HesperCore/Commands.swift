@@ -492,10 +492,13 @@ public enum CommandRegistry {
     ]
 
     private static let overlays: [Command] = [
+        // J K move in the inbox and History (Review's step hunks).
         Command(.moveUp, "Move up", chord: .plain(.up), surfaces: lists,
-                aliases: [KeyBinding(KeyChord(.char("p"), control: true), in: overlaySurfaces.union([.inbox]))]),
+                aliases: [KeyBinding(KeyChord(.char("p"), control: true), in: overlaySurfaces.union([.inbox])),
+                          KeyBinding(.plain("k"), in: [.inbox, .history])]),
         Command(.moveDown, "Move down", chord: .plain(.down), surfaces: lists,
-                aliases: [KeyBinding(KeyChord(.char("n"), control: true), in: overlaySurfaces.union([.inbox]))]),
+                aliases: [KeyBinding(KeyChord(.char("n"), control: true), in: overlaySurfaces.union([.inbox])),
+                          KeyBinding(.plain("j"), in: [.inbox, .history])]),
         Command(.closeOverlay, "Close", chord: .plain(.escape), surfaces: lists),
         Command(.overlayActivate, "Choose", chord: .plain(.enter), surfaces: overlaySurfaces),
         Command(.overlayAlternate, "Open full size, or keep the popover open", chord: .cmd(.enter), surfaces: overlaySurfaces),
