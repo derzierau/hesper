@@ -146,7 +146,7 @@ struct AttentionBar: View {
     /// A shelf card: the one line (summary, state) with the card's own
     /// actions; never an empty band.
     var shelf = false
-    /// A narrow card: no key hints, no Open / Always (double-click opens).
+    /// A narrow card: no key hints; Always and Open fold behind ⋯ (TileActions).
     var tight = false
     /// The buttons show their keys (⏎ A N …) only where those keys work:
     /// on the selected, not active wall tile (focus: the agent has them).
