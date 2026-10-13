@@ -3318,8 +3318,11 @@ scope with the query (⇧⇥ field ↔ list, where J K move as in the inbox
 and F C A M R ⌫ act; typing
 any other character goes back to the search with it), ⌘F the search, ⌘C
 copy id (the field's own copy when text is selected), esc / ⌘Y close;
-⌘K closes the panel for the palette (`SearchKeys.opensPalette`, the
-registry's everywhere binding); ⌘Z, ⌘W… stay the window's. A toast never takes the keyboard from the panel.
+⌘K ⌘R ⌘J close the panel for the palette, Review and the inbox
+(`SearchKeys.passesThrough`, the registry's everywhere bindings); ⌘Z
+stays the window's and ⌘W is nobody's under the panel (File ▸ Close is
+off). A popover opened over the panel (⇧⌘M, Rename…) has the keys
+until it closes. A toast never takes the keyboard from the panel.
 Every key sits on a control: the preview's buttons, the row's
 right-click menu, the footer (Resume ⏎, Fork ⌥⏎, Open full size ⌘⏎,
 disabled with nothing selected) and the title row's close ×.
