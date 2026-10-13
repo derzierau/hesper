@@ -3,8 +3,9 @@ import HesperCore
 
 /// A removed agent's ghost on its band's shelf (Grid + Shelf, a day,
 /// newest 3 per project; Settings › General turns them off): a dashed
-/// card with its exited StateMark and ⏎ Resume / ⌫ Forget (Kbd buttons).
-/// Click selects, double-click resumes.
+/// card with its exited StateMark and Resume ⏎ / Forget ⌫ (KeyButtons).
+/// Click selects, double-click resumes, right-click offers Resume, Fork
+/// and Forget.
 @MainActor
 final class GhostCardView: NSView {
     private(set) var session: Session
@@ -13,8 +14,8 @@ final class GhostCardView: NSView {
     private let mark = StateMarkView(.exited)
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
-    private let resumeButton = GhostButton(key: "⏎", title: "Resume")
-    private let forgetButton = GhostButton(key: "⌫", title: "Forget")
+    private let resumeButton = KeyButtonView("Resume", kbd: "⏎")
+    private let forgetButton = KeyButtonView("Forget", kbd: "⌫")
     private(set) var placed: WallTile?
     var isSelected = false { didSet { if oldValue != isSelected { updateBorder() } } }
 
@@ -36,8 +37,10 @@ final class GhostCardView: NSView {
         detail.font = .ds(.meta)
         detail.textColor = Theme.ns(.dim)
         for l in [title, detail] { l.lineBreakMode = .byTruncatingTail; l.maximumNumberOfLines = 1; addSubview(l) }
-        resumeButton.onClick = { [weak self] in guard let self else { return }; self.model?.resumeGhost(self.session) }
-        forgetButton.onClick = { [weak self] in guard let self else { return }; self.model?.forgetGhost(self.session) }
+        resumeButton.onPress = { [weak self] in self?.resume() }
+        forgetButton.onPress = { [weak self] in self?.forget() }
+        resumeButton.setAccessibilityIdentifier("ghost.resume")
+        forgetButton.setAccessibilityIdentifier("ghost.forget")
         addSubview(resumeButton)
         addSubview(forgetButton)
         setAccessibilityElement(true)
@@ -98,7 +101,7 @@ final class GhostCardView: NSView {
         detail.frame = NSRect(x: tx, y: pad + th + DS.Spacing.xxs, width: max(0, w - tx - pad), height: dh)
         let bh = Pill.height
         let y = max(detail.frame.maxY + DS.Spacing.s, bounds.height - bh - DS.Spacing.m)
-        let rw = resumeButton.fittingWidth, fw = forgetButton.fittingWidth
+        let rw = resumeButton.intrinsicContentSize.width, fw = forgetButton.intrinsicContentSize.width
         resumeButton.frame = NSRect(x: pad, y: y, width: rw, height: bh)
         forgetButton.frame = NSRect(x: pad + rw + DS.Spacing.s, y: y, width: fw, height: bh)
     }
@@ -109,49 +112,35 @@ final class GhostCardView: NSView {
         model.select(itemID)
         window?.makeFirstResponder(superview)
     }
-}
 
-/// A small outlined button on a ghost card: its Kbd, then the title.
-final class GhostButton: NSView {
-    private let label = NSTextField(labelWithString: "")
-    private let kbd: KbdView
-    var onClick: (() -> Void)?
-
-    init(key: String, title: String) {
-        kbd = KbdView(key)
-        super.init(frame: .zero)
-        wantsLayer = true
-        DS.Radius.apply(DS.Radius.control, to: layer)
-        layer?.borderWidth = 1
-        layer?.borderColor = Theme.ns(.line).cg(in: self)
-        label.stringValue = title
-        label.font = .ds(.chrome, .medium)
-        label.textColor = Theme.ns(.text)
-        addSubview(kbd)
-        addSubview(label)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
-        setAccessibilityLabel("\(title) (\(key))")
+    private func resume() { model?.resumeGhost(session) }
+    private func forget() { model?.forgetGhost(session) }
+    /// History's ⌥⏎: a new agent from the session's conversation.
+    private func fork() {
+        guard let model else { return }
+        HistoryActions(model: model, hub: model.history).fork(session) { _ in }
     }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        layer?.borderColor = Theme.ns(.line).cg(in: self)
+    /// Right-click: the card's verbs, Fork included (History's ⌥⏎).
+    override func menu(for event: NSEvent) -> NSMenu? {
+        model?.select(itemID)
+        let menu = NSMenu()
+        let verbs: [(String, String, @MainActor () -> Void)] = [
+            ("Resume", "⏎", { [weak self] in self?.resume() }),
+            ("Fork", "⌥⏎", { [weak self] in self?.fork() }),
+            ("Forget", "⌫", { [weak self] in self?.forget() }),
+        ]
+        for (title, key, run) in verbs {
+            let i = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: "")
+            if let chord = KeyChord(label: key), let (k, mods) = MenuBuilder.keyEquivalent(chord) {
+                i.keyEquivalent = k
+                i.keyEquivalentModifierMask = mods
+            }
+            let act = MenuAction(run)
+            i.target = act
+            i.representedObject = act
+            menu.addItem(i)
+        }
+        return menu
     }
-
-    var fittingWidth: CGFloat { kbd.intrinsicContentSize.width + DS.Spacing.s + ceil(label.intrinsicContentSize.width) + 2 * DS.Spacing.s }
-
-    override func layout() {
-        super.layout()
-        let k = kbd.intrinsicContentSize, s = label.intrinsicContentSize
-        kbd.frame = NSRect(x: DS.Spacing.s, y: ((bounds.height - k.height) / 2).rounded(), width: k.width, height: k.height)
-        label.frame = NSRect(x: kbd.frame.maxX + DS.Spacing.s, y: ((bounds.height - s.height) / 2).rounded(), width: ceil(s.width), height: s.height)
-    }
-
-    override func mouseDown(with event: NSEvent) {}
-    override func mouseUp(with event: NSEvent) { onClick?() }
-    func press() { onClick?() }
 }

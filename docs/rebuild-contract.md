@@ -1750,6 +1750,9 @@ The worktree chip is a toggle on click (`toggleWorktree`, its key cap
 ⌥⌘B); a ~branch token in the task still picks the branch, and the branch
 popover keeps its rows. Tests: `DraftStartControlTests`.
 
+**Ghost card.** Resume ⏎ and Forget ⌫ are KeyButtons; right-click gives
+Resume, Fork and Forget ("As built — shared history (app)").
+
 #### As built — drop to attach
 
 Request: "We are unable to drag and drop files into the terminals. Make
@@ -3239,7 +3242,10 @@ undo the removal), then the daemon's entry with `removedAt` keeps it
 there for 24 h; newest 3 per project; Grid + Shelf only (the other
 layouts stay strictly agents); scoped like its project. ⏎ / double-click
 Resume (`sessions.resume`), ⌫ / Forget hides it (remembered per Mac);
-Settings › General › "Ghost cards for removed agents" turns them off.
+its buttons are KeyButtons (`ghost.resume`, `ghost.forget`) and a
+right-click offers Resume, Fork (History's ⌥⏎, `sessions.fork`) and
+Forget. Settings › General › "Ghost cards for removed agents" turns them
+off.
 The ghost swaps with the agent in the same slot, so removing one moves
 nothing else. Sources: `sessions.search {since: −24 h}` pages filtered by
 `removedAt`, then `sessions.changed`.
