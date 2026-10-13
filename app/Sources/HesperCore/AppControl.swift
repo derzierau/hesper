@@ -60,6 +60,20 @@ private extension JSONValue {
         }
     }
 
+    /// A sheet's param (`history`, `review`, `palette`): `true`, a string
+    /// or `{<text>}`. nil when absent or false; `.some(nil)` for the
+    /// sheet without its text.
+    func sheet(_ key: String, text: String) throws -> String?? {
+        guard let v = self[key], v != .null else { return nil }
+        switch v {
+        case .bool(true): return .some(nil)
+        case .bool(false): return nil
+        case .string(let s): return .some(s.isEmpty ? nil : s)
+        case .object: return .some(try v.string(text))
+        default: throw AppControlError.invalid("\(key) must be {\(text)} or true")
+        }
+    }
+
     func checkObject() throws {
         if self == .null { return }
         guard objectValue != nil else { throw AppControlError.invalid("params must be an object") }
@@ -156,6 +170,10 @@ public struct AppOpenRequest: Equatable, Sendable {
         case history(query: String?)
         /// The ⌘J inbox (agents needing you).
         case inbox
+        /// The Review sheet (⌘R), on `agent`'s item when it has one.
+        case review(agent: String?)
+        /// The ⌘K palette, with `query` in its search field.
+        case palette(query: String?)
 
         /// The wall it shows leaves its focus view first (⌘Esc): showing
         /// a wall or a composer means the wall, not the focused agent.
@@ -163,7 +181,7 @@ public struct AppOpenRequest: Equatable, Sendable {
             switch self {
             case .wall, .composer: return true
             case .agent(_, let mode): return mode == .wall
-            case .history, .inbox: return false
+            case .history, .inbox, .review, .palette: return false
             }
         }
     }
@@ -171,7 +189,8 @@ public struct AppOpenRequest: Equatable, Sendable {
     public var target: Target
     public init(target: Target) { self.target = target }
 
-    /// `{agent?, mode?, wall?, scope?, newWall?, composer?, history?, inbox?}`.
+    /// `{agent?, mode?, wall?, scope?, newWall?, composer?, history?, inbox?,
+    /// review?, palette?}`.
     public static func parse(_ p: JSONValue) throws -> AppOpenRequest {
         try p.checkObject()
         let agent = try p.string("agent")
@@ -187,27 +206,22 @@ public struct AppOpenRequest: Equatable, Sendable {
         let wall = WallRef(wallText)
         let scope = try p.string("scope")
         let inbox = try p.bool("inbox") ?? false
-        var history: String??
-        if let h = p["history"], h != .null {
-            switch h {
-            case .bool(true): history = .some(nil)
-            case .bool(false): history = nil
-            case .string(let q): history = .some(q.isEmpty ? nil : q)
-            case .object: history = .some(try h.string("query"))
-            default: throw AppControlError.invalid("history must be {query} or true")
-            }
-        }
+        let history = try p.sheet("history", text: "query")
+        let review = try p.sheet("review", text: "agent")
+        let palette = try p.sheet("palette", text: "query")
         var composer: ComposerPrefill?
         if let c = p["composer"], c != .null { composer = try ComposerPrefill.parse(c) }
 
-        let picked = [agent != nil, composer != nil, history != nil, inbox].filter { $0 }.count
-        guard picked <= 1 else { throw AppControlError.invalid("open one thing: agent, composer, history or inbox") }
+        let picked = [agent != nil, composer != nil, history != nil, inbox, review != nil, palette != nil].filter { $0 }.count
+        guard picked <= 1 else { throw AppControlError.invalid("open one thing: agent, composer, history, inbox, review or palette") }
         if let agent {
             return AppOpenRequest(target: .agent(agent, mode ?? .focus))
         }
         if let composer { return AppOpenRequest(target: .composer(composer, wall: wall)) }
         if let history { return AppOpenRequest(target: .history(query: history)) }
         if inbox { return AppOpenRequest(target: .inbox) }
+        if let review { return AppOpenRequest(target: .review(agent: review)) }
+        if let palette { return AppOpenRequest(target: .palette(query: palette)) }
         if let mode, mode != .wall { throw AppControlError.invalid("mode \(mode.rawValue) needs an agent") }
         return AppOpenRequest(target: .wall(wallText.map(WallRef.init), scope: scope, newWall: try p.bool("newWall") ?? false))
     }
