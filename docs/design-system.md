@@ -81,6 +81,7 @@ DS.Elevation.flat / .raised / .floating
 // Chrome and density
 DS.chromeMaxHeight            // 28
 DS.bandGap                    // 16
+DS.focusRing                  // 1: the ring a strip draws in its mark's tone while it has the keyboard (⏎ / esc)
 DS.density: DS.Density        // @MainActor; AppSettings.density keeps it in sync (persisted)
 DS.densityDidChange           // Notification posted when it changes
 DS.tileHeader                 // 26 Comfortable / 22 Compact

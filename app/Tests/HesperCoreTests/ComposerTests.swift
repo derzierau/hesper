@@ -305,3 +305,21 @@ private let ctx = ComposerContext(
         #expect(own.below)
     }
 }
+
+@Suite struct DraftStartControlTests {
+    @Test func splitButtonOffersStartAndOpenAnotherOnTheWall() {
+        let items = DraftStartControl.menu(quick: false)
+        #expect(items.map(\.title) == ["Start and open another"])
+        #expect(items.map(\.keys) == ["⌥⏎"])
+        #expect(items.allSatisfy { $0.openNext })
+        #expect(DraftStartControl.menu(quick: true).isEmpty, "quick launch closes after starting")
+    }
+
+    @Test func titlesFollowTheDraft() {
+        #expect(DraftStartControl.title(busy: false, bringing: false) == "Start")
+        #expect(DraftStartControl.title(busy: true, bringing: false) == "Starting…")
+        #expect(DraftStartControl.title(busy: true, bringing: true) == "Bringing…")
+        #expect(DraftStartControl.leaveTitle(quick: false) == "Keep")
+        #expect(DraftStartControl.leaveTitle(quick: true) == "Close")
+    }
+}

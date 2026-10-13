@@ -65,6 +65,7 @@ final class AgentWindowController: NSWindowController, NSWindowDelegate {
         // ⌘W: once the agent is closed, so is its window.
         model.closeInFocus = { [weak self] _ in self?.window?.close() }
         root.focus.ownsSizeDefault = ownsSize
+        root.focus.onStep = { [weak w] d in w?.step(d) } // the header's ‹ ›: within this window
         rootModeChanged?()
         apply(agent)
     }

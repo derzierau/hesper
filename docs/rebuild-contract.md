@@ -927,9 +927,9 @@ libghostty findings that shaped the code:
 **UI as built:** wall (arrangements below), card header (state dot,
 name, project · branch, elapsed time while working, machine · kind chip;
 remote chips in purple), ring for approval / question / error with a soft
-glow, inline Allow / Always / Deny… (also ⏎ / A / N on the selected tile) in
-the card's own attention band, summary line for done/idle, exited band with
-Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ stepping in wall order.
+glow, inline Allow / Always / Deny… as KeyButtons (also ⏎ / A / N on the
+selected tile; "pointer paths" below) in the card's own attention band,
+summary line for done/idle, exited band with Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ stepping in wall order.
 ⌘J attention queue. Status (counts, machines with RTT, clickable attention
 chips → ⌘J, working count), the layout switch, New Agent, ⌘K search and a
 ⋯ overflow with the View menu's wall commands in the window's unified
@@ -1327,13 +1327,13 @@ mini…" in place; undo moves it back); rename popover; the toolbar's
 machines pill (online, route, RTT, agents, pairing hint), attention pill
 (the ⌘J inbox: ⏎ the first answer, 1–9 answer, ⌘⏎ opens the tile) and
 layout button (five layouts + min width; ⌥⌘1–5). Deny… expands the band
-into a one-line message field
-in place. ⌘W stops at once / removes at once (committed after 6 s) with
+into a one-line message field in place, with Send ⏎ and Cancel esc
+KeyButtons under it. ⌘W stops at once / removes at once (committed after 6 s) with
 an undo toast (⌘Z, its button); stop undoes by resuming; only removing
 an agent whose local worktree has uncommitted changes (`git status
---porcelain`) asks, inline on the tile (⏎ remove anyway, esc keep, while
-the wall has the keyboard; in focus or on an active tile the terminal
-keeps ⏎ and esc and the strip's buttons answer).
+--porcelain`) asks, inline on the tile (Close anyway ⏎ · Keep esc as
+KeyButtons; the strip takes the keyboard while it shows and gives it
+back after: "pointer paths" below).
 Settings ⌘, is a window (General: layout, tile font, min width; Quick
 Launch; Notifications; Profiles per kind). Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
@@ -1452,7 +1452,8 @@ picking another agent opens that agent's window. `tabbingIdentifier
 Move Tab to New Window and dragging tabs out are AppKit's; full screen
 (`.fullScreenPrimary`), the Window menu lists agent windows by name, ⌘`
 cycles. Wall windows don't tab. The tile of an agent with a window shows a
-↗ badge on its top-right corner. Removing the agent closes its window.
+↗ badge on its top-right corner (a click shows the window). Removing the
+agent closes its window.
 
 **Size rule with several windows** (`SizeOwnership`, pure rule
 `HesperCore/SizeOwner.swift`): among the read-write candidates for an
@@ -1650,10 +1651,10 @@ a window). Retargeting was chosen over "do nothing" for an untabbed window
 because the request is to move to the next agent in the single view; the
 skip keeps ⌥⌘→ from ever closing or duplicating another window.
 
-**Discoverability.** Tile footer hints (above), focus / agent window
-header `⌥⌘← →  next agent · ⌘↩ wall`, View ▸ Previous Agent ⌥⌘← / Next
-Agent ⌥⌘→ (moved from the Agents menu; in an agent window they act on
-its tabs / agent).
+**Discoverability.** Tile footer hints (above), the focus / agent window
+header's "‹ Wall ⌘⏎" KeyButton and ‹ › IconButtons (⌥⌘← ⌥⌘→; "pointer
+paths" below), View ▸ Previous Agent ⌥⌘← / Next Agent ⌥⌘→ (moved from
+the Agents menu; in an agent window they act on its tabs / agent).
 
 **Tests.** HesperCore (`WallNavigationTests`, `CoreTests`): grid rows
 wrap like text, partial row, shelf ↔ grid, main + stack, unplaced cards,
@@ -1678,6 +1679,104 @@ SHOW=selected|selected-approval FAKE_ARGS=--demo-states SHOT=…`.
 `make perf` after (16 flood tiles, 60 Hz external display this run):
 0 dropped, keystroke → frame p50 3.5 ms (focus) / 2.1 ms (active tile),
 state → ring p50 6.5 ms, 323 MB — unchanged.
+
+#### As built — pointer paths on tiles, strips and the composer
+
+Every verb a tile, a strip, the focus header, a draft or a ghost card
+shows is a control that carries its key (`KeyButton`, `IconButton`,
+`docs/design-system.md`); a key hint that is not an action is gone.
+
+**Action strip** (`UI/TileParts.swift`, pure `HesperCore/TileActions`):
+state-driven exactly as before. An approval shows Allow ⏎ (primary,
+tinted `signal`), Always A, Deny N and Open ⌘↩; a question hesperd answers
+itself its numbered answers (the first one ⏎); a question with typed
+options its numbered options (each sends its number) and Open; a free
+text question Open; an error Resume (when it exited) and Open; an ended
+agent Resume ⏎ (killed: Resume ⏎ · Close ⌘W); a working agent only the
+activity line. `TileActions.actions(agent, inFocus:canChoose:killed:)`
+lists them with their accessibility identifiers (`approve.allow`,
+`answer.option.2`, `tile.resume`, …); `TileActions.split(_, width:)`
+keeps the primary and the verbs that don't fold on a tight tile (narrower
+than 420 pt) and moves Always and Open behind a ⋯ `IconButton`
+(`tile.more`) whose menu shows the same key caps, instead of dropping
+them. Key caps show only where the keys work (the selected, not active
+wall tile); a tight tile shows none. Tests: `TileActionsTests`.
+
+**Tile header.** After machine · tool, two IconButtons at half opacity
+(full while the pointer is over the tile): "Open full size (⌘⏎)"
+(`tile.openFull`, the focus view) and ⋯ (`tile.menu`), which pops up the
+same menu as a right-click / ⌃-click, now starting with "Open Full Size
+⌘↩" (not in focus) and "Open in New Window ⌥⌘↩". The ↗ badge of an agent
+with its own window is a button (`tile.windowMarker`): a click shows that
+window, as ⇧-click does, through the menu's "Show Window" item
+(`AppModel+Pointer.swift`: `openAgentWindow`, `showTileMenu`). A
+right-click in an **active terminal** (an active tile, the focus view, an
+agent window: `GhosttySurfaceView.rightMouseDown`, `TerminalMenuHost`)
+shows the tile's menu with a Terminal submenu (Copy, Paste, Select All on
+that surface); when the menu closes libghostty still gets the click
+(press and release), so a TUI that reports the mouse sees it.
+
+**Strips take the keyboard.** The close strip (needs you, a running
+command, its worktree) and the move strip (it's working, processes stay
+here, the other Mac can't take it) become first responder when they
+appear (`StripKeys` / `StripKeyView` behind the row), draw a
+`DS.focusRing` (1 px) ring in their tone (`error` for a close that drops
+something, `working` for keeping the worktree and for moves) and own ⏎
+and esc in their `keyDown`; every other key goes up the responder chain,
+so the wall's arrows still move the selection. `MainWindow.sendEvent`
+routes nothing to a strip any more. Their buttons are KeyButtons: Close
+anyway / Keep worktree ⏎ (primary), Discard, Keep esc (`close.primary`,
+`close.secondary`, `close.cancel`); Interrupt and move / Move anyway ⏎,
+Cancel esc (`move.primary`, `move.cancel`). When the strip goes
+(answered, or the agent left) the keyboard returns to where it was: the
+agent of an active tile or the focus view, else the wall; clicking the
+terminal takes it back at any time. A strip that is not first responder
+(the wall was clicked) gets nothing: its buttons answer it.
+
+**Deny field.** The message field keeps the keyboard; next to it Send ⏎
+(primary, `signal`; `deny.send`) denies with the message and Cancel esc
+(`deny.cancel`) folds the field back, the same as the field's own ⏎ and
+esc.
+
+**Draft tile** (`UI/Composer.swift`, pure `DraftStartControl`). The
+header ends in × "Discard draft (⌘W)" (`draft.discard`; gone at once,
+undo brings a non-empty one back, nothing asks). The footer keeps the
+"@ machine · # folder · / tool" hint and otherwise holds controls only:
+Keep esc (`draft.leave`, parks the draft; the quick launch panel says
+Close esc and hides) and the Start control, a split button: Start ⌘⏎
+(primary, `working`; `draft.start`; "Starting…" / "Bringing…" while it
+works, disabled without a folder) and a ▾ (`draft.startMenu`) whose menu
+offers "Start and open another ⌥⏎" (`draft.startNext`); the quick launch
+panel closes after starting and has no ▾ (`DraftStartControl.menu(quick:)`).
+The worktree chip is a toggle on click (`toggleWorktree`, its key cap
+⌥⌘B); a ~branch token in the task still picks the branch, and the branch
+popover keeps its rows. Tests: `DraftStartControlTests`.
+
+**Ghost card.** Resume ⏎ and Forget ⌫ are KeyButtons; right-click gives
+Resume, Fork and Forget ("As built — shared history (app)").
+
+**Focus header** (`FocusHeader`, the focus view and every agent window).
+Left: "‹ Wall ⌘⏎" (`focus.back`, `toggleFocus`: the wall; in an agent
+window the agent on its wall) and ‹ › IconButtons (`focus.previous`,
+`focus.next`: the wall's previous / next agent; an agent window steps
+within itself through `FocusView.onStep`, tabs or retargeting as ⌥⌘← →
+do), then "n of m" on a wall. Centre: StateMark, name, project · branch,
+state · elapsed, machine · tool. Right: the "typing ⌘esc" chip
+(`focus.typing`; ⌘esc has no pointer equivalent other than the wall), a
+"need you" Pill with the count of agents on the wall that need the user
+(`focus.needsYou`, ⌘J; none: no Pill) and ⋯ (`focus.menu`) with the
+agent's menu (the tile menu without "Open Full Size").
+
+**Tests.** HesperCore: `TileActionsTests` (verbs per state, what folds at
+a width, identifiers), `DraftStartControlTests` (the split button's
+menu, titles), `DesignTokensTests` (`focusRing`). UI (`make -C app
+test-ui`, section 8f, not run by agents): the controls pressed by
+accessibility identifier (`SelfTest.press`, `accessibilityPerformPress`
+as VoiceOver would): Allow allows, Deny… opens the field and its Cancel
+folds it, the header's open full size opens focus, ‹ › step and "‹ Wall"
+returns, the close strip is first responder (`StripKeyView`) when it
+appears and esc on it gives the wall the keys back, its Keep button keeps
+the agent, a draft's × discards it.
 
 #### As built — drop to attach
 
@@ -3179,7 +3278,10 @@ undo the removal), then the daemon's entry with `removedAt` keeps it
 there for 24 h; newest 3 per project; Grid + Shelf only (the other
 layouts stay strictly agents); scoped like its project. ⏎ / double-click
 Resume (`sessions.resume`), ⌫ / Forget hides it (remembered per Mac);
-Settings › General › "Ghost cards for removed agents" turns them off.
+its buttons are KeyButtons (`ghost.resume`, `ghost.forget`) and a
+right-click offers Resume, Fork (History's ⌥⏎, `sessions.fork`) and
+Forget. Settings › General › "Ghost cards for removed agents" turns them
+off.
 The ghost swaps with the agent in the same slot, so removing one moves
 nothing else. Sources: `sessions.search {since: −24 h}` pages filtered by
 `removedAt`, then `sessions.changed`.

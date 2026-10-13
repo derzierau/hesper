@@ -1,6 +1,13 @@
 import AppKit
 import libghostty
 
+/// An ancestor that offers a menu on a right-click in an interactive
+/// terminal (TileView, FocusView): the tile's menu plus the surface's
+/// Terminal submenu (`terminalMenuItem()`).
+@MainActor protocol TerminalMenuHost: AnyObject {
+    func terminalMenu(for surface: GhosttySurfaceView) -> NSMenu?
+}
+
 /// A libghostty surface in an NSView. libghostty owns the PTY (it execs the
 /// command) and renders on its own thread into the layer it installs on this
 /// view; we feed it size, scale, focus, occlusion, keys and mouse.
@@ -415,7 +422,19 @@ final class GhosttySurfaceView: NSView, TerminalSurface, @preconcurrency NSTextI
         mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT)
     }
     override func mouseUp(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT) }
-    override func rightMouseDown(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT) }
+    /// A right-click in an interactive terminal shows the host's menu (the
+    /// tile's, with the Terminal submenu); once it is dismissed libghostty
+    /// still sees the click, press and release together (the menu's
+    /// tracking took the mouse up).
+    override func rightMouseDown(with event: NSEvent) {
+        if acceptsInput, let menu = menuHost?.terminalMenu(for: self) {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT)
+            mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT)
+            return
+        }
+        mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT)
+    }
     override func rightMouseUp(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT) }
     override func otherMouseDown(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_MIDDLE) }
     override func otherMouseUp(with event: NSEvent) { mouseButton(event, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_MIDDLE) }
@@ -468,6 +487,30 @@ final class GhosttySurfaceView: NSView, TerminalSurface, @preconcurrency NSTextI
     @objc func copy(_ sender: Any?) { binding("copy_to_clipboard") }
     @objc func paste(_ sender: Any?) { binding("paste_from_clipboard") }
     override func selectAll(_ sender: Any?) { binding("select_all") }
+
+    /// The first ancestor that offers a menu for a right-click here.
+    private var menuHost: TerminalMenuHost? {
+        var v = superview
+        while let s = v {
+            if let h = s as? TerminalMenuHost { return h }
+            v = s.superview
+        }
+        return nil
+    }
+
+    /// The "Terminal" submenu of the host's menu: Copy, Paste and Select
+    /// All on this surface.
+    func terminalMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Terminal", action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: item.title)
+        for (title, sel, key) in [("Copy", #selector(copy(_:)), "c"), ("Paste", #selector(paste(_:)), "v"), ("Select All", #selector(selectAll(_:)), "a")] {
+            let i = NSMenuItem(title: title, action: sel, keyEquivalent: key)
+            i.target = self
+            sub.addItem(i)
+        }
+        item.submenu = sub
+        return item
+    }
 
     private func binding(_ action: String) {
         guard let surface else { return }

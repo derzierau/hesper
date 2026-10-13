@@ -463,3 +463,31 @@ public enum ComposerCompletion {
         return (out, min(caret, (out as NSString).length))
     }
 }
+
+/// The draft's Start control (the footer): a split button, Start ⌘⏎ on
+/// the left and a ▾ on the right listing the other ways to start.
+public enum DraftStartControl {
+    public struct Item: Equatable, Sendable {
+        public var title: String
+        public var keys: String
+        /// Start and open another draft (⌥⏎).
+        public var openNext: Bool
+    }
+
+    /// The left half's title: what the draft is doing.
+    public static func title(busy: Bool, bringing: Bool) -> String {
+        if bringing { return "Bringing…" }
+        return busy ? "Starting…" : "Start"
+    }
+
+    /// The ▾ menu: "Start and open another ⌥⏎" on the wall. The quick
+    /// launch panel closes after starting, so it has nothing to offer
+    /// and no ▾.
+    public static func menu(quick: Bool) -> [Item] {
+        quick ? [] : [Item(title: "Start and open another", keys: "⌥⏎", openNext: true)]
+    }
+
+    /// The esc button next to it: a wall draft is kept (parked), the
+    /// quick launch panel closes.
+    public static func leaveTitle(quick: Bool) -> String { quick ? "Close" : "Keep" }
+}

@@ -1,10 +1,12 @@
+import AppKit
 import HesperCore
 import SwiftUI
 
 /// Card header (26 pt Comfortable, 22 Compact: `DS.tileHeader`): the state
 /// square, the name (Geist 600), one quiet truncated project · branch
-/// segment, then on the right the status (elapsed while working), the
-/// focus Kbd on hover and machine · tool in Mono. No chips: a remote
+/// segment, then on the right the status (elapsed while working), machine
+/// · tool in Mono, and two quiet IconButtons (full opacity on hover):
+/// open full size ⌘⏎ and ⋯ for the tile's menu. No chips: a remote
 /// machine is only colored `horizon`.
 struct TileHeader: View {
     var agent: Agent
@@ -28,9 +30,14 @@ struct TileHeader: View {
     var machineLabel: String? = nil
     /// Ended by ⌃⌘W: the status says "Killed".
     var killed = false
+    /// The header's buttons: open full size (⌘⏎), the tile's menu (⋯).
+    var onOpenFull: (() -> Void)? = nil
+    var onMenu: (() -> Void)? = nil
 
-    /// The focus (open full size) shortcut, shown on hover.
-    static let focusKeys = "⌘↩"
+    /// The focus (open full size) shortcut.
+    static let focusKeys = TileActions.focusKeys
+    /// The buttons' opacity until the pointer is over the tile.
+    static let quietOpacity = 0.5
     /// The project square: the same 6 pt square as the band heading.
     static let swatch: CGFloat = DS.Spacing.s
 
@@ -66,17 +73,20 @@ struct TileHeader: View {
                 .accessibilityIdentifier("tile.typing")
             }
             status.layoutPriority(1)
-            if hovering && !typing && !compact {
-                Kbd(Self.focusKeys)
-                    .help("Open full size (\(Self.focusKeys))")
-                    .accessibilityIdentifier("tile.focusHint")
-            }
             Text(compact ? machine : "\(machine) · \(Theme.kindLabel(agent.kind))")
                 .font(.ds(.meta))
                 .foregroundStyle(local ? Theme.dim : Theme.color(.horizon))
                 .lineLimit(1)
                 .fixedSize()
                 .accessibilityIdentifier("tile.mark")
+            HStack(spacing: 0) {
+                IconButton("arrow.up.left.and.arrow.down.right", help: "Open full size", shortcut: Self.focusKeys) { onOpenFull?() }
+                    .accessibilityIdentifier("tile.openFull")
+                IconButton("ellipsis", help: "More") { onMenu?() }
+                    .accessibilityIdentifier("tile.menu")
+            }
+            .fixedSize()
+            .opacity(hovering ? 1 : Self.quietOpacity)
         }
         .padding(.horizontal, DS.Spacing.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -136,7 +146,7 @@ struct AttentionBar: View {
     /// A shelf card: the one line (summary, state) with the card's own
     /// actions; never an empty band.
     var shelf = false
-    /// A narrow card: no key hints, no Open / Always (double-click opens).
+    /// A narrow card: no key hints; Always and Open fold behind ⋯ (TileActions).
     var tight = false
     /// The buttons show their keys (⏎ A N …) only where those keys work:
     /// on the selected, not active wall tile (focus: the agent has them).
@@ -190,9 +200,9 @@ struct AttentionBar: View {
     var body: some View {
         Group {
             if let closeStrip {
-                CloseStripRow(strip: closeStrip, tight: tight)
+                CloseStripRow(strip: closeStrip)
             } else if let moveStrip {
-                MoveStripRow(strip: moveStrip, tight: tight)
+                MoveStripRow(strip: moveStrip)
             } else if let moveProgress {
                 MoveProgressRow(line: moveProgress)
             } else if agent.state == .approval, let deny {
@@ -241,11 +251,12 @@ struct AttentionBar: View {
         }
     }
 
-    /// The question's options that are typed to the agent (not hesperd's
-    /// own decisions), when this band can send them.
-    private var typedOptions: [String] {
-        guard onChoose != nil, agent.attention?.answers.isEmpty ?? true else { return [] }
-        return agent.attention?.options ?? []
+    /// The strip's verbs for this state (TileActions): what to show and
+    /// what a tight tile folds behind ⋯. The band's width isn't known
+    /// here: `tight` stands for it.
+    private var actions: (shown: [TileAction], overflow: [TileAction]) {
+        let all = TileActions.actions(agent, inFocus: inFocus, canChoose: onChoose != nil, killed: killed)
+        return TileActions.split(all, width: tight ? 0 : TileActions.tightWidth)
     }
 
     @ViewBuilder private var states: some View {
@@ -264,55 +275,23 @@ struct AttentionBar: View {
                 layout {
                     detail(agent.attention?.title ?? "Approval", agent.attention?.detail, mark: .needsYou, color: Theme.Token.signal.hex)
                 } actions: {
-                    button("Allow", key: "⏎", color: Theme.Token.signal.hex, primary: true) { onAnswer(.allow) }.accessibilityIdentifier("approve.allow")
-                    if !tight { button("Always", key: "A") { onAnswer(.always) }.accessibilityIdentifier("approve.always") }
-                    button("Deny", key: "N") { onDenyMessage() }.accessibilityIdentifier("approve.deny")
-                    if !inFocus && !tight { button("Open", key: TileHeader.focusKeys, action: onOpen).accessibilityIdentifier("approve.open") }
-                }
-            case .question where !(agent.attention?.answers.isEmpty ?? true):
-                // A screen hesperd answers itself: the trust question of a
-                // first run (Trust / Exit), Codex's update screen (Skip /
-                // Update). Numbered pills; the first one is also ⏎.
-                let answers = agent.attention?.answers ?? []
-                layout {
-                    detail(agent.attention?.title ?? "Question", agent.attention?.detail, mark: .question, color: Theme.Token.question.hex)
-                } actions: {
-                    ForEach(Array(answers.enumerated()), id: \.element) { i, d in
-                        button(d.title, number: i + 1, key: i == 0 ? "⏎" : nil, color: Theme.Token.question.hex, primary: i == 0) { onAnswer(d) }
-                            .accessibilityIdentifier("answer.\(d.rawValue)")
-                    }
-                }
-            case .question where !typedOptions.isEmpty:
-                // Numbered options typed to the agent: the pill sends its
-                // number, as pressing it in the agent would.
-                layout {
-                    detail(agent.attention?.title ?? "Question", agent.attention?.detail, mark: .question, color: Theme.Token.question.hex)
-                } actions: {
-                    ForEach(Array(typedOptions.enumerated()), id: \.offset) { i, title in
-                        button(title, number: i + 1, color: Theme.Token.question.hex, primary: i == 0) { onChoose?(i) }
-                            .accessibilityIdentifier("answer.option.\(i + 1)")
-                    }
-                    if !inFocus && !tight { button("Open", key: TileHeader.focusKeys, action: onOpen) }
+                    verbs
                 }
             case .question:
+                // A screen hesperd answers itself (trust, update): numbered
+                // answers, the first one also ⏎. Numbered options typed to
+                // the agent: the button sends its number, as pressing it in
+                // the agent would. Free text: answered in the agent (Open).
                 layout {
                     detail(agent.attention?.title ?? "Question", agent.attention?.detail, mark: .question, color: Theme.Token.question.hex)
                 } actions: {
-                    // Free-text questions and first-run screens (setup, log
-                    // in) are answered in the agent itself.
-                    if !inFocus {
-                        button("Open", key: TileHeader.focusKeys, color: Theme.Token.question.hex, primary: true, action: onOpen)
-                            .accessibilityIdentifier("answer.open")
-                    }
+                    verbs
                 }
             case .error:
                 layout {
                     detail(agent.attention?.title ?? "Error", agent.attention?.detail, mark: .error, color: Theme.Token.error.hex)
                 } actions: {
-                    if agent.exit != nil {
-                        button("Resume", color: Theme.Token.error.hex, primary: true, action: onResume).accessibilityIdentifier("tile.resume")
-                    }
-                    if !inFocus { button("Open", key: TileHeader.focusKeys, action: onOpen) }
+                    verbs
                 }
             case .done where reviewReady != nil, .idle where reviewReady != nil:
                 if let reviewReady { ReviewReadyRow(ready: reviewReady, state: agent.state, keyHints: keyHints, tight: tight) }
@@ -333,8 +312,7 @@ struct AttentionBar: View {
                     Text(CloseText.killed).font(.ds(.chrome, .semibold)).foregroundStyle(Theme.fg)
                     if let e = agent.exit { Text(e.label).font(.ds(.meta)).foregroundStyle(Theme.dim) }
                     Spacer(minLength: DS.Spacing.m)
-                    button("Resume", key: "⏎", primary: true, action: onResume).accessibilityIdentifier("tile.resume")
-                    button("Close", key: "⌘W", action: onClose).accessibilityIdentifier("tile.close")
+                    verbs
                 }
                 .accessibilityIdentifier("tile.killedStrip")
             case .exited:
@@ -342,11 +320,21 @@ struct AttentionBar: View {
                     StateMark(.exited)
                     Text(agent.exit.map { "Exited (\($0.label))" } ?? "Exited").font(.ds(.chrome)).foregroundStyle(Theme.dim)
                     Spacer(minLength: DS.Spacing.m)
-                    button("Resume", primary: true, action: onResume).accessibilityIdentifier("tile.resume")
+                    verbs
                 }
             default:
                 EmptyView()
             }
+        }
+    }
+
+    /// The strip's KeyButtons, then ⋯ for what a tight tile folds away.
+    @ViewBuilder private var verbs: some View {
+        let a = actions
+        ForEach(a.shown) { keyButton($0) }
+        if !a.overflow.isEmpty {
+            IconButton("ellipsis", help: "More") { popUpMenu(overflowMenu(a.overflow)) }
+                .accessibilityIdentifier("tile.more")
         }
     }
 
@@ -379,28 +367,47 @@ struct AttentionBar: View {
         .accessibilityIdentifier("attention.detail")
     }
 
-    /// An action pill: `number` leads in Mono (1 / 2 / 3), `key` trails as a
-    /// Kbd where the key works. Primary: tinted with its color.
-    private func button(_ title: String, number: Int? = nil, key: String? = nil, color: String = Theme.Token.working.hex, primary: Bool = false,
-                        action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: DS.Spacing.s) {
-                if let number { Text("\(number)").font(.ds(.meta, .medium)).foregroundStyle(Theme.dim) }
-                Text(title).font(.ds(.chrome, .medium)).lineLimit(1)
-                if let key, keyHints, !tight { Kbd(key) }
-            }
-            .padding(.horizontal, DS.Spacing.m)
-            .frame(height: Pill.height)
-            .background(DS.Radius.shape(DS.Radius.control).fill(primary ? Theme.color(color).opacity(Self.primaryFill) : Theme.chipBG))
-            .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(primary ? Theme.color(color).opacity(Self.primaryStroke) : Theme.stroke, lineWidth: 1))
-            .foregroundStyle(Theme.fg)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(key.map { "\(title) (\($0))" } ?? title)
-        .accessibilityLabel(number.map { "\(title), option \($0)" } ?? title)
+    /// A verb as a KeyButton: the primary tinted with its tone, the key
+    /// cap only where the key works (not on a tight tile).
+    private func keyButton(_ a: TileAction) -> some View {
+        KeyButton(a.title, kbd: keyHints && !tight ? a.key : nil, variant: a.primary ? .primary(a.tone) : .quiet) { run(a) }
+            .accessibilityLabel(label(a))
+            .accessibilityIdentifier(a.id)
     }
 
+    private func label(_ a: TileAction) -> String {
+        if case .option(let i) = a.verb { return "\(a.title), option \(i + 1)" }
+        return a.title
+    }
+
+    private func run(_ a: TileAction) {
+        switch a.verb {
+        case .answer(let d): onAnswer(d)
+        case .option(let i): onChoose?(i)
+        case .denyWithMessage: onDenyMessage()
+        case .open: onOpen()
+        case .resume: onResume()
+        case .close: onClose()
+        }
+    }
+
+    /// The folded verbs as a menu (the key as its equivalent: "Always  A").
+    private func overflowMenu(_ items: [TileAction]) -> NSMenu {
+        let menu = NSMenu()
+        for a in items {
+            let i = NSMenuItem(title: a.title, action: #selector(MenuAction.run), keyEquivalent: "")
+            if let chord = a.key.flatMap(KeyChord.init(label:)), let (key, mods) = MenuBuilder.keyEquivalent(chord) {
+                i.keyEquivalent = key
+                i.keyEquivalentModifierMask = mods
+            }
+            let act = MenuAction { run(a) }
+            i.target = act
+            i.representedObject = act
+            i.setAccessibilityIdentifier(a.id)
+            menu.addItem(i)
+        }
+        return menu
+    }
     /// A primary action's tint: fill and border.
     static let primaryFill = 0.18
     static let primaryStroke = 0.7
@@ -415,8 +422,9 @@ extension AttentionBar {
         }
     }
 
-    /// Below this width the band drops key hints, Always and Open.
-    static func isTight(width: CGFloat) -> Bool { width < 420 }
+    /// Below this width the band drops key hints and folds Always and
+    /// Open into ⋯ (TileActions).
+    static func isTight(width: CGFloat) -> Bool { TileActions.isTight(width: width) }
 
     /// Whether the band fits on one row at `width`.
     static func isWide(_ a: Agent, width: CGFloat, inFocus: Bool = false) -> Bool {
@@ -450,13 +458,13 @@ extension AttentionBar {
 }
 
 /// The close's one question, in the agent's band: "It's waiting for you ·
-/// Close anyway ⏎ · Esc", "npm run dev is still running · Close anyway ⏎ ·
-/// Esc", "3 files changed in its worktree · Keep worktree ⏎ · Discard ·
-/// Esc". Its keys work wherever the keyboard is (MainWindow), so they
-/// always show (not on a tight card).
+/// Close anyway ⏎ · Keep esc", "npm run dev is still running · Close
+/// anyway ⏎ · Keep esc", "3 files changed in its worktree · Keep worktree
+/// ⏎ · Discard · Keep esc". The strip takes the keyboard when it appears
+/// (StripKeys): a ring in its tone says so, and ⏎ / esc are its own.
 struct CloseStripRow: View {
     var strip: AttentionBar.CloseStrip
-    var tight = false
+    @State private var focused = false
 
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
@@ -464,14 +472,15 @@ struct CloseStripRow: View {
             Text(strip.ask.message).font(.ds(.chrome, .medium)).foregroundStyle(Theme.fg).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: DS.Spacing.m)
             HStack(spacing: DS.Spacing.s) {
-                action(strip.ask.primary, key: "⏎", primary: true, run: strip.onPrimary).accessibilityIdentifier("close.primary")
+                KeyButton(strip.ask.primary, kbd: "⏎", variant: .primary(tone), action: strip.onPrimary).accessibilityIdentifier("close.primary")
                 if let second = strip.ask.secondary {
-                    action(second, key: nil, primary: false, run: strip.onSecondary).accessibilityIdentifier("close.secondary")
+                    KeyButton(second, action: strip.onSecondary).accessibilityIdentifier("close.secondary")
                 }
-                action(nil, key: "esc", primary: false, run: strip.onCancel).accessibilityIdentifier("close.cancel")
+                KeyButton("Keep", kbd: "esc", action: strip.onCancel).accessibilityIdentifier("close.cancel")
             }
             .fixedSize()
         }
+        .stripKeys(tone: tone, focused: $focused, onPrimary: strip.onPrimary, onCancel: strip.onCancel)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("tile.closeStrip")
     }
@@ -488,28 +497,106 @@ struct CloseStripRow: View {
 
     /// Closing anyway drops something: the primary is tinted `error`;
     /// keeping the worktree is the safe default (`working`).
-    private var tint: Theme.Token {
+    private var tone: StateMarkKind.Tone {
         if case .worktree = strip.ask { return .working }
         return .error
     }
+}
 
-    private func action(_ title: String?, key: String?, primary: Bool, run: @escaping () -> Void) -> some View {
-        Button(action: run) {
-            HStack(spacing: DS.Spacing.s) {
-                if let title { Text(title).font(.ds(.chrome, .medium)).lineLimit(1) }
-                if let key, !tight || title == nil { Kbd(key) }
+/// A strip that asks (close, move) has the keyboard while it shows: an
+/// invisible view behind the row becomes first responder when it
+/// appears, answers ⏎ and esc itself and passes every other key up (the
+/// wall's arrows still move), and hands the keyboard back when it goes
+/// (the agent of an active tile or the focus view, else the wall). The
+/// row draws a `DS.focusRing` ring in its tone while it has the keys.
+extension View {
+    func stripKeys(tone: StateMarkKind.Tone, focused: Binding<Bool>, onPrimary: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
+        background(StripKeys(focused: focused, onPrimary: onPrimary, onCancel: onCancel))
+            .overlay {
+                if focused.wrappedValue {
+                    DS.Radius.shape(DS.Radius.control).strokeBorder(Theme.color(Theme.token(tone)), lineWidth: DS.focusRing)
+                        .padding(-DS.Spacing.s)
+                }
             }
-            .padding(.horizontal, title == nil ? DS.Spacing.xs : DS.Spacing.m)
-            .frame(height: Pill.height)
-            .background(DS.Radius.shape(DS.Radius.control).fill(primary ? Theme.color(tint).opacity(AttentionBar.primaryFill) : (title == nil ? Color.clear : Theme.chipBG)))
-            .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(primary ? Theme.color(tint).opacity(AttentionBar.primaryStroke) : (title == nil ? Color.clear : Theme.stroke), lineWidth: 1))
-            .foregroundStyle(Theme.fg)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(key.map { "\(title ?? "Cancel") (\($0))" } ?? (title ?? ""))
-        .accessibilityLabel(title ?? "Cancel")
     }
+}
+
+private struct StripKeys: NSViewRepresentable {
+    @Binding var focused: Bool
+    var onPrimary: () -> Void
+    var onCancel: () -> Void
+
+    func makeNSView(context: Context) -> StripKeyView {
+        let v = StripKeyView()
+        v.onFocus = { focused = $0 }
+        return v
+    }
+
+    func updateNSView(_ v: StripKeyView, context: Context) {
+        v.onPrimary = onPrimary
+        v.onCancel = onCancel
+    }
+}
+
+/// The strip's first responder (StripKeys). `MainWindow` routes nothing
+/// to the strip: these keys are its own.
+@MainActor
+final class StripKeyView: NSView {
+    var onPrimary: (() -> Void)?
+    var onCancel: (() -> Void)?
+    var onFocus: ((Bool) -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window === window else { return }
+            window.makeFirstResponder(self)
+        }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        guard newWindow == nil, let window, window.firstResponder === self else { return }
+        var v = superview
+        while let s = v {
+            if let t = s as? TileView { t.handBackFocus(); return }
+            if let f = s as? FocusView { f.focusTerminal(); return }
+            v = s.superview
+        }
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { onFocus?(true) }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { onFocus?(false) }
+        return ok
+    }
+
+    override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self) }
+
+    override func keyDown(with event: NSEvent) {
+        let chord = KeyChord(event: event)
+        if chord.plain && !chord.shift {
+            if chord.key == .enter { onPrimary?(); return }
+            if chord.key == .escape { onCancel?(); return }
+        }
+        super.keyDown(with: event)
+    }
+}
+
+/// Pops `menu` under the pointer, from a SwiftUI button (an IconButton's
+/// ⋯): the click that pressed it is the current event.
+@MainActor func popUpMenu(_ menu: NSMenu) {
+    guard let e = NSApp.currentEvent, let v = (e.window ?? NSApp.keyWindow)?.contentView else { return }
+    NSMenu.popUpContextMenu(menu, with: e, for: v)
 }
 
 /// On a tile scrolled back: how far, and how much new output waits below;
@@ -539,8 +626,8 @@ struct ScrollPill: View {
     }
 }
 
-/// The deny band: "Deny <tool>:" and a one-line message, ⏎ denies with it,
-/// esc folds it back (the text stays for next time).
+/// The deny band: "Deny <tool>:" and a one-line message, Send ⏎ denies
+/// with it, Cancel esc folds it back (the text stays for next time).
 struct DenyRow: View {
     var agent: Agent
     var wide: Bool
@@ -562,9 +649,11 @@ struct DenyRow: View {
                 .onSubmit { field.onSubmit(field.text.wrappedValue) }
                 .onExitCommand { field.onCancel() }
                 .accessibilityIdentifier("deny.field")
-            HStack(spacing: DS.Spacing.xs) {
-                Kbd("⏎"); Text("deny").font(.ds(.meta)).foregroundStyle(Theme.dim)
-                Kbd("esc"); Text("back").font(.ds(.meta)).foregroundStyle(Theme.dim)
+            HStack(spacing: DS.Spacing.s) {
+                KeyButton("Send", kbd: "⏎", variant: .primary(.signal)) { field.onSubmit(field.text.wrappedValue) }
+                    .accessibilityIdentifier("deny.send")
+                KeyButton("Cancel", kbd: "esc", action: field.onCancel)
+                    .accessibilityIdentifier("deny.cancel")
             }
             .fixedSize()
         }

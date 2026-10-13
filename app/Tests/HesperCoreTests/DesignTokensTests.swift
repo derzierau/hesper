@@ -10,6 +10,7 @@ import Testing
         #expect(DesignTokens.TextStyle.allCases.filter(\.isMono) == [.meta])
         #expect(DesignTokens.Weight.allCases.map(\.rawValue) == [400, 500, 600])
         #expect(DesignTokens.Chrome.maxHeight == 28)
+        #expect(DesignTokens.Chrome.focusRing == 1)
     }
 
     @Test func density() {

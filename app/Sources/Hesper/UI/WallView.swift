@@ -21,7 +21,7 @@ final class FlippedView: NSView {
 /// question, error for an error, with a static soft glow (a layer shadow);
 /// `working` when selected or active. Hover shows the focus Kbd.
 @MainActor
-final class TileView: NSView, TerminalDropTarget {
+final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
     let terminal: AgentTerminal
     private let body = FlippedView()
     /// The whole terminal area (under the header, above the band) in the
@@ -91,6 +91,7 @@ final class TileView: NSView, TerminalDropTarget {
         pill.isHidden = true
         terminal.onScrollChanged = { [weak self] in self?.scrollChanged() }
         addSubview(windowMarker) // window layer: ↗ marker
+        windowMarker.onClick = { [weak model, weak self] in if let id = self?.agent.id { model?.openAgentWindow(id) } }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("tile.\(agent.id)")
@@ -202,10 +203,12 @@ final class TileView: NSView, TerminalDropTarget {
         let w = width ?? (bounds.width > 0 ? bounds.width : 600)
         let moving = model.moving[agent.id].map { model.machine($0)?.displayName ?? $0 }
         let project = model.projectLabel(agent)
+        let id = agent.id
         header.rootView = TileHeader(agent: agent, local: agent.machine == model.localMachine, compact: w < Self.compactHeaderWidth, movingTo: moving,
                                      typing: isActive, projectName: project?.name, projectColor: project?.colorHex, hovering: hovering,
                                      inOwnBand: inOwnBand, bandBranch: bandBranch, machineLabel: model.machine(agent.machine)?.displayName,
-                                     killed: model.isKilled(agent))
+                                     killed: model.isKilled(agent),
+                                     onOpenFull: { [weak model] in model?.focus(id) }, onMenu: { [weak model] in model?.showTileMenu(id) })
     }
 
     /// Below this card width the header keeps the name, status and machine.
@@ -472,6 +475,15 @@ final class TileView: NSView, TerminalDropTarget {
         model?.tileMenu?(agent.id) ?? super.menu(for: event)
     }
 
+    /// A right-click in the active tile's terminal: the same menu, with
+    /// the terminal's own Copy / Paste / Select All.
+    func terminalMenu(for surface: GhosttySurfaceView) -> NSMenu? {
+        guard let menu = model?.tileMenu?(agent.id) else { return nil }
+        menu.addItem(.separator())
+        menu.addItem(surface.terminalMenuItem())
+        return menu
+    }
+
     /// A click selects the tile (the wall keeps the keys); a click on the
     /// selected tile makes it active (typing goes to the agent); a double
     /// click opens it full size.
@@ -493,6 +505,12 @@ final class TileView: NSView, TerminalDropTarget {
         var v = superview
         while let s = v, !(s is WallView) { v = s.superview }
         return v
+    }
+
+    /// A strip that had the keyboard went away: the keys go back to where
+    /// they were, the agent (an active tile) or the wall.
+    func handBackFocus() {
+        if isActive { terminal.focusInput() } else { window?.makeFirstResponder(enclosingWall) }
     }
 }
 
@@ -1029,7 +1047,7 @@ final class WallView: NSView {
         guard let model else { return }
         let chord = KeyChord(event: event)
         // An inline question on the selected tile (a close or move asking)
-        // took ⏎ and esc already: MainWindow.sendEvent.
+        // has the keyboard while it shows: its ⏎ and esc never get here.
         // The active tile whose read-write terminal hasn't taken the
         // keyboard yet (it swaps in ≤ 800 ms after "start typing"): its keys
         // still go to the agent, in order.

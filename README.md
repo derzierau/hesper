@@ -366,7 +366,7 @@ pick a profile per agent, per project or per kind:
 
 | Key | |
 |---|---|
-| ⌘N | New agent: task, machine, profile (Claude, Codex or a shell), project, worktree and branch. ⌘⏎ starts it, ⌥⏎ starts it and opens another draft, ⌥⌘B toggles the worktree. |
+| ⌘N | New agent: task, machine, profile (Claude, Codex or a shell), project, worktree and branch. ⌘⏎ starts it, ⌥⏎ starts it and opens another draft (the Start button's ▾), ⌥⌘B toggles the worktree (or click its chip), ⌘W or × discards the draft. |
 | ⌘⏎ | Focus the selected tile and type into it. Again, or ⌘esc, returns to the wall. ⌥⌘⏎ opens it in its own window. |
 | ⌥⌘← ⌥⌘→ | Previous / next agent. ⌥⌘↑ ⌥⌘↓: previous / next band. |
 | ⌘J | Next agent that needs you (approvals, then questions, then errors) |
