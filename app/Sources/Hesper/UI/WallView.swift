@@ -1126,20 +1126,7 @@ struct EmptyWall: View {
 extension KeyChord {
     init(event: NSEvent) {
         let f = event.modifierFlags
-        let key: Key
-        switch event.keyCode {
-        case 36, 76: key = .enter
-        case 53: key = .escape
-        case 123: key = .left
-        case 124: key = .right
-        case 125: key = .down
-        case 126: key = .up
-        case 48: key = .tab
-        case 115: key = .home
-        case 119: key = .end
-        default:
-            if let c = event.charactersIgnoringModifiers?.first { key = .char(c) } else { key = .other }
-        }
-        self.init(key, command: f.contains(.command), shift: f.contains(.shift), option: f.contains(.option), control: f.contains(.control))
+        self.init(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers,
+                  command: f.contains(.command), shift: f.contains(.shift), option: f.contains(.option), control: f.contains(.control))
     }
 }

@@ -42,6 +42,24 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
         #expect(KeyRouter.route(KeyChord(.char("1"), command: true), mode: .wall, selectedState: nil) == .none)
     }
 
+    /// Chords come from the key code, not the layout's characters: on a
+    /// German keyboard ⌥5 types `[`, so ⌥⌘5 must still be the Grid
+    /// layout and ⌘ on the US `[` key still steps; ⌫ is `.delete`.
+    @Test func chordsFromKeyCodes() {
+        let grid = KeyChord(keyCode: 23, characters: "[", command: true, option: true)
+        #expect(grid.key == .char("5"))
+        #expect(KeyRouter.route(grid, mode: .wall, selectedState: nil) == .arrangement(4))
+        #expect(KeyChord(keyCode: 29, characters: "0", command: true).key == .char("0"))
+        #expect(KeyChord(keyCode: 33, characters: "ü", command: true).key == .char("["))
+        #expect(KeyChord(keyCode: 30, characters: "+", command: true, shift: true).key == .char("}"))
+        #expect(KeyChord(keyCode: 44, characters: "-", command: true).key == .char("/"))
+        #expect(KeyChord(keyCode: 51, characters: "\u{7f}").key == .delete)
+        #expect(OverlayKeys.route(KeyChord(keyCode: 51, characters: "\u{7f}")) == .deleteBackward)
+        #expect(KeyChord(keyCode: 36, characters: "\r").key == .enter)
+        #expect(KeyChord(keyCode: 0, characters: "a", command: true).key == .char("a"))
+        #expect(KeyChord(keyCode: 0, characters: nil).key == .other)
+    }
+
     @Test func commandShortcutsAgreeInBothModes() {
         for mode in [AppMode.wall, .focus] {
             #expect(KeyRouter.route(KeyChord(.char("n"), command: true), mode: mode, selectedState: nil) == .newAgent)

@@ -15,6 +15,43 @@ public struct KeyChord: Hashable, Sendable {
         self.key = key; self.command = command; self.shift = shift; self.option = option; self.control = control
     }
     public var plain: Bool { !command && !option && !control }
+
+    /// From a key event: `keyCode` is the physical key, `characters` what
+    /// the layout makes of it without ⌘ (`charactersIgnoringModifiers`).
+    /// Digits, brackets, braces and slash come from the key code so a chord
+    /// means the same on every layout (on German ⌥5 types `[`, and ⌥⌘5
+    /// must stay the Grid layout); ⌫ is `.delete`, not a control character.
+    public init(keyCode: UInt16, characters: String?, command: Bool = false, shift: Bool = false, option: Bool = false, control: Bool = false) {
+        let key: Key
+        switch keyCode {
+        case 36, 76: key = .enter
+        case 53: key = .escape
+        case 51: key = .delete
+        case 123: key = .left
+        case 124: key = .right
+        case 125: key = .down
+        case 126: key = .up
+        case 48: key = .tab
+        case 115: key = .home
+        case 119: key = .end
+        case 29: key = .char("0")
+        case 18: key = .char("1")
+        case 19: key = .char("2")
+        case 20: key = .char("3")
+        case 21: key = .char("4")
+        case 23: key = .char("5")
+        case 22: key = .char("6")
+        case 26: key = .char("7")
+        case 28: key = .char("8")
+        case 25: key = .char("9")
+        case 33: key = .char(shift ? "{" : "[")
+        case 30: key = .char(shift ? "}" : "]")
+        case 44: key = .char("/")
+        default:
+            if let c = characters?.first { key = .char(c) } else { key = .other }
+        }
+        self.init(key, command: command, shift: shift, option: option, control: control)
+    }
 }
 
 public enum AppCommand: Equatable, Sendable {
