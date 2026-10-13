@@ -11,7 +11,12 @@ struct TileActionsTests {
     @Test func approvalShowsAllowAlwaysDenyOpen() {
         let acts = TileActions.actions(agent(.approval))
         #expect(acts.map(\.title) == ["Allow", "Always", "Deny", "Open"])
-        #expect(acts.map(\.key) == ["⏎", "A", "N", TileActions.focusKeys])
+        #expect(acts.map(\.key) == ["⏎", "A", "N", "⌘⏎"])
+        // The caps are the registry's (the same spelling as every other
+        // key cap, and a rebinding shows on the strip).
+        #expect(TileActions.focusKeys == CommandRegistry.cap(.toggleFocus))
+        #expect(acts.map(\.key) == [CommandRegistry.cap(.activateTile, in: .wall), CommandRegistry.cap(.answer(.always), in: .wall),
+                                    CommandRegistry.cap(.denyWithMessage, in: .wall), CommandRegistry.cap(.toggleFocus)])
         #expect(acts.map(\.primary) == [true, false, false, false])
         #expect(acts[0].tone == .signal)
         #expect(acts.map(\.id) == ["approve.allow", "approve.always", "approve.deny", "approve.open"])

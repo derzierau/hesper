@@ -1729,7 +1729,7 @@ shows is a control that carries its key (`KeyButton`, `IconButton`,
 
 **Action strip** (`UI/TileParts.swift`, pure `HesperCore/TileActions`):
 state-driven exactly as before. An approval shows Allow ⏎ (primary,
-tinted `signal`), Always A, Deny N and Open ⌘↩; a question hesperd answers
+tinted `signal`), Always A, Deny N and Open ⌘⏎ (the registry's caps); a question hesperd answers
 itself its numbered answers (the first one ⏎); a question with typed
 options its numbered options (each sends its number) and Open; a free
 text question Open; an error Resume (when it exited) and Open; an ended
