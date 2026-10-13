@@ -4,12 +4,13 @@ import Foundation
 // place, default chord, the surfaces the chord is live in and when it is
 // available. The menu bar, the palette, the key routers (KeyRouter,
 // OverlayKeys, InboxKeys, SearchKeys, ReviewKeys), Settings › Shortcuts
-// and the shortcuts sheet are all generated from `CommandRegistry.all`;
-// `AppModel.perform` stays the one executor (KeyRouter.command(for:) maps
-// an id to its AppCommand). CommandsTests holds the three invariants: no
-// chord bound twice within a surface, every chord has a menu path or an
-// exemption, and each router resolves every chord of its surface to the
-// registered command.
+// and the shortcuts sheet are all generated from the table in force,
+// `CommandRegistry.active`: the shipped `all` with the user's
+// `ShortcutOverrides` applied (`install`). `AppModel.perform` stays the
+// one executor (KeyRouter.command(for:) maps an id to its AppCommand).
+// CommandsTests holds the three invariants: no chord bound twice within
+// a surface, every chord has a menu path or an exemption, and each
+// router resolves every chord of its surface to the registered command.
 
 /// Where a chord is live. `.everywhere` is every surface; a command bound
 /// there conflicts with the same chord in any other surface.
@@ -220,6 +221,14 @@ public struct Command: Identifiable, Sendable {
     public func chords(in surface: Surface) -> [KeyChord] {
         bindings.filter { $0.surfaces.contains(surface) || $0.surfaces.contains(.everywhere) }.map(\.chord)
     }
+
+    /// The command with its default chord replaced (nil: unbound); the
+    /// aliases stay. A menu command that never had a chord gets it
+    /// app-wide, like every menu key equivalent.
+    func rebound(to chord: KeyChord?) -> Command {
+        Command(id, title, menu: menu, chord: chord, surfaces: surfaces.isEmpty && menu != nil && chord != nil ? [.everywhere] : surfaces,
+                aliases: aliases, palette: palette, availability: availability)
+    }
 }
 
 // MARK: Chords
@@ -316,17 +325,26 @@ extension KeyChord {
 
 // MARK: The table
 
-public enum CommandRegistry {
-    /// `.everywhere` is also every concrete surface.
-    static func live(_ b: KeyBinding, in surface: Surface) -> Bool {
-        b.surfaces.contains(surface) || b.surfaces.contains(.everywhere)
+/// A command table with its chord index: the shipped one
+/// (`CommandRegistry.defaults`) or one with the user's overrides applied
+/// (`CommandRegistry.active`, what the routers look up at key time).
+public struct CommandTable: Sendable {
+    public let commands: [Command]
+    /// Chord → indices into `commands` of the commands binding it.
+    private let byChord: [KeyChord: [Int]]
+
+    public init(_ commands: [Command]) {
+        self.commands = commands
+        var m: [KeyChord: [Int]] = [:]
+        for (i, c) in commands.enumerated() { for b in c.bindings { m[b.chord, default: []].append(i) } }
+        byChord = m
     }
 
     /// The command `chord` runs in `surface`: an exact match, else, for a
     /// shifted plain letter, the unshifted one (⇧A on an approval is
     /// Always; Review's N and ⇧N are both bound, so each keeps its
     /// meaning). ⌘ chords match exactly: ⇧⌘N is not ⌘N.
-    public static func resolve(_ chord: KeyChord, in surface: Surface) -> CommandID? {
+    public func resolve(_ chord: KeyChord, in surface: Surface) -> CommandID? {
         let k = chord.normalized
         if let id = exact(k, in: surface) { return id }
         if k.isLetter, k.shift, !k.command, !k.control {
@@ -337,18 +355,55 @@ public enum CommandRegistry {
         return nil
     }
 
-    private static func exact(_ k: KeyChord, in surface: Surface) -> CommandID? {
-        byChord[k]?.first { c in all[c].bindings.contains { $0.chord == k && live($0, in: surface) } }.map { all[$0].id }
+    private func exact(_ k: KeyChord, in surface: Surface) -> CommandID? {
+        byChord[k]?.first { c in commands[c].bindings.contains { $0.chord == k && CommandRegistry.live($0, in: surface) } }.map { commands[$0].id }
     }
 
-    /// Chord → indices into `all` of the commands binding it.
-    private static let byChord: [KeyChord: [Int]] = {
-        var m: [KeyChord: [Int]] = [:]
-        for (i, c) in all.enumerated() { for b in c.bindings { m[b.chord, default: []].append(i) } }
-        return m
-    }()
+    public func command(_ id: CommandID) -> Command? { commands.first { $0.id == id } }
+}
 
-    public static func command(_ id: CommandID) -> Command? { all.first { $0.id == id } }
+public enum CommandRegistry {
+    /// `.everywhere` is also every concrete surface.
+    static func live(_ b: KeyBinding, in surface: Surface) -> Bool {
+        b.surfaces.contains(surface) || b.surfaces.contains(.everywhere)
+    }
+
+    /// The shipped table, indexed.
+    public static let defaults = CommandTable(all)
+
+    /// The table in force: the shipped one with the user's overrides
+    /// (`install`). Swapped whole under `activeLock` and never mutated,
+    /// so the routers read it at key time from any thread; the menu bar
+    /// is rebuilt by the owner of the overrides (AppDelegate).
+    nonisolated(unsafe) private static var activeTable = defaults
+    private static let activeLock = NSLock()
+
+    public static var active: CommandTable { activeLock.withLock { activeTable } }
+
+    public static func install(_ overrides: ShortcutOverrides) {
+        let t = overrides.isEmpty ? defaults : CommandTable(resolved(with: overrides))
+        activeLock.withLock { activeTable = t }
+    }
+
+    /// `registry` with `overrides` applied: a command's default chord
+    /// replaced or taken away (aliases stay); an override naming a
+    /// command the table doesn't have does nothing.
+    public static func resolved(with overrides: ShortcutOverrides, from registry: [Command] = all) -> [Command] {
+        guard !overrides.isEmpty else { return registry }
+        return registry.map { c in
+            switch overrides[c.id] {
+            case nil: return c
+            case .unbound: return c.rebound(to: nil)
+            case .chord(let k): return c.rebound(to: k)
+            }
+        }
+    }
+
+    /// `CommandTable.resolve` on the active table.
+    public static func resolve(_ chord: KeyChord, in surface: Surface) -> CommandID? { active.resolve(chord, in: surface) }
+
+    /// The command in the active table.
+    public static func command(_ id: CommandID) -> Command? { active.command(id) }
 
     /// Chord labels for `id`: its chord first, then the aliases live in
     /// `surface` (nil: every alias).
@@ -366,7 +421,7 @@ public enum CommandRegistry {
     /// The commands with a chord live in `surface`, in table order; for
     /// `.everywhere` only those bound everywhere.
     public static func bound(in surface: Surface) -> [Command] {
-        all.filter { c in c.bindings.contains { surface == .everywhere ? $0.surfaces.contains(.everywhere) : live($0, in: surface) } }
+        active.commands.filter { c in c.bindings.contains { surface == .everywhere ? $0.surfaces.contains(.everywhere) : live($0, in: surface) } }
     }
 
     // Surface groups.
@@ -589,7 +644,7 @@ public struct MenuModel: Equatable, Sendable {
 
     public let menus: [Menu]
 
-    public static func build(from registry: [Command] = CommandRegistry.all) -> MenuModel {
+    public static func build(from registry: [Command] = CommandRegistry.active.commands) -> MenuModel {
         var menus: [Menu] = []
         for bar in MenuBar.allCases {
             let placed = registry.compactMap { c in c.menu.map { ($0, c) } }.filter { $0.0.menu == bar }
@@ -612,7 +667,7 @@ public struct MenuModel: Equatable, Sendable {
     /// The Dock menu: the app's main ways in, with the registry's titles.
     public static let dock: [CommandID] = [.newAgent, .nextAttention, .history, .review]
 
-    public static func dockItems(registry: [Command] = CommandRegistry.all, context: CommandContext = .none) -> [Item] {
+    public static func dockItems(registry: [Command] = CommandRegistry.active.commands, context: CommandContext = .none) -> [Item] {
         items(dock, registry: registry, context: context)
     }
 
@@ -625,7 +680,7 @@ public struct MenuModel: Equatable, Sendable {
         (.quickLaunch, "Quick Launch…"), (.settings, "Settings…"), (.quit, "Quit Hesper"),
     ]
 
-    public static func statusItems(registry: [Command] = CommandRegistry.all, hotKey: String, context: CommandContext = .none) -> [Item] {
+    public static func statusItems(registry: [Command] = CommandRegistry.active.commands, hotKey: String, context: CommandContext = .none) -> [Item] {
         var out: [Item] = []
         for (id, label) in statusLabels {
             guard let c = registry.first(where: { $0.id == id }), c.availability(context) != .hidden else { continue }

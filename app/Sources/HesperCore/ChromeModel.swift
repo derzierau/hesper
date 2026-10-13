@@ -76,7 +76,7 @@ public enum ToolbarOverflow {
     /// The View menu sections it shows (MenuPath order).
     static let sections: Set<Int> = [1, 2, 4]
 
-    public static func items(registry: [Command] = CommandRegistry.all) -> [MenuModel.Item] {
+    public static func items(registry: [Command] = CommandRegistry.active.commands) -> [MenuModel.Item] {
         MenuModel.build(from: registry.filter { c in c.menu.map { $0.menu == .view && sections.contains($0.section) } ?? false })[.view]
     }
 }

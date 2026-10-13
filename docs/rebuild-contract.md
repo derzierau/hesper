@@ -4590,6 +4590,32 @@ quick launch Close, the band +); only hints for keys that are not
 commands (the close and move strips' ⏎ esc, the deny field, ghost cards,
 End) spell their key.
 
+**Overrides (phase 5).** The table in force is `CommandRegistry.active`:
+the shipped `all` with the user's `ShortcutOverrides` applied
+(`CommandRegistry.resolved(with:)`, installed by `install`). An override
+is command id → a chord or `unbound`, and replaces the command's default
+chord in the surfaces it is live in (a menu command that never had one
+gets it app-wide); aliases (⇥ on the wall, J K in lists) stay. The
+routers, `MenuModel.build`, the Dock and status-bar items, the palette's
+key caps and both shortcut lists read the active table, so a change
+rebuilds the menu bar (AppDelegate) and nothing else: keys are looked up
+at key time. AppSettings stores them as one JSON object
+(`shortcutOverrides`: `CommandID.key` → the chord's label, null for
+unbound); an entry naming a command this version doesn't have is kept
+and ignored. `ShortcutOverrides.rebinding(id, to:)` is the one way in and
+refuses, with the reason Settings shows inline: macOS's own chords ⌘Q ⌘H
+⌘M ⌘, (`reserved`); the standard items and Quick Launch (`fixed`: About,
+Settings…, Hide, Quit, the Edit menu, Minimize, Zoom, Full Screen, Bring
+All to Front; Quick Launch's hotkey is Settings › General's); a chord
+without ⌘ for a command live where the agent types (everywhere, focus,
+the active tile, an agent window: principle 4); and a chord another
+command has in a surface both are live in (`ShortcutConflicts.check`:
+the conflicts of a table per surface, a chord bound everywhere clashing
+in every surface the other is live in). Binding the default chord is a
+reset. A conflict can still exist in a stored table when a later version
+binds the chord: the first command in table order wins at key time and
+both rows show the "Conflicts with …" pill.
+
 **Settings › Shortcuts.** The same sections, every one open, as
 SettingsSections of Rows (`settings.shortcut.<command id>`); the Quick
 Launch row shows the configured hotkey while quick launch is on. A row

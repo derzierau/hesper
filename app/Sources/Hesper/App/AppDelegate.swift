@@ -26,7 +26,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WindowManager.prepare() // window layer: before the main toolbar exists
         windowController = MainWindowController(model: model, userFontSize: user.fontSize ?? 13)
         windows = WindowManager(primary: model, main: windowController, env: env, userFontSize: user.fontSize ?? 13)
+        CommandRegistry.install(model.settings.shortcutOverrides)
         buildMenu()
+        // A rebound shortcut: the routers read the new table at key time,
+        // only the menu bar's key equivalents are built once.
+        model.settings.onShortcutsChanged = { [weak self] in
+            guard let self else { return }
+            CommandRegistry.install(self.model.settings.shortcutOverrides)
+            self.buildMenu()
+        }
 
         automated = env.values["perf-out"] != nil || env.values["selftest-out"] != nil || env.values["layout-out"] != nil || env.values["windows-test-out"] != nil || env.values["walls-perf-out"] != nil || env.values["projects-test-out"] != nil || env.values["desks-test-out"] != nil || env.values["history-test-out"] != nil || env.values["history-perf-out"] != nil
         let ql = QuickLaunchController(model: model)

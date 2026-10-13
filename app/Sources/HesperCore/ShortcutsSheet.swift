@@ -18,7 +18,8 @@ public enum ShortcutsSheet {
         /// The titles of the other commands bound to one of this
         /// command's chords in a surface they share: the "Conflicts
         /// with …" pill. Empty for the registry as shipped (CommandsTests
-        /// keeps it so); rebinding can fill it.
+        /// keeps it so); an override stored before a later version bound
+        /// its chord fills it (`ShortcutConflicts`).
         public var conflicts: [String]
 
         public init(id: CommandID, title: String, chord: String, conflicts: [String] = []) {
@@ -49,7 +50,7 @@ public enum ShortcutsSheet {
     ///     launch is off, the row is left out).
     ///   - hotKeyConflict: what macOS binds the hotkey to, when it does
     ///     (the Quick Launch row's pill).
-    public static func sections(registry: [Command] = CommandRegistry.all, current: Surface, query: String = "",
+    public static func sections(registry: [Command] = CommandRegistry.active.commands, current: Surface, query: String = "",
                                 hotKey: String? = nil, hotKeyConflict: String? = nil, context: CommandContext = .none) -> [Section] {
         let order = [current] + Self.order.filter { $0 != current }
         var rows: [Surface: [Row]] = [:]
