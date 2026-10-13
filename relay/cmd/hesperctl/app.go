@@ -22,9 +22,9 @@ import (
 // none did, hesperctl opens Hesper.app and retries for up to 10 s
 // (--no-launch: exit 4 at once).
 //
-//	open agent | wall | new | history | inbox   (open ID = open agent ID)
-//	wall show | set                              (wall = wall show)
-//	desk ls | save | switch | rename | rm        (desk = desk ls)
+//	open agent | wall | new | history | inbox | review | palette   (open ID = open agent ID)
+//	wall show | set                                                (wall = wall show)
+//	desk ls | save | switch | rename | rm                          (desk = desk ls)
 
 const groupApp = "App"
 
@@ -88,6 +88,17 @@ func init() {
 		{Name: "open inbox", Summary: "Open the inbox of agents that need you (⌘J)", Usage: "open inbox",
 			Help: "On the frontmost wall; with nobody needing you the app says so.\n\n" + noLaunchHelp, Output: "{wall, needsYou}",
 			Run: openInbox},
+		{Name: "open review", Summary: "Open Review in Hesper.app (⌘R), on an agent's item with --agent", Usage: "open review [--agent ID]",
+			Help: "The Review sheet on the frontmost wall. --agent ID: that agent's item selected when it is in the review inbox; " +
+				"otherwise the sheet opens as it is and selected is false. " + idHelp + "\n\n" + noLaunchHelp,
+			Output:   "{wall, selected}",
+			Examples: []string{"hesperctl open review", "hesperctl open review --agent a7f3k2"},
+			Run:      openReview},
+		{Name: "open palette", Summary: "Open the ⌘K command palette in Hesper.app, with --query typed in", Usage: "open palette [--query TEXT]",
+			Help:     "The palette on the frontmost wall; --query TEXT fills its search field (agents, projects, machines, actions).\n\n" + noLaunchHelp,
+			Output:   "{wall, query}",
+			Examples: []string{"hesperctl open palette --query 'login'"},
+			Run:      openPalette},
 		{Name: "wall show", Aliases: []string{"wall"}, ReadOnly: true, Summary: "Show the walls: scope, layout, grouping, density, bands, focus",
 			Usage: "wall show [--wall W] [--json]",
 			Help:  "Every wall in desk order (home first), the bands of walls that show bands, the current desk and what has the focus. --json prints the app's whole state (--wall W: that wall only). " + wallHelp + "\n\n" + noLaunchHelp,
@@ -195,7 +206,7 @@ func openAgent(ctx context.Context, f *flag.FlagSet, args []string) error {
 	sel := f.Bool("select", false, "Selected on the wall showing it, without the focus view")
 	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, pos []string) error {
 		if len(pos) != 1 {
-			return usagef("open agent ID (or open wall | new | history | inbox)")
+			return usagef("open agent ID (or open wall | new | history | inbox | review | palette)")
 		}
 		mode, n := "focus", 0
 		for _, m := range []struct {
@@ -294,6 +305,66 @@ func openInbox(ctx context.Context, f *flag.FlagSet, args []string) error {
 		}
 		return appOpen(ctx, c, *asJSON, *noLaunch, map[string]any{"inbox": true}, func(r map[string]any) string {
 			return fmt.Sprintf("inbox on %v: %v need you", r["wall"], r["needsYou"])
+		})
+	})
+}
+
+// openSheet sends app.open for a sheet (review, palette) and prints
+// line(result). An app from before the sheet's target ignores its key
+// and answers with the frontmost wall instead; that is an error, not a
+// sheet.
+func openSheet(ctx context.Context, c *wire.Client, asJSON, noLaunch bool, sheet string, params map[string]any, line func(map[string]any) string) error {
+	var res json.RawMessage
+	if err := appCall(ctx, c, noLaunch, false, "app.open", params, &res); err != nil {
+		return err
+	}
+	var r map[string]any
+	json.Unmarshal(res, &r)
+	if _, isWall := r["id"]; isWall && r["wall"] == nil { // a wall's state, not a sheet's {wall, …}
+		return failf(wire.CodeUnavailable, "this Hesper.app has no open %s yet: update it", sheet)
+	}
+	if asJSON {
+		return output(res)
+	}
+	fmt.Println(line(r))
+	return nil
+}
+
+func openReview(ctx context.Context, f *flag.FlagSet, args []string) error {
+	asJSON := jsonFlag(f)
+	noLaunch := noLaunchFlag(f)
+	agent := f.String("agent", "", "Select this agent's item (id, local id or unique name)")
+	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, pos []string) error {
+		if len(pos) > 0 {
+			return usagef("open review takes flags, not arguments (--agent ID selects an item)")
+		}
+		var review any = true
+		if *agent != "" {
+			review = map[string]any{"agent": *agent}
+		}
+		return openSheet(ctx, c, *asJSON, *noLaunch, "review", map[string]any{"review": review}, func(r map[string]any) string {
+			if *agent != "" && r["selected"] != true {
+				return fmt.Sprintf("review on %v (%s is not in the review inbox)", r["wall"], *agent)
+			}
+			return fmt.Sprintf("review on %v", r["wall"])
+		})
+	})
+}
+
+func openPalette(ctx context.Context, f *flag.FlagSet, args []string) error {
+	asJSON := jsonFlag(f)
+	noLaunch := noLaunchFlag(f)
+	query := f.String("query", "", "Text typed into the palette's search field")
+	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, pos []string) error {
+		if len(pos) > 0 {
+			return usagef("open palette takes flags, not arguments (--query TEXT fills the search field)")
+		}
+		var palette any = true
+		if *query != "" {
+			palette = map[string]any{"query": *query}
+		}
+		return openSheet(ctx, c, *asJSON, *noLaunch, "palette", map[string]any{"palette": palette}, func(r map[string]any) string {
+			return fmt.Sprintf("palette on %v", r["wall"])
 		})
 	})
 }

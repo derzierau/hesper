@@ -368,7 +368,8 @@ the registry; the parents are aliases: `open ID` = `open agent ID`,
 [--window|--tab|--select]` (also `open ID`), `open wall [--wall W]
 [--scope S] [--new]`, `open new [--project P] [--task T | TASK…] [--kind
 K] [--profile P] [--machine M] [--worktree] [--branch B] [--wall W]`,
-`open history [QUERY…]`, `open inbox`; `wall [show] [--wall W]` (a table
+`open history [QUERY…]`, `open inbox`, `open review [--agent ID]`, `open
+palette [--query TEXT]`; `wall [show] [--wall W]` (a table
 and the bands; `--json`: the whole `app.state`), `wall set [--wall W]
 [--arrangement A] [--grouping G] [--density D] [--collapse BAND]…
 [--expand BAND]… [--band-order B,…] [--scope S] [--sidebar on|off]

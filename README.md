@@ -390,6 +390,7 @@ hesperctl new --machine mini --worktree --project ~/projects/app "Add the export
 hesperctl attach fix-the-login-redirect       # Ctrl-] detaches
 hesperctl send ID "yes, go ahead" ; hesperctl approve ID ; hesperctl deny ID
 hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl move ID --to mini
+hesperctl open review --agent ID ; hesperctl open palette --query TEXT   # the app's sheets
 ```
 
 Agents are addressed by id (`L/a7f3k2`), local id or unique name.
