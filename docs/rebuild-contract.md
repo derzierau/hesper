@@ -419,7 +419,8 @@ that, `kill -QUIT` the daemon: it writes every goroutine to the log.
 - **⌘K**: palette over agents, projects, machines, actions. ⌘W closes the
   selected agent (asks when that would lose something; History keeps it;
   in an agent window it closes the window and the agent keeps running).
-  ⌘⇧M moves it to another machine.
+  ⇧⌘M moves it to another machine. Every key and menu item is one entry
+  in the command registry: see "As built — commands".
 - Tokyo Night palette; Ghostty's font settings (read the user's Ghostty config
   for font family/size where possible).
 - Performance budget (from the proposal): local keystroke→screen < 5 ms;
@@ -1311,9 +1312,9 @@ closes and keeps the text.
 1 + fade), close 80 ms, Reduce Motion: fades. Popovers attach to their
 thing with an arrow (`PopoverPlacement`: below, else above, sideways
 while the arrow still reaches; never over a card that needs the user when
-another spot is free). Keys everywhere (`OverlayKeys`): ↑↓ select, ⏎ do,
-⌘⏎ the alternative, ⇥ act on, esc close, typing filters; each overlay's
-footer lists its keys. State survives close (palette query, deny text,
+another spot is free). Keys everywhere (`OverlayKeys`, resolved through the command registry:
+"As built — commands"): ↑↓ select, ⏎ do, ⌘⏎ the alternative, ⇥ act on,
+esc close, typing filters; each overlay's footer lists its keys. State survives close (palette query, deny text,
 composer). Inventory: ⌘K palette (the only centered one; light scrim with
 holes so attention rings stay visible; agents, drafts, actions — an agent
 named in the query brings its actions — projects, machines, layouts,
@@ -1357,8 +1358,9 @@ terminal frame). The shelf/treemap follow the shown (debounced) state.
 ⏎ on it, typing a character on it, or ⌘J landing on it makes it active
 (a plain click only selects: see "As built — keyboard navigation"): cyan ring, "typing · ⌘esc
 leaves"; every key goes to the agent (Esc, ⏎, arrows, ⌃-keys, IME,
-⌘C/⌘V, selection) except the app's ⌘ shortcuts (⌘N ⌘K ⌘J ⌘W ⌘↩ ⌥⌘← ⌥⌘→ ⌘,
-⌘⇧M ⌘Z ⌥⌘…). ⌘esc (Claude/Codex never see ⌘esc), a click on the wall or
+⌘C/⌘V, selection) except the app's ⌘ shortcuts (the registry's
+`.activeTile` surface, "As built — commands": ⌘N ⌘K ⌘J ⌘W ⌘↩ ⌥⌘← ⌥⌘→ ⌘,
+⇧⌘M ⌘Z ⌥⌘…). ⌘esc (Claude/Codex never see ⌘esc), a click on the wall or
 another tile leaves (back to selected); one per window; double click still opens focus. On
 a selected but not active tile ⏎/A/N still answer approvals. The active
 tile's surface is a read-write **owner** attach at its own grid in the
@@ -1630,7 +1632,8 @@ clicks, activation and focus (`mainPick`), not the arrows (test: sizes
 and frames identical before and after).
 
 **Single view and agent windows.** Plain ← → (and every other plain key)
-stay the terminal's: Claude and Codex need them. ⌥⌘← / ⌥⌘→ = previous /
+stay the terminal's: Claude and Codex need them. (The chords: the
+registry's `.focus` and `.agentWindow` surfaces, "As built — commands".) ⌥⌘← / ⌥⌘→ = previous /
 next agent (like a browser's tabs; ⌘[ ⌘] were dropped: on a German
 layout ⌘[ is ⌥⌘5, the Grid layout); in the wall's
 focus view in wall order (wrapping); on the wall they move the selection
@@ -3100,7 +3103,8 @@ test-ui-desks` (or all of them: `make -C app test`).
 **History is a panel over the wall, not a wall mode.** ⌘Y (Agents ▸
 History, the project sidebar's "Show History (⌘Y)" per project, ⇥ on a
 ⌘K History row) opens it on the window's content area: the overlay
-family's look (#1f2335, #3b4261 border, 14 pt radius, shadow, scrim 38 %,
+family's look (its keys: the registry's `.history` surface, "As built —
+commands") (#1f2335, #3b4261 border, 14 pt radius, shadow, scrim 38 %,
 open 120 ms scale 0.98 → 1 + fade, close 80 ms, Reduce Motion: none) and
 keys. Chosen over a dedicated wall mode because it is calmer: nothing on
 the wall changes — no mode switch, no tile hidden or re-attached, no
@@ -4250,7 +4254,8 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
   the same rules here: risky and schema first, a test right after its
   code, formatting-only and generated last and folded; never
   alphabetical).
-- **Keys** (`ReviewKeys`): ↑↓ items, J/K hunk, N/⇧N file, V seen
+- **Keys** (`ReviewKeys`, the registry's `.review` surface: "As built —
+  commands"): ↑↓ items, J/K hunk, N/⇧N file, V seen
   (toggle), X reject the hunk (`review.reject`, one at a time against
   the diff as it is then; hunk ids are positions), C a note on the
   clicked line (else the hunk's first change; the editor under the
@@ -4293,6 +4298,72 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
 
 **Status: built and unit-tested headless only.** Not run against a
 real hesperd with `review.*` yet, and no UI suite covers the sheet.
+
+### As built — commands (app: HesperCore/Commands.swift)
+
+**One table for every user action.** `CommandRegistry.all` lists each
+command once: `CommandID` (named after the `AppCommand` it runs where one
+exists, surface verbs otherwise: `historyFork`, `reviewAccept`,
+`inboxAnswer(n)`), title, `MenuPath` (menu, section, order), default
+`KeyChord`, the `Set<Surface>` the chord is live in, aliases (a second
+chord with its own surfaces: ⇥ steps agents on the wall, ⌥↑ ⌥↓ jump bands
+there, J K move in the inbox and History), an availability predicate over
+`CommandContext` (selected agent state and whether it runs, mode, key
+window kind, a draft, the review count, undo, History support, open
+panels) returning `.enabled`, `.disabled(reason)` or `.hidden`, and a
+palette flag. Chords are matched normalised (a letter lowercase with ⇧ as
+a flag); a shifted plain letter falls back to the unshifted command (⇧A on
+an approval is Always; Review's N and ⇧N are both bound), ⌘ chords match
+exactly.
+
+**Surfaces.** `.everywhere` (app-wide ⌘ chords, also every menu key
+equivalent), `.wall` (a selected tile), `.focus`, `.activeTile`,
+`.composer`, `.quickLaunch`, `.palette`, `.popover`, `.inbox`, `.history`,
+`.review`, `.agentWindow`, `.settings`. A chord bound everywhere means the
+same thing in every surface; a surface binds a chord of its own only
+where the role differs (⌘⏎ is Open / Back to Wall on the wall, Start in a
+composer, Accept and commit in Review, Open the agent in the inbox; ⌘W is
+Close everywhere but the background tray, where it closes the selected
+agent). Surface routers return "not mine" for an app-wide chord and the
+window or the menu runs it (⌘K in History closes the sheet and opens the
+palette).
+
+**Generated from it.** `KeyRouter.route` / `routeActiveTile` / `compose`,
+`OverlayKeys`, `InboxKeys`, `HistoryKeys`, `SearchKeys.history` and
+`ReviewKeys` resolve a chord in their surface and map the id to the action
+value they always returned (`KeyRouter.command(for:)`, each router's
+`action(for:)`), so `AppModel.perform` and the panel handlers are
+unchanged. `MenuModel.build` is the menu bar as a pure tree (Hesper, File,
+Edit, Agents, View, Window, Help, standard items included); `MenuBuilder`
+turns it into NSMenus, AppKit selectors for the standard items and
+`AppDelegate.run(CommandID)` for the rest, and `validateMenuItem` is the
+registry's availability (disabled items carry the reason as a tooltip;
+Routines is a hidden placeholder for its branch). The dynamic parts keep
+their owners: layout checkmarks, Dense Cards and the Undo title (Edit ▸
+Undo names the action; "Undo Close or Move" is gone), the Desks submenu,
+History hidden while hesperd has no sessions.*, the window list. The ⌘K
+palette's "Actions" rows and Settings › Shortcuts (`ShortcutList.groups`,
+by surface) read the table; Help ▸ Keyboard Shortcuts ⌘/ is wired to a
+stub until phase 4's sheet. `KeyChord.label` / `KeyChord(label:)` are the
+one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
+
+**Invariants** (`CommandsTests`): no chord is bound twice within one
+surface (a chord bound everywhere conflicts with the same chord in any
+surface); every command with a chord has a menu path or sits in an
+exemption list with its reason (the wall's selection keys, the composer's,
+the overlay family's and the inbox, History and Review verbs: their key
+caps sit on the surface's controls); every surface's router resolves every
+registered chord to the registered command (the test walks the table);
+plus: every shortcut in the README's "Using it" table is registered, the
+generated menu tree equals the spec's menu table, Close / Kill / Move are
+disabled with nothing selected and Routines is hidden.
+
+**Bindings that changed with the registry.** ⌥⌘↑ ⌥⌘↓ step bands
+everywhere (View ▸ Previous / Next Band; ⌥↑ ⌥↓ stay wall-only aliases);
+J K move in History as in the inbox; ⇧⏎ in History no longer resumes;
+⌘W in Settings, First Run and the gallery closes that window (File ▸
+Close). The two primitives phase 3 builds the pointer paths with,
+`KeyButton` and `SheetChrome`, are in `docs/design-system.md`.
 
 ## Wire names kept from Ghosty
 
