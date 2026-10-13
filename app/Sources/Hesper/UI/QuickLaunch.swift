@@ -23,10 +23,11 @@ final class QuickLaunchPanel: NSPanel {
     override func cancelOperation(_ sender: Any?) { _ = onKey?(.leaveDraft) }
 }
 
-/// Quick launch (⌃⌥Space, the menu bar item): the same prompt-first
-/// composer as a draft tile, as a floating glass sheet over any app: the
-/// task first, the chips under it. ⌘↩ starts the agent (it joins the wall)
-/// and a notification takes you to it; esc closes and keeps what you wrote.
+/// Quick launch (⌃⌥Space, the menu bar item, File › Quick Launch…: each
+/// toggles it): the same prompt-first composer as a draft tile, as a
+/// floating glass sheet over any app: the task first, the chips under it.
+/// ⌘↩ starts the agent (it joins the wall) and a notification takes you to
+/// it; esc (the × in its corner) closes and keeps what you wrote.
 @MainActor
 final class QuickLaunchController {
     let model: AppModel
@@ -53,7 +54,7 @@ final class QuickLaunchController {
         composer = model.composer(for: model.quickDraft.id)
         panel = QuickLaunchPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: Self.editorHeight * 2),
                                  styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        header = NSHostingView(rootView: QuickHeader())
+        header = NSHostingView(rootView: QuickHeader(onClose: {}))
         list = NSHostingView(rootView: AnyView(EmptyView()))
         chips = NSHostingView(rootView: AnyView(EmptyView()))
         footer = NSHostingView(rootView: DraftFooter(composer: composer, quick: true, onStart: {}))
@@ -96,6 +97,7 @@ final class QuickLaunchController {
         tv.placeholder = "What should the agent do?   @ machine · # folder · / tool · ~ branch · drop files"
         tv.onCommand = { [weak self] cmd in self?.handle(cmd) ?? false }
         panel.onKey = { [weak self] cmd in self?.handle(cmd) ?? false }
+        header.rootView = QuickHeader(onClose: { [weak self] in self?.hide() })
         composer.onReplaceText = { [weak tv] text, caret in tv?.replaceAll(with: text, caret: caret) }
         footer.rootView = DraftFooter(composer: composer, quick: true, onStart: { [weak self] in self?.start() })
         observeChanges { [weak self] in self?.refresh() }
@@ -219,6 +221,8 @@ final class QuickLaunchController {
 }
 
 struct QuickHeader: View {
+    var onClose: () -> Void
+
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
             StateMark(.starting)
@@ -227,6 +231,8 @@ struct QuickHeader: View {
             Spacer()
             Image(systemName: "rectangle.grid.2x2").font(.ds(.meta)).foregroundStyle(Theme.dim)
             Text("joins the wall").font(.ds(.chrome)).foregroundStyle(Theme.dim)
+            KeyButton("Close", kbd: "esc", variant: .icon("xmark"), action: onClose)
+                .accessibilityIdentifier("quicklaunch.close")
         }
         .padding(.horizontal, DS.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

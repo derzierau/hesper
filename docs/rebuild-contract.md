@@ -1436,6 +1436,8 @@ Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
   no longer discards). The background tray's rows carry a Bring back
   button (⏎ on the selected row) and keep their context menu (Bring Back,
   Close).
+- **Quick launch.** A × (esc) in the panel's top right; File › Quick
+  Launch… toggles the panel, as the status item and the hotkey do.
 
 #### As built — windows (multi-window iteration 1)
 
