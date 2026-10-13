@@ -488,7 +488,7 @@ public enum CommandRegistry {
                 availability: { $0.mode == .focus ? .enabled : .disabled("Not in focus") }),
         Command(.nextAttention, "Needs You…", menu: MenuPath(.agents, 1, 0), chord: .cmd("j"), surfaces: [.everywhere], palette: true),
         Command(.answer(.allow), "Allow", menu: MenuPath(.agents, 2, 0), availability: awaitingApproval),
-        Command(.answer(.always), "Always Allow", menu: MenuPath(.agents, 2, 1), chord: .plain("a"), surfaces: [.wall], availability: awaitingApproval),
+        Command(.answer(.always), "Always Allow", menu: MenuPath(.agents, 2, 1), chord: .plain("a"), surfaces: [.wall, .inbox], availability: awaitingApproval),
         Command(.denyWithMessage, "Deny…", menu: MenuPath(.agents, 2, 2), chord: .plain("n"), surfaces: [.wall], availability: awaitingApproval),
         Command(.backgroundAgent, "Send to Background", menu: MenuPath(.agents, 3, 0), chord: .cmd("w", option: true), surfaces: [.everywhere],
                 availability: selected),
@@ -589,6 +589,8 @@ public enum CommandRegistry {
 
         Command(.inboxPrimary, "The first answer", chord: .plain(.enter), surfaces: [.inbox]),
         Command(.inboxOpen, "Open the agent", chord: .cmd(.enter), surfaces: [.inbox]),
+        // N here answers deny outright (the wall's N asks for a message).
+        Command(.answer(.deny), "Deny", chord: .plain("n"), surfaces: [.inbox]),
     ]
 
     private static let inboxAnswers: [Command] = (1...9).map { n in

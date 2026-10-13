@@ -37,6 +37,7 @@ import Testing
         e[.closeTrayItem] = "the background tray's rows carry ⌘W"
         for id in [CommandID.inboxPrimary, .inboxOpen, .inboxMoveElsewhere] { e[id] = "inbox rows carry the key caps" }
         for n in 0..<9 { e[.inboxAnswer(n)] = "inbox rows number their answers" }
+        e[.answer(.deny)] = "the inbox's Deny button carries N"
         for id in [CommandID.historyResume, .historyOpenFullSize, .historyFork, .historyContinueOnOtherMac, .historyContinueOther, .historyArchive,
                    .historyDelete, .historyRestoreCheckpoint, .historySwitchScope, .historyToggleFocus, .historyFirst, .historyLast] {
             e[id] = "History's toolbar, preview buttons, row menu and footer carry the keys"
@@ -221,5 +222,10 @@ import Testing
         #expect(CommandRegistry.resolve(KeyChord(.enter, command: true), in: .review) == .reviewAccept)
         #expect(CommandRegistry.resolve(KeyChord(.char("k"), command: true), in: .history) == .palette, "everywhere reaches every surface")
         #expect(CommandRegistry.resolve(KeyChord(.char("j")), in: .wall) == nil)
+        // The inbox's A and N are the registry's too (the sheet lists them,
+        // another inbox verb can't take them).
+        #expect(CommandRegistry.resolve(KeyChord(.char("a")), in: .inbox) == .answer(.always))
+        #expect(CommandRegistry.resolve(KeyChord(.char("n")), in: .inbox) == .answer(.deny))
+        #expect(CommandRegistry.resolve(KeyChord(.char("n")), in: .wall) == .denyWithMessage)
     }
 }

@@ -4557,7 +4557,8 @@ one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
 | Help | Hesper Help, Keyboard Shortcuts… ⌘/, hesperctl Reference, Report a Problem (the GitHub issues page) |
 
 Only ⌘ chords become key equivalents: Always Allow's A and Deny's N
-live on the selected tile, Quick Launch's hotkey is the system's.
+live on the selected tile and in the inbox (where N denies outright),
+Quick Launch's hotkey is the system's.
 
 **Help ▸ Keyboard Shortcuts (⌘/).** A modal sheet over the front wall
 like History and Review (`ShortcutsPanel`, hosted by

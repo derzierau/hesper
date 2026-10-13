@@ -181,6 +181,7 @@ public enum InboxKeys {
         case .inboxPrimary: return .primary
         case .inboxOpen: return .open
         case .closeOverlay: return .close
+        case .answer(let d): return .decide(d)
         default: return nil
         }
     }
@@ -193,16 +194,10 @@ public enum InboxKeys {
         case .alternate: return .open
         case .close: return .close
         case .type(let s):
-            // J K 1–9 M: typed letters, looked up in the inbox's surface.
+            // J K 1–9 M A N: typed letters, looked up in the inbox's surface.
             guard s.count == 1, let c = s.first else { return .none }
             if let id = CommandRegistry.resolve(KeyChord(.char(c)), in: .inbox) { return Self.action(for: id) ?? .none }
-            // A and N: the wall's Always and Deny…, on the selected item's
-            // buttons here (not yet in the registry's inbox surface).
-            switch c.lowercased() {
-            case "a": return .decide(.always)
-            case "n": return .decide(.deny)
-            default: return .none
-            }
+            return .none
         case .actOn, .back, .deleteBackward, .pass:
             return .none
         }
