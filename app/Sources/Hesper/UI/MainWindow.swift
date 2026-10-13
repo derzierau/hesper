@@ -33,15 +33,19 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
         if HistoryPanelHost.handleKeyEquivalent(event, window: self) { return true } // shared history: the panel's ⌘ keys
         if ReviewPanelHost.handleKeyEquivalent(event, window: self) { return true } // review: the sheet's ⌘ keys
         let chord = KeyChord(event: event)
+        // An open overlay's ⌘ chords come from the registry's surface, so a
+        // rebound palette or tray chord (ShortcutOverrides) holds here too.
         if model.showPalette {
-            if chord.command && chord.key == .char("k") { model.showPalette = false; return true }
-            if chord.command && chord.key == .enter { return model.paletteKey(.alternate) }
+            let id = CommandRegistry.resolve(chord, in: .palette)
+            if id == .palette { model.showPalette = false; return true }
+            if id.flatMap(OverlayKeys.action(for:)) == .alternate { return model.paletteKey(.alternate) }
             return super.performKeyEquivalent(with: event)
         }
         if model.popover != nil {
-            if chord.command && chord.key == .enter { return model.popoverKey(.alternate) }
-            if chord.command && chord.key == .char("k") { model.closePopover(); model.perform(.palette); return true }
-            if chord.command && !chord.option && !chord.control && !chord.shift && chord.key == .char("w"), model.popover == .background {
+            let id = CommandRegistry.resolve(chord, in: model.popover == .attention ? .inbox : .popover)
+            if id.flatMap(OverlayKeys.action(for:)) == .alternate { return model.popoverKey(.alternate) }
+            if id == .palette { model.closePopover(); model.perform(.palette); return true }
+            if id == .closeTrayItem, model.popover == .background {
                 return model.closeFromTray() // the background tray: ⌘W closes the selected agent
             }
         }

@@ -124,4 +124,25 @@ import Testing
         #expect(table(s).resolve(.cmd("1"), in: .wall) == nil)
         #expect(try ShortcutOverrides(json: s.json()).count == 2)
     }
+
+    /// The window resolves an open overlay's ⌘ chords (close the palette,
+    /// ⌘⏎, the tray's ⌘W) in the palette, popover and inbox surfaces of
+    /// the table in force, so a rebound chord holds there and the old one
+    /// is free.
+    @Test func overlayChordsFollowOverrides() {
+        var o = ShortcutOverrides()
+        o.set(.palette, to: .chord(.cmd("p")))
+        o.set(.closeTrayItem, to: .chord(.cmd("e")))
+        let t = table(o)
+        #expect(t.resolve(.cmd("p"), in: .palette) == .palette)
+        #expect(t.resolve(.cmd("p"), in: .popover) == .palette)
+        #expect(t.resolve(.cmd("k"), in: .palette) == nil, "the default chord is free")
+        #expect(t.resolve(.cmd("e"), in: .popover) == .closeTrayItem)
+        #expect(t.resolve(.cmd("w"), in: .popover) == nil)
+        #expect(t.resolve(.cmd("w"), in: .inbox) == nil)
+        // ⌘⏎ is the row's alternate in every overlay (the inbox: Open).
+        for s in [Surface.palette, .popover, .inbox] {
+            #expect(t.resolve(.cmd(.enter), in: s).flatMap(OverlayKeys.action(for:)) == .alternate, "\(s)")
+        }
+    }
 }
