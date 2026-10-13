@@ -1497,7 +1497,11 @@ showing it (⌘J activates its tile there; a notification opens its focus
 view), else the main wall (focus view). Rings show on every tile of the
 agent in every wall; agent windows tint their title bar. The Dock badge
 (number needing you) and the menu bar counts are app-wide. Menus act on
-the key window's model (layouts on the frontmost wall).
+the key window's model (layouts on the frontmost wall); when the key
+window is neither a wall nor an agent window (Settings, First Run, the
+Design Gallery) the Agents menu's Close, Send to Background, Kill, Tidy
+Up and Move are disabled, the chords do nothing, and ⌘W (Window ▸
+Close) closes that window.
 
 **Restoration** (`WindowRestorer`, explicit file, not NSWindowRestoration):
 `--window-state PATH`, else, only when talking to the live daemon (no

@@ -3,7 +3,7 @@ import HesperCore
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let env = AppEnvironment.resolve()
     var model: AppModel!
     var windowController: MainWindowController!
@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let s = StatusItemController(model: model)
             s.showWindow = { [weak self] in self?.showWindow() }
             s.openAgent = { [weak self] id in self?.windows.open(id, focus: true) }
-            s.openReview = { [weak self] id in self?.windows.activeModel.openReview(select: id) }
+            s.openReview = { [weak self] id in self?.windows.frontModel.openReview(select: id) }
             statusItem = s
         }
         let n = Notifier(model: model, enabled: !automated && !env.options.contains("no-notifications"))
@@ -51,13 +51,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notifier = n
         model.onTransitions = { [weak n] t in n?.post(t) }
         // Review: an agent on any Mac became ready to review.
-        n.openReview = { [weak self] id in self?.windows.activeModel.openReview(select: id) }
+        n.openReview = { [weak self] id in self?.windows.frontModel.openReview(select: id) }
         model.reviewHub.onArrivals = { [weak n] items in n?.postReadyToReview(items) }
         // Closing agents: a background agent finished (and was closed).
         model.onFinishedInBackground = { [weak n, weak self] name in
             n?.postFinished(name)
             if NSApp.isActive, let text = CloseText.notification(.finishedInBackground, name: name) {
-                self?.windows.activeModel.showToast(text)
+                self?.windows.frontModel.showToast(text)
             }
         }
         model.settings.onAutoTidyChanged = { [weak self] in self?.model.scheduleAutoTidy() }
@@ -247,6 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSMenuItem()
         let wm = NSMenu(title: "Window")
         wm.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        // ⌘W reaches this only where Agents ▸ Close is disabled: Settings,
+        // First Run, the Design Gallery (walls and agent windows route ⌘W
+        // themselves).
+        wm.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         // ⌘0 is the project sidebar (window layer); Show Wall moved to ⇧⌘0.
         let showWall = wm.addItem(withTitle: "Show Wall", action: #selector(showWallMenu), keyEquivalent: "0")
         showWall.keyEquivalentModifierMask = [.command, .shift]
@@ -298,7 +302,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (NSApp.keyWindow as? AgentWindow)?.step(c.command == .stepNext ? 1 : -1)
         case .backgroundAgent where NSApp.keyWindow is AgentWindow:
             (NSApp.keyWindow as? AgentWindow)?.closeKeepingAgent() // the window only; the agent stays on its wall
-        default: windows.activeModel.perform(c.command)
+        default: windows.activeModel?.perform(c.command)
+        }
+    }
+
+    /// Agents menu: nothing to act on (Settings or another plain window
+    /// in front, no selected agent) shows as disabled.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard let c = item.representedObject as? MenuCommand else { return true }
+        switch c.command {
+        case .arrangement, .cycleArrangement: return true // the frontmost wall's
+        case .backgroundAgent where NSApp.keyWindow is AgentWindow, .stepPrevious where NSApp.keyWindow is AgentWindow,
+             .stepNext where NSApp.keyWindow is AgentWindow:
+            return true
+        default: break
+        }
+        guard let m = windows.activeModel else { return false }
+        switch c.command {
+        case .closeAgent: return m.current != nil || m.editingDraftID != nil || m.selectedDraft != nil // ⌘W: a draft is discarded
+        case .backgroundAgent, .killAgent, .moveAgent: return m.current != nil
+        case .tidyUp: return !m.wall.isEmpty
+        default: return true
         }
     }
 }

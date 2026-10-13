@@ -502,14 +502,21 @@ final class WindowManager: NSObject {
 
     // MARK: Routing
 
-    /// The model of the key window (menus act on it), else the main one.
-    var activeModel: AppModel {
+    /// The model of the key window (menus act on it); nil when the key
+    /// window is neither a wall nor an agent window (Settings, First Run,
+    /// the Design Gallery): an agent chord there does nothing, ⌘W closes
+    /// that window.
+    var activeModel: AppModel? {
         if let k = NSApp.keyWindow ?? NSApp.mainWindow {
             if let w = walls.first(where: { $0.window === k }) { return w.model }
             if let c = (k as? AgentWindow)?.controller { return c.model }
         }
-        return primary
+        return nil
     }
+
+    /// Where a toast or a review opened from outside a window goes: the
+    /// key window's model, else the frontmost wall's.
+    var frontModel: AppModel { activeModel ?? activeWall.model }
 
     var activeWall: WallEntry {
         if let k = NSApp.keyWindow ?? NSApp.mainWindow, let w = walls.first(where: { $0.window === k }) { return w }
