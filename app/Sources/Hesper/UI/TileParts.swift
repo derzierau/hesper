@@ -626,8 +626,8 @@ struct ScrollPill: View {
     }
 }
 
-/// The deny band: "Deny <tool>:" and a one-line message, ⏎ denies with it,
-/// esc folds it back (the text stays for next time).
+/// The deny band: "Deny <tool>:" and a one-line message, Send ⏎ denies
+/// with it, Cancel esc folds it back (the text stays for next time).
 struct DenyRow: View {
     var agent: Agent
     var wide: Bool
@@ -649,9 +649,11 @@ struct DenyRow: View {
                 .onSubmit { field.onSubmit(field.text.wrappedValue) }
                 .onExitCommand { field.onCancel() }
                 .accessibilityIdentifier("deny.field")
-            HStack(spacing: DS.Spacing.xs) {
-                Kbd("⏎"); Text("deny").font(.ds(.meta)).foregroundStyle(Theme.dim)
-                Kbd("esc"); Text("back").font(.ds(.meta)).foregroundStyle(Theme.dim)
+            HStack(spacing: DS.Spacing.s) {
+                KeyButton("Send", kbd: "⏎", variant: .primary(.signal)) { field.onSubmit(field.text.wrappedValue) }
+                    .accessibilityIdentifier("deny.send")
+                KeyButton("Cancel", kbd: "esc", action: field.onCancel)
+                    .accessibilityIdentifier("deny.cancel")
             }
             .fixedSize()
         }

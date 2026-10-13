@@ -1325,8 +1325,8 @@ mini…" in place; undo moves it back); rename popover; the toolbar's
 machines pill (online, route, RTT, agents, pairing hint), attention pill
 (the ⌘J inbox: ⏎ the first answer, 1–9 answer, ⌘⏎ opens the tile) and
 layout button (five layouts + min width; ⌥⌘1–5). Deny… expands the band
-into a one-line message field
-in place. ⌘W stops at once / removes at once (committed after 6 s) with
+into a one-line message field in place, with Send ⏎ and Cancel esc
+KeyButtons under it. ⌘W stops at once / removes at once (committed after 6 s) with
 an undo toast (⌘Z, its button); stop undoes by resuming; only removing
 an agent whose local worktree has uncommitted changes (`git status
 --porcelain`) asks, inline on the tile (Close anyway ⏎ · Keep esc as
@@ -1730,6 +1730,11 @@ Cancel esc (`move.primary`, `move.cancel`). When the strip goes
 agent of an active tile or the focus view, else the wall; clicking the
 terminal takes it back at any time. A strip that is not first responder
 (the wall was clicked) gets nothing: its buttons answer it.
+
+**Deny field.** The message field keeps the keyboard; next to it Send ⏎
+(primary, `signal`; `deny.send`) denies with the message and Cancel esc
+(`deny.cancel`) folds the field back, the same as the field's own ⏎ and
+esc.
 
 #### As built — drop to attach
 
