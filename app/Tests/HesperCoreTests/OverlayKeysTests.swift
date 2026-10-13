@@ -21,6 +21,21 @@ import Testing
         #expect(InboxKeys.route(.deleteBackward) == .none)
     }
 
+    /// The inbox's J and K move the selection until its filter field has
+    /// the keyboard: then they are letters for the field (an agent named
+    /// "jobs" can be filtered for), as every other letter is.
+    @Test func lettersTypeIntoTheInboxFilterWhileItHasTheKeyboard() {
+        #expect(OverlayKeys.route(KeyChord(.char("j")), characters: "j", surface: .inbox) == .down)
+        #expect(OverlayKeys.route(KeyChord(.char("k")), characters: "k", surface: .inbox, typing: true) == .type("k"))
+        #expect(OverlayKeys.route(KeyChord(.char("j")), characters: "j", surface: .inbox, typing: true) == .type("j"))
+        #expect(OverlayKeys.route(KeyChord(.char("m")), characters: "m", surface: .inbox, typing: true) == .type("m"))
+        // Arrows, ⌃N and ⌃P still move; esc and ⏎ keep their roles.
+        #expect(OverlayKeys.route(KeyChord(.down), surface: .inbox, typing: true) == .down)
+        #expect(OverlayKeys.route(KeyChord(.char("n"), control: true), surface: .inbox, typing: true) == .down)
+        #expect(OverlayKeys.route(KeyChord(.escape), surface: .inbox, typing: true) == .close)
+        #expect(OverlayKeys.route(KeyChord(.enter), surface: .inbox, typing: true) == .activate)
+    }
+
     /// The scoped palette (an agent's actions): "‹ Back" first with esc as
     /// its cap, the selection opening on the first action.
     @Test func paletteScopeStartsWithBack() {

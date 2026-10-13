@@ -29,10 +29,15 @@ public enum OverlayKeys {
         }
     }
 
-    /// - Parameter surface: `.palette`, `.popover` or `.inbox` (the
-    ///   registry's surface the overlay is).
-    public static func route(_ k: KeyChord, characters: String? = nil, surface: Surface = .palette) -> OverlayKeyAction {
-        if let id = CommandRegistry.resolve(k, in: surface), let a = action(for: id) { return a }
+    /// - Parameters:
+    ///   - surface: `.palette`, `.popover` or `.inbox` (the registry's
+    ///     surface the overlay is).
+    ///   - typing: a text field in the overlay has the keyboard (the
+    ///     inbox's filter): a plain letter that would move (J K) types.
+    public static func route(_ k: KeyChord, characters: String? = nil, surface: Surface = .palette, typing: Bool = false) -> OverlayKeyAction {
+        if let id = CommandRegistry.resolve(k, in: surface), let a = action(for: id) {
+            if !(typing && k.plain && k.isLetter && (a == .up || a == .down)) { return a }
+        }
         if k.command || k.control { return .pass }
         if let c = characters, !c.isEmpty, c.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && $0.value < 0xF700 }) {
             return .type(c)

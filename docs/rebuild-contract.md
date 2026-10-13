@@ -1415,7 +1415,8 @@ Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
   questions 1–n, free text Open ⏎, "Continue on mini M" when it can move,
   and Open ⌘⏎ (an icon). J K ↑↓ move; the letters answer the selected
   item; any other letter goes to the filter, and the field then has the
-  keyboard (every key types, ↑↓ ⏎ ⌘⏎ esc still route); ⌫ deletes; esc and
+  keyboard (every key types, J and K too; ↑↓ ⌃N ⌃P ⏎ ⌘⏎ esc still
+  route); ⌫ deletes; esc and
   the × in the title close. "Nothing matches" under a filter, "Nothing
   needs you." (and the panel closes itself) with an empty queue; the
   filter clears when the inbox opens.
