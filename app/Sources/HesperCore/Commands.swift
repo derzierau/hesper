@@ -40,7 +40,7 @@ public enum Surface: Hashable, Sendable, CaseIterable {
     case settings
 
     /// Every surface but `.everywhere`.
-    public static var concrete: [Surface] { allCases.filter { $0 != .everywhere } }
+    public static let concrete: [Surface] = allCases.filter { $0 != .everywhere }
 
     /// The heading in Settings › Shortcuts and the shortcuts sheet.
     public var title: String {
