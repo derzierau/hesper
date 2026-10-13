@@ -4673,7 +4673,10 @@ validation outcomes below.
 registry with the key window's `CommandContext`. Allow, Always Allow and
 Deny… are enabled only while the selected agent waits on an approval;
 Close, Background, Move and Rename… need a selected agent (Close also
-takes a draft, and closes the window off a wall); Kill needs one that is
+takes a draft, closes the window off a wall, and is off while a sheet,
+the palette, a popover or the ⌘/ sheet is over a wall: ⌘W is bound in
+none of their surfaces, so the window sends it to the menu, never to
+the agent beneath); Kill needs one that is
 running, Resume one that has ended; Open in New Window / Tab need a
 selected agent on a wall (not in an agent window); Make Home Wall is
 enabled on a wall that is not the desk's first (`isHomeWall`); View ▸

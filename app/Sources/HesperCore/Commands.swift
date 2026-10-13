@@ -114,6 +114,8 @@ public struct CommandContext: Equatable, Sendable {
     public var reviewOpen: Bool
     public var paletteOpen: Bool
     public var popoverOpen: Bool
+    /// The keyboard shortcuts sheet (⌘/) is up.
+    public var shortcutsOpen: Bool
     /// The key window is the desk's first wall (Make Home Wall is done).
     public var isHomeWall: Bool
     /// The key window is in full screen (the View item says Exit).
@@ -122,11 +124,12 @@ public struct CommandContext: Equatable, Sendable {
     public init(selectedState: AgentState? = nil, selectedRunning: Bool = false, mode: AppMode = .wall, keyWindow: KeyWindowKind = .wall,
                 hasDraft: Bool = false, reviewCount: Int = 0, wallEmpty: Bool = true, canReopen: Bool = false, canUndo: Bool = false,
                 historySupported: Bool = true, historyOpen: Bool = false, reviewOpen: Bool = false, paletteOpen: Bool = false, popoverOpen: Bool = false,
-                isHomeWall: Bool = false, inFullScreen: Bool = false) {
+                shortcutsOpen: Bool = false, isHomeWall: Bool = false, inFullScreen: Bool = false) {
         self.selectedState = selectedState; self.selectedRunning = selectedRunning; self.mode = mode; self.keyWindow = keyWindow
         self.hasDraft = hasDraft; self.reviewCount = reviewCount; self.wallEmpty = wallEmpty; self.canReopen = canReopen; self.canUndo = canUndo
         self.historySupported = historySupported; self.historyOpen = historyOpen; self.reviewOpen = reviewOpen
-        self.paletteOpen = paletteOpen; self.popoverOpen = popoverOpen; self.isHomeWall = isHomeWall; self.inFullScreen = inFullScreen
+        self.paletteOpen = paletteOpen; self.popoverOpen = popoverOpen; self.shortcutsOpen = shortcutsOpen
+        self.isHomeWall = isHomeWall; self.inFullScreen = inFullScreen
     }
 
     /// No window in front: what the palette and the shortcuts list use.
@@ -134,6 +137,10 @@ public struct CommandContext: Equatable, Sendable {
 
     /// A wall or agent window is in front with an agent selected.
     var hasSelection: Bool { selectedState != nil && keyWindow != .other }
+
+    /// A sheet or overlay is over the wall: ⌘W is bound in none of their
+    /// surfaces (the tray's is closeTrayItem), so Close is nobody's there.
+    var overlayOpen: Bool { historyOpen || reviewOpen || paletteOpen || popoverOpen || shortcutsOpen }
 
     /// What File ▸ Close (⌘W) acts on: the selected agent or draft on a
     /// wall; the window everywhere else (an agent window closes and its
@@ -461,9 +468,15 @@ public enum CommandRegistry {
                 availability: { $0.hasSelection && $0.keyWindow == .wall ? .enabled : .disabled("Select an agent on a wall first") }),
         // The agent on a wall (a draft: discard); the window in Settings,
         // First Run, the gallery and agent windows (the agent keeps running).
+        // Not under a sheet or overlay on a wall: the key is unbound there
+        // and the item is off, so nothing reaches the agent beneath.
         Command(.closeAgent, "Close", menu: MenuPath(.file, 2, 0), chord: .cmd("w"),
                 surfaces: agentViews.union(composers).union([.settings]),
-                availability: { $0.keyWindow != .wall || $0.selectedState != nil || $0.hasDraft ? .enabled : .disabled("Select an agent first") }),
+                availability: {
+                    if $0.keyWindow != .wall { return .enabled }
+                    if $0.overlayOpen { return .disabled("Close the sheet or popover first") }
+                    return $0.selectedState != nil || $0.hasDraft ? .enabled : .disabled("Select an agent first")
+                }),
     ]
 
     private static let edit: [Command] = [

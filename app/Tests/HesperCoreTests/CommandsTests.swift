@@ -126,6 +126,18 @@ import Testing
         #expect(CommandRegistry.command(.closeAgent)!.availability(CommandContext(hasDraft: true)) == .enabled)
         #expect(CommandRegistry.command(.closeAgent)!.availability(CommandContext(keyWindow: .other)) == .enabled)
         #expect(CommandRegistry.command(.closeAgent)!.availability(CommandContext(selectedState: .working, keyWindow: .agentWindow)) == .enabled)
+        // Under a sheet or an overlay on a wall ⌘W is nobody's: File ▸ Close
+        // is disabled, so the key can't reach the agent beneath (the tray's
+        // ⌘W is closeTrayItem; an agent window's ⌘W closes the window).
+        for open in [CommandContext(selectedState: .working, keyWindow: .wall, historyOpen: true),
+                     CommandContext(selectedState: .working, keyWindow: .wall, reviewOpen: true),
+                     CommandContext(selectedState: .working, keyWindow: .wall, paletteOpen: true),
+                     CommandContext(selectedState: .working, keyWindow: .wall, popoverOpen: true),
+                     CommandContext(keyWindow: .wall, hasDraft: true, popoverOpen: true),
+                     CommandContext(selectedState: .working, keyWindow: .wall, shortcutsOpen: true)] {
+            guard case .disabled = CommandRegistry.command(.closeAgent)!.availability(open) else { Issue.record("Close enabled under a sheet: \(open)"); continue }
+        }
+        #expect(CommandRegistry.command(.closeAgent)!.availability(CommandContext(selectedState: .working, keyWindow: .agentWindow, popoverOpen: true)) == .enabled)
         // Agent-lifecycle chords do nothing off the wall.
         guard case .disabled = CommandRegistry.command(.killAgent)!.availability(CommandContext(selectedState: .working, keyWindow: .other)) else {
             Issue.record("Kill enabled in Settings"); return

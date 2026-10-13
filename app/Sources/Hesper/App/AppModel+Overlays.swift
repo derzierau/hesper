@@ -568,6 +568,7 @@ extension AppModel {
                        canReopen: closeBook.reopen.top != nil, canUndo: undoToast != nil || textHasFocus,
                        historySupported: HistoryHub.shared(for: self).supported == true, historyOpen: HistoryPanelHost.isOpen(self),
                        reviewOpen: ReviewPanelHost.isOpen(self), paletteOpen: showPalette, popoverOpen: popover != nil,
+                       shortcutsOpen: ShortcutsSheetHost.isOpen(self),
                        isHomeWall: isHomeWall, inFullScreen: inFullScreen)
     }
 

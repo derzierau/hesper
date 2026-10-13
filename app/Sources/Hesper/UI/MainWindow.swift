@@ -48,7 +48,15 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
             if id == .closeTrayItem, model.popover == .background {
                 return model.closeFromTray() // the background tray: ⌘W closes the selected agent
             }
+            // A chord the popover's surface doesn't bind (⌘W off the tray,
+            // ⌘⏎ in a name field's popover): the menu's, never the wall's beneath.
+            if id == nil || id == .closeTrayItem { return super.performKeyEquivalent(with: event) }
         }
+        // The same under a sheet: what its surface doesn't bind goes to the
+        // menu (File ▸ Close is off there), not to the wall under it.
+        if ShortcutsSheetHost.isOpen(model) { return super.performKeyEquivalent(with: event) }
+        if HistoryPanelHost.isOpen(model), CommandRegistry.resolve(chord, in: .history) == nil { return super.performKeyEquivalent(with: event) }
+        if ReviewPanelHost.isOpen(model), CommandRegistry.resolve(chord, in: .review) == nil { return super.performKeyEquivalent(with: event) }
         if model.activeTileID != nil, firstResponder is GhosttySurfaceView, model.mode != .focus {
             // The active tile: like focus, only the app's ⌘ shortcuts.
             let cmd = KeyRouter.routeActiveTile(chord)
