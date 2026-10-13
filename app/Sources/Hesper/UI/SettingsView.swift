@@ -514,6 +514,9 @@ struct KeyRecorder: View {
     @State private var recording = false
     @State private var monitor: Any?
     static let minWidth: CGFloat = 140
+    /// Stops the recorder that is recording: one at a time, or two
+    /// monitors would race for the next key.
+    @MainActor private static var stopActive: (() -> Void)?
 
     var body: some View {
         Button {
@@ -529,6 +532,8 @@ struct KeyRecorder: View {
     }
 
     private func start() {
+        Self.stopActive?()
+        Self.stopActive = { stop() }
         recording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
             guard recording else { return e }
@@ -540,6 +545,7 @@ struct KeyRecorder: View {
     }
 
     private func stop() {
+        Self.stopActive = nil
         recording = false
         if let m = monitor { NSEvent.removeMonitor(m) }
         monitor = nil
