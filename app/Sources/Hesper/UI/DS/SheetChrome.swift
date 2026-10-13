@@ -20,12 +20,14 @@ struct SheetChrome<Toolbar: View, Content: View, Footer: View>: View {
     var toolbar: Toolbar
     var content: Content
     var footer: Footer
+    /// The close ×'s accessibility identifier ("shortcuts.close").
+    var closeIdentifier: String?
     var onClose: () -> Void
 
-    init(title: String, mark: StateMarkKind? = nil, symbol: String? = nil, count: Int? = nil,
+    init(title: String, mark: StateMarkKind? = nil, symbol: String? = nil, count: Int? = nil, closeIdentifier: String? = nil,
          @ViewBuilder toolbar: () -> Toolbar = { EmptyView() }, @ViewBuilder footer: () -> Footer = { EmptyView() },
          onClose: @escaping () -> Void, @ViewBuilder content: () -> Content) {
-        self.title = title; self.mark = mark; self.symbol = symbol; self.count = count
+        self.title = title; self.mark = mark; self.symbol = symbol; self.count = count; self.closeIdentifier = closeIdentifier
         self.toolbar = toolbar(); self.footer = footer(); self.content = content(); self.onClose = onClose
     }
 
@@ -40,6 +42,7 @@ struct SheetChrome<Toolbar: View, Content: View, Footer: View>: View {
                 Spacer(minLength: DS.Spacing.m)
                 Kbd(SheetChromeView.closeKey)
                 IconButton("xmark", help: "Close", shortcut: SheetChromeView.closeKey, action: onClose)
+                    .accessibilityIdentifier(closeIdentifier ?? "")
             }
             .padding(.horizontal, DS.Spacing.l)
             .frame(height: SheetChromeView.titleHeight)

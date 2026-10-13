@@ -257,7 +257,7 @@ struct ShortcutsSheetView: View {
     private var count: Int { sections.reduce(0) { $0 + $1.rows.count } }
 
     var body: some View {
-        SheetChrome(title: "Keyboard Shortcuts", symbol: "keyboard", count: count, toolbar: { search }, footer: {
+        SheetChrome(title: "Keyboard Shortcuts", symbol: "keyboard", count: count, closeIdentifier: "shortcuts.close", toolbar: { search }, footer: {
             KeyButton("Open Settings › Shortcuts", kbd: CommandRegistry.labels(.settings).first, action: onSettings)
                 .accessibilityIdentifier("shortcuts.settings")
         }, onClose: onClose) {

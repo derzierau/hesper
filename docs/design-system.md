@@ -242,7 +242,8 @@ Pill, the `esc` key cap and a close × IconButton), a toolbar row of
 KeyButtons for the sheet's verbs, the content, and a footer row of
 KeyButtons for the row-level keys. 1 px `line` hairlines between the rows;
 toolbar and footer are left out when empty. Closing is the host's
-(`onClose`); esc and the scrim click stay with its key routing.
+(`onClose`); esc and the scrim click stay with its key routing;
+`closeIdentifier` names the × for accessibility and the self-tests.
 
 ```swift
 SheetChrome(title: "Review", symbol: "checkmark.seal", count: 3, toolbar: {
