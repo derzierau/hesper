@@ -190,6 +190,19 @@ final class RootView: NSView {
         }
     }
 
+    /// Full Keyboard Access: ⇥ from the wall (once it has no tiles to
+    /// step) reaches the bar's controls, then the sidebar filter, then
+    /// the wall again; hidden views are skipped. The wall is where the
+    /// window starts.
+    func joinKeyViewLoop(bar: TopBar) {
+        guard let window else { return }
+        window.autorecalculatesKeyViewLoop = false
+        window.initialFirstResponder = wall
+        wall.nextKeyView = bar.firstKeyView
+        bar.lastKeyView.nextKeyView = sidebar.filterField
+        sidebar.filterField.nextKeyView = wall
+    }
+
     /// The sidebar shows on walls (not agent windows), not in focus.
     var showsSidebar: Bool { model.sidebarVisible && model.sidebarAction != nil && model.mode != .focus }
 
@@ -490,6 +503,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: w)
         w.delegate = self
         toolbar.install(in: w)
+        root.joinKeyViewLoop(bar: toolbar.bar)
         root.toolbarAnchor = { [weak self] k in self?.toolbar.anchor(for: k) }
     }
 

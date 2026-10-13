@@ -1077,6 +1077,13 @@ final class WallView: NSView {
         let cmd = KeyRouter.route(chord, mode: .wall, selectedState: model.current?.state, selectedIsDraft: model.selectedDraft != nil,
                                    selectedAnswers: model.current?.attention?.answers ?? [], typed: event.characters,
                                    selectedReviewable: model.reviewItem(model.current?.id) != nil)
+        // ⇥ steps tiles while the wall (first responder here) has any;
+        // with none it walks the window's key-view loop (Full Keyboard
+        // Access: the bar, the sidebar filter).
+        if chord.key == .tab, chord.plain, order.isEmpty, cmd == .stepNext || cmd == .stepPrevious {
+            if chord.shift { window?.selectPreviousKeyView(nil) } else { window?.selectNextKeyView(nil) }
+            return
+        }
         if cmd == .none { super.keyDown(with: event) } else { model.perform(cmd) }
     }
 

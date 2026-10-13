@@ -43,6 +43,8 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
     private(set) var rows: [SidebarRowView] = []
     private(set) var machineViews: [SidebarRowView] = []
     private let filter = SidebarFilterField()
+    /// The filter's text field (the window's key-view loop).
+    var filterField: NSTextField { filter.field }
     private let footer = FlippedView()
     private let footerLine = NSView()
     private let edge = NSView()
@@ -836,7 +838,7 @@ final class SidebarFilterField: NSView {
             .withSymbolConfiguration(.init(pointSize: DS.Spacing.m - DS.Spacing.xxs, weight: .medium))
         field.isBordered = false
         field.drawsBackground = false
-        field.focusRingType = .none
+        field.focusRingType = DS.focusRingType
         field.font = DS.nsFont(.chrome)
         field.lineBreakMode = .byTruncatingTail
         field.cell?.isScrollable = true

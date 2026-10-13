@@ -48,6 +48,12 @@ comes from `DS`.
     `CommandRegistry.cap(id, in:)`, never a literal; Help ▸ Keyboard
     Shortcuts (⌘/) and Settings › Shortcuts render the same table. Only
     keys that are not commands (a strip's ⏎ esc, End) are spelled out.
+12. **Focus rings follow Full Keyboard Access.** A field or list that
+    turns its focus ring off for looks sets `focusRingType =
+    DS.focusRingType`, never `.none`: the ring is off as usual and comes
+    back when Full Keyboard Access is on, so ⇥ always has a visible
+    target. Views that take part in ⇥ are linked with `nextKeyView`
+    (`RootView.joinKeyViewLoop`, the sheets' fields and lists).
 
 ## DS API
 

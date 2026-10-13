@@ -213,7 +213,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
             attributes: [.font: NSFont.ds(.panelTitle), .foregroundColor: Theme.ns(.dim)])
         searchField.font = .ds(.panelTitle)
         searchField.textColor = Theme.ns(.text)
-        searchField.focusRingType = .none
+        searchField.focusRingType = DS.focusRingType
         searchField.isBordered = false
         searchField.isBezeled = false
         searchField.drawsBackground = false
@@ -251,7 +251,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         table.backgroundColor = .clear
         table.selectionHighlightStyle = .none
         table.style = .plain
-        table.focusRingType = .none
+        table.focusRingType = DS.focusRingType
         table.allowsEmptySelection = true
         table.dataSource = self
         table.delegate = self
@@ -259,6 +259,10 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         table.doubleAction = #selector(doubleClicked)
         table.contextMenu = { [weak self] row in self?.rowMenu(row) }
         table.setAccessibilityIdentifier("history.list")
+        // The sheet's key-view loop (Full Keyboard Access): the field and
+        // the list; ⇥ ⇧⇥ themselves are the sheet's (scope, field / list).
+        searchField.nextKeyView = table
+        table.nextKeyView = searchField
         table.setAccessibilityLabel("Sessions")
         scroll.documentView = table
         scroll.drawsBackground = false

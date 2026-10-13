@@ -106,7 +106,7 @@ final class ReviewStreamView: NSScrollView, NSTableViewDataSource, NSTableViewDe
         table.backgroundColor = .clear
         table.selectionHighlightStyle = .none
         table.style = .plain
-        table.focusRingType = .none
+        table.focusRingType = DS.focusRingType
         table.dataSource = self
         table.delegate = self
         table.target = self

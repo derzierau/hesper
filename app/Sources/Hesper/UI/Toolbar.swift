@@ -628,6 +628,11 @@ final class TopBar: NSView {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { true }
 
+    /// The bar's ends in the window's key-view loop (RootView links the
+    /// wall before, the sidebar filter after).
+    var firstKeyView: NSView { leading }
+    var lastKeyView: NSView { trailing }
+
     init(source: TopBarSource) {
         self.source = source
         wordmark = BarHostingView(rootView: TopBarWordmark(source: source))
@@ -638,6 +643,7 @@ final class TopBar: NSView {
         wordmark.sizingOptions = [.intrinsicContentSize]
         leading.sizingOptions = [.intrinsicContentSize]
         trailing.sizingOptions = [.intrinsicContentSize]
+        leading.nextKeyView = trailing // Full Keyboard Access: the bar's controls, leading then trailing
         glass.isHidden = true
         addSubview(glass)
         addSubview(wordmark)

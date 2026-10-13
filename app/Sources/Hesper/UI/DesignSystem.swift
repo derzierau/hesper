@@ -75,6 +75,11 @@ enum DS {
     static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// Reduce Transparency: floating layers fall back to solid `surface`.
     static var reduceTransparency: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency }
+    /// Full Keyboard Access (System Settings › Keyboard): a field or list
+    /// whose focus ring is off for looks (the sidebar filter, History's
+    /// field and list, Review's note) shows it again, so Tab has a
+    /// visible target. Read when the view is made.
+    @MainActor static var focusRingType: NSFocusRingType { NSApp?.isFullKeyboardAccessEnabled == true ? .default : .none }
 
     /// A SwiftUI animation for a motion step, or nil (no animation) under
     /// Reduce Motion. `reduceMotion` is injectable (tests, SwiftUI's

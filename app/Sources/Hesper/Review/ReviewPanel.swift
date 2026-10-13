@@ -217,13 +217,18 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         noteField.font = .ds(.body)
         noteField.textColor = Theme.ns(.text)
         noteField.placeholderString = "What should the agent change here?"
-        noteField.focusRingType = .none
+        noteField.focusRingType = DS.focusRingType
         noteField.isBordered = false
         noteField.drawsBackground = false
         noteField.usesSingleLineMode = false
         noteField.cell?.wraps = true
         noteField.cell?.isScrollable = false
         noteField.setAccessibilityIdentifier("review.note")
+        // The sheet's key-view loop (Full Keyboard Access): inbox, stream,
+        // the note field while it shows.
+        inbox.nextKeyView = stream.table
+        stream.table.nextKeyView = noteField
+        noteField.nextKeyView = inbox
         noteBox.addSubview(noteLabel)
         noteBox.addSubview(noteField)
         let save = KeyButtonView("Save", kbd: KeyChord(.enter, command: true).label, variant: .primary(.question)) { [weak self] in

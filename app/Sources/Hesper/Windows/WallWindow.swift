@@ -57,6 +57,7 @@ final class WallWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: w)
         w.delegate = self
         toolbar.install(in: w)
+        root.joinKeyViewLoop(bar: toolbar.bar)
         root.toolbarAnchor = { [weak self] k in self?.toolbar.anchor(for: k) }
     }
 

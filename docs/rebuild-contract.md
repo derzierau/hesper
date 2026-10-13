@@ -4730,6 +4730,23 @@ heading. The self-test (`runAccessibility`, `runRebinding`) checks the
 tile's actions, a palette row's role and press, the History pill, and
 the Settings recorder.
 
+**Key-view loop (phase 5).** Each wall window links its views for Full
+Keyboard Access (`RootView.joinKeyViewLoop`, the window's
+`autorecalculatesKeyViewLoop` off): the wall is the initial first
+responder, its next key view is the top bar's leading controls, then
+the trailing ones (`TopBar.firstKeyView` / `lastKeyView`), then the
+sidebar filter (`ProjectSidebar.filterField`), then the wall; hidden
+views are skipped. ⇥ and ⇧⇥ on the wall step tiles only while
+`WallView` is first responder (`KeyRouter`'s wall aliases, as before)
+and the wall has tiles; with none they walk the loop. In a text field
+or a SwiftUI control ⇥ moves focus as in any Mac app. History links
+its search field and list, Review its inbox, stream and note field
+(while it shows); the shortcuts sheet is one hosting view. Focus rings
+turned off for looks (the sidebar filter, History's field and list,
+Review's note field and stream) are `DS.focusRingType`: off as usual,
+on while Full Keyboard Access is enabled (`docs/design-system.md`
+rule 12).
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
