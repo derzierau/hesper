@@ -114,6 +114,9 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
                 default: fieldsOwn = false
                 }
                 if !fieldsOwn, model.popoverKey(action) { return }
+                // Nothing plain falls through to the wall beneath (⇥ Home
+                // End ⌥↑ would step or select under the popover).
+                if !chord.command, !chord.control, !textHasFocus { return }
             }
         }
         super.sendEvent(event)
