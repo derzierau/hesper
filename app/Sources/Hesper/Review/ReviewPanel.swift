@@ -72,10 +72,11 @@ enum ReviewPanelHost {
 }
 
 /// Review (⌘R): a modal sheet over the wall like History (a Night scrim,
-/// one opaque Panel). Left the inbox (every Mac, ranked), middle the
-/// selected item's header and its changes as one stream, right the
-/// evidence, risk and attention; narrow, the evidence goes under the
-/// inbox. Keys: ReviewKeys.
+/// one opaque Panel in the SheetChrome frame: the title row with the
+/// count and the close × esc, the toolbar, the footer). Left the inbox
+/// (every Mac, ranked), middle the selected item's header and its changes
+/// as one stream, right the evidence, risk and attention; narrow, the
+/// evidence goes under the inbox. Keys: ReviewKeys.
 @MainActor
 final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     let session: ReviewSession
@@ -85,20 +86,26 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     private(set) var isOpen = false
 
     private let panel = PanelView()
+    let chrome = SheetChromeView(title: "Review", symbol: "checklist")
     private let box = FlippedView()
-    private let header: NSHostingView<ReviewSheetHeader>
+    private let meta: NSHostingView<ReviewSheetMeta>
+    // The toolbar's verbs (KeyButtons; the caps come from the registry).
+    private(set) var toolbarButtons: [CommandID: KeyButtonView] = [:]
     private let itemHeader: NSHostingView<ReviewItemHeader>
     private let evidence: NSHostingView<ReviewEvidencePanel>
-    private let hints = NSHostingView(rootView: Hints(items: []))
+    /// The footer: Fold ⏎, Next hunk J, Previous hunk K.
+    private(set) var footerButtons: [KeyButtonView] = []
     let inbox = ReviewTable()
     private let inboxScroll = NSScrollView()
     let stream: ReviewStreamView
     private let emptyLabel = NSTextField(labelWithString: "")
     private let dividers = [NSView(), NSView(), NSView()]
-    // The note editor under the stream.
+    // The note editor under the stream: the anchor, Save ⌘⏎ and Cancel
+    // esc, the field.
     private let noteBox = FlippedView()
     private let noteLabel = NSTextField(labelWithString: "")
     let noteField = NSTextField()
+    private(set) var noteButtons: [KeyButtonView] = []
     private var shownItems: [ReviewItem] = []
 
     override var isFlipped: Bool { true }
@@ -120,7 +127,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     init(session: ReviewSession, machineNames: @escaping () -> [String: String]) {
         self.session = session
         self.machineNames = machineNames
-        header = NSHostingView(rootView: ReviewSheetHeader(session: session, machineNames: [:]))
+        meta = NSHostingView(rootView: ReviewSheetMeta(session: session, machineNames: [:]))
         itemHeader = NSHostingView(rootView: ReviewItemHeader(session: session, machineNames: [:]))
         evidence = NSHostingView(rootView: ReviewEvidencePanel(session: session))
         stream = ReviewStreamView(session: session)
@@ -133,11 +140,45 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         setAccessibilityRole(.group)
         setAccessibilityLabel("Review")
         addSubview(panel)
-        box.frame = panel.contentView.bounds
+        chrome.onClose = { [weak self] in self?.close() }
+        chrome.closeButton.setAccessibilityIdentifier("review.close")
+        chrome.frame = panel.contentView.bounds
+        chrome.autoresizingMask = [.width, .height]
+        panel.contentView.addSubview(chrome)
+        box.frame = chrome.contentView.bounds
         box.autoresizingMask = [.width, .height]
-        panel.contentView.addSubview(box)
+        chrome.contentView.addSubview(box)
+        // ‹ › file, Bulk accept, Provenance, the meta; then Send back and
+        // the primary Accept and commit on the right.
+        let s = session
+        let verbs: [(CommandID, String, KeyButton.Variant, NSStackView.Gravity, () -> Void)] = [
+            (.reviewPreviousFile, "Previous file", .icon("chevron.left"), .leading, { s.nextFile(back: true) }),
+            (.reviewNextFile, "Next file", .icon("chevron.right"), .leading, { s.nextFile() }),
+            (.reviewBulkAccept, "Bulk accept", .quiet, .leading, { s.bulkAccept() }),
+            (.reviewProvenance, "Provenance", .quiet, .leading, { s.openProvenance() }),
+            (.reviewSendBack, "Send back", .quiet, .trailing, { s.sendBack() }),
+            (.reviewAccept, "Accept and commit", .primary(.working), .trailing, { s.accept() }),
+        ]
+        for (id, title, variant, gravity, run) in verbs {
+            let b = KeyButtonView(title, kbd: Self.cap(id), variant: variant, onPress: run)
+            b.setAccessibilityIdentifier("review.\(id.key)")
+            chrome.toolbar.addView(b, in: gravity)
+            toolbarButtons[id] = b
+        }
+        meta.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        chrome.toolbar.addView(meta, in: .leading)
 
-        for v in [header, itemHeader, evidence, hints] as [NSView] { box.addSubview(v) }
+        for v in [itemHeader, evidence] as [NSView] { box.addSubview(v) }
+        let rowVerbs: [(CommandID, String, () -> Void)] = [
+            (.reviewToggleFold, "Fold", { s.toggleFold() }), (.reviewNextHunk, "Next hunk", { s.nextHunk() }),
+            (.reviewPreviousHunk, "Previous hunk", { s.previousHunk() }),
+        ]
+        for (id, title, run) in rowVerbs {
+            let b = KeyButtonView(title, kbd: Self.cap(id), onPress: run)
+            b.setAccessibilityIdentifier("review.footer.\(id.key)")
+            chrome.footer.addArrangedSubview(b)
+            footerButtons.append(b)
+        }
         for d in dividers { d.wantsLayer = true; box.addSubview(d) }
 
         let col = NSTableColumn(identifier: .init("i"))
@@ -175,7 +216,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         noteLabel.textColor = Theme.ns(.question)
         noteField.font = .ds(.body)
         noteField.textColor = Theme.ns(.text)
-        noteField.placeholderString = "What should the agent change here? ⌘↩ saves · esc cancels"
+        noteField.placeholderString = "What should the agent change here?"
         noteField.focusRingType = .none
         noteField.isBordered = false
         noteField.drawsBackground = false
@@ -185,17 +226,28 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         noteField.setAccessibilityIdentifier("review.note")
         noteBox.addSubview(noteLabel)
         noteBox.addSubview(noteField)
+        let save = KeyButtonView("Save", kbd: KeyChord(.enter, command: true).label, variant: .primary(.question)) { [weak self] in
+            guard let self else { return }
+            self.session.saveNote(self.noteField.stringValue)
+        }
+        save.setAccessibilityIdentifier("review.note.save")
+        let cancel = KeyButtonView("Cancel", kbd: SheetChromeView.closeKey) { [weak self] in self?.session.cancelNote() }
+        cancel.setAccessibilityIdentifier("review.note.cancel")
+        noteButtons = [save, cancel]
+        for b in noteButtons { noteBox.addSubview(b) }
         box.addSubview(noteBox)
 
         session.onStream = { [weak self] in self?.streamChanged() }
         session.onFocus = { [weak self] old, new in self?.stream.focusChanged(old: old, new: new) }
         observeChanges { [weak self] in self?.sessionChanged() }
-        updateHints()
         applyTheme()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    /// A verb's key cap in the sheet, as the registry spells it ("⇧⏎").
+    static func cap(_ id: CommandID) -> String { CommandRegistry.labels(id, in: .review).first ?? "" }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -263,7 +315,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
 
     private func refreshNames() {
         let names = machineNames()
-        header.rootView = ReviewSheetHeader(session: session, machineNames: names)
+        meta.rootView = ReviewSheetMeta(session: session, machineNames: names)
         itemHeader.rootView = ReviewItemHeader(session: session, machineNames: names)
     }
 
@@ -305,16 +357,15 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         super.layout()
         panel.frame = ReviewLook.frame(in: bounds.size)
         panel.layoutSubtreeIfNeeded()
-        box.frame = panel.contentView.bounds
+        chrome.frame = panel.contentView.bounds
+        chrome.layoutSubtreeIfNeeded()
+        box.frame = chrome.contentView.bounds
         layoutBox()
     }
 
     private func layoutBox() {
         let w = box.bounds.width, h = box.bounds.height
-        let hh = ReviewLook.headerHeight, fh = SearchLook.footerHeight
-        header.frame = NSRect(x: 0, y: 0, width: w, height: hh)
-        hints.frame = NSRect(x: 0, y: h - fh, width: w, height: fh)
-        let top = hh, bottom = h - fh, paneH = max(0, bottom - top)
+        let top: CGFloat = 0, bottom = h, paneH = max(0, bottom - top)
         let wide = w >= ReviewLook.wideMin
         let leftW = wide ? ReviewLook.inboxWidth : ReviewLook.narrowInboxWidth
         let rightW = wide ? ReviewLook.evidenceWidth : 0
@@ -339,8 +390,17 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         stream.frame = NSRect(x: midX, y: top + ih, width: midW, height: max(0, bottom - top - ih - noteH))
         noteBox.isHidden = !editing
         noteBox.frame = NSRect(x: midX + DS.Spacing.m, y: bottom - noteH + DS.Spacing.s, width: max(0, midW - 2 * DS.Spacing.m), height: max(0, noteH - 2 * DS.Spacing.s))
-        let lh = ceil(noteLabel.intrinsicContentSize.height)
-        noteLabel.frame = NSRect(x: DS.Spacing.m, y: DS.Spacing.s, width: max(0, noteBox.bounds.width - 2 * DS.Spacing.m), height: lh)
+        // The first row: the anchor on the left, Save and Cancel on the right.
+        let lh = KeyButton.height
+        var bx = noteBox.bounds.width - DS.Spacing.m
+        for b in noteButtons.reversed() {
+            let s = b.intrinsicContentSize
+            bx -= s.width
+            b.frame = NSRect(x: bx, y: DS.Spacing.s, width: s.width, height: lh)
+            bx -= DS.Spacing.xs
+        }
+        let labelH = ceil(noteLabel.intrinsicContentSize.height)
+        noteLabel.frame = NSRect(x: DS.Spacing.m, y: DS.Spacing.s + ((lh - labelH) / 2).rounded(), width: max(0, bx - DS.Spacing.s - DS.Spacing.m), height: labelH)
         noteField.frame = NSRect(x: DS.Spacing.m, y: DS.Spacing.s + lh + DS.Spacing.xs, width: max(0, noteBox.bounds.width - 2 * DS.Spacing.m),
                                  height: max(0, noteBox.bounds.height - lh - 2 * DS.Spacing.s - DS.Spacing.xs))
         let eh = emptyLabel.intrinsicContentSize.height * 2
@@ -356,6 +416,9 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let editing = session.editingNote
         _ = session.loading
         guard isOpen else { return } // closed: nothing to show (and no diffs to fetch)
+        let count = items.isEmpty ? nil : items.count
+        if chrome.count != count { chrome.count = count }
+        updateToolbar()
         if items != shownItems { reloadInbox() } else { syncInboxSelection(selected) }
         if editing != shownEditing { editingChanged(editing) }
         updateEmpty()
@@ -363,6 +426,21 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     }
 
     private var shownEditing: ReviewNoteAnchor?
+
+    /// The verbs follow the selection: nothing selected disables them all
+    /// but Bulk accept (which needs items); Send back counts the notes.
+    private func updateToolbar() {
+        let hasItem = session.selected != nil
+        for (id, b) in toolbarButtons {
+            let on = id == .reviewBulkAccept ? !session.items.isEmpty : hasItem
+            if b.isEnabled != on { b.isEnabled = on }
+        }
+        let hasHunks = !(session.stream?.hunks.isEmpty ?? true)
+        for b in footerButtons where b.isEnabled != hasHunks { b.isEnabled = hasHunks }
+        let n = session.currentNotes.count
+        let sendBack = n == 0 ? "Send back" : "Send back · \(n)"
+        if let b = toolbarButtons[.reviewSendBack], b.label != sendBack { b.label = sendBack }
+    }
 
     private func editingChanged(_ a: ReviewNoteAnchor?) {
         shownEditing = a
@@ -380,7 +458,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         stream.reload()
         if let f = session.focused { stream.focusChanged(old: nil, new: f) }
         updateEmpty()
-        updateHints()
+        updateToolbar()
     }
 
     private func updateEmpty() {
@@ -392,12 +470,6 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         }
         emptyLabel.stringValue = text
         emptyLabel.isHidden = text.isEmpty
-    }
-
-    private func updateHints() {
-        hints.rootView = Hints(items: [("J K", "hunk"), ("N", "file"), ("V", "seen"), ("X", "reject"), ("C", "note"),
-                                       ("⌥↩", "why"), ("⇧A", "bulk"), ("esc", "close")],
-                               leading: "↑↓ items")
     }
 
     // MARK: Inbox
@@ -447,7 +519,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         }
         if action == .pass {
             // Another sheet's or overlay's ⌘ key (⌘K, ⌘Y, ⌘J): this one steps aside.
-            if equivalent, session.editingNote == nil, chord.command, case .char(let c) = chord.key, "kyj".contains(c) { close() }
+            if equivalent, session.editingNote == nil, ReviewKeys.passesThrough(chord) { close() }
             return false
         }
         perform(action)

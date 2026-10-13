@@ -17,7 +17,7 @@ import Testing
         func r(_ k: KeyChord, focus: HistoryFocus = .search) -> SearchKeyAction { SearchKeys.history(k, characters: nil, focus: focus) }
         #expect(r(KeyChord(.enter)) == .history(.resume))
         #expect(r(KeyChord(.enter, option: true)) == .history(.fork))
-        #expect(r(KeyChord(.enter, command: true)) == .continueOnOtherMac)
+        #expect(r(KeyChord(.enter, command: true)) == .openFullSize, "⌘⏎ resumes and opens full size")
         #expect(r(KeyChord(.tab)) == .switchScope)
         #expect(r(KeyChord(.tab, shift: true)) == .toggleFocus)
         #expect(r(KeyChord(.escape)) == .history(.close))
@@ -26,6 +26,11 @@ import Testing
         // Letters stay actions in the list.
         #expect(SearchKeys.history(KeyChord(.char("a")), characters: "a", focus: .list) == .history(.archive))
         #expect(SearchKeys.history(KeyChord(.char("a")), characters: "a", focus: .search) == .history(.pass))
+        #expect(SearchKeys.history(KeyChord(.char("m")), characters: "m", focus: .list) == .continueOnOtherMac, "M continues on the other Mac")
+        #expect(SearchKeys.history(KeyChord(.char("m")), characters: "m", focus: .search) == .history(.pass), "M types in the field")
+        // ⌘K is the window's: the sheet closes for the palette.
+        #expect(SearchKeys.opensPalette(KeyChord(.char("k"), command: true)))
+        #expect(!SearchKeys.opensPalette(KeyChord(.char("k"), command: true, option: true)) && !SearchKeys.opensPalette(KeyChord(.char("k"))))
     }
 
     @Test func shortcutsAreKbd() {
@@ -82,14 +87,35 @@ import Testing
         let s = Session(id: "a", kind: "claude", machine: "M")
         let card = SessionCardText(s, changes: nil, loadingChanges: true, local: "L", machines: Self.names)
         let a = SearchPreview.actions(s, card: card, local: "L", online: ["M"], machines: Self.names)
-        #expect(a.map(\.key) == ["⏎", "⌥⏎", "⌘⏎", "C", "A", "⌫", "⌘C"])
+        #expect(a.map(\.key) == ["⏎", "⌥⏎", "M", "C", "A", "⌫", "⌘C"])
         #expect(a[0].title == "Resume on mini" && a[0].primary)
         #expect(a[1].title == "Fork")
         #expect(a[2].title == "Continue on laptop")
         #expect(a[3].title == "Continue in Codex")
         #expect(SearchPreview.continueNote(s, local: "L", online: ["M"], machines: Self.names)?.contains("uncommitted work comes along if mini is reachable") == true)
         let alone = SearchPreview.actions(Session(id: "b", machine: "L"), card: card, local: "L", online: [], machines: Self.names)
-        #expect(!alone.contains { $0.key == "⌘⏎" })
+        #expect(!alone.contains { $0.key == "M" })
+    }
+
+    /// The preview's buttons, the row's right-click menu and the footer
+    /// show the same verbs: all three are cut from `SearchPreview.actions`.
+    @Test func menuAndFooterComeFromTheActions() {
+        let s = Session(id: "a", kind: "claude", machine: "M")
+        let card = SessionCardText(s, changes: nil, loadingChanges: true, local: "L", machines: Self.names)
+        let a = SearchPreview.actions(s, card: card, local: "L", online: ["M"], machines: Self.names, restore: true)
+        #expect(SearchPreview.menu(for: a) == a, "every preview verb is in the menu")
+        let footer = SearchPreview.footer(for: a)
+        #expect(footer.map(\.key) == ["⏎", "⌥⏎", "⌘⏎"])
+        #expect(footer[0] == a[0] && footer[1] == a[1], "the footer names ⏎ and ⌥⏎ as the preview does")
+        #expect(footer[2].title == "Open full size")
+        #expect(SearchPreview.footerDefault.map(\.key) == footer.map(\.key))
+        // Running outside Hesper: ⏎ is a note, not a verb; no resume, no full size.
+        let outside = Session(id: "b", machine: "M", live: SessionLive(external: true))
+        let oc = SessionCardText(outside, changes: nil, loadingChanges: true, local: "L", machines: Self.names)
+        let oa = SearchPreview.actions(outside, card: oc, local: "L", online: ["M"], machines: Self.names)
+        #expect(oa[0].title == SessionCardText.outsideTitle)
+        #expect(SearchPreview.menu(for: oa).map(\.key) == ["⌥⏎", "C", "A", "⌫", "⌘C"])
+        #expect(SearchPreview.footer(for: oa).map(\.key) == ["⌥⏎"])
     }
 
     static func row(_ id: String, _ title: String, project: String?, depth: Int = 0, count: Int = 1) -> SidebarRow {

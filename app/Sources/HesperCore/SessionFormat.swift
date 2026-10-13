@@ -214,7 +214,12 @@ public struct SessionCardText: Equatable, Sendable {
         public var key: String
         public var title: String
         public var primary: Bool
+
+        public init(key: String, title: String, primary: Bool) { self.key = key; self.title = title; self.primary = primary }
     }
+
+    /// The ⏎ "action" that is a state, not something to do.
+    public static let outsideTitle = "Running outside Hesper"
 
     public var title: String
     /// "Codex on mini · ~/projects/hesper (worktree fix/flaky-badge)"
@@ -278,7 +283,7 @@ public struct SessionCardText: Equatable, Sendable {
         } else if let m = s.movedTo {
             acts.append(Action(key: "⏎", title: "Open on \(SessionFormat.machineName(m, machines))", primary: true))
         } else if s.live?.external == true {
-            acts.append(Action(key: "⏎", title: "Running outside Hesper", primary: true))
+            acts.append(Action(key: "⏎", title: Self.outsideTitle, primary: true))
         } else {
             acts.append(Action(key: "⏎", title: s.machine == local || s.machine.isEmpty ? "Resume" : "Resume on \(mac)", primary: true))
         }

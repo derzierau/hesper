@@ -19,10 +19,9 @@ enum ReviewLook {
     static let evidenceWidth: CGFloat = 300
     /// The inbox's share of the left column when narrow.
     static let narrowInboxFraction: CGFloat = 0.42
-    static let headerHeight: CGFloat = 48
     static let itemHeaderHeight: CGFloat = 52
     static let inboxRowHeight: CGFloat = 52
-    static let noteEditorHeight: CGFloat = 88
+    static let noteEditorHeight: CGFloat = 96
 
     // The stream.
     @MainActor static let codeFont = DS.nsMonoFont(.chrome)
@@ -86,6 +85,15 @@ final class ReviewStreamView: NSScrollView, NSTableViewDataSource, NSTableViewDe
     private var lastHeight: CGFloat = 0
     /// Rows built (perf: what the table mounted).
     private(set) var cellsMade = 0
+    /// The hunk under the pointer (any of its rows): its header shows the bar.
+    private(set) var hoveredHunk: Int?
+
+    func hover(_ ordinal: Int?) {
+        guard ordinal != hoveredHunk else { return }
+        hoveredHunk = ordinal
+        table.enumerateAvailableRowViews { rv, _ in rv.subviews.forEach { ($0 as? ReviewRowCell)?.refreshBars() } }
+        sticky.refreshBars()
+    }
 
     init(session: ReviewSession) {
         self.session = session
@@ -104,6 +112,7 @@ final class ReviewStreamView: NSScrollView, NSTableViewDataSource, NSTableViewDe
         table.target = self
         table.action = #selector(clicked)
         table.doubleAction = #selector(doubleClicked)
+        table.contextMenu = { [weak self] row in self?.rowMenu(row) }
         table.setAccessibilityIdentifier("review.stream")
         table.setAccessibilityLabel("Changes")
         documentView = table
@@ -162,7 +171,9 @@ final class ReviewStreamView: NSScrollView, NSTableViewDataSource, NSTableViewDe
             if let e = s.endRow(ofHunk: s.hunks[o]) { ends.insert(e) }
         }
         if !ends.isEmpty { table.noteHeightOfRows(withIndexesChanged: ends) }
-        table.enumerateAvailableRowViews { rv, _ in rv.subviews.forEach { $0.needsDisplay = true } }
+        table.enumerateAvailableRowViews { rv, _ in
+            rv.subviews.forEach { $0.needsDisplay = true; ($0 as? ReviewRowCell)?.refreshBars() }
+        }
         if let n = new { revealHunk(n) }
     }
 
@@ -266,12 +277,106 @@ final class ReviewStreamView: NSScrollView, NSTableViewDataSource, NSTableViewDe
         default: break
         }
     }
+
+    /// A row's right-click menu: the hunk's verbs (Seen V, Reject X, Note
+    /// C) on its rows, Fold / Unfold ⏎ on a foldable file's header; the
+    /// hunk is focused first, as a click would.
+    private func rowMenu(_ row: Int) -> NSMenu? {
+        guard let session, let s = session.stream, rows.indices.contains(row) else { return nil }
+        var verbs: [(CommandID, String, () -> Void)] = []
+        if let o = s.hunkOrdinal(atRow: row) {
+            let focus = { session.clicked(row: row); session.setFocus(o, scroll: false) }
+            verbs = [(.reviewSeen, "Seen", { focus(); session.toggleSeen() }),
+                     (.reviewReject, "Reject", { focus(); session.reject() }),
+                     (.reviewNote, "Note", { focus(); session.startNote() })]
+        }
+        switch rows[row] {
+        case .file(let f) where s.files[f].foldedByDefault: verbs.append((.reviewToggleFold, "Fold", { session.toggleFold(row: row) }))
+        case .folded: verbs.append((.reviewToggleFold, "Unfold", { session.toggleFold(row: row) }))
+        default: break
+        }
+        guard !verbs.isEmpty else { return nil }
+        let m = NSMenu()
+        m.autoenablesItems = false
+        for (id, title, run) in verbs {
+            let item = NSMenuItem(title: title, action: #selector(menuChose(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = MenuVerb(run)
+            if let chord = CommandRegistry.command(id)?.chord, let (key, mods) = MenuBuilder.keyEquivalent(chord) {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = mods
+            }
+            m.addItem(item)
+        }
+        return m
+    }
+
+    private final class MenuVerb: NSObject {
+        let run: () -> Void
+        init(_ run: @escaping () -> Void) { self.run = run }
+    }
+
+    @objc private func menuChose(_ item: NSMenuItem) { (item.representedObject as? MenuVerb)?.run() }
 }
 
 /// The stream's table: no first responder of its own (the sheet routes
-/// keys), no type-select.
+/// keys), no type-select; a right-click asks `contextMenu` for the row.
 final class ReviewTable: NSTableView {
+    var contextMenu: ((Int) -> NSMenu?)?
+
     override var acceptsFirstResponder: Bool { false }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        guard row >= 0 else { return nil }
+        return contextMenu?(row)
+    }
+}
+
+/// KeyButtons on a table row (a hunk's Seen V · Reject X · Note C, a
+/// file's fold caret). The bar takes the clicks itself: a mouseDown that
+/// reached the table would start its tracking loop and eat the mouseUp
+/// the buttons press on.
+@MainActor
+final class ReviewCellBar: NSView {
+    let buttons: [KeyButtonView]
+
+    init(_ buttons: [KeyButtonView]) {
+        self.buttons = buttons
+        super.init(frame: .zero)
+        for b in buttons { addSubview(b) }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize {
+        let w = buttons.reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width } + CGFloat(max(0, buttons.count - 1)) * DS.Spacing.xs
+        return NSSize(width: w, height: KeyButton.height)
+    }
+
+    override func layout() {
+        super.layout()
+        var x: CGFloat = 0
+        for b in buttons {
+            let s = b.intrinsicContentSize
+            b.frame = NSRect(x: x, y: ((bounds.height - s.height) / 2).rounded(), width: s.width, height: s.height)
+            x += s.width + DS.Spacing.xs
+        }
+    }
+
+    private func button(at p: NSPoint) -> KeyButtonView? { buttons.first { !$0.isHidden && $0.frame.contains(p) } }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHidden, let s = superview else { return nil }
+        return button(at: convert(point, from: s)) != nil ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {
+        guard let b = button(at: convert(event.locationInWindow, from: nil)), b.isEnabled else { return }
+        _ = b.accessibilityPerformPress()
+    }
 }
 
 /// Rows draw their own backgrounds.
@@ -294,6 +399,13 @@ final class ReviewRowCell: NSView {
     /// The code line, shaped once per show.
     private var ctLine: CTLine?
     private var words: [NSRange] = []
+    /// A hunk header's Seen V · Reject X · Note C, at its top right while
+    /// the pointer is over the hunk's rows or the hunk is the focused one.
+    private var hunkBar: ReviewCellBar?
+    /// A foldable file's caret (⏎): ▾ open on its header, ▸ when folded.
+    private var caret: ReviewCellBar?
+    private var tracking: NSTrackingArea?
+    private var stream: ReviewStreamView? { enclosingScrollView as? ReviewStreamView }
 
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
@@ -311,11 +423,98 @@ final class ReviewRowCell: NSView {
             ctLine = CTLineCreateWithAttributedString(attr)
             words = w
         }
+        updateBars()
         needsDisplay = true
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
         setAccessibilityLabel(accessibilityText)
     }
+
+    /// The hunk this row belongs to (focused first, as a click would).
+    private func focusHunk() {
+        guard let session, let o = session.stream?.hunkOrdinal(atRow: row) else { return }
+        session.clicked(row: row)
+        session.setFocus(o, scroll: false)
+    }
+
+    private func makeHunkBar() -> ReviewCellBar {
+        let verbs: [(CommandID, String, (ReviewSession) -> Void)] = [
+            (.reviewSeen, "Seen", { $0.toggleSeen() }), (.reviewReject, "Reject", { $0.reject() }), (.reviewNote, "Note", { $0.startNote() }),
+        ]
+        let bar = ReviewCellBar(verbs.map { id, title, run in
+            let b = KeyButtonView(title, kbd: ReviewPanel.cap(id)) { [weak self] in
+                guard let self, let session = self.session else { return }
+                self.focusHunk()
+                run(session)
+            }
+            b.setAccessibilityIdentifier("review.hunk.\(id.key)")
+            return b
+        })
+        addSubview(bar)
+        return bar
+    }
+
+    private func makeCaret() -> ReviewCellBar {
+        let b = KeyButtonView("Fold", kbd: ReviewPanel.cap(.reviewToggleFold), variant: .icon("chevron.down")) { [weak self] in
+            guard let self else { return }
+            self.session?.toggleFold(row: self.row)
+        }
+        b.setAccessibilityIdentifier("review.fold")
+        let bar = ReviewCellBar([b])
+        addSubview(bar)
+        return bar
+    }
+
+    /// The focused hunk moved: its bar follows.
+    func refreshBars() { if case .hunk = kind { updateBars() } }
+
+    /// Which bar shows for this row.
+    private func updateBars() {
+        guard let s = session?.stream else { hunkBar?.isHidden = true; caret?.isHidden = true; return }
+        var hunk = false, fold: (open: Bool, label: String)?
+        switch kind {
+        case .hunk:
+            let o = s.hunkOrdinal(atRow: row)
+            hunk = o != nil && (o == stream?.hoveredHunk || o == session?.focused)
+        case .file(let f) where s.files[f].foldedByDefault: fold = (true, "Fold")
+        case .folded: fold = (false, "Unfold")
+        default: break
+        }
+        if hunk, hunkBar == nil { hunkBar = makeHunkBar() }
+        hunkBar?.isHidden = !hunk
+        if let fold {
+            let c = caret ?? makeCaret()
+            caret = c
+            let b = c.buttons[0]
+            if b.label != fold.label { b.label = fold.label }
+            b.variant = .icon(fold.open ? "chevron.down" : "chevron.right")
+        }
+        caret?.isHidden = fold == nil
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        if let bar = hunkBar, !bar.isHidden {
+            let s = bar.intrinsicContentSize
+            bar.frame = NSRect(x: max(0, bounds.width - DS.Spacing.l - s.width), y: ((bounds.height - s.height) / 2).rounded(), width: s.width, height: s.height)
+        }
+        if let c = caret, !c.isHidden {
+            let s = c.intrinsicContentSize
+            c.frame = NSRect(x: DS.Spacing.s, y: ((bounds.height - s.height) / 2).rounded(), width: s.width, height: s.height)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let t = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect], owner: self)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func mouseEntered(with event: NSEvent) { stream?.hover(session?.stream?.hunkOrdinal(atRow: row)) }
+    override func mouseExited(with event: NSEvent) { stream?.hover(nil) }
 
     private var accessibilityText: String {
         guard let s = session?.stream else { return "" }
@@ -364,7 +563,8 @@ final class ReviewRowCell: NSView {
         b.fill()
         Theme.ns(.line).setFill()
         NSRect(x: 0, y: b.maxY - 1, width: b.width, height: 1).fill()
-        var x = DS.Spacing.l
+        // After the caret's slot (every header, so the paths line up).
+        var x = DS.Spacing.s + IconButton.side + DS.Spacing.s
         let midY = b.midY
         let status = Self.text(f.status.rawValue, DS.nsMonoFont(.chrome, .semibold), Theme.ns(ReviewLook.tone(f.status)))
         status.draw(at: NSPoint(x: x, y: midY - status.size().height / 2))

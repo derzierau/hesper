@@ -294,6 +294,9 @@ struct ReviewTests {
         #expect(r(.char("A"), shift: true) == .bulkAccept && r(.char("a")) == .pass)
         #expect(r(.escape) == .close && r(.char("r"), cmd: true) == .close && r(.enter) == .toggleFold)
         #expect(r(.up) == .previousItem && r(.down) == .nextItem && r(.char("k"), cmd: true) == .pass)
+        // ⌘K, ⌘Y and ⌘J are the window's: the sheet closes and lets them through.
+        for c in ["k", "y", "j"] { #expect(ReviewKeys.passesThrough(KeyChord(.char(Character(c)), command: true)), "⌘\(c)") }
+        #expect(!ReviewKeys.passesThrough(KeyChord(.char("k"))) && !ReviewKeys.passesThrough(KeyChord(.char("w"), command: true)))
         // In a note the text field gets the keys: ⌘↩ / ⇧↩ save, esc cancels.
         #expect(r(.char("j"), note: true) == .pass && r(.enter, note: true) == .pass)
         #expect(r(.enter, cmd: true, note: true) == .saveNote && r(.enter, shift: true, note: true) == .saveNote && r(.escape, note: true) == .cancelNote)

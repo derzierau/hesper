@@ -83,9 +83,10 @@ struct HistoryFilterHandle {
 /// wall window over the wall (which keeps running underneath: no mode
 /// change, no attach, no relayout). A modal sheet: a Night scrim over the
 /// wall (it takes every click, scroll and hover; a click closes) and one
-/// opaque Panel, a little above the middle: the
-/// search field with the scope (All · History, ⇥ switches), the filter
-/// Pills (project, Mac, tool, age, more), the list (virtualized
+/// opaque Panel, a little above the middle, in the SheetChrome frame: the
+/// title row (History, the count, close × esc), the toolbar (the scope
+/// segments All · History, ⇥ switches; the filter Pills: project, Mac,
+/// tool, age, more), then the search field, the list (virtualized
 /// NSTableView, fixed rows drawn directly, pages by cursor ahead of the
 /// scroll) and on the right the preview of the selected session.
 @MainActor
@@ -111,6 +112,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
 
     // Views.
     private let panel = PanelView()
+    let chrome = SheetChromeView(title: "History", symbol: "clock.arrow.circlepath")
     private let box = FlippedView()
     private let magnifier = NSImageView()
     private let allPill = PillView(SearchScope.all.title, variant: .segment(selected: false))
@@ -122,13 +124,15 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     private let progressFill = NSView()
     private let countLabel = NSTextField(labelWithString: "")
     private let filters = FilterRow()
-    let table = NSTableView()
+    let table = HistoryTable()
     private let scroll = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "")
     private let divider = NSView()
     let card = SessionCardModel()
     private let cardHost: SessionCardPanel
-    private let hints = NSHostingView(rootView: Hints(items: []))
+    /// The footer: Resume ⏎, Fork ⌥⏎, Open full size ⌘⏎ on the selection
+    /// (`SearchPreview.footer`; disabled with nothing to act on).
+    private(set) var footerButtons: [KeyButtonView] = []
 
     // Perf (tests): ⌘Y → first rows drawn; keystroke → rows; daemon answer → rows.
     private(set) var openStarted: CFTimeInterval = 0
@@ -163,27 +167,43 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         setAccessibilityLabel("History search")
 
         addSubview(panel)
-        box.frame = panel.contentView.bounds
+        chrome.onClose = { [weak self] in self?.close() }
+        chrome.closeButton.setAccessibilityIdentifier("history.close")
+        chrome.frame = panel.contentView.bounds
+        chrome.autoresizingMask = [.width, .height]
+        panel.contentView.addSubview(chrome)
+        box.frame = chrome.contentView.bounds
         box.autoresizingMask = [.width, .height]
-        panel.contentView.addSubview(box)
+        chrome.contentView.addSubview(box)
 
-        // The field row: magnifier, scope (All · History ⇥), the field.
-        magnifier.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
-        magnifier.symbolConfiguration = .init(pointSize: CGFloat(DS.TextStyle.panelTitle.size), weight: .regular)
-        magnifier.contentTintColor = Theme.ns(.dim)
-        box.addSubview(magnifier)
+        // The toolbar: the scope (All · History ⇥), the filter Pills, the count.
         for (p, scope) in [(allPill, SearchScope.all), (historyPill, SearchScope.history)] {
             p.setAccessibilityElement(true)
             p.setAccessibilityRole(.radioButton)
             p.setAccessibilityLabel("Scope: \(scope.title)")
             p.setAccessibilityValue(scope == .history ? "selected" : "")
             p.toolTip = "\(scope.title) (\(scope.shortcut))"
-            box.addSubview(p)
+            chrome.toolbar.addView(p, in: .leading)
         }
         allPill.setAccessibilityIdentifier("history.scope.all")
         allPill.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(allScopeClicked)))
         tabKbd.toolTip = "⇥ switches scope"
-        box.addSubview(tabKbd)
+        chrome.toolbar.addView(tabKbd, in: .leading)
+        chrome.toolbar.setCustomSpacing(DS.Spacing.l, after: tabKbd)
+        // The whole Pills that fit (FilterRow hides the rest).
+        filters.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        chrome.toolbar.addView(filters, in: .leading)
+        countLabel.font = .ds(.meta)
+        countLabel.textColor = Theme.ns(.dim)
+        countLabel.alignment = .right
+        countLabel.lineBreakMode = .byTruncatingHead
+        chrome.toolbar.addView(countLabel, in: .trailing)
+
+        // The field row: magnifier, the field.
+        magnifier.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+        magnifier.symbolConfiguration = .init(pointSize: CGFloat(DS.TextStyle.panelTitle.size), weight: .regular)
+        magnifier.contentTintColor = Theme.ns(.dim)
+        box.addSubview(magnifier)
 
         // A plain field (no search-field cell: its placeholder and cancel
         // button sat at their own insets).
@@ -215,18 +235,11 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         progress.setAccessibilityIdentifier("history.indexing")
         box.addSubview(progress)
 
-        countLabel.font = .ds(.meta)
-        countLabel.textColor = Theme.ns(.dim)
-        countLabel.alignment = .right
-        countLabel.lineBreakMode = .byTruncatingHead
-        box.addSubview(countLabel)
         emptyLabel.font = .ds(.body)
         emptyLabel.textColor = Theme.ns(.dim)
         emptyLabel.alignment = .center
         emptyLabel.lineBreakMode = .byTruncatingTail
         box.addSubview(emptyLabel)
-
-        box.addSubview(filters)
 
         let col = NSTableColumn(identifier: .init("s"))
         table.addTableColumn(col)
@@ -243,6 +256,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         table.delegate = self
         table.target = self
         table.doubleAction = #selector(doubleClicked)
+        table.contextMenu = { [weak self] row in self?.rowMenu(row) }
         table.setAccessibilityIdentifier("history.list")
         table.setAccessibilityLabel("Sessions")
         scroll.documentView = table
@@ -262,8 +276,15 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         card.onStartContinue = { [weak self] in self?.startContinue() }
         card.onCancelContinue = { [weak self] in self?.cancelContinue() }
 
-        box.addSubview(hints)
-        updateHints()
+        for a in SearchPreview.footerDefault {
+            let b = KeyButtonView(a.title, kbd: a.key, variant: a.primary ? .primary(.working) : .quiet) { [weak self] in
+                self?.perform(SessionCardModel.action(a.key))
+            }
+            b.setAccessibilityIdentifier("history.footer.\(a.key)")
+            b.isEnabled = false
+            chrome.footer.addArrangedSubview(b)
+            footerButtons.append(b)
+        }
         applyTheme()
 
         observer = hub.observe { [weak self] c in self?.hubChanged(c) }
@@ -329,7 +350,6 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         }
         window?.makeFirstResponder(searchField)
         (window?.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
-        updateHints()
         if !firstOpen && pendingSelect == nil && text == nil {
             // Warm: the last results draw at once; refresh underneath.
             noteRowsShown()
@@ -408,10 +428,12 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         super.layout()
         Self.layouts += 1
         panel.frame = SearchLook.historyFrame(in: bounds.size)
-        // The Panel's content (and the box in it) at their size now, not
-        // in the Panel's own layout pass after this one.
+        // The Panel's content (the chrome and the box in it) at their size
+        // now, not in the Panel's own layout pass after this one.
         panel.layoutSubtreeIfNeeded()
-        box.frame = panel.contentView.bounds
+        chrome.frame = panel.contentView.bounds
+        chrome.layoutSubtreeIfNeeded()
+        box.frame = chrome.contentView.bounds
         layoutBox()
     }
 
@@ -421,38 +443,21 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         // Field row.
         let ms = CGFloat(DS.TextStyle.panelTitle.size) + DS.Spacing.xs
         magnifier.frame = NSRect(x: pad, y: ((fh - ms) / 2).rounded(), width: ms, height: ms)
-        var x = magnifier.frame.maxX + DS.Spacing.m
-        for p in [allPill, historyPill] {
-            let pw = p.intrinsicContentSize.width
-            p.frame = NSRect(x: x, y: ((fh - Pill.height) / 2).rounded(), width: pw, height: Pill.height)
-            x += pw + DS.Spacing.xs
-        }
-        let ks = tabKbd.intrinsicContentSize
-        tabKbd.frame = NSRect(x: x, y: ((fh - ks.height) / 2).rounded(), width: ks.width, height: ks.height)
-        x = tabKbd.frame.maxX + DS.Spacing.m
+        let x = magnifier.frame.maxX + DS.Spacing.m
         let fieldH = ceil(searchField.intrinsicContentSize.height)
         searchField.frame = NSRect(x: x, y: ((fh - fieldH) / 2).rounded(), width: max(0, w - pad - x), height: fieldH)
         headerLine.frame = NSRect(x: 0, y: fh, width: w, height: 1)
         progress.frame = NSRect(x: 0, y: fh, width: w, height: DS.Spacing.xxs)
         updateProgressFill()
 
-        // Footer.
-        let footerTop = h - SearchLook.footerHeight
-        hints.frame = NSRect(x: 0, y: footerTop, width: w, height: SearchLook.footerHeight)
-
-        // Preview (right), the list with its filters (left).
+        // Preview (right), the list (left).
         let previewW = min(SearchLook.previewMax, max(SearchLook.previewMin, (w * SearchLook.previewFraction).rounded()))
         let paneTop = fh + 1
-        divider.frame = NSRect(x: w - previewW - 1, y: paneTop, width: 1, height: max(0, footerTop - paneTop))
-        cardHost.frame = NSRect(x: w - previewW, y: paneTop, width: previewW, height: max(0, footerTop - paneTop))
+        divider.frame = NSRect(x: w - previewW - 1, y: paneTop, width: 1, height: max(0, h - paneTop))
+        cardHost.frame = NSRect(x: w - previewW, y: paneTop, width: previewW, height: max(0, h - paneTop))
         let listW = divider.frame.minX
-        let fy = paneTop + DS.Spacing.m
-        let countW = min(listW / 3, ceil(countLabel.intrinsicContentSize.width) + DS.Spacing.xs)
-        countLabel.frame = NSRect(x: listW - DS.Spacing.l - countW, y: fy + ((Pill.height - countLabel.intrinsicContentSize.height) / 2).rounded(),
-                                  width: countW, height: countLabel.intrinsicContentSize.height)
-        filters.frame = NSRect(x: DS.Spacing.l, y: fy, width: max(0, countLabel.frame.minX - DS.Spacing.l - DS.Spacing.m), height: Pill.height)
-        let listTop = fy + Pill.height + DS.Spacing.m
-        scroll.frame = NSRect(x: DS.Spacing.s, y: listTop, width: max(0, listW - 2 * DS.Spacing.s), height: max(0, footerTop - listTop - DS.Spacing.xs))
+        let listTop = paneTop + DS.Spacing.m
+        scroll.frame = NSRect(x: DS.Spacing.s, y: listTop, width: max(0, listW - 2 * DS.Spacing.s), height: max(0, h - listTop - DS.Spacing.xs))
         table.tableColumns.first?.width = scroll.contentSize.width
         emptyLabel.frame = NSRect(x: DS.Spacing.l, y: listTop + DS.Spacing.xxl, width: max(0, listW - 2 * DS.Spacing.l), height: emptyLabel.intrinsicContentSize.height)
     }
@@ -558,7 +563,6 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
             refreshCard(keepChanges: true)
         }
         rebuildFilters()
-        updateHints()
     }
 
     private func noteRowsShown() {
@@ -570,14 +574,13 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     }
 
     private func updateCount() {
+        // The count is the title row's Pill; the toolbar's label says when
+        // there are more pages, or how far the first index is.
         let n = rows.count
-        let count = n == 0 ? "" : "\(n)\(list.hasMore ? "+" : "") session\(n == 1 ? "" : "s")"
-        let label = hub.indexing.map { "indexing \($0.done.formatted()) of \($0.total.formatted())…" } ?? count
-        if countLabel.stringValue != label {
-            let relayout = countLabel.stringValue.count != label.count
-            countLabel.stringValue = label
-            if relayout { needsLayout = true } // its width (not on every page)
-        }
+        let count = n == 0 ? nil : n
+        if chrome.count != count { chrome.count = count }
+        let label = hub.indexing.map { "indexing \($0.done.formatted()) of \($0.total.formatted())…" } ?? (list.hasMore ? "more below" : "")
+        if countLabel.stringValue != label { countLabel.stringValue = label }
         if !list.loaded {
             emptyLabel.stringValue = "Loading…"
         } else if rows.isEmpty {
@@ -781,6 +784,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     private var onlineMachines: [String] { model.machines.filter(\.online).map(\.short) }
 
     private func refreshCard(keepChanges: Bool) {
+        defer { updateFooter() }
         guard let s = selectedSession else { card.text = nil; return }
         let changes = shownDetail?.id == s.id ? shownDetail?.changes : nil
         if !keepChanges && shownDetail?.id != s.id { shownDetail = nil }
@@ -788,13 +792,25 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         let names = machineNames()
         var t = SearchLook.plain(SessionCardText(s, changes: changes, loadingChanges: changes == nil, local: model.localMachine, machines: names), s)
         t.subtitle = SearchLook.previewMeta(s, machines: names)
-        // The search surface's keys: ⏎ resume, ⌥⏎ fork, ⌘⏎ continue on the
+        // The search surface's keys: ⏎ resume, ⌥⏎ fork, M continue on the
         // other Mac (a live agent: moves it with its work), R restore checkpoint.
         let moveTo = model.liveMoveTarget(s)?.to
         t.actions = SearchPreview.actions(s, card: t, local: model.localMachine, online: onlineMachines, machines: names,
                                           moveTo: moveTo, restore: model.restoreOffered(s), restoreScratch: model.archivedScratch(for: s) != nil)
         t.resumeHereNote = SearchPreview.continueNote(s, local: model.localMachine, online: onlineMachines, machines: names, moveTo: moveTo)
         card.text = t
+    }
+
+    /// The footer names ⏎ and ⌥⏎ as the preview does ("Open (live)",
+    /// "Resume on mini"); a verb the selection lacks shows disabled.
+    private func updateFooter() {
+        let verbs = card.text.map { SearchPreview.footer(for: $0.actions) } ?? []
+        for (b, a) in zip(footerButtons, SearchPreview.footerDefault) {
+            let v = verbs.first { $0.key == a.key }
+            let title = v?.title ?? a.title
+            if b.label != title { b.label = title }
+            if b.isEnabled != (v != nil) { b.isEnabled = v != nil }
+        }
     }
 
     private func loadDetail(_ id: String) {
@@ -842,7 +858,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
             // panel for the palette (the window's, as in Review; ⇥ is the
             // All scope with the query); the rest (⌘Z, ⌘W…) the window's.
             guard chord.command else { return false }
-            if chord.key == .char("k") && !chord.option && !chord.control { close(); return false }
+            if SearchKeys.opensPalette(chord) { close(); return false }
             if action == .history(.pass) { return false }
         } else if chord.command {
             return false // performKeyEquivalent handles ⌘ chords
@@ -857,6 +873,12 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         case .history(let h): perform(h)
         case .switchScope: switchScope()
         case .toggleFocus: perform(searchHasFocus ? .focusList : .focusSearch(nil))
+        case .openFullSize:
+            // ⌘⏎: ⏎'s resume, then the agent full size.
+            guard let s = selectedSession else { NSSound.beep(); return }
+            if s.live?.external == true && s.liveAgentID == nil { act(.resume, on: s); return }
+            let changes = shownDetail?.id == s.id ? shownDetail?.changes : nil
+            HistoryActions(model: model, hub: hub).resume(s, here: false, changes: changes, focus: true) { [weak self] in self?.close() }
         case .continueOnOtherMac:
             guard let s = selectedSession else { NSSound.beep(); return }
             continueOnOtherMac(s)
@@ -881,7 +903,6 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         case .close: close()
         case .focusList:
             window?.makeFirstResponder(table)
-            updateHints()
         case .focusSearch(let text):
             window?.makeFirstResponder(searchField)
             if let text {
@@ -889,20 +910,11 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
                 (window?.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
                 controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
             }
-            updateHints()
         case .resume, .fork, .continueOther, .archive, .delete, .copyID:
             guard let s = selectedSession else { NSSound.beep(); return }
             act(a, on: s)
         case .pass: break
         }
-    }
-
-    private func updateHints() {
-        let list = !searchHasFocus
-        // One line: the keys the preview's buttons don't already show.
-        hints.rootView = Hints(items: list
-            ? [("↑↓", "select"), ("⇧⇥", "search"), ("⇥", "All"), ("esc", "close")]
-            : [("↑↓", "select"), ("⇧⇥", "list"), ("⇥", "All"), ("esc", "close")])
     }
 
     // MARK: Actions
@@ -937,7 +949,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         }
     }
 
-    /// ⌘⏎: resume on the other Mac (another Mac's session comes here; this
+    /// M: resume on the other Mac (another Mac's session comes here; this
     /// Mac's goes to the other one). Moves ownership (sessions.resume {machine}).
     private func continueOnOtherMac(_ s: Session) {
         if let m = model.liveMoveTarget(s) {
@@ -999,12 +1011,51 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         if isOpen { window?.makeFirstResponder(table) }
     }
 
+    /// A row's right-click menu: the preview's verbs for that session
+    /// (the row is selected first, so the menu and the keys agree).
+    private func rowMenu(_ row: Int) -> NSMenu? {
+        guard rows.indices.contains(row) else { return nil }
+        if table.selectedRow != row { select(row: row) }
+        guard let actions = card.text?.actions else { return nil }
+        let m = NSMenu()
+        m.autoenablesItems = false
+        for a in SearchPreview.menu(for: actions) {
+            let item = NSMenuItem(title: a.title, action: #selector(menuChose(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = a.key
+            // The key cap, as a plain character where the menu can show one.
+            if let k = KeyChord(label: a.key), let (key, mods) = MenuBuilder.keyEquivalent(k) {
+                item.keyEquivalent = key
+                item.keyEquivalentModifierMask = mods
+            }
+            m.addItem(item)
+        }
+        return m
+    }
+
+    @objc private func menuChose(_ item: NSMenuItem) {
+        guard let key = item.representedObject as? String else { return }
+        perform(SessionCardModel.action(key))
+    }
+
     deinit {
         MainActor.assumeIsolated { hub.unobserve(observer) }
     }
 }
 
 // MARK: Rows
+
+/// The list: a right-click asks `contextMenu` for the row under the
+/// pointer (nil: no menu).
+final class HistoryTable: NSTableView {
+    var contextMenu: ((Int) -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        guard row >= 0 else { return nil }
+        return contextMenu?(row)
+    }
+}
 
 /// A row's background: the selection (`working` at 14%, radius
 /// `control`); nothing otherwise.
@@ -1122,7 +1173,15 @@ final class FilterRow: NSView {
             pills = menus.map { FilterPill(menu: $0, onChoose: onChoose) }
             for p in pills { addSubview(p) }
         }
+        invalidateIntrinsicContentSize()
         needsLayout = true
+    }
+
+    /// Every Pill at its width (the toolbar compresses the row when they
+    /// don't fit; `layout` then hides the ones past the edge).
+    override var intrinsicContentSize: NSSize {
+        let w = pills.reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width } + CGFloat(max(0, pills.count - 1)) * DS.Spacing.xs
+        return NSSize(width: w, height: Pill.height)
     }
 
     override func layout() {

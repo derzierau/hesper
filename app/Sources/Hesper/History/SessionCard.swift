@@ -22,12 +22,14 @@ final class SessionCardModel {
     @ObservationIgnored var onStartContinue: (() -> Void)?
     @ObservationIgnored var onCancelContinue: (() -> Void)?
 
-    /// An action's key → what it does (the preview's buttons).
+    /// An action's key → what it does (the preview's buttons, the row
+    /// menu, the footer).
     static func action(_ key: String) -> SearchKeyAction {
         switch key {
         case "⏎": return .history(.resume)
+        case "⌘⏎": return .openFullSize
         case "⌥⏎": return .history(.fork)
-        case "⌘⏎": return .continueOnOtherMac
+        case "M": return .continueOnOtherMac
         case "R": return .restoreCheckpoint
         case SearchPreview.restoreScratchKey: return .restoreScratch
         case "F": return .history(.fork)

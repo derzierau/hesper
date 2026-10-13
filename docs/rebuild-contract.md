@@ -3226,32 +3226,37 @@ tile's rendering both ways). The tiles keep rendering underneath (wall
 numbers below); toasts and undo stay above the panel; a click on the
 scrim closes; state (query, filters, list, selection) survives closing.
 
-Layout: left the project sidebar (the same `SidebarRowContent` rows as
-⌘0) with session counts: All sessions, groups → projects (a package's
-sessions count for its repository), other projects, and "Scratch" /
-"Elsewhere (folder gone)" rows when the daemon counts them; top the
-search field (live FTS as you type, 60 ms debounce) and chips (this
-project — the selected card's or the wall's —, all projects, Claude,
-Codex, one per Mac, time any/24 h/7 days/30 days, live in Hesper,
-external, archived, moved to another Mac); the list (kind badge, title,
-Mac · branch · turns · tokens, the FTS snippet with its `[matches]`
-highlighted or the last exchange, when and state: ended / ● live in
-Hesper / ● running outside / external / moved to M / mirrored on N
-Macs); right the "where you left off" card; the footer: count, the first
-index's progress (`sessions.indexing`, also from `stats.indexing`) and
-the keys.
+Layout, in the `SheetChrome` frame (`docs/design-system.md`): the title
+row (History, the session count as a Pill, the `esc` key cap and a close
+×; a click on the scrim closes too); the toolbar (the scope segments All
+· History with ⇥, the filter Pills: this project — the selected card's
+or the wall's —, all projects, Claude, Codex, one per Mac, time any/24
+h/7 days/30 days, live in Hesper, external, archived, moved to another
+Mac; on the right "more below" while another page waits, or the first
+index's progress from `sessions.indexing` / `stats.indexing`); the
+search field (live FTS as you type, 60 ms debounce); the list (kind
+badge, title, Mac · branch · turns · tokens, the FTS snippet with its
+`[matches]` highlighted or the last exchange, when and state: ended / ●
+live in Hesper / ● running outside / external / moved to M / mirrored on
+N Macs; a right-click on a row shows the preview's verbs as a menu with
+their key caps, double-click resumes); right the "where you left off"
+card; the footer: KeyButtons acting on the selection.
 
 **The card** renders at once from the row's fields (title, Kind on Mac ·
 folder, you asked, it answered, open todos, branch) and fills the git
 line from `sessions.show` 120 ms after the selection settles (changed
 files +/−, uncommitted, ahead/behind, folder on M / folder gone) into a
-slot reserved for it: nothing moves. Actions with keys: **⏎** Resume (on
+slot reserved for it: nothing moves. Actions, one KeyButton each with
+its key cap (`SearchPreview.actions`; the row menu and the footer are
+cut from the same list, `SearchPreview.menu` / `footer`, so the three
+never disagree): **⏎** Resume (on
 its Mac; "Open (live)" when hesperd runs it → that agent's tile or
 window; "Open on M" for a moved entry, which hesperd resumes on the new
-home; running outside Hesper → a toast), **⌥⏎** Fork, **⌘⏎** Continue
-on the other Mac ("continues on laptop, moves ownership; uncommitted
-work comes along if mini is reachable"; `sessions.resume {id, machine:
-this Mac}`), **C** Continue in Claude/Codex (the card turns into the brief from
+home; running outside Hesper → a note instead of a button), **⌥⏎** Fork,
+**M** Continue on the other Mac ("continues on laptop, moves ownership;
+uncommitted work comes along if mini is reachable"; `sessions.resume
+{id, machine: this Mac}`; a live agent moves with its work), **C**
+Continue in Claude/Codex (the card turns into the brief from
 `sessions.brief`, editable, the other kind preselected; ⌘⏎ starts:
 unedited → `sessions.continueAs {id, kind}`; edited → `agents.spawn`
 of that kind in the session's folder on its Mac with the edited text,
@@ -3266,11 +3271,15 @@ two lines (at least 0.8 s, at most 12 s, typing into it hides it).
 
 **Keys** (`HistoryKeys`, the overlay family's): ↑↓ select (also from the
 search field), ⌘↑ ⌘↓ / Home End first / last, page up/down, ⏎ resume,
-⌥⏎ fork, ⌘⏎ continue on the other Mac, ⇥ the All scope with the query
-(⇧⇥ field ↔ list, where F C A ⌫ act; typing any other character goes
-back to the search with it), ⌘F the search, ⌘C copy id (the field's own
-copy when text is selected), esc / ⌘Y close; ⌘K closes the panel for
-the palette; ⌘Z, ⌘W… stay the window's. A toast never takes the keyboard from the panel.
+⌘⏎ resume and open the agent full size (focus), ⌥⏎ fork, ⇥ the All
+scope with the query (⇧⇥ field ↔ list, where F C A M R ⌫ act; typing
+any other character goes back to the search with it), ⌘F the search, ⌘C
+copy id (the field's own copy when text is selected), esc / ⌘Y close;
+⌘K closes the panel for the palette (`SearchKeys.opensPalette`, the
+registry's everywhere binding); ⌘Z, ⌘W… stay the window's. A toast never takes the keyboard from the panel.
+Every key sits on a control: the preview's buttons, the row's
+right-click menu, the footer (Resume ⏎, Fork ⌥⏎, Open full size ⌘⏎,
+disabled with nothing selected) and the title row's close ×.
 
 **Ghost cards.** A removed agent (⌘W on an ended one) becomes a dashed
 card in its place on its band's shelf at once (its undo window: ⏎ =
@@ -4351,10 +4360,17 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
 
 - **⌘R** (Agents › Review) opens the review sheet over the wall like
   History: a Night scrim and one opaque Panel, min(1440, 94%) ×
-  min(940, 88%) of the window. Left the inbox (every Mac, ranked: fresh
+  min(940, 88%) of the window, in the `SheetChrome` frame: the title row
+  (Review, the count Pill, the `esc` key cap and a close ×), the toolbar
+  (‹ › file ⇧N N, Bulk accept ⇧A, Provenance ⌥⏎, the Macs and what the
+  sheet is busy with; on the right Send back ⇧⏎ with the note count and
+  the primary Accept and commit ⌘⏎; every verb a KeyButton whose cap
+  comes from the registry, disabled with no item selected); the footer
+  (Fold ⏎, Next hunk J, Previous hunk K, disabled without hunks). Left
+  the inbox (every Mac, ranked: fresh
   evidence first, then stale, missing; lower risk first; then the one
-  waiting longest), middle the selected item's header (Send back ⇧↩,
-  Accept & commit ⌘↩) and its diff, right the evidence (fresh ✓ /
+  waiting longest), middle the selected item's header (name, where,
+  churn, the status line) and its diff, right the evidence (fresh ✓ /
   stale ! / missing ?, the commands with exit codes, attachments), the
   risk and its notes, the attention strip (one cell per hunk: seen,
   rejected, noted, unseen) and whether ⇧A would take it. Below 1120 pt
@@ -4364,7 +4380,14 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
   one `CTLine` each, changed words as tinted rects behind the text),
   notes and the line under each hunk. Only notes and that line are
   measured; code geometry never is. The file being read keeps its
-  header at the top. `review.diff` is fetched and turned into rows off
+  header at the top. A hunk header shows Seen V · Reject X · Note C as
+  KeyButtons at its right while the pointer is over the hunk or it is
+  the focused one; a foldable file's header carries a fold caret (⏎,
+  ▾ open / ▸ folded); a right-click on any row offers the same verbs as
+  a menu. The bar takes its clicks itself (`ReviewCellBar`), since a
+  mouseDown that reaches the table starts its tracking loop and eats
+  the mouseUp the buttons press on. `review.diff` is fetched and turned
+  into rows off
   the main thread. Files come in reading order (hesperd's `order`, else
   the same rules here: risky and schema first, a test right after its
   code, formatting-only and generated last and folded; never
@@ -4374,13 +4397,16 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
   (toggle), X reject the hunk (`review.reject`, one at a time against
   the diff as it is then; hunk ids are positions), C a note on the
   clicked line (else the hunk's first change; the editor under the
-  stream: ⌘↩ or ⇧↩ saves, esc cancels), ⏎ open/fold a folded file,
+  stream, with Save ⌘⏎ and Cancel esc KeyButtons: ⌘↩ or ⇧↩ saves, esc
+  cancels), ⏎ open/fold a folded file,
   ⇧↩ send every note back as one instruction (`review.sendBack`),
   ⌘↩ accept and commit (`review.accept`; with hunks not marked seen,
-  the first ⌘↩ says how many and the second commits), ⌥↩ History at
+  the first ⌘↩ asks in the status line, with Confirm ⌘⏎ and Cancel esc
+  KeyButtons, and the second commits), ⌥↩ History at
   the conversation that last wrote the hunk, ⇧A accept in bulk (only
   low risk, fresh evidence, no schema/auth/migration path; the first ⇧A
-  lists them, the second commits each), esc closes (or cancels a
+  lists them in the status line with Confirm ⇧A and Cancel esc, the
+  second commits each), esc closes (or cancels a
   confirm or a note). After V or X the cursor goes to the next
   undecided hunk.
 - **Marks survive reloads**: seen and rejected hang on a hunk's key (its
@@ -4476,8 +4502,10 @@ disabled with nothing selected and Routines is hidden.
 **Bindings that changed with the registry.** ⌥⌘↑ ⌥⌘↓ step bands
 everywhere (View ▸ Previous / Next Band; ⌥↑ ⌥↓ stay wall-only aliases);
 J K move in History as in the inbox; ⇧⏎ in History no longer resumes;
-⌘W in Settings, First Run and the gallery closes that window (File ▸
-Close). The two primitives phase 3 builds the pointer paths with,
+⌘⏎ in History resumes and opens the agent full size (the overlay
+family's "open full size") and M continues on the other Mac, a list
+verb like F C A R; ⌘W in Settings, First Run and the gallery closes
+that window (File ▸ Close). The two primitives phase 3 builds the pointer paths with,
 `KeyButton` and `SheetChrome`, are in `docs/design-system.md`.
 
 **Pointer paths (phase 3: bands, sidebar, toolbar, empty wall).** The

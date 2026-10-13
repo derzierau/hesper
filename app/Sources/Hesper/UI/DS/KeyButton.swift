@@ -117,9 +117,13 @@ final class KeyButtonView: NSControl {
 
     private var tooltip: String { kbd.map { "\(label) (\($0))" } ?? label }
 
+    /// The text's width with the label's 2 pt insets (a clipping label
+    /// cuts its last glyph without them).
+    private var labelWidth: CGFloat { ceil(labelField.attributedStringValue.size().width) + 2 * DS.Spacing.xxs }
+
     override var intrinsicContentSize: NSSize {
         if icon != nil { return NSSize(width: IconButton.side, height: IconButton.side) }
-        var w = ceil(labelField.attributedStringValue.size().width) + 2 * DS.Spacing.m
+        var w = labelWidth + 2 * DS.Spacing.m
         if kbd != nil { w += DS.Spacing.s + kbdView.intrinsicContentSize.width }
         return NSSize(width: w, height: KeyButton.height)
     }
@@ -128,7 +132,7 @@ final class KeyButtonView: NSControl {
         super.layout()
         if let icon { icon.frame = bounds; return }
         let l = labelField.intrinsicContentSize
-        let lw = ceil(labelField.attributedStringValue.size().width)
+        let lw = labelWidth
         labelField.frame = NSRect(x: DS.Spacing.m, y: ((bounds.height - l.height) / 2).rounded(), width: lw, height: l.height)
         let k = kbdView.intrinsicContentSize
         kbdView.frame = NSRect(x: DS.Spacing.m + lw + DS.Spacing.s, y: ((bounds.height - k.height) / 2).rounded(), width: k.width, height: k.height)

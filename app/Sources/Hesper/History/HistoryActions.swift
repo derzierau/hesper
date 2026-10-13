@@ -9,20 +9,21 @@ struct HistoryActions {
     let model: AppModel
     let hub: HistoryHub
 
-    /// ⏎ (where it ran) / ⌥⏎ (here: moves ownership to this Mac). A live
-    /// session opens its agent instead, never a second process.
-    func resume(_ s: Session, here: Bool, changes: SessionChanges?, done: @escaping @MainActor () -> Void = {}) {
-        resume(s, on: here ? model.localMachine : nil, changes: changes, done: done)
+    /// ⏎ (where it ran) / ⌥⏎ (here: moves ownership to this Mac); `focus`
+    /// (⌘⏎) opens the agent full size once it is there. A live session
+    /// opens its agent instead, never a second process.
+    func resume(_ s: Session, here: Bool, changes: SessionChanges?, focus: Bool = false, done: @escaping @MainActor () -> Void = {}) {
+        resume(s, on: here ? model.localMachine : nil, changes: changes, focus: focus, done: done)
     }
 
     /// Resume on `machine` (nil: where it ran). Another machine than the
-    /// session's home moves it there (⌘⏎ "continue on the other Mac"):
+    /// session's home moves it there (M "continue on the other Mac"):
     /// hesperd packs the branch, uncommitted work and the transcript.
-    func resume(_ s: Session, on machine: String?, changes: SessionChanges?, failed: @escaping @MainActor () -> Void = {},
+    func resume(_ s: Session, on machine: String?, changes: SessionChanges?, focus: Bool = false, failed: @escaping @MainActor () -> Void = {},
                 done: @escaping @MainActor () -> Void = {}) {
         if let id = s.liveAgentID, model.agent(id) != nil {
             done()
-            open(id)
+            open(id, focus: focus)
             return
         }
         if s.live?.external == true && s.liveAgentID == nil {
@@ -35,7 +36,7 @@ struct HistoryActions {
             do {
                 let r = try await hub.timed("sessions.resume") { try await client.resumeSession(s.id, machine: machine) }
                 done()
-                started(r, from: s, changes: changes)
+                started(r, from: s, changes: changes, focus: focus)
             } catch {
                 failed()
                 model.showToast("Could not resume: \(model.describe(error))", error: true)
@@ -130,24 +131,28 @@ struct HistoryActions {
         }
     }
 
-    private func started(_ r: SessionStart, from s: Session?, changes: SessionChanges?) {
+    private func started(_ r: SessionStart, from s: Session?, changes: SessionChanges?, focus: Bool = false) {
         switch r {
         case .live(let id):
-            if let id { open(id) } else { model.showToast("That session is running outside Hesper", error: true) }
+            if let id { open(id, focus: focus) } else { model.showToast("That session is running outside Hesper", error: true) }
         case .agent(let a, let note):
             if let s { hub.noteResumed(a.id, s, changes: changes) }
             if let note { model.showToast(note) }
             // The agent joins its project's band (draft/band rules) once
-            // agents.changed brings it; then it is selected and in view.
+            // agents.changed brings it; then it is selected and in view
+            // (⌘⏎: open full size).
             Task { @MainActor in
                 _ = await Harness.wait(5) { model.agent(a.id) != nil }
-                if model.agent(a.id) != nil { model.select(a.id) }
+                guard model.agent(a.id) != nil else { return }
+                if focus { model.focus(a.id) } else { model.select(a.id) }
             }
         }
     }
 
-    /// A live session: its agent's tile (or window), like ⌘J.
-    private func open(_ id: String) {
+    /// A live session: its agent's tile (or window), like ⌘J; `focus`
+    /// opens it full size.
+    private func open(_ id: String, focus: Bool = false) {
+        if focus, model.agent(id) != nil { model.focus(id); return }
         if let a = model.agent(id), model.routeAttention?(a) == true { return }
         model.goTo(id)
     }

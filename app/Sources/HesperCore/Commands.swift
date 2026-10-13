@@ -157,7 +157,7 @@ public enum CommandID: Hashable, Sendable {
     // Inbox verbs.
     case inboxPrimary, inboxOpen, inboxAnswer(Int), inboxMoveElsewhere
     // History verbs.
-    case historyResume, historyFork, historyContinueOnOtherMac, historyContinueOther, historyArchive, historyDelete
+    case historyResume, historyOpenFullSize, historyFork, historyContinueOnOtherMac, historyContinueOther, historyArchive, historyDelete
     case historyRestoreCheckpoint, historySwitchScope, historyToggleFocus, historyFirst, historyLast
     // Review verbs.
     case reviewAccept, reviewSendBack, reviewProvenance, reviewToggleFold
@@ -523,8 +523,9 @@ public enum CommandRegistry {
         Command(.inboxMoveElsewhere, "Continue on the other Mac", chord: .plain("m"), surfaces: [.inbox]),
 
         Command(.historyResume, "Resume", chord: .plain(.enter), surfaces: [.history]),
+        Command(.historyOpenFullSize, "Resume and open full size", chord: .cmd(.enter), surfaces: [.history]),
         Command(.historyFork, "Fork", chord: .plain(.enter, option: true), surfaces: [.history], aliases: [KeyBinding(.plain("f"), in: [.history])]),
-        Command(.historyContinueOnOtherMac, "Continue on the other Mac", chord: .cmd(.enter), surfaces: [.history]),
+        Command(.historyContinueOnOtherMac, "Continue on the other Mac", chord: .plain("m"), surfaces: [.history]),
         Command(.historyContinueOther, "Continue in the other tool", chord: .plain("c"), surfaces: [.history]),
         Command(.historyArchive, "Archive", chord: .plain("a"), surfaces: [.history]),
         Command(.historyDelete, "Delete", chord: .plain(.delete), surfaces: [.history]),

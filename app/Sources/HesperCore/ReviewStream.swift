@@ -418,6 +418,16 @@ public enum ReviewKeys {
         }
         return CommandRegistry.resolve(k, in: .review).flatMap(action(for:)) ?? .pass
     }
+
+    /// Another sheet's or overlay's chord (⌘K palette, ⌘Y History, ⌘J
+    /// inbox; the registry's everywhere bindings): the sheet closes and
+    /// lets the window run it.
+    public static func passesThrough(_ k: KeyChord) -> Bool {
+        switch CommandRegistry.resolve(k, in: .review) {
+        case .palette, .history, .nextAttention: return true
+        default: return false
+        }
+    }
 }
 
 // MARK: Line text
