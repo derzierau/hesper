@@ -249,16 +249,4 @@ import Testing
         #expect(CommandRegistry.resolve(KeyChord(.char("k"), command: true), in: .history) == .palette, "everywhere reaches every surface")
         #expect(CommandRegistry.resolve(KeyChord(.char("j")), in: .wall) == nil)
     }
-
-    @Test func shortcutGroupsFollowTheSurfaces() {
-        let groups = ShortcutList.groups(hotKey: "⌃⌥Space")
-        #expect(groups.first?.surface == .everywhere)
-        let everywhere = groups[0].items
-        #expect(everywhere.contains { $0.id == .newAgent && $0.keys == "⌘N" })
-        #expect(everywhere.contains { $0.id == .quickLaunch && $0.keys == "⌃⌥Space" })
-        #expect(!everywhere.contains { $0.id == .routines })
-        #expect(groups.first { $0.surface == .wall }?.items.contains { $0.id == .stepNext && $0.keys == "⇥" } == true)
-        #expect(groups.first { $0.surface == .review }?.items.contains { $0.id == .reviewAccept && $0.keys == "⌘⏎" } == true)
-        #expect(ShortcutList.groups(hotKey: nil)[0].items.contains { $0.id == .quickLaunch } == false)
-    }
 }

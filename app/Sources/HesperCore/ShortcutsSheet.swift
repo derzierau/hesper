@@ -2,10 +2,10 @@ import Foundation
 
 /// Help ▸ Keyboard Shortcuts (⌘/) and Settings › Shortcuts: the registry
 /// as one section per surface, each a list of rows (title, key caps,
-/// command id). Unlike `ShortcutList`, a command appears once: in the
-/// section of the surface the user is in when its chord is live there,
-/// else in the first surface of `ShortcutList.order` that binds it
-/// (app-wide chords always under Everywhere). The current surface's
+/// command id). A command appears once: in the section of the surface
+/// the user is in when its chord is live there, else in the first
+/// surface of `order` that binds it (app-wide chords always under
+/// Everywhere). The current surface's
 /// section comes first and is the one expanded; a query filters the rows
 /// by title and key text and expands every section that still has rows.
 /// Hidden commands (Routines) are left out.
@@ -35,6 +35,10 @@ public enum ShortcutsSheet {
         public let expanded: Bool
     }
 
+    /// The display order of the surfaces.
+    public static let order: [Surface] = [.everywhere, .wall, .focus, .activeTile, .composer, .quickLaunch, .palette, .popover, .inbox,
+                                          .history, .review, .agentWindow, .settings]
+
     /// The accessibility identifier of a row ("shortcuts.row.closeAgent").
     public static func rowIdentifier(_ id: CommandID) -> String { "shortcuts.row.\(id.key)" }
 
@@ -47,7 +51,7 @@ public enum ShortcutsSheet {
     ///     (the Quick Launch row's pill).
     public static func sections(registry: [Command] = CommandRegistry.all, current: Surface, query: String = "",
                                 hotKey: String? = nil, hotKeyConflict: String? = nil, context: CommandContext = .none) -> [Section] {
-        let order = [current] + ShortcutList.order.filter { $0 != current }
+        let order = [current] + Self.order.filter { $0 != current }
         var rows: [Surface: [Row]] = [:]
         for c in registry where c.availability(context) != .hidden {
             let row: Row

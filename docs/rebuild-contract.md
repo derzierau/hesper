@@ -4524,7 +4524,7 @@ Routines is a hidden placeholder for its branch). The dynamic parts keep
 their owners: layout checkmarks, Dense Cards and the Undo title (Edit ▸
 Undo names the action; "Undo Close or Move" is gone), the Desks submenu,
 History hidden while hesperd has no sessions.*, the window list. The ⌘K
-palette's "Actions" rows and Settings › Shortcuts (`ShortcutList.groups`,
+palette's "Actions" rows and Settings › Shortcuts (`ShortcutsSheet.sections`,
 by surface) read the table. `KeyChord.label` / `KeyChord(label:)` are the
 one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
 
@@ -4548,6 +4548,23 @@ section that still has rows. The footer is one KeyButton, "Open Settings
 toggles; ⌘K ⌘Y ⌘R ⌘J close it and go on to their owner. Accessibility:
 `shortcuts`, `shortcuts.search`, `shortcuts.section.<surface>`,
 `shortcuts.row.<command id>`, `shortcuts.settings`, `shortcuts.close`.
+
+**Settings › Shortcuts.** The same sections, every one open, as
+SettingsSections of Rows (`settings.shortcut.<command id>`); the Quick
+Launch row shows the configured hotkey while quick launch is on. A row
+whose chord is bound to another command within one of its surfaces gets
+a "Conflicts with <title>" status Pill in the error tone after its key
+cap (`settings.shortcut.conflict.<id>`); the shipped table has none (the
+registry test forbids it), the pill is for rebinding. The Quick Launch
+row gets the same pill when macOS's input source switching uses the
+hotkey, and General › Hotkey shows the warning text under the recorder
+(`settings.hotkey.warning`): `InputSourceHotKeys` (HesperCore) decodes
+`AppleSymbolicHotKeys` entries 60 and 61 from the
+`com.apple.symbolichotkeys` defaults suite (enabled flag, key code and
+NSEvent modifier flags mapped to Carbon's) and compares them to the
+`HotKeySpec`; when the suite has neither entry (macOS writes them only
+once changed) or cannot be read, a hotkey equal to macOS's defaults
+⌃Space or ⌃⌥Space gets the static "may use" warning instead.
 
 **Invariants** (`CommandsTests`): no chord is bound twice within one
 surface (a chord bound everywhere conflicts with the same chord in any
