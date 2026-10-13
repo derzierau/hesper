@@ -130,7 +130,9 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     private let divider = NSView()
     let card = SessionCardModel()
     private let cardHost: SessionCardPanel
-    private let hints = NSHostingView(rootView: Hints(items: []))
+    /// The footer: Resume ⏎, Fork ⌥⏎, Open full size ⌘⏎ on the selection
+    /// (`SearchPreview.footer`; disabled with nothing to act on).
+    private(set) var footerButtons: [KeyButtonView] = []
 
     // Perf (tests): ⌘Y → first rows drawn; keystroke → rows; daemon answer → rows.
     private(set) var openStarted: CFTimeInterval = 0
@@ -274,8 +276,15 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         card.onStartContinue = { [weak self] in self?.startContinue() }
         card.onCancelContinue = { [weak self] in self?.cancelContinue() }
 
-        box.addSubview(hints)
-        updateHints()
+        for a in SearchPreview.footerDefault {
+            let b = KeyButtonView(a.title, kbd: a.key, variant: a.primary ? .primary(.working) : .quiet) { [weak self] in
+                self?.perform(SessionCardModel.action(a.key))
+            }
+            b.setAccessibilityIdentifier("history.footer.\(a.key)")
+            b.isEnabled = false
+            chrome.footer.addArrangedSubview(b)
+            footerButtons.append(b)
+        }
         applyTheme()
 
         observer = hub.observe { [weak self] c in self?.hubChanged(c) }
@@ -341,7 +350,6 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         }
         window?.makeFirstResponder(searchField)
         (window?.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
-        updateHints()
         if !firstOpen && pendingSelect == nil && text == nil {
             // Warm: the last results draw at once; refresh underneath.
             noteRowsShown()
@@ -442,18 +450,14 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         progress.frame = NSRect(x: 0, y: fh, width: w, height: DS.Spacing.xxs)
         updateProgressFill()
 
-        // Footer.
-        let footerTop = h - SearchLook.footerHeight
-        hints.frame = NSRect(x: 0, y: footerTop, width: w, height: SearchLook.footerHeight)
-
         // Preview (right), the list (left).
         let previewW = min(SearchLook.previewMax, max(SearchLook.previewMin, (w * SearchLook.previewFraction).rounded()))
         let paneTop = fh + 1
-        divider.frame = NSRect(x: w - previewW - 1, y: paneTop, width: 1, height: max(0, footerTop - paneTop))
-        cardHost.frame = NSRect(x: w - previewW, y: paneTop, width: previewW, height: max(0, footerTop - paneTop))
+        divider.frame = NSRect(x: w - previewW - 1, y: paneTop, width: 1, height: max(0, h - paneTop))
+        cardHost.frame = NSRect(x: w - previewW, y: paneTop, width: previewW, height: max(0, h - paneTop))
         let listW = divider.frame.minX
         let listTop = paneTop + DS.Spacing.m
-        scroll.frame = NSRect(x: DS.Spacing.s, y: listTop, width: max(0, listW - 2 * DS.Spacing.s), height: max(0, footerTop - listTop - DS.Spacing.xs))
+        scroll.frame = NSRect(x: DS.Spacing.s, y: listTop, width: max(0, listW - 2 * DS.Spacing.s), height: max(0, h - listTop - DS.Spacing.xs))
         table.tableColumns.first?.width = scroll.contentSize.width
         emptyLabel.frame = NSRect(x: DS.Spacing.l, y: listTop + DS.Spacing.xxl, width: max(0, listW - 2 * DS.Spacing.l), height: emptyLabel.intrinsicContentSize.height)
     }
@@ -559,7 +563,6 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
             refreshCard(keepChanges: true)
         }
         rebuildFilters()
-        updateHints()
     }
 
     private func noteRowsShown() {
@@ -781,6 +784,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     private var onlineMachines: [String] { model.machines.filter(\.online).map(\.short) }
 
     private func refreshCard(keepChanges: Bool) {
+        defer { updateFooter() }
         guard let s = selectedSession else { card.text = nil; return }
         let changes = shownDetail?.id == s.id ? shownDetail?.changes : nil
         if !keepChanges && shownDetail?.id != s.id { shownDetail = nil }
@@ -795,6 +799,18 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
                                           moveTo: moveTo, restore: model.restoreOffered(s), restoreScratch: model.archivedScratch(for: s) != nil)
         t.resumeHereNote = SearchPreview.continueNote(s, local: model.localMachine, online: onlineMachines, machines: names, moveTo: moveTo)
         card.text = t
+    }
+
+    /// The footer names ⏎ and ⌥⏎ as the preview does ("Open (live)",
+    /// "Resume on mini"); a verb the selection lacks shows disabled.
+    private func updateFooter() {
+        let verbs = card.text.map { SearchPreview.footer(for: $0.actions) } ?? []
+        for (b, a) in zip(footerButtons, SearchPreview.footerDefault) {
+            let v = verbs.first { $0.key == a.key }
+            let title = v?.title ?? a.title
+            if b.label != title { b.label = title }
+            if b.isEnabled != (v != nil) { b.isEnabled = v != nil }
+        }
     }
 
     private func loadDetail(_ id: String) {
@@ -887,7 +903,6 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         case .close: close()
         case .focusList:
             window?.makeFirstResponder(table)
-            updateHints()
         case .focusSearch(let text):
             window?.makeFirstResponder(searchField)
             if let text {
@@ -895,20 +910,11 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
                 (window?.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
                 controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
             }
-            updateHints()
         case .resume, .fork, .continueOther, .archive, .delete, .copyID:
             guard let s = selectedSession else { NSSound.beep(); return }
             act(a, on: s)
         case .pass: break
         }
-    }
-
-    private func updateHints() {
-        let list = !searchHasFocus
-        // One line: the keys the preview's buttons don't already show.
-        hints.rootView = Hints(items: list
-            ? [("↑↓", "select"), ("⇧⇥", "search"), ("⇥", "All"), ("esc", "close")]
-            : [("↑↓", "select"), ("⇧⇥", "list"), ("⇥", "All"), ("esc", "close")])
     }
 
     // MARK: Actions

@@ -93,7 +93,8 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     private(set) var toolbarButtons: [CommandID: KeyButtonView] = [:]
     private let itemHeader: NSHostingView<ReviewItemHeader>
     private let evidence: NSHostingView<ReviewEvidencePanel>
-    private let hints = NSHostingView(rootView: Hints(items: []))
+    /// The footer: Fold ⏎, Next hunk J, Previous hunk K.
+    private(set) var footerButtons: [KeyButtonView] = []
     let inbox = ReviewTable()
     private let inboxScroll = NSScrollView()
     let stream: ReviewStreamView
@@ -167,7 +168,17 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         meta.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         chrome.toolbar.addView(meta, in: .leading)
 
-        for v in [itemHeader, evidence, hints] as [NSView] { box.addSubview(v) }
+        for v in [itemHeader, evidence] as [NSView] { box.addSubview(v) }
+        let rowVerbs: [(CommandID, String, () -> Void)] = [
+            (.reviewToggleFold, "Fold", { s.toggleFold() }), (.reviewNextHunk, "Next hunk", { s.nextHunk() }),
+            (.reviewPreviousHunk, "Previous hunk", { s.previousHunk() }),
+        ]
+        for (id, title, run) in rowVerbs {
+            let b = KeyButtonView(title, kbd: Self.cap(id), onPress: run)
+            b.setAccessibilityIdentifier("review.footer.\(id.key)")
+            chrome.footer.addArrangedSubview(b)
+            footerButtons.append(b)
+        }
         for d in dividers { d.wantsLayer = true; box.addSubview(d) }
 
         let col = NSTableColumn(identifier: .init("i"))
@@ -229,7 +240,6 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         session.onStream = { [weak self] in self?.streamChanged() }
         session.onFocus = { [weak self] old, new in self?.stream.focusChanged(old: old, new: new) }
         observeChanges { [weak self] in self?.sessionChanged() }
-        updateHints()
         applyTheme()
     }
 
@@ -355,9 +365,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
 
     private func layoutBox() {
         let w = box.bounds.width, h = box.bounds.height
-        let fh = SearchLook.footerHeight
-        hints.frame = NSRect(x: 0, y: h - fh, width: w, height: fh)
-        let top: CGFloat = 0, bottom = h - fh, paneH = max(0, bottom - top)
+        let top: CGFloat = 0, bottom = h, paneH = max(0, bottom - top)
         let wide = w >= ReviewLook.wideMin
         let leftW = wide ? ReviewLook.inboxWidth : ReviewLook.narrowInboxWidth
         let rightW = wide ? ReviewLook.evidenceWidth : 0
@@ -427,6 +435,8 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
             let on = id == .reviewBulkAccept ? !session.items.isEmpty : hasItem
             if b.isEnabled != on { b.isEnabled = on }
         }
+        let hasHunks = !(session.stream?.hunks.isEmpty ?? true)
+        for b in footerButtons where b.isEnabled != hasHunks { b.isEnabled = hasHunks }
         let n = session.currentNotes.count
         let sendBack = n == 0 ? "Send back" : "Send back · \(n)"
         if let b = toolbarButtons[.reviewSendBack], b.label != sendBack { b.label = sendBack }
@@ -448,7 +458,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         stream.reload()
         if let f = session.focused { stream.focusChanged(old: nil, new: f) }
         updateEmpty()
-        updateHints()
+        updateToolbar()
     }
 
     private func updateEmpty() {
@@ -460,12 +470,6 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         }
         emptyLabel.stringValue = text
         emptyLabel.isHidden = text.isEmpty
-    }
-
-    private func updateHints() {
-        hints.rootView = Hints(items: [("J K", "hunk"), ("N", "file"), ("V", "seen"), ("X", "reject"), ("C", "note"),
-                                       ("⌥↩", "why"), ("⇧A", "bulk"), ("esc", "close")],
-                               leading: "↑↓ items")
     }
 
     // MARK: Inbox

@@ -4250,8 +4250,9 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
   (‹ › file ⇧N N, Bulk accept ⇧A, Provenance ⌥⏎, the Macs and what the
   sheet is busy with; on the right Send back ⇧⏎ with the note count and
   the primary Accept and commit ⌘⏎; every verb a KeyButton whose cap
-  comes from the registry, disabled with no item selected). Left the
-  inbox (every Mac, ranked: fresh
+  comes from the registry, disabled with no item selected); the footer
+  (Fold ⏎, Next hunk J, Previous hunk K, disabled without hunks). Left
+  the inbox (every Mac, ranked: fresh
   evidence first, then stale, missing; lower risk first; then the one
   waiting longest), middle the selected item's header (name, where,
   churn, the status line) and its diff, right the evidence (fresh ✓ /
