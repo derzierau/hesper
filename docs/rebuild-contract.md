@@ -1438,6 +1438,9 @@ Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
   Close).
 - **Quick launch.** A × (esc) in the panel's top right; File › Quick
   Launch… toggles the panel, as the status item and the hotkey do.
+- **Completion lists** (the composer's popover, quick launch): rows are
+  `Row`s with a button role (`completion.row.<id>`); the keys are
+  unchanged.
 
 #### As built — windows (multi-window iteration 1)
 

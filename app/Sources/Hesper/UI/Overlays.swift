@@ -252,10 +252,8 @@ struct OverlayRoot: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
                         ForEach(Array(comp.items.enumerated()), id: \.element.id) { i, item in
-                            OverlayRow(title: item.title, detail: item.detail, mark: item.mark, dot: nil, checked: false,
-                                       selected: i == sel, enabled: item.enabled, tint: TokenStyle.fg(item.kind))
+                            CompletionRow(item: item, selected: i == sel) { c.accept(item) }
                                 .id(i)
-                                .onTapGesture { if item.enabled { c.accept(item) } }
                         }
                     }
                     .padding(DS.Spacing.s)
@@ -779,6 +777,24 @@ struct PopoverPanel: View {
             .padding(.horizontal, DS.Spacing.xs).padding(.vertical, DS.Spacing.m - DS.Spacing.xxs / 2)
             .onAppear { DispatchQueue.main.async { fieldFocused = true } }
             .accessibilityIdentifier(id)
+    }
+}
+
+/// A completion list's row (the composer's popover, the quick launch
+/// panel): a Row with a button role; its mark ("M", "⑂") leads the meta.
+struct CompletionRow: View {
+    var item: CompletionItem
+    var selected: Bool
+    var accept: () -> Void
+
+    var body: some View {
+        Button { if item.enabled { accept() } } label: {
+            Row(title: item.title, meta: [item.mark, item.detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "), selected: selected)
+                .opacity(item.enabled ? 1 : OverlayLook.disabledOpacity)
+        }
+        .buttonStyle(.plain)
+        .disabled(!item.enabled)
+        .accessibilityIdentifier("completion.row.\(item.id)")
     }
 }
 

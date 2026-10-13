@@ -248,9 +248,7 @@ struct QuickCompletion: View {
             let sel = c.selected
             VStack(spacing: 0) {
                 ForEach(Array(c.items.prefix(QuickLaunchController.completionRows).enumerated()), id: \.element.id) { i, item in
-                    OverlayRow(title: item.title, detail: item.detail, mark: item.mark, dot: nil, checked: false,
-                               selected: i == sel, enabled: item.enabled, tint: TokenStyle.fg(item.kind))
-                        .onTapGesture { if item.enabled { composer.accept(item) } }
+                    CompletionRow(item: item, selected: i == sel) { composer.accept(item) }
                 }
             }
             .padding(DS.Spacing.xs)
