@@ -927,9 +927,9 @@ libghostty findings that shaped the code:
 **UI as built:** wall (arrangements below), card header (state dot,
 name, project · branch, elapsed time while working, machine · kind chip;
 remote chips in purple), ring for approval / question / error with a soft
-glow, inline Allow / Always / Deny… (also ⏎ / A / N on the selected tile) in
-the card's own attention band, summary line for done/idle, exited band with
-Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ stepping in wall order.
+glow, inline Allow / Always / Deny… as KeyButtons (also ⏎ / A / N on the
+selected tile; "pointer paths" below) in the card's own attention band,
+summary line for done/idle, exited band with Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ stepping in wall order.
 ⌘J attention queue. Status (counts, machines with RTT, clickable attention
 chips → ⌘J, working count), the layout switch, New Agent and ⌘K search in
 the window's unified toolbar. Menu bar item (counts, the queue, New Agent). Notifications on
@@ -1676,6 +1676,28 @@ SHOW=selected|selected-approval FAKE_ARGS=--demo-states SHOT=…`.
 `make perf` after (16 flood tiles, 60 Hz external display this run):
 0 dropped, keystroke → frame p50 3.5 ms (focus) / 2.1 ms (active tile),
 state → ring p50 6.5 ms, 323 MB — unchanged.
+
+#### As built — pointer paths on tiles, strips and the composer
+
+Every verb a tile, a strip, the focus header, a draft or a ghost card
+shows is a control that carries its key (`KeyButton`, `IconButton`,
+`docs/design-system.md`); a key hint that is not an action is gone.
+
+**Action strip** (`UI/TileParts.swift`, pure `HesperCore/TileActions`):
+state-driven exactly as before. An approval shows Allow ⏎ (primary,
+tinted `signal`), Always A, Deny N and Open ⌘↩; a question hesperd answers
+itself its numbered answers (the first one ⏎); a question with typed
+options its numbered options (each sends its number) and Open; a free
+text question Open; an error Resume (when it exited) and Open; an ended
+agent Resume ⏎ (killed: Resume ⏎ · Close ⌘W); a working agent only the
+activity line. `TileActions.actions(agent, inFocus:canChoose:killed:)`
+lists them with their accessibility identifiers (`approve.allow`,
+`answer.option.2`, `tile.resume`, …); `TileActions.split(_, width:)`
+keeps the primary and the verbs that don't fold on a tight tile (narrower
+than 420 pt) and moves Always and Open behind a ⋯ `IconButton`
+(`tile.more`) whose menu shows the same key caps, instead of dropping
+them. Key caps show only where the keys work (the selected, not active
+wall tile); a tight tile shows none. Tests: `TileActionsTests`.
 
 #### As built — drop to attach
 
