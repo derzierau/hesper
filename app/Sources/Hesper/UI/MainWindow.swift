@@ -43,7 +43,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
         }
         if model.popover != nil {
             let id = CommandRegistry.resolve(chord, in: model.popover == .attention ? .inbox : .popover)
-            if id.flatMap(OverlayKeys.action(for:)) == .alternate { return model.popoverKey(.alternate) }
+            if id.flatMap(OverlayKeys.action(for:)) == .alternate { _ = model.popoverKey(.alternate); return true } // a name field's: nothing else runs
             if id == .palette { model.closePopover(); model.perform(.palette); return true }
             if id == .closeTrayItem, model.popover == .background {
                 return model.closeFromTray() // the background tray: ⌘W closes the selected agent
