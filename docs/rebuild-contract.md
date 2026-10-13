@@ -1649,10 +1649,10 @@ a window). Retargeting was chosen over "do nothing" for an untabbed window
 because the request is to move to the next agent in the single view; the
 skip keeps ⌥⌘→ from ever closing or duplicating another window.
 
-**Discoverability.** Tile footer hints (above), focus / agent window
-header `⌥⌘← →  next agent · ⌘↩ wall`, View ▸ Previous Agent ⌥⌘← / Next
-Agent ⌥⌘→ (moved from the Agents menu; in an agent window they act on
-its tabs / agent).
+**Discoverability.** Tile footer hints (above), the focus / agent window
+header's "‹ Wall ⌘⏎" KeyButton and ‹ › IconButtons (⌥⌘← ⌥⌘→; "pointer
+paths" below), View ▸ Previous Agent ⌥⌘← / Next Agent ⌥⌘→ (moved from
+the Agents menu; in an agent window they act on its tabs / agent).
 
 **Tests.** HesperCore (`WallNavigationTests`, `CoreTests`): grid rows
 wrap like text, partial row, shelf ↔ grid, main + stack, unplaced cards,
@@ -1752,6 +1752,18 @@ popover keeps its rows. Tests: `DraftStartControlTests`.
 
 **Ghost card.** Resume ⏎ and Forget ⌫ are KeyButtons; right-click gives
 Resume, Fork and Forget ("As built — shared history (app)").
+
+**Focus header** (`FocusHeader`, the focus view and every agent window).
+Left: "‹ Wall ⌘⏎" (`focus.back`, `toggleFocus`: the wall; in an agent
+window the agent on its wall) and ‹ › IconButtons (`focus.previous`,
+`focus.next`: the wall's previous / next agent; an agent window steps
+within itself through `FocusView.onStep`, tabs or retargeting as ⌥⌘← →
+do), then "n of m" on a wall. Centre: StateMark, name, project · branch,
+state · elapsed, machine · tool. Right: the "typing ⌘esc" chip
+(`focus.typing`; ⌘esc has no pointer equivalent other than the wall), a
+"need you" Pill with the count of agents on the wall that need the user
+(`focus.needsYou`, ⌘J; none: no Pill) and ⋯ (`focus.menu`) with the
+agent's menu (the tile menu without "Open Full Size").
 
 #### As built — drop to attach
 
