@@ -628,7 +628,10 @@ struct AttentionItem: View {
 
 // MARK: - Popover list
 
-/// A popover's list (keys come through the window: ↑↓ ⏎ ⌘⏎ esc, typing).
+/// A popover's list (keys come through the window: ↑↓ ⏎ ⌘⏎ esc; a
+/// filterable one types into its field, which has the keyboard while it
+/// is open). The layout and scope popovers' title row carries a pin
+/// (apply the highlighted row and keep it open, ⌘⏎) and a × (esc).
 struct PopoverPanel: View {
     @Bindable var model: AppModel
     var kind: PopoverKind
@@ -636,6 +639,10 @@ struct PopoverPanel: View {
     var list: OverlayList
     var width: CGFloat
     @FocusState private var fieldFocused: Bool
+    @FocusState private var filterFocused: Bool
+    /// The filter field's own copy (an NSTextField being edited ignores
+    /// outside changes); the model's list keeps the query.
+    @State private var filterText = ""
 
     static let titleHeight = DS.chromeMaxHeight
     static let filterHeight = DS.chromeMaxHeight + DS.Spacing.xxs
@@ -658,21 +665,42 @@ struct PopoverPanel: View {
         let sel = list.selection(enabled: content.items.map(\.enabled))
         VStack(alignment: .leading, spacing: 0) {
             if let t = content.title {
-                Text(t).font(.ds(.chrome, .semibold)).foregroundStyle(Theme.muted).lineLimit(1)
-                    .padding(.horizontal, DS.Spacing.m).frame(height: Self.titleHeight, alignment: .leading)
+                HStack(spacing: DS.Spacing.s) {
+                    Text(t).font(.ds(.chrome, .semibold)).foregroundStyle(Theme.muted).lineLimit(1)
+                    Spacer(minLength: DS.Spacing.s)
+                    if kind.keepsOpen {
+                        KeyButton("Apply, keep open", kbd: "⌘⏎", variant: .icon("pin")) { _ = model.popoverKey(.alternate) }
+                            .accessibilityIdentifier("popover.pin")
+                        KeyButton("Close", kbd: "esc", variant: .icon("xmark")) { model.closePopover() }
+                            .accessibilityIdentifier("popover.close")
+                    }
+                }
+                .padding(.horizontal, DS.Spacing.m).frame(height: Self.titleHeight)
             }
             if kind.filterable {
                 HStack(spacing: DS.Spacing.s) {
-                    Image(systemName: "magnifyingglass").font(.ds(.meta)).foregroundStyle(Theme.dim)
-                    Text(list.query.isEmpty ? "Type to filter" : list.query)
-                        .font(list.query.isEmpty ? .ds(.chrome) : DS.monoFont(.chrome))
-                        .foregroundStyle(list.query.isEmpty ? Theme.dim : Theme.fg).lineLimit(1)
-                    Spacer()
+                    Image(systemName: "magnifyingglass").font(.ds(.meta)).foregroundStyle(Theme.dim).accessibilityHidden(true)
+                    TextField("", text: $filterText, prompt: Text("Type to filter").font(.ds(.chrome)).foregroundStyle(Theme.dim))
+                        .textFieldStyle(.plain)
+                        .font(DS.monoFont(.chrome))
+                        .foregroundStyle(Theme.fg)
+                        .focused($filterFocused)
+                        .accessibilityIdentifier("popover.filter")
                 }
                 .padding(.horizontal, DS.Spacing.m).frame(height: Self.filterHeight - DS.Spacing.xs)
                 .background(DS.Radius.shape(DS.Radius.control).fill(Theme.chipBG.opacity(0.6)))
                 .padding(.horizontal, DS.Spacing.xs).padding(.bottom, DS.Spacing.xs)
-                .accessibilityIdentifier("popover.filter")
+                .onAppear {
+                    filterText = list.query
+                    DispatchQueue.main.async { filterFocused = true }
+                }
+                .onChange(of: list.query) { if list.query != filterText { filterText = list.query } }
+                .onChange(of: filterText) {
+                    guard var l = model.popoverLists[kind.key], l.query != filterText else { return }
+                    l.query = filterText
+                    l.index = 0
+                    model.popoverLists[kind.key] = l
+                }
             }
             if let f = content.field, case .rename(let id) = kind {
                 field(f, text: Binding(get: { model.renameText[id] ?? "" }, set: { model.renameText[id] = $0 }), id: "rename.field") {

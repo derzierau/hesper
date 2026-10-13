@@ -1417,6 +1417,11 @@ Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
   the × in the title close. "Nothing matches" under a filter, "Nothing
   needs you." (and the panel closes itself) with an empty queue; the
   filter clears when the inbox opens.
+- **Popovers.** "Type to filter" is a text field that has the keyboard
+  while a filterable popover is open (↑↓ ⏎ ⇥ esc route through the
+  window; ⌫ deletes in the field). The layout popover (titled "Layout")
+  and the scope popover carry a pin in their title row (apply the
+  highlighted row and keep the popover open: ⌘⏎) and a × (esc).
 
 #### As built — windows (multi-window iteration 1)
 

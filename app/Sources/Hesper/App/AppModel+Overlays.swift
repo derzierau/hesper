@@ -58,6 +58,9 @@ enum PopoverKind: Equatable {
         default: return nil
         }
     }
+    /// ⌘⏎ applies the highlighted row and keeps the popover open (the
+    /// title row's pin button does the same).
+    var keepsOpen: Bool { self == .layout || self == .scope }
     /// Typing filters the list.
     var filterable: Bool {
         switch self {
@@ -191,7 +194,7 @@ extension AppModel {
                                              checked: ownWallMode == m, run: { [weak self] in self?.ownWallMode = m }))
                 }
             }
-            return PopoverContent(title: nil, items: items, note: nil, hints: [("⏎", "choose"), ("⌘⏎", "keep open"), ("esc", "close")])
+            return PopoverContent(title: "Layout", items: items, note: nil, hints: [("⏎", "choose"), ("⌘⏎", "keep open"), ("esc", "close")])
         case .background:
             // Drawn by BackgroundPanel (Overlays.swift); these rows serve the
             // generic list code (↑↓ ⏎, tests).
