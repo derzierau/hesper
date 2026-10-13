@@ -29,7 +29,7 @@ enum PopoverKind: Equatable {
     case attention, machines, layout, background
     /// The wall's scope pill (window layer: content from AppModel.scopeContent).
     case scope
-    /// ⌃⌘D: the desk picker (desks: content from AppModel.deskContent).
+    /// ⇧⌘D: the desk picker (desks: content from AppModel.deskContent).
     case desks
     /// Save Desk As… ("") / Rename (the desk id): a name field.
     case deskName(String)
@@ -282,7 +282,7 @@ extension AppModel {
                                          if r.worktree { c.toggleWorktree() } else { d.worktree = false; self?.editDraftContent(d) }
                                          self?.closePopover()
                                      }))
-            return PopoverContent(title: "Worktree", items: items, note: nil, hints: [("⏎", "choose"), ("type", "branch name"), ("⌘⇧W", "toggle")])
+            return PopoverContent(title: "Worktree", items: items, note: nil, hints: [("⏎", "choose"), ("type", "branch name"), ("⌥⌘B", "toggle")])
         }
     }
 

@@ -5,7 +5,7 @@ import HesperCore
 /// arrangement of windows saved per display setup in desks.json, switched
 /// automatically when displays are plugged in or out (debounced 1 s, never
 /// during a drag or live resize, windows animated), named desks per setup
-/// (Window ▸ Save Desk As…, Window ▸ Desks ▸ …, the ⌃⌘D picker), fold to
+/// (Window ▸ Save Desk As…, Window ▸ Desks ▸ …, the ⇧⌘D picker), fold to
 /// defaults for a setup without a desk. Pure rules: HesperCore/Desks.swift.
 @MainActor
 final class DeskController: NSObject, NSMenuDelegate {
@@ -253,7 +253,7 @@ final class DeskController: NSObject, NSMenuDelegate {
     func content(_ kind: PopoverKind, model: AppModel) -> PopoverContent {
         if case .deskName(let id) = kind {
             let title = id.isEmpty ? "Save desk as" : "Rename “\(book.desk(id)?.name ?? "")”"
-            return PopoverContent(title: title, items: [], note: id.isEmpty ? "For \(active.defaultName); switch with ⌃⌘D" : nil,
+            return PopoverContent(title: title, items: [], note: id.isEmpty ? "For \(active.defaultName); switch with ⇧⌘D" : nil,
                                   hints: [("⏎", id.isEmpty ? "save" : "rename"), ("esc", "close")], field: "Desk name")
         }
         let cur = currentDesk?.id
@@ -317,7 +317,7 @@ final class DeskController: NSObject, NSMenuDelegate {
         let sub = NSMenuItem(title: "Desks", action: nil, keyEquivalent: "")
         sub.submenu = desksMenu
         wm.insertItem(sub, at: index)
-        wm.insertItem(item("Desk Picker…", "d", [.command, .control]) { [weak self] in self?.showPicker() }, at: index + 1)
+        wm.insertItem(item("Desk Picker…", "d", [.command, .shift]) { [weak self] in self?.showPicker() }, at: index + 1)
         wm.insertItem(item("Save Desk As…", "", []) { [weak self] in
             guard let self else { return }
             let m = self.manager.activeWall.model

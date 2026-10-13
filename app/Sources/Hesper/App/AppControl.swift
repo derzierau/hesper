@@ -269,7 +269,7 @@ final class AppControl {
         case .save:
             desks.saveAs(r.name!) // Save Desk As…
         case .switch:
-            desks.select(try find().id) // ⌃⌘D picker
+            desks.select(try find().id) // ⇧⌘D picker
         case .rename:
             desks.rename(try find().id, to: r.newName!)
         case .remove:

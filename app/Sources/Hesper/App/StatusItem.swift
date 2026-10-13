@@ -68,7 +68,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(none)
             menu.addItem(.separator())
         }
-        add(menu, "Open Hesper", "0", #selector(show))
+        add(menu, "Open Hesper", "0", #selector(show)).keyEquivalentModifierMask = [.command, .shift] // as Window ▸ Show Wall; ⌘0 is the sidebar
         add(menu, "New agent…", "n", #selector(newAgent))
         add(menu, "History…", "y", #selector(history))
         add(menu, "Review…", "r", #selector(review))

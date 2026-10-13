@@ -1146,7 +1146,7 @@ Defaults: no project (see "New drafts have no project" below), this Mac,
 the project's last profile once chosen (else Settings › Profiles, else
 hesperd's); worktree off with a
 branch suggested from the first line (`Fix the flaky badge test` →
-`fix/flaky-badge-test`), ⌘⇧W toggles. ⌘↩ starts: the spawn's agent takes
+`fix/flaky-badge-test`), ⌥⌘B toggles (⇧⌘W tidies up, as everywhere). ⌘↩ starts: the spawn's agent takes
 the draft's place (`placements`, remembered in UserDefaults; the agent's
 tile is created in the draft tile's frame — no movement), the first line
 names it, the draft leaves hesperd. ⌥↩ starts and opens the next draft
@@ -2068,7 +2068,7 @@ stay; clamping falls back to overlap). windows.json is left in place.
 setup), plus named desks (Window ▸ Save Desk As…, the picker's "Save
 Desk As…": a name field popover; the same name replaces). Each setup
 has a *current* desk; changes go into it. Window ▸ Desks ▸ <name> and
-the **⌃⌘D picker** (overlay system `PopoverKind.desks`, under the
+the **⇧⌘D picker** (overlay system `PopoverKind.desks`, under the
 toolbar of the frontmost wall: this setup's desks checked, desks of
 other displays (picking one copies it into this setup), Save Desk As…,
 Rename) switch between them. Removing a named desk (Settings) falls
@@ -2169,7 +2169,7 @@ the Studio Display made home, agent window, collapsed band, sidebar);
 unplug → laptop desk exactly; replug (displays listed in reverse) →
 office desk exactly (frames, scopes, view, home, agent windows); same
 displays in another order: no switch; no switch while busy, then the
-switch; ⌃⌘D picker, Save Desk As "Deep work", picking desks, Window ▸
+switch; ⇧⌘D picker, Save Desk As "Deep work", picking desks, Window ▸
 Desks; switching off keeps the windows; desks.json has 2 setups, 3
 desks; relaunch on the office displays restores Deep work with the
 group wall as home, all windows on attached displays. `make test`

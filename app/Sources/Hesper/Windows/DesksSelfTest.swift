@@ -11,7 +11,7 @@ import HesperCore
 /// (group wall made home, agent window, collapsed band, sidebar); laptop
 /// and office switch back and forth restoring walls, scopes, views and
 /// agent windows; order-independence; no switch during a drag; Save Desk
-/// As and the ⌃⌘D picker; automatic switching off. Phase 2 (relaunch on
+/// As and the ⇧⌘D picker; automatic switching off. Phase 2 (relaunch on
 /// the office displays): the office desk comes back. Screenshots with
 /// `--desks-shots DIR`.
 @MainActor
@@ -249,7 +249,7 @@ final class DesksSelfTest {
         await makeKey(mainWall.window)
         desks.showPicker()
         let picker = await Harness.wait(2) { self.manager.activeWall.model.popover == .desks }
-        check("⌃⌘D opens the desk picker popover", picker)
+        check("⇧⌘D opens the desk picker popover", picker)
         let pm = manager.activeWall.model
         pm.deskNameText = "Deep work"
         pm.closePopover()

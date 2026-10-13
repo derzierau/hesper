@@ -422,7 +422,7 @@ enum ShortcutList {
     static func groups(hotKey: String?) -> [Group] {
         var general = [Item(title: "New agent", keys: "⌘N"), Item(title: "Next agent needing you", keys: "⌘J"),
                        Item(title: "Search and commands", keys: "⌘K"), Item(title: "History", keys: "⌘Y"),
-                       Item(title: "Settings", keys: "⌘,")]
+                       Item(title: "Review", keys: "⌘R"), Item(title: "Settings", keys: "⌘,")]
         if let hotKey { general.append(Item(title: "Quick launch, from any app", keys: hotKey)) }
         return [
             Group(title: "General", items: general),
@@ -454,11 +454,12 @@ enum ShortcutList {
                 Item(title: "Show the wall", keys: "⇧⌘0"),
                 Item(title: "New wall window", keys: "⌥⌘N"),
                 Item(title: "Wall scope", keys: "⌃⌘S"),
+                Item(title: "Desk picker", keys: "⇧⌘D"),
             ]),
             Group(title: "New agent", items: [
                 Item(title: "Start", keys: "⌘↩"),
                 Item(title: "Start and write the next one", keys: "⌥↩"),
-                Item(title: "Worktree on / off", keys: "⇧⌘W"),
+                Item(title: "Worktree on / off", keys: "⌥⌘B"),
                 Item(title: "Leave the draft", keys: "esc"),
             ]),
         ]

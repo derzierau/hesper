@@ -262,7 +262,9 @@ private let ctx = ComposerContext(
     @Test func composerKeysAreTheComposers() {
         #expect(KeyRouter.route(KeyChord(.enter, command: true), mode: .compose, selectedState: nil) == .startDraft)
         #expect(KeyRouter.route(KeyChord(.enter, option: true), mode: .compose, selectedState: nil) == .startDraftAndNew)
-        #expect(KeyRouter.route(KeyChord(.char("w"), command: true, shift: true), mode: .compose, selectedState: nil) == .toggleWorktree)
+        #expect(KeyRouter.route(KeyChord(.char("b"), command: true, option: true), mode: .compose, selectedState: nil) == .toggleWorktree)
+        #expect(KeyRouter.route(KeyChord(keyCode: 11, characters: "b", command: true, option: true), mode: .compose, selectedState: nil) == .toggleWorktree)
+        #expect(KeyRouter.route(KeyChord(.char("w"), command: true, shift: true), mode: .compose, selectedState: nil) == .tidyUp)
         #expect(KeyRouter.route(KeyChord(.escape), mode: .compose, selectedState: nil) == .leaveDraft)
         #expect(KeyRouter.route(KeyChord(.char("a"), command: true), mode: .compose, selectedState: nil) == .passThrough)
         #expect(KeyRouter.route(KeyChord(.char("z"), command: true), mode: .wall, selectedState: nil) == .undo)

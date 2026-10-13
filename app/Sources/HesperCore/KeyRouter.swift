@@ -71,7 +71,7 @@ public enum AppCommand: Equatable, Sendable {
     case answer(Decision)
     case denyWithMessage
     /// Drafts: start (⌘↩), start and open another (⌥↩), toggle the
-    /// worktree (⌘⇧W), leave as a quiet tile (esc), edit the selected one.
+    /// worktree (⌥⌘B), leave as a quiet tile (esc), edit the selected one.
     case startDraft, startDraftAndNew, toggleWorktree, leaveDraft, editDraft
     /// ⌘Z outside a text field: the newest undo toast.
     case undo
@@ -191,8 +191,7 @@ public enum KeyRouter {
         if k.command && !k.option && !k.control {
             switch k.key {
             case .enter: return .startDraft
-            case .char("w") where k.shift: return .toggleWorktree
-            case .char("W"): return .toggleWorktree
+            case .char("w") where k.shift, .char("W"): return .tidyUp // as everywhere; the worktree toggle is ⌥⌘B
             case .char("w"): return .closeAgent
             case .char("t") where k.shift, .char("T"): return .reopenClosed
             case .char("n") where !k.shift: return .newAgent
@@ -207,6 +206,7 @@ public enum KeyRouter {
             switch k.key {
             case .char(let c) where WallArrangement.numbered(Int(String(c)) ?? 0) != nil: return .arrangement(Int(String(c))! - 1)
             case .char("l"), .char("L"): return .cycleArrangement
+            case .char("b"), .char("B"): return .toggleWorktree
             default: return .passThrough
             }
         }
