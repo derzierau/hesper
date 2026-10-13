@@ -149,7 +149,7 @@ extension AppModel {
         case .attention:
             // Drawn by AttentionPanel (Overlays.swift) from attentionEntries();
             // these rows serve the generic list code (selection, tests).
-            let items = attentionEntries().map { e -> OverlayItem in
+            let items = inboxEntries().map { e -> OverlayItem in
                 OverlayItem(id: e.id, title: e.agent.name, detail: ([e.agent.machine] + e.whereabouts).joined(separator: " · "),
                             stateMark: StateMarkKind(e.agent.state),
                             run: { [weak self] in self?.openFromQueue(e.agent) },
@@ -391,6 +391,15 @@ extension AppModel {
         }
     }
 
+    /// The inbox's items: the queue through its filter (the field at the
+    /// top: agent name, project, question).
+    func inboxEntries() -> [AttentionEntry] {
+        let q = popoverLists[PopoverKind.attention.key]?.query ?? ""
+        let all = attentionEntries()
+        guard !q.isEmpty else { return all }
+        return all.filter { AttentionInbox.matches(q, name: $0.agent.name, project: $0.agent.project ?? "", question: $0.question) }
+    }
+
     /// ⌘J: opens the inbox under the toolbar's attention pill (again:
     /// closes it). Nothing in the queue: says so. No pill to hang it on
     /// (an agent window): goes to the next agent, as before.
@@ -420,13 +429,20 @@ extension AppModel {
         if mode == .focus { focus(next.id) } else { activate(next.id) }
     }
 
-    /// The inbox's keys: J/K ↑↓ move, 1–9 answer, ⏎ primary, ⌘⏎ open, esc.
+    /// The inbox's keys: J/K ↑↓ move, 1–9 A N answer, ⏎ primary, ⌘⏎ open,
+    /// M move, esc. Any other letter goes to the filter (and the field
+    /// takes the keyboard: from then on every key types); ⌫ deletes.
     /// Typing never falls through to the wall while it is open.
     func attentionKey(_ action: OverlayKeyAction) -> Bool {
-        let entries = attentionEntries()
+        let entries = inboxEntries()
         var list = popoverList
         let enabled = entries.map { _ in true }
         let sel = list.selection(enabled: enabled)
+        if action == .deleteBackward {
+            list.deleteBackward()
+            popoverList = list
+            return true
+        }
         switch InboxKeys.route(action) {
         case .move(let d):
             list.move(d, enabled: enabled)
@@ -441,8 +457,14 @@ extension AppModel {
             closePopover()
         case .moveElsewhere:
             if let sel, let t = entries[sel].moveTo { moveFromQueue(entries[sel].agent, to: t.short) }
+        case .decide(let d):
+            if let sel, let a = InboxKeys.answer(d, in: entries[sel].answers) { answerFromQueue(entries[sel], a) }
         case .none:
-            if case .type = action { return true }
+            if case .type(let s) = action {
+                list.type(s)
+                popoverList = list
+                return true
+            }
             return false
         }
         return true
@@ -450,7 +472,7 @@ extension AppModel {
 
     /// Selects an item (a click on it).
     func selectAttention(_ id: String) {
-        guard let i = attentionEntries().firstIndex(where: { $0.id == id }) else { return }
+        guard let i = inboxEntries().firstIndex(where: { $0.id == id }) else { return }
         var l = popoverList
         l.index = i
         popoverList = l

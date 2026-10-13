@@ -1401,6 +1401,23 @@ offset / rw preamble / alt screen, `internal/attachtty` scroll parser,
 machines|layout|undo|deny|quick|settings|flap|after-focus|active|scroll
 [DAEMON=real]` screenshots each (quick/settings: the panel/window too).
 
+#### As built — pointer paths in the overlays (UI control, phase 3c)
+
+Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
+`docs/design-system.md`); the keys themselves did not move.
+
+- **Inbox ⌘J.** A filter field under the title (agent name, project,
+  question: `AttentionInbox.matches`). Each item is a `Row` (state mark,
+  agent, "machine · other wall · age", the question as its subtitle) with
+  KeyButtons under it: approvals Allow ⏎ · Always A · Deny N, numbered
+  questions 1–n, free text Open ⏎, "Continue on mini M" when it can move,
+  and Open ⌘⏎ (an icon). J K ↑↓ move; the letters answer the selected
+  item; any other letter goes to the filter, and the field then has the
+  keyboard (every key types, ↑↓ ⏎ ⌘⏎ esc still route); ⌫ deletes; esc and
+  the × in the title close. "Nothing matches" under a filter, "Nothing
+  needs you." (and the panel closes itself) with an empty queue; the
+  filter clears when the inbox opens.
+
 #### As built — windows (multi-window iteration 1)
 
 Code: the window

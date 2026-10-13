@@ -117,8 +117,16 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
                     if model.paletteKey(action) { return }
                 default: break
                 }
-            } else if model.popover != nil, !textHasFocus || action == .close {
-                if model.popoverKey(action) { return }
+            } else if model.popover != nil {
+                // A field in the popover (a filter, a name) keeps what is
+                // typed; ↑↓ ⏎ ⇥ esc still route (rename and desk name take
+                // only esc: popoverKey leaves the rest to the field).
+                let fieldsOwn: Bool
+                switch action {
+                case .type, .deleteBackward, .pass: fieldsOwn = textHasFocus
+                default: fieldsOwn = false
+                }
+                if !fieldsOwn, model.popoverKey(action) { return }
             }
         }
         super.sendEvent(event)
