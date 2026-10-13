@@ -409,14 +409,16 @@ that, `kill -QUIT` the daemon: it writes every goroutine to the log.
   header: state dot, name, machine + kind mark. Tiles in `approval` / `question`
   / `error` get a ring and inline actions (Allow / Always / Deny for approvals).
 - **Focus**: ⌘↩ opens a tile full window as `rw --owner` (resizes the PTY to the
-  view); ⌘↩ again or Esc returns. ⌥⌘← / ⌥⌘→ step through agents in wall order.
+  view); ⌘↩ again or ⌘Esc returns (Esc is the agent's). ⌥⌘← / ⌥⌘→ step through agents in wall order.
 - **Attention**: ⌘J jumps to the next agent needing you (approval, then
   question, then error; oldest first). Menu bar item with counts; a macOS
   notification on entering approval/question/error (not while focused on it).
 - **New agent** ⌘N: a draft tile in the wall (was a sheet; see "As built —
   drafts, overlays, …").
-- **⌘K**: palette over agents, projects, machines, actions. ⌘W stops the
-  focused agent (confirm in-app). ⌘⇧M moves it to another machine.
+- **⌘K**: palette over agents, projects, machines, actions. ⌘W closes the
+  selected agent (asks when that would lose something; History keeps it;
+  in an agent window it closes the window and the agent keeps running).
+  ⌘⇧M moves it to another machine.
 - Tokyo Night palette; Ghostty's font settings (read the user's Ghostty config
   for font family/size where possible).
 - Performance budget (from the proposal): local keystroke→screen < 5 ms;
@@ -1319,8 +1321,9 @@ popover from the tile (machines with route and round trip, offline
 dimmed, "with conversation + uncommitted work"; the tile says "moving to
 mini…" in place; undo moves it back); rename popover; the toolbar's
 machines pill (online, route, RTT, agents, pairing hint), attention pill
-(the ⌘J queue: ⏎ go, ⌘⏎ allow) and layout button (four layouts + min
-width; ⌥⌘1–4 stay). Deny… expands the band into a one-line message field
+(the ⌘J inbox: ⏎ the first answer, 1–9 answer, ⌘⏎ opens the tile) and
+layout button (five layouts + min width; ⌥⌘1–5). Deny… expands the band
+into a one-line message field
 in place. ⌘W stops at once / removes at once (committed after 6 s) with
 an undo toast (⌘Z, its button); stop undoes by resuming; only removing
 an agent whose local worktree has uncommitted changes (`git status

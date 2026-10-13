@@ -374,7 +374,7 @@ pick a profile per agent, per project or per kind:
 | ⌘K | Palette: agents, projects, machines, actions |
 | ⌘Y | History: every session on every Mac |
 | ⌘R | Review: finished work from every Mac, its diff, tests and where each change came from |
-| ⌘W | Stop the agent (asks first); for an ended one, remove it |
+| ⌘W | Close the agent: it leaves the wall and stays in History (⌘Z brings it back); asks first when closing would lose something. In an agent window, closes the window and the agent keeps running. |
 | ⌘⇧M | Move the agent to another Mac |
 
 Esc always goes to the agent, since Claude and Codex use it. The menu bar item
