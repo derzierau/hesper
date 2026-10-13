@@ -299,7 +299,7 @@ struct FocusHeader: View {
             Spacer(minLength: DS.Spacing.m)
             HStack(spacing: DS.Spacing.xs) {
                 Text("typing").font(DS.font(.chrome, .medium)).foregroundStyle(Theme.color(.working))
-                Kbd("⌘esc")
+                Kbd(CommandRegistry.cap(.exitFocus) ?? "⌘esc")
             }
             .fixedSize()
             .help("Typing goes to the agent; \(CommandRegistry.cap(.exitFocus) ?? "") returns to the wall")
