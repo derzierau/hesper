@@ -89,6 +89,8 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     let chrome = SheetChromeView(title: "Review", symbol: "checklist")
     private let box = FlippedView()
     private let meta: NSHostingView<ReviewSheetMeta>
+    // The toolbar's verbs (KeyButtons; the caps come from the registry).
+    private(set) var toolbarButtons: [CommandID: KeyButtonView] = [:]
     private let itemHeader: NSHostingView<ReviewItemHeader>
     private let evidence: NSHostingView<ReviewEvidencePanel>
     private let hints = NSHostingView(rootView: Hints(items: []))
@@ -143,6 +145,23 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         box.frame = chrome.contentView.bounds
         box.autoresizingMask = [.width, .height]
         chrome.contentView.addSubview(box)
+        // ‹ › file, Bulk accept, Provenance, the meta; then Send back and
+        // the primary Accept and commit on the right.
+        let s = session
+        let verbs: [(CommandID, String, KeyButton.Variant, NSStackView.Gravity, () -> Void)] = [
+            (.reviewPreviousFile, "Previous file", .icon("chevron.left"), .leading, { s.nextFile(back: true) }),
+            (.reviewNextFile, "Next file", .icon("chevron.right"), .leading, { s.nextFile() }),
+            (.reviewBulkAccept, "Bulk accept", .quiet, .leading, { s.bulkAccept() }),
+            (.reviewProvenance, "Provenance", .quiet, .leading, { s.openProvenance() }),
+            (.reviewSendBack, "Send back", .quiet, .trailing, { s.sendBack() }),
+            (.reviewAccept, "Accept and commit", .primary(.working), .trailing, { s.accept() }),
+        ]
+        for (id, title, variant, gravity, run) in verbs {
+            let b = KeyButtonView(title, kbd: Self.cap(id), variant: variant, onPress: run)
+            b.setAccessibilityIdentifier("review.\(id.key)")
+            chrome.toolbar.addView(b, in: gravity)
+            toolbarButtons[id] = b
+        }
         meta.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         chrome.toolbar.addView(meta, in: .leading)
 
@@ -205,6 +224,9 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    /// A verb's key cap in the sheet, as the registry spells it ("⇧⏎").
+    static func cap(_ id: CommandID) -> String { CommandRegistry.labels(id, in: .review).first ?? "" }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -368,6 +390,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         guard isOpen else { return } // closed: nothing to show (and no diffs to fetch)
         let count = items.isEmpty ? nil : items.count
         if chrome.count != count { chrome.count = count }
+        updateToolbar()
         if items != shownItems { reloadInbox() } else { syncInboxSelection(selected) }
         if editing != shownEditing { editingChanged(editing) }
         updateEmpty()
@@ -375,6 +398,19 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     }
 
     private var shownEditing: ReviewNoteAnchor?
+
+    /// The verbs follow the selection: nothing selected disables them all
+    /// but Bulk accept (which needs items); Send back counts the notes.
+    private func updateToolbar() {
+        let hasItem = session.selected != nil
+        for (id, b) in toolbarButtons {
+            let on = id == .reviewBulkAccept ? !session.items.isEmpty : hasItem
+            if b.isEnabled != on { b.isEnabled = on }
+        }
+        let n = session.currentNotes.count
+        let sendBack = n == 0 ? "Send back" : "Send back · \(n)"
+        if let b = toolbarButtons[.reviewSendBack], b.label != sendBack { b.label = sendBack }
+    }
 
     private func editingChanged(_ a: ReviewNoteAnchor?) {
         shownEditing = a

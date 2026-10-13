@@ -4245,10 +4245,16 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
 
 - **⌘R** (Agents › Review) opens the review sheet over the wall like
   History: a Night scrim and one opaque Panel, min(1440, 94%) ×
-  min(940, 88%) of the window. Left the inbox (every Mac, ranked: fresh
+  min(940, 88%) of the window, in the `SheetChrome` frame: the title row
+  (Review, the count Pill, the `esc` key cap and a close ×), the toolbar
+  (‹ › file ⇧N N, Bulk accept ⇧A, Provenance ⌥⏎, the Macs and what the
+  sheet is busy with; on the right Send back ⇧⏎ with the note count and
+  the primary Accept and commit ⌘⏎; every verb a KeyButton whose cap
+  comes from the registry, disabled with no item selected). Left the
+  inbox (every Mac, ranked: fresh
   evidence first, then stale, missing; lower risk first; then the one
-  waiting longest), middle the selected item's header (Send back ⇧↩,
-  Accept & commit ⌘↩) and its diff, right the evidence (fresh ✓ /
+  waiting longest), middle the selected item's header (name, where,
+  churn, the status line) and its diff, right the evidence (fresh ✓ /
   stale ! / missing ?, the commands with exit codes, attachments), the
   risk and its notes, the attention strip (one cell per hunk: seen,
   rejected, noted, unseen) and whether ⇧A would take it. Below 1120 pt
@@ -4271,10 +4277,12 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
   stream: ⌘↩ or ⇧↩ saves, esc cancels), ⏎ open/fold a folded file,
   ⇧↩ send every note back as one instruction (`review.sendBack`),
   ⌘↩ accept and commit (`review.accept`; with hunks not marked seen,
-  the first ⌘↩ says how many and the second commits), ⌥↩ History at
+  the first ⌘↩ asks in the status line, with Confirm ⌘⏎ and Cancel esc
+  KeyButtons, and the second commits), ⌥↩ History at
   the conversation that last wrote the hunk, ⇧A accept in bulk (only
   low risk, fresh evidence, no schema/auth/migration path; the first ⇧A
-  lists them, the second commits each), esc closes (or cancels a
+  lists them in the status line with Confirm ⇧A and Cancel esc, the
+  second commits each), esc closes (or cancels a
   confirm or a note). After V or X the cursor goes to the next
   undecided hunk.
 - **Marks survive reloads**: seen and rejected hang on a hunk's key (its
