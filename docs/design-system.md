@@ -43,6 +43,11 @@ comes from `DS`.
     line · text · text2 · dim · dim2 · signal · working · question · done ·
     error · horizon`. Layers resolve them with `.cg(in: view)` and
     re-apply them in `viewDidChangeEffectiveAppearance`.
+11. **Key caps come from the command table.** A `Kbd`, `KeyButton` cap or
+    `IconButton` tooltip that names a registry command reads its chord with
+    `CommandRegistry.cap(id, in:)`, never a literal; Help ▸ Keyboard
+    Shortcuts (⌘/) and Settings › Shortcuts render the same table. Only
+    keys that are not commands (a strip's ⏎ esc, End) are spelled out.
 
 ## DS API
 
@@ -156,8 +161,8 @@ p.count = 3
 Geist Mono 10.5 medium, a 1 px `line` border, radius `kbd`, dim text.
 
 ```swift
-Kbd("⌘K")
-let k = KbdView("⌘J")   // AppKit, intrinsic size
+Kbd(CommandRegistry.cap(.palette) ?? "")
+let k = KbdView(CommandRegistry.cap(.nextAttention) ?? "")   // AppKit, intrinsic size
 ```
 
 ### IconButton

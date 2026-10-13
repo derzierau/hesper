@@ -128,7 +128,7 @@ final class BandHeaderView: NSView {
     private let label = NSHostingView(rootView: BandHeaderContent(title: "", subtitle: "", colorHex: Theme.Token.dim.hex, total: 0, active: 0, needsYou: 0, collapsed: false, compact: false))
     private let row = NSView()
     private let hairline = NSView()
-    let plus = IconButtonView(symbol: "plus", help: "New agent here", shortcut: "⌘N", target: nil, action: nil)
+    let plus = IconButtonView(symbol: "plus", help: "New agent here", shortcut: CommandRegistry.cap(.newAgent), target: nil, action: nil)
     let open = IconButtonView(symbol: "arrow.up.right.square", help: "Open as a wall", target: nil, action: nil)
     let more = IconButtonView(symbol: "ellipsis", help: "Band actions", target: nil, action: nil)
     private(set) var band: Band?

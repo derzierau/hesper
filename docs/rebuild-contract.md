@@ -4539,12 +4539,8 @@ History…, Review…, Quick Launch…, Settings…, Quit Hesper) and shows a ke
 equivalent only where the chord is the app-wide one (⇧⌘0, ⌘N, ⌘Y, ⌘R,
 ⌘, and ⌘Q); Quick Launch… carries the hotkey in its label and toggles
 the panel; History… leaves while hesperd has no sessions.*. The ⌘K
-
-
-
-palette's "Actions" rows and Settings › Shortcuts (`ShortcutList.groups`,
-by surface) read the table; Help ▸ Keyboard Shortcuts ⌘/ is wired to a
-stub until phase 4's sheet. `KeyChord.label` / `KeyChord(label:)` are the
+palette's "Actions" rows and Settings › Shortcuts (`ShortcutsSheet.sections`,
+by surface) read the table. `KeyChord.label` / `KeyChord(label:)` are the
 one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
 
 **The menu bar** (`MenuModel.build`, pinned item by item in
@@ -4562,6 +4558,54 @@ one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
 
 Only ⌘ chords become key equivalents: Always Allow's A and Deny's N
 live on the selected tile, Quick Launch's hotkey is the system's.
+
+**Help ▸ Keyboard Shortcuts (⌘/).** A modal sheet over the front wall
+like History and Review (`ShortcutsPanel`, hosted by
+`ShortcutsSheetHost` on the window's RootView: a Night scrim that takes
+every click, one opaque Panel in the SheetChrome frame, title "Keyboard
+Shortcuts" with the row count, close × esc). The toolbar row is a search
+field that has the keyboard as the sheet opens; the content is one
+section per surface (`ShortcutsSheet.sections`, HesperCore): a header
+row with the surface's title and count that folds and unfolds on click,
+then a Row per command with its title and key caps. Each command appears
+once: app-wide chords under Everywhere, the rest under the surface the
+user was in when its chord is live there (the sheet opens on the front
+sheet or overlay, else the agent window, Settings, focus, the composer,
+the active tile or the wall), else under the first surface in the
+display order that binds it. That section comes first and open, the
+others folded; a query matches title and key caps and unfolds every
+section that still has rows. The footer is one KeyButton, "Open Settings
+› Shortcuts ⌘,". esc and a scrim click close; ⌘/ (the Help menu item)
+toggles; ⌘K ⌘Y ⌘R ⌘J close it and go on to their owner. Accessibility:
+`shortcuts`, `shortcuts.search`, `shortcuts.section.<surface>`,
+`shortcuts.row.<command id>`, `shortcuts.settings`, `shortcuts.close`.
+
+**Key caps come from the table.** An IconButton tooltip or KeyButton cap
+that names a registry command reads its chord through
+`CommandRegistry.cap(id, in:)` (the toolbar's + and search, the review,
+background and needs-you pills, the focus header's ‹ › and typing hint,
+the composer's Start, Keep / Close, worktree chip and discard ×, the
+palette's and the popovers' footers, the inbox's Open and Continue, the
+quick launch Close, the band +); only hints for keys that are not
+commands (the close and move strips' ⏎ esc, the deny field, ghost cards,
+End) spell their key.
+
+**Settings › Shortcuts.** The same sections, every one open, as
+SettingsSections of Rows (`settings.shortcut.<command id>`); the Quick
+Launch row shows the configured hotkey while quick launch is on. A row
+whose chord is bound to another command within one of its surfaces gets
+a "Conflicts with <title>" status Pill in the error tone after its key
+cap (`settings.shortcut.conflict.<id>`); the shipped table has none (the
+registry test forbids it), the pill is for rebinding. The Quick Launch
+row gets the same pill when macOS's input source switching uses the
+hotkey, and General › Hotkey shows the warning text under the recorder
+(`settings.hotkey.warning`): `InputSourceHotKeys` (HesperCore) decodes
+`AppleSymbolicHotKeys` entries 60 and 61 from the
+`com.apple.symbolichotkeys` defaults suite (enabled flag, key code and
+NSEvent modifier flags mapped to Carbon's) and compares them to the
+`HotKeySpec`; when the suite has neither entry (macOS writes them only
+once changed) or cannot be read, a hotkey equal to macOS's defaults
+⌃Space or ⌃⌥Space gets the static "may use" warning instead.
 
 **Invariants** (`CommandsTests`): no chord is bound twice within one
 surface (a chord bound everywhere conflicts with the same chord in any

@@ -358,6 +358,11 @@ public enum CommandRegistry {
         return chords.map(\.label)
     }
 
+    /// The key cap a control shows for `id` ("⌘N"): its first chord live
+    /// in `surface` (nil: its default chord). IconButton tooltips and
+    /// KeyButton caps read it rather than spelling the chord.
+    public static func cap(_ id: CommandID, in surface: Surface? = nil) -> String? { labels(id, in: surface).first }
+
     /// The commands with a chord live in `surface`, in table order; for
     /// `.everywhere` only those bound everywhere.
     public static func bound(in surface: Surface) -> [Command] {
@@ -667,48 +672,6 @@ public enum UndoKind: Equatable, Sendable {
         case .move: return "Move"
         case .discardDraft: return "Discard Draft"
         case .deleteSession: return "Delete Session"
-        }
-    }
-}
-
-
-// MARK: Shortcut groups
-
-/// Settings › Shortcuts and the shortcuts sheet: the registry grouped by
-/// surface, Everywhere first; a command live in several surfaces appears
-/// in each. Hidden commands (Routines) are left out.
-public enum ShortcutList {
-    public struct Item: Equatable, Sendable {
-        public let id: CommandID
-        public let title: String
-        /// "⌥⌘←", or several ("⌥⌘← ⌥↑") when aliases are live there.
-        public let keys: String
-    }
-    public struct Group: Equatable, Sendable {
-        public let surface: Surface
-        public var title: String { surface.title }
-        public let items: [Item]
-    }
-
-    /// The display order of the surfaces.
-    public static let order: [Surface] = [.everywhere, .wall, .focus, .activeTile, .composer, .quickLaunch, .palette, .popover, .inbox,
-                                          .history, .review, .agentWindow, .settings]
-
-    /// - Parameter hotKey: the configured quick launch chord's label (nil:
-    ///   quick launch is off, the row is left out).
-    public static func groups(registry: [Command] = CommandRegistry.all, hotKey: String?, context: CommandContext = .none) -> [Group] {
-        order.compactMap { s in
-            let items: [Item] = registry.compactMap { c in
-                if c.availability(context) == .hidden { return nil }
-                if c.id == .quickLaunch {
-                    guard s == .everywhere, let hotKey else { return nil }
-                    return Item(id: c.id, title: c.title, keys: hotKey)
-                }
-                let chords = c.bindings.filter { s == .everywhere ? $0.surfaces.contains(.everywhere) : $0.surfaces.contains(s) }.map(\.chord)
-                guard !chords.isEmpty else { return nil }
-                return Item(id: c.id, title: c.title, keys: chords.map(\.label).joined(separator: " "))
-            }
-            return items.isEmpty ? nil : Group(surface: s, items: items)
         }
     }
 }

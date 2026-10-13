@@ -16,6 +16,7 @@ struct SettingsView: View {
     /// width are that wall's own (nil: `model`'s).
     var front: FrontWall? = nil
     @State private var pane = Pane.general
+    @State private var symbolicHotKeys: [String: Any]?
 
     /// The wall whose layout the Wall section edits.
     private var wall: AppModel { front?.model ?? model }
@@ -37,6 +38,8 @@ struct SettingsView: View {
     }
 
     static let size = NSSize(width: 720, height: 540)
+    /// Posted to open a pane (userInfo "pane"): the shortcuts sheet's footer.
+    static let showPane = Notification.Name("hesper.settings.showPane")
     static let sidebarWidth: CGFloat = 196
     static let labelWidth: CGFloat = 168
     static let sliderWidth: CGFloat = 180
@@ -63,6 +66,10 @@ struct SettingsView: View {
         .foregroundStyle(Theme.fg)
         .background(SettingsWindowStyle())
         .ignoresSafeArea()
+        .onAppear { symbolicHotKeys = Self.readSymbolicHotKeys() }
+        .onReceive(NotificationCenter.default.publisher(for: Self.showPane)) { n in
+            if let p = n.userInfo?["pane"] as? Pane { pane = p }
+        }
     }
 
     private var sidebar: some View {
@@ -121,12 +128,22 @@ struct SettingsView: View {
                                                                           set: { model.settings.quickLaunchEnabled = $0; onHotKeyChanged() }))
             }
             SettingsLine("Hotkey") {
-                HStack(spacing: DS.Spacing.m) {
-                    HotKeyRecorder(spec: Binding(get: { model.settings.hotKey }, set: { model.settings.hotKey = $0; onHotKeyChanged() }))
-                    Button("Reset to ⌃⌥Space") { model.settings.hotKey = .default; onHotKeyChanged() }
-                        .disabled(model.settings.hotKey == .default)
+                VStack(alignment: .leading, spacing: DS.Spacing.s) {
+                    HStack(spacing: DS.Spacing.m) {
+                        HotKeyRecorder(spec: Binding(get: { model.settings.hotKey }, set: { model.settings.hotKey = $0; onHotKeyChanged() }))
+                        Button("Reset to ⌃⌥Space") { model.settings.hotKey = .default; onHotKeyChanged() }
+                            .disabled(model.settings.hotKey == .default)
+                    }
+                    .disabled(!model.settings.quickLaunchEnabled)
+                    if model.settings.quickLaunchEnabled, let warning = hotKeyVerdict.warning {
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
+                            StateMark(.error)
+                            Text(warning).font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityIdentifier("settings.hotkey.warning")
+                    }
                 }
-                .disabled(!model.settings.quickLaunchEnabled)
             }
         }
         SettingsSection("Notifications", footer: "Approvals, questions and errors, unless you are looking at that agent: \"<agent> on <machine> needs you\" with the exact question, grouped per machine. Approvals can be allowed or denied from the notification. Starting from quick launch always confirms with a notification you can click.") {
@@ -252,13 +269,39 @@ struct SettingsView: View {
 
     // MARK: Shortcuts
 
-    /// The registry grouped by surface (HesperCore `ShortcutList`); the
-    /// quick launch row shows the configured hotkey.
+    /// What macOS does with the quick launch hotkey (Decision 4: the
+    /// input source chords from com.apple.symbolichotkeys; unreadable:
+    /// the static warning on macOS's defaults).
+    private var hotKeyVerdict: InputSourceHotKeys.Verdict {
+        let k = model.settings.hotKey
+        return InputSourceHotKeys.check(SystemHotKey(keyCode: k.keyCode, carbonModifiers: k.carbonModifiers), in: symbolicHotKeys)
+    }
+
+    /// The system's AppleSymbolicHotKeys, read once when the window shows.
+    static func readSymbolicHotKeys() -> [String: Any]? {
+        UserDefaults(suiteName: "com.apple.symbolichotkeys")?.dictionary(forKey: "AppleSymbolicHotKeys")
+    }
+
+    /// The sheet's sections (HesperCore `ShortcutsSheet`, every section
+    /// open); the quick launch row shows the configured hotkey and, like
+    /// any row whose chord is bound twice in one surface, a "Conflicts
+    /// with …" pill.
     @ViewBuilder private var shortcuts: some View {
-        ForEach(ShortcutList.groups(hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil), id: \.surface) { g in
+        let sections = ShortcutsSheet.sections(current: .everywhere, hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil,
+                                               hotKeyConflict: hotKeyVerdict.conflict)
+        ForEach(sections, id: \.surface) { g in
             SettingsSection(g.title) {
                 VStack(spacing: 0) {
-                    ForEach(g.items, id: \.id) { s in Row(title: s.title, kbd: s.keys) }
+                    ForEach(g.rows, id: \.id) { r in
+                        HStack(spacing: DS.Spacing.s) {
+                            Row(title: r.title, kbd: r.chord)
+                            if !r.conflicts.isEmpty {
+                                Pill("Conflicts with \(r.conflicts.joined(separator: ", "))", mark: .error)
+                                    .accessibilityIdentifier("settings.shortcut.conflict.\(r.id.key)")
+                            }
+                        }
+                        .accessibilityIdentifier("settings.shortcut.\(r.id.key)")
+                    }
                 }
             }
         }

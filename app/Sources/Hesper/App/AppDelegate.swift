@@ -239,8 +239,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func open(_ url: String) { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
 
-    /// Help ▸ Keyboard Shortcuts (⌘/): the sheet rendered from the registry comes in phase 4.
-    func showShortcuts() {}
+    /// Help ▸ Keyboard Shortcuts (⌘/): the sheet over the front wall (or
+    /// agent window), opened on the surface the user is in; again closes it.
+    func showShortcuts() {
+        let key = NSApp.keyWindow
+        let model = windows.frontModel
+        if windows.activeModel == nil { showWindow() }
+        ShortcutsSheetHost.toggle(model, keyWindow: key) { [weak self] in
+            self?.showSettings()
+            NotificationCenter.default.post(name: SettingsView.showPane, object: nil, userInfo: ["pane": SettingsView.Pane.shortcuts])
+        }
+    }
 
     #if DEBUG
     @objc private func showDesignGallery() { DesignGallery.show() }

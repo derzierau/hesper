@@ -480,7 +480,7 @@ struct AttentionPanel: View {
                 Text("Needs you · \(entries.count)").font(.ds(.body, .semibold)).foregroundStyle(Theme.fg)
                     .accessibilityIdentifier("attention.title")
                 Spacer(minLength: DS.Spacing.s)
-                KeyButton("Close", kbd: "esc", variant: .icon("xmark")) { model.closePopover() }
+                KeyButton("Close", kbd: CommandRegistry.cap(.closeOverlay), variant: .icon("xmark")) { model.closePopover() }
                     .accessibilityIdentifier("attention.close")
             }
             .padding(.horizontal, DS.Spacing.l)
@@ -586,7 +586,7 @@ struct AttentionItem: View {
                 }
                 .disabled(entry.answered)
                 if let t = entry.moveTo, !entry.answered {
-                    KeyButton(MoveText.continueTitle(t.name), kbd: "M") { onMove(t.short) }
+                    KeyButton(MoveText.continueTitle(t.name), kbd: CommandRegistry.cap(.inboxMoveElsewhere)) { onMove(t.short) }
                         .accessibilityIdentifier("attention.move.\(a.id)")
                 }
                 if entry.answered {
@@ -594,7 +594,7 @@ struct AttentionItem: View {
                         .accessibilityIdentifier("attention.sent")
                 }
                 Spacer(minLength: 0)
-                KeyButton("Open", kbd: "⌘⏎", variant: .icon("arrow.up.left.and.arrow.down.right")) { onOpen() }
+                KeyButton("Open", kbd: CommandRegistry.cap(.inboxOpen), variant: .icon("arrow.up.left.and.arrow.down.right")) { onOpen() }
                     .accessibilityIdentifier("attention.open.\(a.id)")
             }
             .frame(height: KeyButton.height)
@@ -663,9 +663,9 @@ struct PopoverPanel: View {
                     Text(t).font(.ds(.chrome, .semibold)).foregroundStyle(Theme.muted).lineLimit(1)
                     Spacer(minLength: DS.Spacing.s)
                     if kind.keepsOpen {
-                        KeyButton("Apply, keep open", kbd: "⌘⏎", variant: .icon("pin")) { _ = model.popoverKey(.alternate) }
+                        KeyButton("Apply, keep open", kbd: CommandRegistry.cap(.overlayAlternate), variant: .icon("pin")) { _ = model.popoverKey(.alternate) }
                             .accessibilityIdentifier("popover.pin")
-                        KeyButton("Close", kbd: "esc", variant: .icon("xmark")) { model.closePopover() }
+                        KeyButton("Close", kbd: CommandRegistry.cap(.closeOverlay), variant: .icon("xmark")) { model.closePopover() }
                             .accessibilityIdentifier("popover.close")
                     }
                 }
@@ -753,9 +753,9 @@ struct PopoverPanel: View {
             let id = { if case .rename = kind { return "rename" } else { return "desk.name" } }()
             HStack(spacing: DS.Spacing.s) {
                 Spacer(minLength: 0)
-                KeyButton("Cancel", kbd: "esc") { model.closePopover() }
+                KeyButton("Cancel", kbd: CommandRegistry.cap(.closeOverlay)) { model.closePopover() }
                     .accessibilityIdentifier("\(id).cancel")
-                KeyButton("Save", kbd: "⏎", variant: .primary(.working), action: submit)
+                KeyButton("Save", kbd: CommandRegistry.cap(.overlayActivate), variant: .primary(.working), action: submit)
                     .accessibilityIdentifier("\(id).save")
             }
             .padding(.horizontal, DS.Spacing.m)

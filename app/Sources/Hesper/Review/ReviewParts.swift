@@ -350,7 +350,7 @@ struct ReviewReadyRow: View {
             }
             .buttonStyle(.plain)
             .fixedSize()
-            .help("Review (⌘R)")
+            .help(IconButton.tooltip("Review", CommandRegistry.cap(.review)))
             .accessibilityIdentifier("tile.review")
         }
         .accessibilityElement(children: .combine)
