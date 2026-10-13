@@ -106,6 +106,10 @@ func TestAppCommandsSendTheirParams(t *testing.T) {
 		{[]string{"open", "new", "--task", "hi", "--worktree", "--machine", "M"}, "app.open", `{"composer":{"machine":"M","task":"hi","worktree":true}}`},
 		{[]string{"open", "history", "login", "bug"}, "app.open", `{"history":{"query":"login bug"}}`},
 		{[]string{"open", "inbox"}, "app.open", `{"inbox":true}`},
+		{[]string{"open", "review"}, "app.open", `{"review":true}`},
+		{[]string{"open", "review", "--agent", "a7f3k2"}, "app.open", `{"review":{"agent":"a7f3k2"}}`},
+		{[]string{"open", "palette"}, "app.open", `{"palette":true}`},
+		{[]string{"open", "palette", "--query", "login bug"}, "app.open", `{"palette":{"query":"login bug"}}`},
 		{[]string{"wall", "set", "--arrangement", "columns", "--density", "dense", "--collapse", "a", "--collapse", "b,c", "--expand", "all", "--sidebar", "off", "--home"}, "app.wall.set",
 			`{"arrangement":"columns","collapse":["a","b","c"],"density":"dense","expand":["all"],"home":true,"sidebar":false}`},
 		{[]string{"wall", "set", "--wall", "2", "--scope", "needs-you", "--band-order", "p:a,p:b", "--grouping", "project", "--own-walls", "full"}, "app.wall.set",
@@ -171,6 +175,8 @@ func TestAppCommandsPrintAndUsage(t *testing.T) {
 		{[]string{"open", "wall", "--window"}, exitUsage},
 		{[]string{"open", "agent", "a", "--window", "--tab"}, exitUsage},
 		{[]string{"open", "new", "--task", "a", "b"}, exitUsage},
+		{[]string{"open", "review", "a7f3k2"}, exitUsage},
+		{[]string{"open", "palette", "login"}, exitUsage},
 		{[]string{"wall", "set"}, exitUsage},
 		{[]string{"wall", "set", "--sidebar", "maybe"}, exitUsage},
 		{[]string{"wall", "show", "--arrangement", "grid"}, exitUsage},
@@ -183,6 +189,21 @@ func TestAppCommandsPrintAndUsage(t *testing.T) {
 		code := execute(ctx, append(c.args, "--daemon-socket", sock), io.Discard)
 		if code != c.exit {
 			t.Errorf("%v: exit %d, want %d", c.args, code, c.exit)
+		}
+	}
+}
+
+// An app from before open review / palette ignores the key and opens the
+// frontmost wall: hesperctl reports that instead of printing a sheet.
+func TestOpenSheetsOnAnOlderApp(t *testing.T) {
+	noLaunching(t)
+	_, sock, _ := daemon(t)
+	startFakeApp(t, sock, func(req wire.Request) (any, *wire.RPCError) {
+		return map[string]any{"id": "main", "scope": "all", "mode": "wall"}, nil
+	})
+	for _, args := range [][]string{{"open", "review"}, {"open", "palette", "--query", "x"}} {
+		if exit, code, msg := jsonError(t, append(args, "--json", "--daemon-socket", sock)...); exit != exitUnavailable || code != wire.CodeUnavailable || !strings.Contains(msg, "update it") {
+			t.Errorf("%v on an older app: exit %d code %q %q", args, exit, code, msg)
 		}
 	}
 }

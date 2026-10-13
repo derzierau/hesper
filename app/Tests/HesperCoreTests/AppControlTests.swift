@@ -43,6 +43,23 @@ import Testing
         #expect(try AppOpenRequest.parse(["inbox": true]).target == .inbox)
     }
 
+    @Test func openReviewAndPalette() throws {
+        #expect(try AppOpenRequest.parse(["review": true]).target == .review(agent: nil))
+        #expect(try AppOpenRequest.parse(["review": ["agent": "a7f3k2"]]).target == .review(agent: "a7f3k2"))
+        #expect(try AppOpenRequest.parse(["review": "push"]).target == .review(agent: "push"))
+        #expect(try AppOpenRequest.parse(["review": [:]]).target == .review(agent: nil))
+        #expect(try AppOpenRequest.parse(["palette": true]).target == .palette(query: nil))
+        #expect(try AppOpenRequest.parse(["palette": ["query": "login bug"]]).target == .palette(query: "login bug"))
+        #expect(try AppOpenRequest.parse(["palette": "login"]).target == .palette(query: "login"))
+        #expect(try AppOpenRequest.parse(["palette": false]).target == .wall(nil, scope: nil, newWall: false))
+        #expect(try !AppOpenRequest.parse(["review": true]).target.showsWall)
+        #expect(try !AppOpenRequest.parse(["palette": true]).target.showsWall)
+        #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["review": 7]) }
+        #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["palette": ["query": 1]]) }
+        #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["review": true, "palette": true]) }
+        #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["review": true, "inbox": true]) }
+    }
+
     @Test func wallTargetsLeaveTheFocusView() throws {
         // open wall (no args) after open agent: back to the wall, as ⌘Esc.
         #expect(try AppOpenRequest.parse(.null).target.showsWall)
@@ -188,6 +205,8 @@ import Testing
             if req["method"]?.stringValue == "app.register" {
                 s.send(fd, ["jsonrpc": "2.0", "id": "app-1", "method": "app.state", "params": [:]])
                 s.send(fd, ["jsonrpc": "2.0", "id": "app-2", "method": "app.desk", "params": ["action": "explode"]])
+                s.send(fd, ["jsonrpc": "2.0", "id": "app-3", "method": "app.open", "params": ["review": ["agent": "a7f3k2"]]])
+                s.send(fd, ["jsonrpc": "2.0", "id": "app-4", "method": "app.open", "params": ["palette": ["query": "login"]]])
             }
         }
         let client = DaemonClient(socketPath: server.path)
@@ -195,17 +214,27 @@ import Testing
             if method == "app.desk" {
                 do { _ = try DeskRequest.parse(params) } catch let e as AppControlError { return .failure(e.rpc) } catch {}
             }
+            if method == "app.open" {
+                // The sheets as hesperctl open review / palette ask for them.
+                switch try? AppOpenRequest.parse(params).target {
+                case .review(let agent): return .success(["ok": true, "selected": false, "agent": agent.map { .string($0) } ?? .null])
+                case .palette(let query): return .success(["query": query.map { .string($0) } ?? .null])
+                default: return .failure(AppControlError.invalid("unexpected target").rpc)
+                }
+            }
             return .success(["method": .string(method)])
         }
         client.start()
         let deadline = Date().addingTimeInterval(5)
-        while answers.count < 2 && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+        while answers.count < 4 && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
         client.stop()
         #expect(server.methods.contains("app.register"))
         let got = answers.all
         #expect(got.first { $0["id"] == "app-1" }?["result"] == ["method": "app.state"])
         let err = got.first { $0["id"] == "app-2" }?["error"]
         #expect(err?["code"] == -32602 && err?["data"]?["code"] == "invalid")
+        #expect(got.first { $0["id"] == "app-3" }?["result"] == ["ok": true, "selected": false, "agent": "a7f3k2"])
+        #expect(got.first { $0["id"] == "app-4" }?["result"] == ["query": "login"])
     }
 
     @Test func withoutHandlerRequestsAreRefused() async throws {
