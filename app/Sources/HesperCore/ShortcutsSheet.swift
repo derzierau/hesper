@@ -21,9 +21,20 @@ public enum ShortcutsSheet {
         /// keeps it so); an override stored before a later version bound
         /// its chord fills it (`ShortcutConflicts`).
         public var conflicts: [String]
+        /// The default chord's label (what Settings' recorder shows);
+        /// nil: none, the command is unbound (or has aliases only).
+        public var primary: String?
+        /// The aliases' labels (the Row's own key caps next to the recorder).
+        public var aliases: [String]
+        /// An override is stored for it (Settings shows Reset).
+        public var overridden: Bool
+        /// Settings offers a recorder (`ShortcutOverrides.rebindable`).
+        public var rebindable: Bool
 
-        public init(id: CommandID, title: String, chord: String, conflicts: [String] = []) {
+        public init(id: CommandID, title: String, chord: String, conflicts: [String] = [], primary: String? = nil, aliases: [String] = [],
+                    overridden: Bool = false, rebindable: Bool = false) {
             self.id = id; self.title = title; self.chord = chord; self.conflicts = conflicts
+            self.primary = primary; self.aliases = aliases; self.overridden = overridden; self.rebindable = rebindable
         }
     }
 
@@ -50,26 +61,35 @@ public enum ShortcutsSheet {
     ///     launch is off, the row is left out).
     ///   - hotKeyConflict: what macOS binds the hotkey to, when it does
     ///     (the Quick Launch row's pill).
+    ///   - overrides: Settings' stored overrides (the ⌘/ sheet passes
+    ///     none): a command they unbind keeps its row, with no chord,
+    ///     in the surface its default chord lives in (`defaults`), so
+    ///     it can be reset.
     public static func sections(registry: [Command] = CommandRegistry.active.commands, current: Surface, query: String = "",
-                                hotKey: String? = nil, hotKeyConflict: String? = nil, context: CommandContext = .none) -> [Section] {
+                                hotKey: String? = nil, hotKeyConflict: String? = nil, context: CommandContext = .none,
+                                overrides: ShortcutOverrides = ShortcutOverrides(), defaults: [Command] = CommandRegistry.all) -> [Section] {
         let order = [current] + Self.order.filter { $0 != current }
         var rows: [Surface: [Row]] = [:]
         for c in registry where c.availability(context) != .hidden {
-            let row: Row
+            var row: Row
             let home: Surface
             if c.id == .quickLaunch {
                 guard let hotKey else { continue }
                 row = Row(id: c.id, title: c.title, chord: hotKey, conflicts: hotKeyConflict.map { [$0] } ?? [])
                 home = .everywhere
             } else {
-                guard !c.bindings.isEmpty else { continue }
-                if c.bindings.contains(where: { $0.surfaces.contains(.everywhere) }) {
+                let overridden = overrides[c.id] != nil
+                // An unbound command is placed by its default.
+                let placing = c.bindings.isEmpty && overridden ? defaults.first { $0.id == c.id }?.bindings ?? [] : c.bindings
+                guard !placing.isEmpty else { continue }
+                if placing.contains(where: { $0.surfaces.contains(.everywhere) }) {
                     home = .everywhere
-                } else if let h = order.first(where: { s in c.bindings.contains { $0.surfaces.contains(s) } }) {
+                } else if let h = order.first(where: { s in placing.contains { $0.surfaces.contains(s) } }) {
                     home = h
                 } else { continue }
                 row = Row(id: c.id, title: c.title, chord: c.bindings.map(\.chord.label).joined(separator: " "),
-                          conflicts: conflicts(of: c, in: registry))
+                          conflicts: conflicts(of: c, in: registry), primary: c.chord?.label, aliases: c.aliases.map(\.chord.label),
+                          overridden: overridden, rebindable: ShortcutOverrides.rebindable(c.id))
             }
             rows[home, default: []].append(row)
         }

@@ -4618,11 +4618,28 @@ both rows show the "Conflicts with …" pill.
 
 **Settings › Shortcuts.** The same sections, every one open, as
 SettingsSections of Rows (`settings.shortcut.<command id>`); the Quick
-Launch row shows the configured hotkey while quick launch is on. A row
-whose chord is bound to another command within one of its surfaces gets
-a "Conflicts with <title>" status Pill in the error tone after its key
-cap (`settings.shortcut.conflict.<id>`); the shipped table has none (the
-registry test forbids it), the pill is for rebinding. The Quick Launch
+Launch row shows the configured hotkey while quick launch is on. A
+rebindable row (`ShortcutOverrides.rebindable`: everything but the
+standard items and Quick Launch) shows its default chord as a recorder
+(`settings.shortcut.record.<id>`, the Row's own key caps are the
+aliases): click, then press the new chord; esc cancels, ⌫ unbinds, and
+the registry's `rebinding` either stores the override or leaves it and
+puts the reason under the row in the error tone
+(`settings.shortcut.reason.<id>`: "macOS reserves ⌘Q", "Conflicts with
+New Agent", "Needs ⌘ here: plain keys belong to the agent"). An
+overridden row gets a Reset IconButton (`settings.shortcut.reset.<id>`,
+tooltip "Reset to ⇧⌘W"); "Reset All" above the sections
+(`settings.shortcuts.resetAll`) clears every override. An unbound
+command keeps its row here, with "None", under the surface its default
+lived in. The recorder (`KeyRecorder`, shared with the quick launch
+hotkey) installs its key monitor only while recording and passes every
+event through once stopped, so ⌘Q and ⌘W reach the menu bar at every
+other time. A row whose chord is bound to another command within one of
+its surfaces gets a "Conflicts with <title>" status Pill in the error
+tone after its key cap (`settings.shortcut.conflict.<id>`); the shipped
+table has none (the registry test forbids it), and a stored override
+never creates one, so the pill shows only a clash a later version
+introduced. The Quick Launch
 row gets the same pill when macOS's input source switching uses the
 hotkey, and General › Hotkey shows the warning text under the recorder
 (`settings.hotkey.warning`): `InputSourceHotKeys` (HesperCore) decodes

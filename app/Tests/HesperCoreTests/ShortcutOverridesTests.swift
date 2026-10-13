@@ -19,6 +19,12 @@ import Testing
         #expect(t.resolve(.cmd("u", shift: true), in: .review) == .tidyUp, "an everywhere chord stays everywhere")
         #expect(t.resolve(.cmd("w", shift: true), in: .wall) == nil, "the default chord is free")
         #expect(t.command(.tidyUp)?.chord == .cmd("u", shift: true))
+        let rows = ShortcutsSheet.sections(registry: t.commands, current: .everywhere, overrides: overrides).flatMap(\.rows)
+        #expect(rows.first { $0.id == .tidyUp } == ShortcutsSheet.Row(id: .tidyUp, title: "Tidy Up Finished Agents", chord: "⇧⌘U", primary: "⇧⌘U",
+                                                                       overridden: true, rebindable: true))
+        #expect(rows.first { $0.id == .stepNext } == ShortcutsSheet.Row(id: .stepNext, title: "Next Agent", chord: "⌥⌘→ ⇥", primary: "⌥⌘→",
+                                                                         aliases: ["⇥"], rebindable: true))
+        #expect(rows.first { $0.id == .quit }?.rebindable == false)
         #expect(MenuModel.build(from: t.commands)[.agents].contains(.command(.tidyUp, title: "Tidy Up Finished Agents", chord: .cmd("u", shift: true))),
                 "the menu bar follows the override")
         // Aliases are not the override's: ⇥ still steps on the wall.
@@ -75,7 +81,11 @@ import Testing
         #expect(t.resolve(.cmd("w", shift: true), in: .wall) == nil)
         #expect(t.command(.tidyUp)?.chord == nil)
         #expect(!ShortcutsSheet.sections(registry: t.commands, current: .wall).flatMap(\.rows).contains { $0.id == .tidyUp },
-                "an unbound command has no row in the sheet")
+                "an unbound command has no row in the ⌘/ sheet")
+        // Settings keeps the row (under Everywhere, where ⇧⌘W lived) so it can be reset.
+        let settings = ShortcutsSheet.sections(registry: t.commands, current: .everywhere, overrides: o)
+        let row = settings.first { $0.surface == .everywhere }?.rows.first { $0.id == .tidyUp }
+        #expect(row == ShortcutsSheet.Row(id: .tidyUp, title: "Tidy Up Finished Agents", chord: "", primary: nil, overridden: true, rebindable: true))
         #expect(MenuModel.build(from: t.commands)[.agents].contains(.command(.tidyUp, title: "Tidy Up Finished Agents", chord: nil)))
         // The chord is free for another command now.
         guard case .applied(let o2) = o.rebinding(.killAgent, to: .chord(.cmd("w", shift: true))) else { Issue.record("the freed chord refused"); return }

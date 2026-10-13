@@ -4,7 +4,7 @@ import SwiftUI
 
 /// ⌘,: one sidebar window. General (the wall, quick launch,
 /// notifications), Machines & pairing, Agents & profiles, Appearance
-/// (Dusk / Daylight / System, density), Shortcuts (read only) and Advanced
+/// (Dusk / Daylight / System, density), Shortcuts (rebinding) and Advanced
 /// (desks, the first run, hesperd). The sidebar is Rows, choices are
 /// segmented Pills; ⌘1…⌘6 switch panes.
 struct SettingsView: View {
@@ -17,6 +17,9 @@ struct SettingsView: View {
     var front: FrontWall? = nil
     @State private var pane = Pane.general
     @State private var symbolicHotKeys: [String: Any]?
+    /// Shortcuts: why a recorded chord was refused, per row, until the
+    /// next recording or reset.
+    @State private var refusals: [CommandID: String] = [:]
 
     /// The wall whose layout the Wall section edits.
     private var wall: AppModel { front?.model ?? model }
@@ -283,21 +286,48 @@ struct SettingsView: View {
     }
 
     /// The sheet's sections (HesperCore `ShortcutsSheet`, every section
-    /// open); the quick launch row shows the configured hotkey and, like
-    /// any row whose chord is bound twice in one surface, a "Conflicts
-    /// with …" pill.
+    /// open, the stored overrides in); the quick launch row shows the
+    /// configured hotkey and, like any row whose chord is bound twice in
+    /// one surface, a "Conflicts with …" pill. A rebindable row's chord
+    /// is a recorder (click, press the new chord; esc cancels, ⌫
+    /// unbinds), with Reset once it is overridden; a refused chord says
+    /// why under the row. Reset All sits above the sections.
     @ViewBuilder private var shortcuts: some View {
+        let overrides = model.settings.shortcutOverrides
         let sections = ShortcutsSheet.sections(current: .everywhere, hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil,
-                                               hotKeyConflict: hotKeyVerdict.conflict)
+                                               hotKeyConflict: hotKeyVerdict.conflict, overrides: overrides)
+        HStack(spacing: DS.Spacing.m) {
+            Text("Click a shortcut to record a new one; esc cancels, ⌫ removes it.").font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+            Spacer(minLength: DS.Spacing.m)
+            Button("Reset All") { refusals = [:]; model.settings.shortcutOverrides.resetAll() }
+                .disabled(overrides.isEmpty)
+                .accessibilityIdentifier("settings.shortcuts.resetAll")
+        }
         ForEach(sections, id: \.surface) { g in
             SettingsSection(g.title) {
                 VStack(spacing: 0) {
                     ForEach(g.rows, id: \.id) { r in
-                        HStack(spacing: DS.Spacing.s) {
-                            Row(title: r.title, kbd: r.chord)
-                            if !r.conflicts.isEmpty {
-                                Pill("Conflicts with \(r.conflicts.joined(separator: ", "))", mark: .error)
-                                    .accessibilityIdentifier("settings.shortcut.conflict.\(r.id.key)")
+                        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                            HStack(spacing: DS.Spacing.s) {
+                                Row(title: r.title, kbd: r.rebindable ? (r.aliases.isEmpty ? nil : r.aliases.joined(separator: " ")) : r.chord)
+                                if r.rebindable {
+                                    ShortcutRecorder(title: r.title, chord: r.primary, identifier: "settings.shortcut.record.\(r.id.key)") { binding in
+                                        rebind(r.id, to: binding)
+                                    }
+                                    if r.overridden {
+                                        IconButton("arrow.uturn.backward", help: Self.resetHelp(r.id)) { refusals[r.id] = nil; model.settings.shortcutOverrides.reset(r.id) }
+                                            .accessibilityIdentifier("settings.shortcut.reset.\(r.id.key)")
+                                    }
+                                }
+                                if !r.conflicts.isEmpty {
+                                    Pill("Conflicts with \(r.conflicts.joined(separator: ", "))", mark: .error)
+                                        .accessibilityIdentifier("settings.shortcut.conflict.\(r.id.key)")
+                                }
+                            }
+                            if let reason = refusals[r.id] {
+                                Text(reason).font(DS.font(.chrome)).foregroundStyle(Theme.color(.error))
+                                    .padding(.leading, DS.Spacing.m)
+                                    .accessibilityIdentifier("settings.shortcut.reason.\(r.id.key)")
                             }
                         }
                         .accessibilityIdentifier("settings.shortcut.\(r.id.key)")
@@ -305,6 +335,18 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// Stores the binding, or shows the registry's reason under the row.
+    private func rebind(_ id: CommandID, to binding: ShortcutOverrides.Binding) {
+        switch model.settings.shortcutOverrides.rebinding(id, to: binding) {
+        case .applied(let o): refusals[id] = nil; model.settings.shortcutOverrides = o
+        case .refused(let reason): refusals[id] = reason
+        }
+    }
+
+    static func resetHelp(_ id: CommandID) -> String {
+        CommandRegistry.defaults.command(id)?.chord.map { "Reset to \($0.label)" } ?? "Reset (no shortcut)"
     }
 
     // MARK: Advanced
@@ -458,9 +500,17 @@ private struct SettingsWindowStyle: NSViewRepresentable {
     }
 }
 
-/// Click, then press the new shortcut (esc cancels).
-struct HotKeyRecorder: View {
-    @Binding var spec: HotKeySpec
+/// Click, then press the new shortcut (esc cancels): the recorder behind
+/// the quick launch hotkey and the per-command shortcuts. `take` sees a
+/// key event while recording and says whether it took it; recording
+/// stops either way. The key monitor exists only while recording and
+/// lets every event through once it stopped, so ⌘Q and ⌘W reach the
+/// menu bar at every other time.
+struct KeyRecorder: View {
+    var label: String
+    var accessibilityLabel: String
+    var identifier: String
+    var take: (NSEvent) -> Bool
     @State private var recording = false
     @State private var monitor: Any?
     static let minWidth: CGFloat = 140
@@ -469,19 +519,22 @@ struct HotKeyRecorder: View {
         Button {
             recording ? stop() : start()
         } label: {
-            Text(recording ? "Press a shortcut…" : spec.label)
+            Text(recording ? "Press a shortcut…" : label)
                 .font(DS.monoFont(.chrome, .medium))
                 .frame(minWidth: Self.minWidth)
         }
-        .accessibilityIdentifier("settings.hotkey")
+        .accessibilityLabel(recording ? "Press a shortcut" : "\(accessibilityLabel): \(label)")
+        .accessibilityIdentifier(identifier)
         .onDisappear { stop() }
     }
 
     private func start() {
         recording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            guard recording else { return e }
             if e.keyCode == 53 { stop(); return nil }
-            if let s = HotKeySpec(event: e) { spec = s; stop(); return nil }
+            _ = take(e)
+            stop()
             return nil
         }
     }
@@ -490,5 +543,36 @@ struct HotKeyRecorder: View {
         recording = false
         if let m = monitor { NSEvent.removeMonitor(m) }
         monitor = nil
+    }
+}
+
+/// The quick launch hotkey (a global hotkey needs ⌘, ⌥ or ⌃).
+struct HotKeyRecorder: View {
+    @Binding var spec: HotKeySpec
+
+    var body: some View {
+        KeyRecorder(label: spec.label, accessibilityLabel: "Quick launch hotkey", identifier: "settings.hotkey") { e in
+            guard let s = HotKeySpec(event: e) else { return false }
+            spec = s
+            return true
+        }
+    }
+}
+
+/// A command's shortcut in Settings › Shortcuts: ⌫ unbinds, any other
+/// key is the new chord (the registry says whether it may be).
+struct ShortcutRecorder: View {
+    var title: String
+    /// The current chord's label; nil: none.
+    var chord: String?
+    var identifier: String
+    var onRecord: (ShortcutOverrides.Binding) -> Void
+
+    var body: some View {
+        KeyRecorder(label: chord ?? "None", accessibilityLabel: "Shortcut for \(title)", identifier: identifier) { e in
+            let k = KeyChord(event: e)
+            onRecord(k.key == .delete && k.plain && !k.shift ? .unbound : .chord(k))
+            return true
+        }
     }
 }
