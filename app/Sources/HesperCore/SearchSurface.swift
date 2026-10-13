@@ -76,13 +76,6 @@ public enum SearchKeys {
     public static func opensPalette(_ k: KeyChord) -> Bool {
         CommandRegistry.resolve(k, in: .history) == .palette
     }
-
-    /// A palette detail that is a shortcut ("⌘N", "⌥⌘1", "⌘,") is drawn as
-    /// a Kbd; anything else is meta text.
-    public static func isShortcut(_ detail: String) -> Bool {
-        guard let f = detail.unicodeScalars.first, detail.count <= 6, !detail.contains(" ") else { return false }
-        return "⌘⌥⌃⇧".unicodeScalars.contains(f)
-    }
 }
 
 // MARK: Rows

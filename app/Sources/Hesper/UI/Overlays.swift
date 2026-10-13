@@ -818,7 +818,6 @@ struct OverlayRow: View {
     var checked: Bool
     var selected: Bool
     var enabled: Bool
-    var tint: String? = nil
     var stateMark: StateMarkKind? = nil
 
     var body: some View {
@@ -826,7 +825,7 @@ struct OverlayRow: View {
             if let stateMark { StateMark(stateMark) } else if let dot { StateMark(color: Theme.color(dot)) }
             if let mark {
                 Text(mark).font(DS.monoFont(.meta, .semibold))
-                    .foregroundStyle(tint.map(Theme.color) ?? Theme.fg2)
+                    .foregroundStyle(Theme.fg2)
                     .frame(minWidth: OverlayLook.markSide, minHeight: OverlayLook.markSide)
                     .background(DS.Radius.shape(DS.Radius.kbd).fill(Theme.chipBG))
             }

@@ -33,14 +33,6 @@ import Testing
         #expect(!SearchKeys.opensPalette(KeyChord(.char("k"), command: true, option: true)) && !SearchKeys.opensPalette(KeyChord(.char("k"))))
     }
 
-    @Test func shortcutsAreKbd() {
-        #expect(SearchKeys.isShortcut("⌘N"))
-        #expect(SearchKeys.isShortcut("⌥⌘1"))
-        #expect(!SearchKeys.isShortcut("mini · working"))
-        #expect(!SearchKeys.isShortcut("draft"))
-        #expect(!SearchKeys.isShortcut(""))
-    }
-
     @Test func ages() {
         let n = Self.now
         #expect(SearchFormat.age(nil, now: n) == "")
