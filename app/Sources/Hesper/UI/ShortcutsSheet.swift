@@ -141,6 +141,7 @@ final class ShortcutsPanel: NSView {
         frame = root.reviewFrame
         opens += 1
         hosting.rootView = ShortcutsSheetView(current: current, opens: opens,
+                                              hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil,
                                               onClose: { [weak self] in self?.close() },
                                               onSettings: { [weak self] in self?.close(); self?.openSettings() })
         applyTheme()
@@ -242,6 +243,8 @@ struct ShortcutsSheetView: View {
     /// Bumped by the host on every open: the field takes focus again and
     /// the folds reset.
     var opens: Int
+    /// The quick launch hotkey's label (nil: quick launch is off).
+    var hotKey: String?
     var onClose: () -> Void
     var onSettings: () -> Void
 
@@ -250,7 +253,7 @@ struct ShortcutsSheetView: View {
     @State private var folds: Set<Surface>?
     @FocusState private var searching: Bool
 
-    private var sections: [ShortcutsSheet.Section] { ShortcutsSheet.sections(current: current, query: query) }
+    private var sections: [ShortcutsSheet.Section] { ShortcutsSheet.sections(current: current, query: query, hotKey: hotKey) }
     private var count: Int { sections.reduce(0) { $0 + $1.rows.count } }
 
     var body: some View {
