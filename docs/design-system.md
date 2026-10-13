@@ -203,6 +203,50 @@ let r = RowView(title: "api", meta: "3", mark: .working)   // AppKit
 r.isSelected = true
 ```
 
+### KeyButton
+
+A Pill-sized button with a label and a trailing Kbd: the control every
+footer hint, strip hint and header label becomes. Radius `control`,
+height 22. Variants: `.primary(tone)` (tinted with the mark's tone at 14%,
+24% on hover: the surface's default verb), `.quiet` (a 1 px `line`
+hairline, `line` fill on hover) and `.icon(symbol)` (an IconButton whose
+tooltip carries the key). Disabled draws at 40%.
+
+```swift
+KeyButton("Allow", kbd: "⏎", variant: .primary(.signal)) { model.answer(a, .allow) }
+KeyButton("Always", kbd: "A") { model.answer(a, .always) }
+KeyButton("Open full size", kbd: "⌘⏎", variant: .icon("arrow.up.left.and.arrow.down.right")) { model.focus(a.id) }
+
+let b = KeyButtonView("Close", kbd: "⏎", variant: .primary(.signal)) { model.confirmClose() }   // AppKit
+b.isEnabled = false
+```
+
+### SheetChrome
+
+The frame History, Review and Routines share inside their Panel: a title
+row (StateMark or SF Symbol, title in `panelTitle` semibold, a count
+Pill, the `esc` key cap and a close × IconButton), a toolbar row of
+KeyButtons for the sheet's verbs, the content, and a footer row of
+KeyButtons for the row-level keys. 1 px `line` hairlines between the rows;
+toolbar and footer are left out when empty. Closing is the host's
+(`onClose`); esc and the scrim click stay with its key routing.
+
+```swift
+SheetChrome(title: "Review", symbol: "checkmark.seal", count: 3, toolbar: {
+    KeyButton("Next file", kbd: "N") { session.nextFile() }
+    Spacer()
+    KeyButton("Accept & commit", kbd: "⌘⏎", variant: .primary(.done)) { session.accept() }
+}, footer: {
+    KeyButton("Seen", kbd: "V") { session.toggleSeen() }
+}, onClose: { close() }) {
+    list
+}
+
+let chrome = SheetChromeView(title: "History", mark: .working, count: 128) { [weak self] in self?.close() }   // AppKit
+chrome.toolbar.addArrangedSubview(KeyButtonView("All", kbd: "⇥") { … })
+chrome.contentView.addSubview(table)
+```
+
 ## Terminals edge to edge
 
 `WallSpec.inset` is 0 (it is still a parameter). The terminal spans the
