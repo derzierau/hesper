@@ -224,7 +224,7 @@ final class AppControl {
             let selected = hub.item(id) != nil
             manager.bringForward(w.window)
             w.model.openReview(select: selected ? id : nil) // ⌘R, the menu bar's item
-            return ["ok": true, "wall": .string(w.id), "selected": .bool(selected)]
+            return ["wall": .string(w.id), "selected": .bool(selected)]
 
         case .palette(let query):
             let w = manager.activeWall
