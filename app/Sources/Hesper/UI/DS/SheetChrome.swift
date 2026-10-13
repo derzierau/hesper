@@ -91,8 +91,9 @@ final class SheetChromeView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let countPill = PillView("", variant: .count)
     private let escKey = KbdView(SheetChromeView.closeKey)
-    private lazy var closeButton = IconButtonView(symbol: "xmark", help: "Close", shortcut: SheetChromeView.closeKey,
-                                                  target: self, action: #selector(closePressed))
+    /// The close × (the host names it for its tests).
+    private(set) lazy var closeButton = IconButtonView(symbol: "xmark", help: "Close", shortcut: SheetChromeView.closeKey,
+                                                       target: self, action: #selector(closePressed))
     private let lines = (top: NSView(), toolbar: NSView(), footer: NSView())
 
     init(title: String, mark: StateMarkKind? = nil, symbol: String? = nil, count: Int? = nil, onClose: (() -> Void)? = nil) {
@@ -164,7 +165,10 @@ final class SheetChromeView: NSView {
         let countW = countPill.isHidden ? 0 : countPill.intrinsicContentSize.width + m
         let titleW = max(0, rx - x - countW)
         let ts = titleLabel.intrinsicContentSize
-        titleLabel.frame = NSRect(x: x, y: y + ((th - ts.height) / 2).rounded(), width: min(titleW, ceil(titleLabel.attributedStringValue.size().width)), height: ts.height)
+        // The text's width with the label's 2 pt insets (the intrinsic
+        // width of a truncating label comes up short).
+        let textW = ceil(titleLabel.attributedStringValue.size().width) + 2 * DS.Spacing.xxs
+        titleLabel.frame = NSRect(x: x, y: y + ((th - ts.height) / 2).rounded(), width: min(titleW, textW), height: ts.height)
         x = titleLabel.frame.maxX + m
         place(countPill)
         lines.top.frame = NSRect(x: 0, y: y - 1, width: bounds.width, height: 1)
