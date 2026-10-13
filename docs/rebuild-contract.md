@@ -1935,6 +1935,11 @@ New Wall, Rename… (`projects.update {id, name}`), Color ▸
 (from Selection)… (`groups.save {group}`, empty id), Remove from <group>,
 Remove Project (`projects.remove`); groups: Rename, Color, Remove
 (`groups.remove`). Synthesized projects (no daemon data) only scope.
+Rows and machine chips are accessibility buttons: `accessibilityPerformPress`
+is a plain click (the row's scope on this wall) and the context menu's
+enabled items are their custom actions (a submenu's as "Color: Red"), so
+VoiceOver and Full Keyboard Access reach every sidebar action; ⌥-click,
+⌘-click and the drag are unchanged.
 
 **Home wall** (the first wall): a "needs you elsewhere" strip at the top
 with a compact card (state, name, project, the attention's title/detail,
@@ -4387,6 +4392,9 @@ Layout with the current one checked, Dense Cards checked when on, Enter
 have the search field, the pills and the tiles). The scope segments,
 layout, machines, review, background and attention controls are
 unchanged and keep their accessibility identifiers.
+Sidebar rows and machine chips press like a click and expose their
+context menus as accessibility custom actions (above, "Project
+sidebar").
 
 ## Wire names kept from Ghosty
 

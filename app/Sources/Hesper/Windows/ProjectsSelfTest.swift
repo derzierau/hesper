@@ -5,7 +5,8 @@ import HesperCore
 /// Tools/run-projects.sh): the real app against the fake daemon seeded with
 /// `--projects demo` (two groups, a repository with a package, a scratch
 /// folder, 10 agents). Drives bands, collapse, the band ⋯ menu, ＋ in a
-/// band, the sidebar (click, ⌥-click), the home wall's needs-you strip, band navigation,
+/// band, the sidebar (click, ⌥-click, accessibility press and actions),
+/// the home wall's needs-you strip, band navigation,
 /// layouts per arrangement, agent window titles, persistence; screenshots
 /// with `--projects-shots DIR`.
 @MainActor
@@ -231,6 +232,34 @@ final class ProjectsSelfTest {
             check("a click on a project scopes this wall; bands by branch/package", scoped && model.wall.count == 4
                   && keys.contains("b:main") && keys.contains("b:pkg:p-ios-app") && keys.contains("b:br:feature/push-provider-fcm"),
                   "\(main.scope) \(model.wall.count) \(keys)")
+        }
+        // 6b. Accessibility: a press is a click; the context menu is the row's custom actions.
+        if let all = sidebar.rows.first(where: { $0.row?.kind == .all }), let row = sidebar.rows.first(where: { $0.row?.id == "g:g-tools/p:p-hesper" }) {
+            let pressedAll = all.accessibilityPerformPress()
+            let backToAll = await Harness.wait(2) { self.main.scope == .all }
+            check("accessibility press on All agents scopes the wall back to All", pressedAll && backToAll)
+            let names = (row.accessibilityCustomActions() ?? []).map(\.name)
+            check("a project row's custom actions are its menu (New Agent in…, Show on This Wall, Open as New Wall, Rename…, Color: …)",
+                  names.first == "New Agent in hesper" && names.contains("Show on This Wall") && names.contains("Open as New Wall")
+                  && names.contains("Rename…") && names.contains { $0.hasPrefix("Color: ") }, names.joined(separator: ", "))
+            if let show = row.accessibilityCustomActions()?.first(where: { $0.name == "Show on This Wall" }) {
+                let ran = show.handler?() == true
+                let scoped = await Harness.wait(2) { self.main.scope == .project("p-hesper") }
+                check("a custom action runs its menu item", ran && scoped)
+            }
+            _ = all.accessibilityPerformPress()
+            _ = await Harness.wait(2) { self.main.scope == .all }
+            let pressedRow = row.accessibilityPerformPress()
+            let scopedRow = await Harness.wait(2) { self.main.scope == .project("p-hesper") }
+            check("accessibility press on a project row scopes the wall to it", pressedRow && scopedRow)
+            if let chip = sidebar.machineViews.first {
+                let pressedChip = chip.accessibilityPerformPress()
+                let scopedChip = await Harness.wait(2) { self.main.scope == chip.item.scope }
+                check("a machine chip presses and offers Show on This Wall / Open as New Wall", pressedChip && scopedChip
+                      && (chip.accessibilityCustomActions() ?? []).map(\.name) == ["Show on This Wall", "Open as New Wall"])
+            }
+            _ = all.accessibilityPerformPress()
+            _ = await Harness.wait(2) { self.main.scope == .all }
         }
         // 7. Home wall: a scoped-out agent needing you shows as a card.
         let ghost = model.unscopedWall.first { model.catalog.projectID(for: $0) == "p-hesper" }!.id
