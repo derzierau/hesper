@@ -1431,7 +1431,9 @@ and undo toasts as ⌘↩. Title = the agent's name (also the tab title),
 subtitle `machine · kind` plus "needs approval" / "asks a question" /
 "error" / "exited"; the title bar is tinted rose / amber / red while the
 agent needs you. Keys as in focus, except ⌘W closes the window (the
-agent keeps running; Agents ▸ Stop Agent… still stops it), ⌥⌘← ⌥⌘→
+agent keeps running, shown on its wall; Agents ▸ Kill still stops it)
+and ⌥⌘W sends the agent to the background and closes the window with
+it, ⌥⌘← ⌥⌘→
 step to the previous / next agent within the window (tabs, or
 retargeting: "As built — keyboard navigation"), ⌘↩ / ⌘Esc show the agent in the frontmost
 wall that shows it, ⌘N starts a new agent on the frontmost wall, ⌘K

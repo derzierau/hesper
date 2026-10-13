@@ -300,7 +300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case .arrangement, .cycleArrangement: windows.activeWall.model.perform(c.command)
         case .stepPrevious where NSApp.keyWindow is AgentWindow, .stepNext where NSApp.keyWindow is AgentWindow:
             (NSApp.keyWindow as? AgentWindow)?.step(c.command == .stepNext ? 1 : -1)
-        case .backgroundAgent where NSApp.keyWindow is AgentWindow:
+        case .closeAgent where NSApp.keyWindow is AgentWindow:
             (NSApp.keyWindow as? AgentWindow)?.closeKeepingAgent() // the window only; the agent stays on its wall
         default: windows.activeModel?.perform(c.command)
         }
@@ -312,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard let c = item.representedObject as? MenuCommand else { return true }
         switch c.command {
         case .arrangement, .cycleArrangement: return true // the frontmost wall's
-        case .backgroundAgent where NSApp.keyWindow is AgentWindow, .stepPrevious where NSApp.keyWindow is AgentWindow,
+        case .closeAgent where NSApp.keyWindow is AgentWindow, .stepPrevious where NSApp.keyWindow is AgentWindow,
              .stepNext where NSApp.keyWindow is AgentWindow:
             return true
         default: break
