@@ -378,11 +378,15 @@ pick a profile per agent, per project or per kind:
 | ⌥⌘W / ⌃⌘W / ⇧⌘W | Send the agent to the background / kill it / tidy up finished agents. ⇧⌘T reopens the last closed one. |
 | ⇧⌘M | Move the agent to another Mac |
 | ⌥⌘1–5 / ⌥⌘L | Layouts / next layout. ⌘0 project sidebar, ⌃⌘S wall scope, ⌥⌘N new wall window, ⇧⌘0 show the wall, ⇧⌘D desk picker. |
-| ⌘/ | Every shortcut, by surface and searchable (Help ▸ Keyboard Shortcuts); Settings › Shortcuts lists the same table |
+| ⌘/ | Every shortcut, by surface and searchable (Help ▸ Keyboard Shortcuts); Settings › Shortcuts lists the same table and rebinds any of them |
 
 Esc always goes to the agent, since Claude and Codex use it. Every key and
 menu item comes from one table in the app (⌘/ and Settings › Shortcuts list
-it by surface). The menu bar item shows the counts and the queue, and a notification arrives when an agent
+it by surface). The defaults above can be changed in Settings › Shortcuts:
+click a shortcut, press the new one (⌫ removes it, Reset brings the default
+back); a chord macOS keeps or another command already has is refused with
+the reason. Every row, card and tile is a button to VoiceOver and Full
+Keyboard Access, and ⇥ walks the window. The menu bar item shows the counts and the queue, and a notification arrives when an agent
 starts waiting for you, or when its finished work is ready to review.
 
 `hesperctl` does the same from a terminal:
