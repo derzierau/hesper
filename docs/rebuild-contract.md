@@ -1428,6 +1428,9 @@ Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
   cap. The footer's buttons act on the selected row: Run ⏎, Open full
   size ⌘⏎ (an agent), Actions ⇥ on an agent / History ⇥ elsewhere,
   Close esc (Back esc inside a scope).
+- **Undo toast.** Undo ⌘Z and Reopen ⇧⌘T are KeyButtons (chords from the
+  command table); "Show ↗" on a start toast stays a button
+  (`toast.action`).
 
 #### As built — windows (multi-window iteration 1)
 

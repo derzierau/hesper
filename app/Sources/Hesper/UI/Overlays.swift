@@ -307,7 +307,7 @@ struct OverlayRoot: View {
                     .transition(OverlayLook.fade(reduceMotion: reduceMotion))
             }
             if let u = model.undoToast {
-                UndoToast(label: u.label, reopen: Self.offersReopen(u.action), onUndo: { model.undo(u.id) })
+                UndoToast(label: u.label, reopen: Self.offersReopen(u.action), onUndo: { model.undo(u.id) }, onReopen: { model.reopenLast() })
                     .hotRect("undo")
                     .transition(OverlayLook.transition(reduceMotion: reduceMotion))
             }
@@ -324,36 +324,23 @@ extension OverlayRoot {
     }
 }
 
-/// The undo toast: what happened, then Undo ⌘Z (and for a close, ⌘⇧T
-/// reopen: "Closed api · Undo ⌘Z · Reopen ⌘⇧T").
+/// The undo toast: what happened, then Undo ⌘Z (and for a close, ⇧⌘T
+/// reopen: "Closed api · Undo ⌘Z · Reopen ⇧⌘T"), both KeyButtons with the
+/// registry's chords.
 struct UndoToast: View {
     var label: String
     var reopen = false
     var onUndo: () -> Void
+    var onReopen: () -> Void = {}
 
     var body: some View {
         HStack(spacing: DS.Spacing.l) {
             Text(label).font(.ds(.body)).foregroundStyle(Theme.fg).lineLimit(1)
-            Button(action: onUndo) {
-                HStack(spacing: DS.Spacing.xs) {
-                    Text("Undo").font(.ds(.chrome, .medium)).foregroundStyle(Theme.accent)
-                    Kbd("⌘Z")
-                }
-                .padding(.horizontal, DS.Spacing.m).frame(height: Pill.height)
-                .background(DS.Radius.shape(DS.Radius.control).fill(Theme.selection))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Undo (⌘Z)")
-            .accessibilityIdentifier("undo.button")
+            KeyButton("Undo", kbd: CommandRegistry.labels(.undo).first, variant: .primary(.working), action: onUndo)
+                .accessibilityIdentifier("undo.button")
             if reopen {
-                HStack(spacing: DS.Spacing.xs) {
-                    Text("Reopen").font(.ds(.chrome)).foregroundStyle(Theme.dim)
-                    Kbd("⌘⇧T")
-                }
-                .fixedSize()
-                .help("Reopen the last closed agent (⌘⇧T); again for the one before")
-                .accessibilityIdentifier("undo.reopen")
+                KeyButton("Reopen", kbd: CommandRegistry.labels(.reopenClosed).first, action: onReopen)
+                    .accessibilityIdentifier("undo.reopen")
             }
         }
         .padding(.leading, DS.Spacing.l).padding(.trailing, DS.Spacing.m).padding(.vertical, DS.Spacing.s)
