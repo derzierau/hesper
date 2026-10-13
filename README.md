@@ -369,8 +369,8 @@ pick a profile per agent, per project or per kind:
 | ⌘N | New agent: task, machine, profile (Claude, Codex or a shell), project, worktree and branch. ⌘⏎ starts it, ⌥⏎ starts it and opens another draft (the Start button's ▾), ⌥⌘B toggles the worktree (or click its chip), ⌘W or × discards the draft. |
 | ⌘⏎ | Focus the selected tile and type into it. Again, or ⌘esc, returns to the wall. ⌥⌘⏎ opens it in its own window. |
 | ⌥⌘← ⌥⌘→ | Previous / next agent. ⌥⌘↑ ⌥⌘↓: previous / next band. |
-| ⌘J | Next agent that needs you (approvals, then questions, then errors) |
-| ⏎ / A / N | Allow / always allow / deny the selected tile's approval |
+| ⌘J | The inbox: what needs you (approvals, then questions, then errors). Type to filter it; ⏎ gives the first answer, ⌘⏎ opens the agent |
+| ⏎ / A / N | Allow / always allow / deny the selected tile's approval, on the wall and in the inbox |
 | ⌘K | Palette: agents, projects, machines, actions |
 | ⌘Y | History: every session on every Mac |
 | ⌘R | Review: finished work from every Mac, its diff, tests and where each change came from |

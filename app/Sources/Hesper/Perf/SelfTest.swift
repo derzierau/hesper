@@ -159,6 +159,30 @@ final class SelfTest {
               (model.agent(c.id)?.state.rawValue ?? "?") + " \(model.popover?.key ?? "nil")")
         _ = Harness.press("\u{1b}", keyCode: 53, window: window)
         check("esc closes the inbox", model.popover == nil)
+
+        // 3b. The inbox filters: a letter that is none of its keys goes to
+        // the filter field (which then has the keyboard); only the items
+        // whose name, project or question match stay.
+        await setState(a.id, "question", attention: ["kind": "question", "title": "Question", "detail": "Pick a tone"])
+        _ = await Harness.wait(2) { self.model.agent(a.id)?.state == .question }
+        window.makeFirstResponder(root.wall)
+        Harness.press("j", keyCode: 0x26, flags: .command, window: window)
+        for ch in "to" { _ = Harness.press(String(ch), keyCode: 0, window: window) }
+        let filtered = await Harness.wait(2) { self.model.popoverList.query == "to" && self.model.inboxEntries().map(\.id) == [a.id] }
+        check("typing in the inbox filters it (\"to\" keeps the tone question, drops the other)", filtered,
+              "\(model.popoverList.query) \(model.inboxEntries().map(\.id)) of \(model.attentionEntries().map(\.id))")
+        _ = Harness.press("\u{1b}", keyCode: 53, window: window)
+        await setState(a.id, "working")
+
+        // 3c. Rename: the popover's Save button (⏎'s pointer path) renames.
+        model.select(a.id)
+        model.renameText[a.id] = "renamed-by-selftest"
+        model.openPopover(.rename(a.id))
+        _ = await Harness.wait(1) { self.model.popover == .rename(a.id) }
+        let savePressed = await Harness.wait(2) { self.press(accessibilityID: "rename.save", in: self.window) }
+        let renamed = await Harness.wait(3) { self.model.agent(a.id)?.name == "renamed-by-selftest" }
+        check("the rename popover's Save button renames the agent", savePressed && renamed && model.popover == nil,
+              "pressed=\(savePressed) \(model.agent(a.id)?.name ?? "nil") \(model.popover?.key ?? "nil")")
         await setState(b.id, "done", summary: "Opened PR #482 (draft)")
         await setState(c.id, "working")
 
@@ -858,6 +882,19 @@ final class SelfTest {
         }
         model.deactivateTile()
         await Harness.sleep(0.3)
+    }
+
+    /// Presses a SwiftUI control by its accessibility identifier (the
+    /// overlays' buttons are accessibility elements, not NSViews).
+    private func press(accessibilityID id: String, in window: NSWindow) -> Bool {
+        func find(_ el: Any) -> NSAccessibilityProtocol? {
+            guard let a = el as? NSAccessibilityProtocol else { return nil }
+            if a.accessibilityIdentifier() == id { return a }
+            for c in a.accessibilityChildren() ?? [] { if let f = find(c) { return f } }
+            return nil
+        }
+        guard let el = find(window) else { return false }
+        return el.accessibilityPerformPress()
     }
 
     /// A plain click on a tile (as AppKit delivers it).

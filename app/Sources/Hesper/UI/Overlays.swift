@@ -131,8 +131,10 @@ struct OverlayRoot: View {
                     .transition(OverlayLook.transition(reduceMotion: reduceMotion))
                 }
                 if let p = model.popover {
+                    // A click outside closes a list; a name field stays
+                    // (Cancel or esc leaves it, never a stray click).
                     Color.black.opacity(0.001)
-                        .onTapGesture { model.closePopover() }
+                        .onTapGesture { if !p.hasField { model.closePopover() } }
                     popover(p, in: geo.size)
                         .id(p.key)
                         .transition(OverlayLook.transition(reduceMotion: reduceMotion))
@@ -172,17 +174,17 @@ struct OverlayRoot: View {
 
     /// ⌘J: the inbox, a glass panel under the toolbar's attention pill.
     private func attention(in size: CGSize) -> some View {
-        let entries = model.attentionEntries()
+        let entries = model.inboxEntries()
         let width = AttentionPanel.width
         let maxList = max(AttentionPanel.minListHeight, size.height * AttentionPanel.maxHeightFraction - AttentionPanel.chromeHeight)
-        let listH = min(AttentionPanel.listHeight(entries, width: width), maxList)
+        let listH = min(AttentionPanel.listHeight(entries), maxList)
         let h = AttentionPanel.chromeHeight + listH
         let a = model.popoverAnchor
         let placed = PopoverPlacement.place(anchor: Rect(x: a.minX, y: a.minY, width: a.width, height: a.height),
                                             width: width, height: h + OverlayLook.arrow,
                                             container: Rect(x: 0, y: 0, width: size.width, height: size.height),
                                             avoid: avoid())
-        return AttentionPanel(model: model, entries: entries, listHeight: listH)
+        return AttentionPanel(model: model, entries: entries, queueEmpty: model.attentionEntries().isEmpty, listHeight: listH)
             .frame(width: width, height: h)
             .overlayGlass(DS.Radius.shape(DS.Radius.panel))
             .contentShape(Rectangle())
@@ -250,10 +252,8 @@ struct OverlayRoot: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
                         ForEach(Array(comp.items.enumerated()), id: \.element.id) { i, item in
-                            OverlayRow(title: item.title, detail: item.detail, mark: item.mark, dot: nil, checked: false,
-                                       selected: i == sel, enabled: item.enabled, tint: TokenStyle.fg(item.kind))
+                            CompletionRow(item: item, selected: i == sel) { c.accept(item) }
                                 .id(i)
-                                .onTapGesture { if item.enabled { c.accept(item) } }
                         }
                     }
                     .padding(DS.Spacing.s)
@@ -307,7 +307,7 @@ struct OverlayRoot: View {
                     .transition(OverlayLook.fade(reduceMotion: reduceMotion))
             }
             if let u = model.undoToast {
-                UndoToast(label: u.label, reopen: Self.offersReopen(u.action), onUndo: { model.undo(u.id) })
+                UndoToast(label: u.label, reopen: Self.offersReopen(u.action), onUndo: { model.undo(u.id) }, onReopen: { model.reopenLast() })
                     .hotRect("undo")
                     .transition(OverlayLook.transition(reduceMotion: reduceMotion))
             }
@@ -324,36 +324,23 @@ extension OverlayRoot {
     }
 }
 
-/// The undo toast: what happened, then Undo ⌘Z (and for a close, ⌘⇧T
-/// reopen: "Closed api · Undo ⌘Z · Reopen ⌘⇧T").
+/// The undo toast: what happened, then Undo ⌘Z (and for a close, ⇧⌘T
+/// reopen: "Closed api · Undo ⌘Z · Reopen ⇧⌘T"), both KeyButtons with the
+/// registry's chords.
 struct UndoToast: View {
     var label: String
     var reopen = false
     var onUndo: () -> Void
+    var onReopen: () -> Void = {}
 
     var body: some View {
         HStack(spacing: DS.Spacing.l) {
             Text(label).font(.ds(.body)).foregroundStyle(Theme.fg).lineLimit(1)
-            Button(action: onUndo) {
-                HStack(spacing: DS.Spacing.xs) {
-                    Text("Undo").font(.ds(.chrome, .medium)).foregroundStyle(Theme.accent)
-                    Kbd("⌘Z")
-                }
-                .padding(.horizontal, DS.Spacing.m).frame(height: Pill.height)
-                .background(DS.Radius.shape(DS.Radius.control).fill(Theme.selection))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Undo (⌘Z)")
-            .accessibilityIdentifier("undo.button")
+            KeyButton("Undo", kbd: CommandRegistry.labels(.undo).first, variant: .primary(.working), action: onUndo)
+                .accessibilityIdentifier("undo.button")
             if reopen {
-                HStack(spacing: DS.Spacing.xs) {
-                    Text("Reopen").font(.ds(.chrome)).foregroundStyle(Theme.dim)
-                    Kbd("⌘⇧T")
-                }
-                .fixedSize()
-                .help("Reopen the last closed agent (⌘⇧T); again for the one before")
-                .accessibilityIdentifier("undo.reopen")
+                KeyButton("Reopen", kbd: CommandRegistry.labels(.reopenClosed).first, action: onReopen)
+                    .accessibilityIdentifier("undo.reopen")
             }
         }
         .padding(.leading, DS.Spacing.l).padding(.trailing, DS.Spacing.m).padding(.vertical, DS.Spacing.s)
@@ -365,9 +352,10 @@ struct UndoToast: View {
 // MARK: - The background tray
 
 /// ⌥⌘W's tray: "Background · 2" and how many need you, then a Row per
-/// agent (its StateMark, name, "machine · tool · age"), the selected one
-/// with ⏎. ⏎ / click brings it back onto its wall (one that needs you
-/// opens like ⌘J), ⌘W closes it, esc dismisses.
+/// agent (its StateMark, name, "machine · tool · age") with a Bring back
+/// button, the selected one's carrying ⏎. ⏎ / click brings it back onto
+/// its wall (one that needs you opens like ⌘J), ⌘W (the context menu's
+/// Close) closes it, esc dismisses.
 struct BackgroundPanel: View {
     struct RowData: Identifiable {
         var agent: Agent
@@ -409,13 +397,18 @@ struct BackgroundPanel: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
-                        Row(title: r.agent.name, meta: r.meta, mark: StateMarkKind(r.agent.state), kbd: i == selected ? "⏎" : nil, selected: i == selected)
-                            .onTapGesture { onBringBack(r.agent) }
-                            .contextMenu {
-                                Button("Bring Back") { onBringBack(r.agent) }
-                                Button("Close") { onClose(r.agent) }
-                            }
-                            .accessibilityIdentifier("background.row.\(r.id)")
+                        HStack(spacing: DS.Spacing.s) {
+                            Row(title: r.agent.name, meta: r.meta, mark: StateMarkKind(r.agent.state), selected: i == selected)
+                            KeyButton("Bring back", kbd: i == selected ? "⏎" : nil) { onBringBack(r.agent) }
+                                .accessibilityIdentifier("background.bringBack.\(r.id)")
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { onBringBack(r.agent) }
+                        .contextMenu {
+                            Button("Bring Back") { onBringBack(r.agent) }
+                            Button("Close") { onClose(r.agent) }
+                        }
+                        .accessibilityIdentifier("background.row.\(r.id)")
                     }
                 }
             }
@@ -432,21 +425,31 @@ struct BackgroundPanel: View {
 
 // MARK: - ⌘J inbox
 
-/// ⌘J: what needs you, as an inbox. Each item: its state mark, the agent,
-/// its machine (and "other wall" / "other Mac"), the exact question and
-/// its answers inline — approvals "1 Allow · 2 Always · 3 Deny",
-/// numbered questions one Pill per option, free text "Open". J/K or ↑↓
-/// move, 1–9 answer the selected item, ⏎ its first answer, ⌘⏎ opens its
-/// tile, esc closes. Empty: "Nothing needs you." and it closes itself
-/// after a second.
+/// ⌘J: what needs you, as an inbox. A filter field at the top (agent
+/// name, project, question). Each item is a Row: its state mark, the
+/// agent, "machine · other wall · age", the exact question; under it the
+/// answers as KeyButtons — approvals "Allow ⏎ · Always A · Deny N",
+/// numbered questions one per option (1–n), free text "Open ⏎" — "Continue
+/// on mini M" when it can move, and Open ⌘⏎. J/K or ↑↓ move, the letters
+/// answer the selected item, ⏎ its first answer, ⌘⏎ opens its tile, any
+/// other letter filters (the field then has the keyboard), esc closes.
+/// Empty: "Nothing needs you." and it closes itself after a second.
 struct AttentionPanel: View {
     @Bindable var model: AppModel
     var entries: [AppModel.AttentionEntry]
+    /// Nothing in the queue at all (not just nothing matching the filter).
+    var queueEmpty: Bool
     var listHeight: CGFloat
+    @FocusState private var filterFocused: Bool
+    /// The field's own copy (an NSTextField being edited ignores outside
+    /// changes); the model's list keeps the query.
+    @State private var filterText = ""
 
     static let width = OverlayLook.inboxWidth
     static let emptyText = "Nothing needs you."
-    static let hints: [(String, String)] = [("J K", "move"), ("1–9", "answer"), ("⏎", "first"), ("⌘⏎", "open"), ("esc", "close")]
+    static let noMatchText = "Nothing matches"
+    static let filterPrompt = "Filter by agent, project or question"
+    static let hints: [(String, String)] = [("J K", "move"), ("esc", "close")]
     /// The empty panel closes itself after this long.
     static let emptyClose: Duration = .seconds(1)
     /// Option titles longer than this are cut (the agent has the full text).
@@ -456,30 +459,18 @@ struct AttentionPanel: View {
 
     // Geometry (the panel is sized before SwiftUI lays it out: placement).
     static var headerHeight: CGFloat { DS.chromeMaxHeight + DS.Spacing.xs }
-    static var chromeHeight: CGFloat { headerHeight + Hints.height + DS.Spacing.s }
-    static let nameLine = DS.Spacing.l + DS.Spacing.s
-    static let questionFont = DS.nsFont(.chrome)
-    static let questionLine = ceil(NSLayoutManager().defaultLineHeight(for: questionFont))
-    static let questionLines = 2
-    static var itemPadding: CGFloat { DS.Spacing.m }
+    static var chromeHeight: CGFloat { headerHeight + PopoverPanel.filterHeight + Hints.height + DS.Spacing.s }
     static var itemSpacing: CGFloat { DS.Spacing.xxs }
 
-    /// How many lines (1–2) a question takes in the item.
-    static func lines(_ question: String, width: CGFloat) -> Int {
-        let w = width - 2 * DS.Spacing.s - 2 * itemPadding
-        let r = (question as NSString).boundingRect(with: NSSize(width: max(1, w), height: .greatestFiniteMagnitude),
-                                                    options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: questionFont])
-        return max(1, min(questionLines, Int(ceil(r.height / questionLine - 0.01))))
-    }
+    /// A Row with the question as its subtitle, the answer buttons under it.
+    static var itemHeight: CGFloat { Row.height(subtitle: true) + DS.Spacing.xs + KeyButton.height + DS.Spacing.s }
 
-    static func itemHeight(_ e: AppModel.AttentionEntry, width: CGFloat) -> CGFloat {
-        2 * itemPadding + nameLine + DS.Spacing.xs + CGFloat(lines(e.question, width: width)) * questionLine + DS.Spacing.s + Pill.height
-    }
-
-    static func listHeight(_ entries: [AppModel.AttentionEntry], width: CGFloat) -> CGFloat {
+    static func listHeight(_ entries: [AppModel.AttentionEntry]) -> CGFloat {
         guard !entries.isEmpty else { return minListHeight }
-        return entries.reduce(0) { $0 + itemHeight($1, width: width) } + CGFloat(entries.count - 1) * itemSpacing + 2 * DS.Spacing.s
+        return CGFloat(entries.count) * itemHeight + CGFloat(entries.count - 1) * itemSpacing + 2 * DS.Spacing.s
     }
+
+    private var query: String { model.popoverLists[PopoverKind.attention.key]?.query ?? "" }
 
     var body: some View {
         let list = model.popoverLists[PopoverKind.attention.key] ?? OverlayList()
@@ -489,15 +480,15 @@ struct AttentionPanel: View {
                 Text("Needs you · \(entries.count)").font(.ds(.body, .semibold)).foregroundStyle(Theme.fg)
                     .accessibilityIdentifier("attention.title")
                 Spacer(minLength: DS.Spacing.s)
-                Kbd("⌘J")
+                KeyButton("Close", kbd: "esc", variant: .icon("xmark")) { model.closePopover() }
+                    .accessibilityIdentifier("attention.close")
             }
             .padding(.horizontal, DS.Spacing.l)
             .frame(height: Self.headerHeight)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Needs you, \(entries.count)")
+            filter
             Rectangle().fill(OverlayLook.line).frame(height: 1)
             if entries.isEmpty {
-                Text(Self.emptyText).font(.ds(.body)).foregroundStyle(Theme.dim)
+                Text(queueEmpty ? Self.emptyText : Self.noMatchText).font(.ds(.body)).foregroundStyle(Theme.dim)
                     .frame(maxWidth: .infinity, minHeight: listHeight)
                     .accessibilityIdentifier("attention.empty")
             } else {
@@ -505,7 +496,7 @@ struct AttentionPanel: View {
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: Self.itemSpacing) {
                             ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in
-                                AttentionItem(entry: e, selected: i == sel, width: Self.width,
+                                AttentionItem(entry: e, selected: i == sel,
                                               onAnswer: { a in model.answerFromQueue(e, a) },
                                               onSelect: { model.selectAttention(e.id) },
                                               onOpen: { model.openFromQueue(e.agent) },
@@ -522,35 +513,54 @@ struct AttentionPanel: View {
             Spacer(minLength: 0)
             Hints(items: Self.hints)
         }
+        .onAppear { filterText = query }
+        // Typed through the window (a letter that is no key of the inbox):
+        // the field shows it and takes the keyboard from there on.
+        .onChange(of: query) {
+            guard query != filterText else { return }
+            filterText = query
+            if !query.isEmpty { filterFocused = true }
+        }
+        .onChange(of: filterText) {
+            guard var l = model.popoverLists[PopoverKind.attention.key], l.query != filterText else { return }
+            l.query = filterText
+            l.index = 0
+            model.popoverLists[PopoverKind.attention.key] = l
+        }
         // Empty (the last one answered): says so, then closes itself.
-        .task(id: entries.isEmpty) {
-            guard entries.isEmpty else { return }
+        .task(id: queueEmpty) {
+            guard queueEmpty else { return }
             try? await Task.sleep(for: Self.emptyClose)
             if !Task.isCancelled, model.popover == .attention, model.attentionEntries().isEmpty { model.closePopover() }
         }
     }
+
+    private var filter: some View {
+        HStack(spacing: DS.Spacing.s) {
+            Image(systemName: "magnifyingglass").font(.ds(.meta)).foregroundStyle(Theme.dim).accessibilityHidden(true)
+            TextField("", text: $filterText, prompt: Text(Self.filterPrompt).foregroundStyle(Theme.dim))
+                .textFieldStyle(.plain)
+                .font(.ds(.chrome))
+                .foregroundStyle(Theme.fg)
+                .focused($filterFocused)
+                .accessibilityIdentifier("attention.filter")
+        }
+        .padding(.horizontal, DS.Spacing.m).frame(height: PopoverPanel.filterHeight - DS.Spacing.xs)
+        .background(DS.Radius.shape(DS.Radius.control).fill(Theme.chipBG.opacity(0.6)))
+        .padding(.horizontal, DS.Spacing.s).padding(.bottom, DS.Spacing.xs)
+    }
 }
 
-/// One inbox item.
+/// One inbox item: a Row (the agent, where it is, the question) and its
+/// buttons.
 struct AttentionItem: View {
     var entry: AppModel.AttentionEntry
     var selected: Bool
-    var width: CGFloat
     var onAnswer: (InboxAnswer) -> Void
     var onSelect: () -> Void
     var onOpen: () -> Void
     /// "Continue on mini" (M): the target's short name.
     var onMove: (String) -> Void = { _ in }
-
-    @State private var hover = false
-
-    private var primaryMark: StateMarkKind {
-        switch entry.agent.state {
-        case .approval: return .needsYou
-        case .question: return .question
-        default: return .error
-        }
-    }
 
     private var stateLabel: String {
         switch entry.agent.state {
@@ -562,22 +572,10 @@ struct AttentionItem: View {
 
     var body: some View {
         let a = entry.agent
-        let lines = AttentionPanel.lines(entry.question, width: width)
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: DS.Spacing.s) {
-                StateMark(state: a.state)
-                Text(a.name).font(.ds(.body, .medium)).foregroundStyle(Theme.fg).lineLimit(1).truncationMode(.middle)
-                Text(([a.machine] + entry.whereabouts).joined(separator: " · ")).font(.ds(.meta)).foregroundStyle(Theme.fg2).lineLimit(1)
-                Spacer(minLength: DS.Spacing.s)
-                if !entry.since.isEmpty { Text(entry.since).font(.ds(.meta)).foregroundStyle(Theme.dim).fixedSize() }
-            }
-            .frame(height: AttentionPanel.nameLine)
-            Text(entry.question)
-                .font(.ds(.chrome)).foregroundStyle(Theme.fg2)
-                .lineLimit(lines).truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .frame(height: CGFloat(lines) * AttentionPanel.questionLine, alignment: .topLeading)
-                .padding(.top, DS.Spacing.xs)
+        let meta = ([a.machine] + entry.whereabouts + (entry.since.isEmpty ? [] : [entry.since])).joined(separator: " · ")
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Row(title: a.name, subtitle: entry.question, meta: meta, mark: StateMarkKind(a.state), selected: selected)
+                .help(entry.question)
             HStack(spacing: DS.Spacing.s) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: DS.Spacing.s) {
@@ -588,28 +586,23 @@ struct AttentionItem: View {
                 }
                 .disabled(entry.answered)
                 if let t = entry.moveTo, !entry.answered {
-                    Button { onMove(t.short) } label: {
-                        Pill(MoveText.continueTitle(t.name), variant: .status, kbd: "M").contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .fixedSize()
-                    .help("Continue \(entry.agent.name) on \(t.name) with its uncommitted work (M)")
-                    .accessibilityLabel("Continue on \(t.name), key M")
-                    .accessibilityIdentifier("attention.move.\(entry.agent.id)")
+                    KeyButton(MoveText.continueTitle(t.name), kbd: "M") { onMove(t.short) }
+                        .accessibilityIdentifier("attention.move.\(a.id)")
                 }
                 if entry.answered {
                     Text("Sent").font(.ds(.meta)).foregroundStyle(Theme.dim).fixedSize()
                         .accessibilityIdentifier("attention.sent")
                 }
+                Spacer(minLength: 0)
+                KeyButton("Open", kbd: "⌘⏎", variant: .icon("arrow.up.left.and.arrow.down.right")) { onOpen() }
+                    .accessibilityIdentifier("attention.open.\(a.id)")
             }
-            .frame(height: Pill.height)
-            .padding(.top, DS.Spacing.s)
+            .frame(height: KeyButton.height)
+            .padding(.horizontal, DS.Spacing.m)
         }
-        .padding(AttentionPanel.itemPadding)
-        .background(DS.Radius.shape(DS.Radius.control).fill(selected ? Theme.selection : hover ? Theme.chipBG.opacity(0.6) : .clear))
+        .padding(.bottom, DS.Spacing.s)
         .opacity(entry.answered ? OverlayLook.disabledOpacity + 0.2 : 1)
         .contentShape(Rectangle())
-        .onHover { hover = $0 }
         .onTapGesture(count: 2) { onOpen() }
         .onTapGesture { onSelect() }
         .accessibilityElement(children: .contain)
@@ -620,21 +613,19 @@ struct AttentionItem: View {
 
     private func answerButton(_ ans: InboxAnswer, primary: Bool) -> some View {
         let title = ans.title.count > AttentionPanel.maxAnswerTitle ? String(ans.title.prefix(AttentionPanel.maxAnswerTitle - 1)) + "…" : ans.title
-        let key = ans.key.map(String.init) ?? (primary ? "⏎" : nil)
-        return Button { onAnswer(ans) } label: {
-            Pill(title, variant: .status, mark: primary ? primaryMark : nil, kbd: key)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(ans.title)
-        .accessibilityLabel(ans.title + (key.map { ", key \($0)" } ?? ""))
-        .accessibilityIdentifier("attention.answer.\(entry.agent.id).\(ans.key ?? 0)")
+        return KeyButton(title, kbd: AttentionInbox.keyCap(ans, primary: primary),
+                         variant: primary ? .primary(StateMarkKind(entry.agent.state).tone) : .quiet) { onAnswer(ans) }
+            .accessibilityIdentifier("attention.answer.\(entry.agent.id).\(ans.key ?? 0)")
     }
 }
 
 // MARK: - Popover list
 
-/// A popover's list (keys come through the window: ↑↓ ⏎ ⌘⏎ esc, typing).
+/// A popover's list (keys come through the window: ↑↓ ⏎ ⌘⏎ esc; a
+/// filterable one types into its field, which has the keyboard while it
+/// is open). The layout and scope popovers' title row carries a pin
+/// (apply the highlighted row and keep it open, ⌘⏎) and a × (esc); a name
+/// popover (rename, desk name) has Save ⏎ and Cancel esc under its field.
 struct PopoverPanel: View {
     @Bindable var model: AppModel
     var kind: PopoverKind
@@ -642,6 +633,10 @@ struct PopoverPanel: View {
     var list: OverlayList
     var width: CGFloat
     @FocusState private var fieldFocused: Bool
+    @FocusState private var filterFocused: Bool
+    /// The filter field's own copy (an NSTextField being edited ignores
+    /// outside changes); the model's list keeps the query.
+    @State private var filterText = ""
 
     static let titleHeight = DS.chromeMaxHeight
     static let filterHeight = DS.chromeMaxHeight + DS.Spacing.xxs
@@ -664,32 +659,48 @@ struct PopoverPanel: View {
         let sel = list.selection(enabled: content.items.map(\.enabled))
         VStack(alignment: .leading, spacing: 0) {
             if let t = content.title {
-                Text(t).font(.ds(.chrome, .semibold)).foregroundStyle(Theme.muted).lineLimit(1)
-                    .padding(.horizontal, DS.Spacing.m).frame(height: Self.titleHeight, alignment: .leading)
+                HStack(spacing: DS.Spacing.s) {
+                    Text(t).font(.ds(.chrome, .semibold)).foregroundStyle(Theme.muted).lineLimit(1)
+                    Spacer(minLength: DS.Spacing.s)
+                    if kind.keepsOpen {
+                        KeyButton("Apply, keep open", kbd: "⌘⏎", variant: .icon("pin")) { _ = model.popoverKey(.alternate) }
+                            .accessibilityIdentifier("popover.pin")
+                        KeyButton("Close", kbd: "esc", variant: .icon("xmark")) { model.closePopover() }
+                            .accessibilityIdentifier("popover.close")
+                    }
+                }
+                .padding(.horizontal, DS.Spacing.m).frame(height: Self.titleHeight)
             }
             if kind.filterable {
                 HStack(spacing: DS.Spacing.s) {
-                    Image(systemName: "magnifyingglass").font(.ds(.meta)).foregroundStyle(Theme.dim)
-                    Text(list.query.isEmpty ? "Type to filter" : list.query)
-                        .font(list.query.isEmpty ? .ds(.chrome) : DS.monoFont(.chrome))
-                        .foregroundStyle(list.query.isEmpty ? Theme.dim : Theme.fg).lineLimit(1)
-                    Spacer()
+                    Image(systemName: "magnifyingglass").font(.ds(.meta)).foregroundStyle(Theme.dim).accessibilityHidden(true)
+                    TextField("", text: $filterText, prompt: Text("Type to filter").font(.ds(.chrome)).foregroundStyle(Theme.dim))
+                        .textFieldStyle(.plain)
+                        .font(DS.monoFont(.chrome))
+                        .foregroundStyle(Theme.fg)
+                        .focused($filterFocused)
+                        .accessibilityIdentifier("popover.filter")
                 }
                 .padding(.horizontal, DS.Spacing.m).frame(height: Self.filterHeight - DS.Spacing.xs)
                 .background(DS.Radius.shape(DS.Radius.control).fill(Theme.chipBG.opacity(0.6)))
                 .padding(.horizontal, DS.Spacing.xs).padding(.bottom, DS.Spacing.xs)
-                .accessibilityIdentifier("popover.filter")
-            }
-            if let f = content.field, case .rename(let id) = kind {
-                field(f, text: Binding(get: { model.renameText[id] ?? "" }, set: { model.renameText[id] = $0 }), id: "rename.field") {
-                    if let a = model.agent(id), let n = model.renameText[id], !n.isEmpty { model.rename(a, to: n) }
+                .onAppear {
+                    filterText = list.query
+                    DispatchQueue.main.async { filterFocused = true }
+                }
+                .onChange(of: list.query) { if list.query != filterText { filterText = list.query } }
+                .onChange(of: filterText) {
+                    guard var l = model.popoverLists[kind.key], l.query != filterText else { return }
+                    l.query = filterText
+                    l.index = 0
+                    model.popoverLists[kind.key] = l
                 }
             }
-            if let f = content.field, case .deskName(let id) = kind {
-                field(f, text: $model.deskNameText, id: "desk.name") {
-                    let n = model.deskNameText
-                    if !n.isEmpty { model.closePopover(); model.deskNameSubmit?(id, n) }
-                }
+            if let f = content.field, let submit = fieldSubmit, case .rename(let id) = kind {
+                field(f, text: Binding(get: { model.renameText[id] ?? "" }, set: { model.renameText[id] = $0 }), id: "rename.field", submit: submit)
+            }
+            if let f = content.field, let submit = fieldSubmit, case .deskName = kind {
+                field(f, text: $model.deskNameText, id: "desk.name", submit: submit)
             }
             if content.items.isEmpty && content.field == nil {
                 Text(content.empty).font(.ds(.chrome)).foregroundStyle(Theme.dim).padding(.horizontal, DS.Spacing.m).frame(height: OverlayLook.rowHeight)
@@ -717,11 +728,40 @@ struct PopoverPanel: View {
                 Text(n).font(.ds(.chrome)).foregroundStyle(Theme.muted).lineLimit(2)
                     .padding(.horizontal, DS.Spacing.m).frame(height: Self.noteHeight - DS.Spacing.xs, alignment: .leading)
             }
-            Hints(items: content.hints)
+            if let buttons = fieldButtons { buttons } else { Hints(items: content.hints) }
         }
         .padding(.horizontal, DS.Spacing.s)
         .padding(.top, DS.Spacing.s)
         .frame(width: width, alignment: .topLeading)
+    }
+
+    /// A name field's submit (⏎, Save).
+    private var fieldSubmit: (() -> Void)? {
+        switch kind {
+        case .rename(let id):
+            return { if let a = model.agent(id), let n = model.renameText[id], !n.isEmpty { model.rename(a, to: n) } }
+        case .deskName(let id):
+            return { let n = model.deskNameText; if !n.isEmpty { model.closePopover(); model.deskNameSubmit?(id, n) } }
+        default:
+            return nil
+        }
+    }
+
+    /// Save ⏎ and Cancel esc in the footer's place (a name popover).
+    @ViewBuilder private var fieldButtons: (some View)? {
+        if let submit = fieldSubmit {
+            let id = { if case .rename = kind { return "rename" } else { return "desk.name" } }()
+            HStack(spacing: DS.Spacing.s) {
+                Spacer(minLength: 0)
+                KeyButton("Cancel", kbd: "esc") { model.closePopover() }
+                    .accessibilityIdentifier("\(id).cancel")
+                KeyButton("Save", kbd: "⏎", variant: .primary(.working), action: submit)
+                    .accessibilityIdentifier("\(id).save")
+            }
+            .padding(.horizontal, DS.Spacing.m)
+            .frame(height: Hints.height)
+            .overlay(alignment: .top) { Rectangle().fill(OverlayLook.line).frame(height: 1) }
+        }
     }
 
     private func field(_ placeholder: String, text: Binding<String>, id: String, submit: @escaping () -> Void) -> some View {
@@ -737,6 +777,24 @@ struct PopoverPanel: View {
             .padding(.horizontal, DS.Spacing.xs).padding(.vertical, DS.Spacing.m - DS.Spacing.xxs / 2)
             .onAppear { DispatchQueue.main.async { fieldFocused = true } }
             .accessibilityIdentifier(id)
+    }
+}
+
+/// A completion list's row (the composer's popover, the quick launch
+/// panel): a Row with a button role; its mark ("M", "⑂") leads the meta.
+struct CompletionRow: View {
+    var item: CompletionItem
+    var selected: Bool
+    var accept: () -> Void
+
+    var body: some View {
+        Button { if item.enabled { accept() } } label: {
+            Row(title: item.title, meta: [item.mark, item.detail].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "), selected: selected)
+                .opacity(item.enabled ? 1 : OverlayLook.disabledOpacity)
+        }
+        .buttonStyle(.plain)
+        .disabled(!item.enabled)
+        .accessibilityIdentifier("completion.row.\(item.id)")
     }
 }
 

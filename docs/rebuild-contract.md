@@ -1403,6 +1403,47 @@ offset / rw preamble / alt screen, `internal/attachtty` scroll parser,
 machines|layout|undo|deny|quick|settings|flap|after-focus|active|scroll
 [DAEMON=real]` screenshots each (quick/settings: the panel/window too).
 
+#### As built — pointer paths in the overlays (UI control, phase 3c)
+
+Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
+`docs/design-system.md`); the keys themselves did not move.
+
+- **Inbox ⌘J.** A filter field under the title (agent name, project,
+  question: `AttentionInbox.matches`). Each item is a `Row` (state mark,
+  agent, "machine · other wall · age", the question as its subtitle) with
+  KeyButtons under it: approvals Allow ⏎ · Always A · Deny N, numbered
+  questions 1–n, free text Open ⏎, "Continue on mini M" when it can move,
+  and Open ⌘⏎ (an icon). J K ↑↓ move; the letters answer the selected
+  item; any other letter goes to the filter, and the field then has the
+  keyboard (every key types, ↑↓ ⏎ ⌘⏎ esc still route); ⌫ deletes; esc and
+  the × in the title close. "Nothing matches" under a filter, "Nothing
+  needs you." (and the panel closes itself) with an empty queue; the
+  filter clears when the inbox opens.
+- **Popovers.** "Type to filter" is a text field that has the keyboard
+  while a filterable popover is open (↑↓ ⏎ ⇥ esc route through the
+  window; ⌫ deletes in the field). The layout popover (titled "Layout")
+  and the scope popover carry a pin in their title row (apply the
+  highlighted row and keep the popover open: ⌘⏎) and a × (esc).
+- **Palette ⌘K.** An agent's action list (⇥) starts with a "‹ Back" row
+  (esc) that leaves the scope the way esc does, and opens on the first
+  action. Action rows show their chord from the command table as a key
+  cap. The footer's buttons act on the selected row: Run ⏎, Open full
+  size ⌘⏎ (an agent), Actions ⇥ on an agent / History ⇥ elsewhere,
+  Close esc (Back esc inside a scope).
+- **Undo toast.** Undo ⌘Z and Reopen ⇧⌘T are KeyButtons (chords from the
+  command table); "Show ↗" on a start toast stays a button
+  (`toast.action`).
+- **Rename, desk name.** Save ⏎ and Cancel esc under the field; a click
+  outside keeps the popover (Save, Cancel or esc leave it, a stray click
+  no longer discards). The background tray's rows carry a Bring back
+  button (⏎ on the selected row) and keep their context menu (Bring Back,
+  Close).
+- **Quick launch.** A × (esc) in the panel's top right; File › Quick
+  Launch… toggles the panel, as the status item and the hotkey do.
+- **Completion lists** (the composer's popover, quick launch): rows are
+  `Row`s with a button role (`completion.row.<id>`); the keys are
+  unchanged.
+
 #### As built — windows (multi-window iteration 1)
 
 Code: the window

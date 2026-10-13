@@ -74,3 +74,20 @@ public struct OverlayList: Equatable, Sendable {
     public mutating func type(_ s: String) { query += s; index = 0 }
     public mutating func deleteBackward() { if !query.isEmpty { query.removeLast(); index = 0 } }
 }
+
+/// The palette's scoped list (⇥ on an agent: its actions): a "‹ Back" row
+/// first, so a click leaves the scope the way esc does, then the actions;
+/// the selection opens on the first action.
+public enum PaletteScope {
+    public static let backID = "back"
+    public static let backTitle = "‹ Back"
+    /// The row's key cap.
+    public static let backKey = "esc"
+    /// The selection a freshly entered scope opens on.
+    public static let firstAction = 1
+
+    /// The scoped list's row ids.
+    public static func rows(actions: [String]) -> [String] { [backID] + actions }
+
+    public static func isBack(_ id: String) -> Bool { id == backID }
+}

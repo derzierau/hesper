@@ -84,6 +84,28 @@ public enum AttentionInbox {
         }
     }
 
+    /// The key cap an answer's button shows: Always and Deny carry the
+    /// wall's A and N, Allow and Open the primary ⏎, a numbered option its
+    /// number; nil: no key (a second free-text answer).
+    public static func keyCap(_ a: InboxAnswer, primary: Bool) -> String? {
+        switch a.action {
+        case .decision(.always): return "A"
+        case .decision(.deny): return "N"
+        case .decision(.allow), .open: return primary ? "⏎" : a.key.map(String.init)
+        default: return a.key.map(String.init) ?? (primary ? "⏎" : nil)
+        }
+    }
+
+    /// The inbox's filter: every word of the query (case-insensitive) is in
+    /// the agent's name, its project or its question; an empty query keeps
+    /// every item.
+    public static func matches(_ query: String, name: String, project: String, question: String) -> Bool {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return true }
+        let fields = [name, project, question].map { $0.lowercased() }
+        return words.allSatisfy { w in fields.contains { $0.contains(w) } }
+    }
+
     /// Where an item is when that isn't here: "other wall" (not on this
     /// wall), "other Mac" (runs on another machine).
     public static func whereabouts(machine: String, local: String, onThisWall: Bool) -> [String] {
@@ -143,6 +165,8 @@ public enum InboxKeyAction: Equatable, Sendable {
     case primary, open, close, none
     /// M: continue the selected agent on the other Mac (agents.move).
     case moveElsewhere
+    /// A / N: the selected item's Always or Deny answer.
+    case decide(Decision)
 }
 
 public enum InboxKeys {
@@ -170,8 +194,15 @@ public enum InboxKeys {
         case .close: return .close
         case .type(let s):
             // J K 1–9 M: typed letters, looked up in the inbox's surface.
-            guard s.count == 1, let c = s.first, let id = CommandRegistry.resolve(KeyChord(.char(c)), in: .inbox) else { return .none }
-            return Self.action(for: id) ?? .none
+            guard s.count == 1, let c = s.first else { return .none }
+            if let id = CommandRegistry.resolve(KeyChord(.char(c)), in: .inbox) { return Self.action(for: id) ?? .none }
+            // A and N: the wall's Always and Deny…, on the selected item's
+            // buttons here (not yet in the registry's inbox surface).
+            switch c.lowercased() {
+            case "a": return .decide(.always)
+            case "n": return .decide(.deny)
+            default: return .none
+            }
         case .actOn, .back, .deleteBackward, .pass:
             return .none
         }
@@ -180,6 +211,11 @@ public enum InboxKeys {
     /// The answer a number key picks (`InboxAnswer.key`), if any.
     public static func answer(_ index: Int, in answers: [InboxAnswer]) -> InboxAnswer? {
         answers.first { $0.key == index + 1 }
+    }
+
+    /// A / N: the answer with this decision, if offered.
+    public static func answer(_ d: Decision, in answers: [InboxAnswer]) -> InboxAnswer? {
+        answers.first { $0.action == .decision(d) }
     }
 
     /// ⏎: the first answer.

@@ -184,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func run(_ id: CommandID) {
         switch id {
         case .settings: showSettings()
-        case .quickLaunch: quickLaunch?.show()
+        case .quickLaunch: quickLaunch?.toggle() // like the status item and the hotkey
         case .showWall: showWindow()
         case .toggleDense: let m = windows.activeWall.model; m.minChars = m.minChars < 80 ? 80 : 60
         case .showShortcuts: showShortcuts()

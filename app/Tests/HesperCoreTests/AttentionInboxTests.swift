@@ -102,6 +102,40 @@ import Testing
         #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.escape))) == .close)
     }
 
+    @Test func lettersPickAlwaysAndDeny() {
+        #expect(InboxKeys.route(.type("a")) == .decide(.always))
+        #expect(InboxKeys.route(.type("N")) == .decide(.deny))
+        let a = AttentionInbox.answers(state: .approval, attention: Attention(kind: "approval", options: ["allow", "always", "deny"]))
+        #expect(InboxKeys.answer(.always, in: a)?.title == "Always")
+        #expect(InboxKeys.answer(.deny, in: a)?.action == .decision(.deny))
+        let noAlways = AttentionInbox.answers(state: .approval, attention: Attention(kind: "approval", options: ["allow", "deny"]))
+        #expect(InboxKeys.answer(.always, in: noAlways) == nil)
+        #expect(InboxKeys.answer(.deny, in: AttentionInbox.answers(state: .question, attention: nil)) == nil)
+    }
+
+    @Test func keyCaps() {
+        let a = AttentionInbox.answers(state: .approval, attention: Attention(kind: "approval", options: ["allow", "always", "deny"]))
+        #expect(a.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["⏎", "A", "N"])
+        let numbered = AttentionInbox.answers(state: .question, attention: Attention(kind: "question", detail: "Which? 1. Formal 2. Casual"))
+        #expect(numbered.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["1", "2"])
+        let trust = AttentionInbox.answers(state: .question, attention: Attention(kind: "question", title: "Trust?", options: ["trust", "exit"]))
+        #expect(trust.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["1", "2"])
+        #expect(AttentionInbox.keyCap(InboxAnswer(title: "Open", action: .open, key: nil), primary: true) == "⏎")
+    }
+
+    @Test func filter() {
+        typealias I = AttentionInbox
+        #expect(I.matches("", name: "api", project: "/p/news-api", question: "Bash: git push"))
+        #expect(I.matches("API", name: "api", project: "/p/x", question: "?"))
+        #expect(I.matches("news", name: "api", project: "/p/news-api", question: "?"))
+        #expect(I.matches("git push", name: "api", project: "/p/x", question: "Bash: git push"))
+        // Every word must match, in any of the three fields.
+        #expect(I.matches("news push", name: "api", project: "/p/news-api", question: "Bash: git push"))
+        #expect(!I.matches("news pull", name: "api", project: "/p/news-api", question: "Bash: git push"))
+        #expect(!I.matches("relay", name: "api", project: "/p/news-api", question: "Bash: git push"))
+        #expect(I.matches("   ", name: "api", project: "", question: ""))
+    }
+
     @Test func numberKeysPickAnswers() {
         let a = AttentionInbox.answers(state: .approval, attention: Attention(kind: "approval", options: ["allow", "always", "deny"]))
         #expect(InboxKeys.answer(2, in: a)?.action == .decision(.deny))
