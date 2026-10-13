@@ -20,4 +20,22 @@ import Testing
         // The inbox treats it as its own (not a verb): the filter shrinks.
         #expect(InboxKeys.route(.deleteBackward) == .none)
     }
+
+    /// The scoped palette (an agent's actions): "‹ Back" first with esc as
+    /// its cap, the selection opening on the first action.
+    @Test func paletteScopeStartsWithBack() {
+        let rows = PaletteScope.rows(actions: ["open:a", "close:a"])
+        #expect(rows == ["back", "open:a", "close:a"])
+        #expect(PaletteScope.isBack(rows[0]) && !PaletteScope.isBack(rows[1]))
+        #expect(PaletteScope.backKey == "esc" && PaletteScope.backTitle == "‹ Back")
+        let list = OverlayList(index: PaletteScope.firstAction)
+        #expect(list.selection(enabled: rows.map { _ in true }) == 1)
+        // Moving up from the first action lands on Back; down from the last wraps to it.
+        var l = list
+        l.move(-1, enabled: rows.map { _ in true })
+        #expect(PaletteScope.isBack(rows[l.index]))
+        l = OverlayList(index: 2)
+        l.move(1, enabled: rows.map { _ in true })
+        #expect(PaletteScope.isBack(rows[l.index]))
+    }
 }

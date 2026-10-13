@@ -638,21 +638,24 @@ extension AppModel {
 
     func agentActions(_ a: Agent) -> [OverlayItem] {
         var out: [OverlayItem] = [
-            OverlayItem(id: "open:\(a.id)", title: "Open \(a.name)", detail: "⌘↩", run: { [weak self] in self?.showPalette = false; self?.focus(a.id) }),
+            OverlayItem(id: "open:\(a.id)", title: "Open \(a.name)", detail: CommandRegistry.labels(.toggleFocus).first ?? "",
+                        run: { [weak self] in self?.showPalette = false; self?.focus(a.id) }),
         ]
         if a.state == .approval {
             out.append(OverlayItem(id: "allow:\(a.id)", title: "Allow \(a.attention?.title ?? "") for \(a.name)", detail: "⏎ on the tile",
                                    run: { [weak self] in self?.showPalette = false; self?.answer(a, .allow) }))
         }
-        out.append(OverlayItem(id: "close:\(a.id)", title: "Close \(a.name)", detail: "⌘W", run: { [weak self] in self?.showPalette = false; self?.requestClose(a) }))
+        out.append(OverlayItem(id: "close:\(a.id)", title: "Close \(a.name)", detail: CommandRegistry.labels(.closeAgent).first ?? "",
+                               run: { [weak self] in self?.showPalette = false; self?.requestClose(a) }))
         if a.isRunning {
             if isBackground(a) {
                 out.append(OverlayItem(id: "back:\(a.id)", title: "Bring \(a.name) back", run: { [weak self] in self?.showPalette = false; self?.bringBackFromTray(a) }))
             } else {
-                out.append(OverlayItem(id: "background:\(a.id)", title: "Send \(a.name) to the background", detail: "⌥⌘W",
+                out.append(OverlayItem(id: "background:\(a.id)", title: "Send \(a.name) to the background", detail: CommandRegistry.labels(.backgroundAgent).first ?? "",
                                        run: { [weak self] in self?.showPalette = false; self?.sendToBackground(a) }))
             }
-            out.append(OverlayItem(id: "kill:\(a.id)", title: "Kill \(a.name)", detail: "⌃⌘W", run: { [weak self] in self?.showPalette = false; self?.kill(a) }))
+            out.append(OverlayItem(id: "kill:\(a.id)", title: "Kill \(a.name)", detail: CommandRegistry.labels(.killAgent).first ?? "",
+                                   run: { [weak self] in self?.showPalette = false; self?.kill(a) }))
         } else {
             out.append(OverlayItem(id: "resume:\(a.id)", title: "Resume \(a.name)", detail: "⏎", run: { [weak self] in self?.showPalette = false; self?.resume(a) }))
         }
@@ -667,9 +670,18 @@ extension AppModel {
         return out
     }
 
+    /// The rows the palette shows: an agent's actions start with "‹ Back"
+    /// (a click leaves the scope, as esc does); the rest is the query's.
     func filteredPalette() -> [OverlayItem] {
+        let rows = filtered(paletteItems())
+        guard let scope = paletteScope, let a = agent(scope) else { return rows }
+        let back = OverlayItem(id: PaletteScope.backID, section: "Actions for \(a.name)", title: PaletteScope.backTitle, detail: PaletteScope.backKey,
+                               run: { [weak self] in _ = self?.paletteKey(.back) })
+        return [back] + rows
+    }
+
+    private func filtered(_ all: [OverlayItem]) -> [OverlayItem] {
         let q = paletteList.query.trimmingCharacters(in: .whitespaces).lowercased()
-        let all = paletteItems()
         guard !q.isEmpty else { return all }
         // History rows matched the full text already (hesperd's FTS).
         return all.filter { $0.section == "History" || ComposerCompletion.score(q, "\($0.title) \($0.detail) \($0.section ?? "")") != nil }
@@ -714,7 +726,7 @@ extension AppModel {
             if paletteTab(selectedID: list.selection(enabled: enabled).map { items[$0].id }) { return true } // search surface: ⇥ → History scope (not on an agent)
             if let i = list.selection(enabled: enabled), case let id = items[i].id, id.hasPrefix("agent:") {
                 paletteScope = String(id.dropFirst(6))
-                list = OverlayList()
+                list = OverlayList(index: PaletteScope.firstAction) // the first action, under "‹ Back"
             }
         case .back:
             if paletteScope != nil { paletteScope = nil; list = OverlayList(query: list.query) }

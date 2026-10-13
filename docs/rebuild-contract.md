@@ -1422,6 +1422,12 @@ Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
   window; ⌫ deletes in the field). The layout popover (titled "Layout")
   and the scope popover carry a pin in their title row (apply the
   highlighted row and keep the popover open: ⌘⏎) and a × (esc).
+- **Palette ⌘K.** An agent's action list (⇥) starts with a "‹ Back" row
+  (esc) that leaves the scope the way esc does, and opens on the first
+  action. Action rows show their chord from the command table as a key
+  cap. The footer's buttons act on the selected row: Run ⏎, Open full
+  size ⌘⏎ (an agent), Actions ⇥ on an agent / History ⇥ elsewhere,
+  Close esc (Back esc inside a scope).
 
 #### As built — windows (multi-window iteration 1)
 
