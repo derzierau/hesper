@@ -12,7 +12,58 @@ import Testing
         items.compactMap { if case .command(let id, _, _) = $0 { return id }; return nil }
     }
 
+    // MARK: Menu bar
+
+    /// The menu bar the registry generates, against the spec's table ("UI
+    /// ideation › Menu bar"): every item in order with its key equivalent
+    /// (only ⌘ chords become one; Always Allow's A and Quick Launch's
+    /// hotkey stay off the item).
+    @Test func menuBarMatchesTheSpecTable() {
+        let m = MenuModel.build()
+        #expect(m.menus.map(\.title) == ["Hesper", "File", "Edit", "Agents", "View", "Window", "Help"])
+        func rows(_ bar: MenuBar) -> [String] {
+            m[bar].map { item in
+                guard case .command(_, let title, let chord) = item else { return "—" }
+                if let chord, chord.command { return "\(title) \(chord.label)" }
+                return title
+            }
+        }
+        #expect(rows(.hesper) == ["About Hesper", "—", "Settings… ⌘,", "—", "Services", "—", "Hide Hesper ⌘H", "Hide Others ⌥⌘H", "Show All", "—", "Quit Hesper ⌘Q"])
+        #expect(rows(.file) == ["New Agent ⌘N", "Quick Launch…", "New Wall Window ⌥⌘N", "—", "Open in New Window ⌥⌘⏎", "Open in New Tab", "—", "Close ⌘W"])
+        #expect(rows(.edit) == ["Undo ⌘Z", "Redo ⇧⌘Z", "—", "Cut ⌘X", "Copy ⌘C", "Paste ⌘V", "Select All ⌘A", "Delete", "—", "Find ⌘F"])
+        #expect(rows(.agents) == ["Open / Back to Wall ⌘⏎", "Leave Focus ⌘esc", "—", "Needs You… ⌘J", "—", "Allow", "Always Allow", "Deny…", "—",
+                                  "Send to Background ⌥⌘W", "Kill ⌃⌘W", "Tidy Up Finished Agents ⇧⌘W", "Reopen Closed Agent ⇧⌘T", "—",
+                                  "Move to Another Mac… ⇧⌘M", "Rename…", "Resume"])
+        let layouts = WallArrangement.allCases.enumerated().map { "\($1.title) ⌥⌘\($0 + 1)" }
+        #expect(rows(.view) == ["Command Palette ⌘K", "History ⌘Y", "Review ⌘R", "Routines ⇧⌘R", "—", "Project Sidebar ⌘0", "Wall Scope… ⌃⌘S", "—"]
+            + layouts + ["Next Layout ⌥⌘L", "Dense Cards", "—", "Previous Agent ⌥⌘←", "Next Agent ⌥⌘→", "Previous Band ⌥⌘↑", "Next Band ⌥⌘↓", "—",
+                         "Enter Full Screen ⌃⌘F"])
+        #expect(rows(.window) == ["Minimize ⌘M", "Zoom", "—", "Show Wall ⇧⌘0", "Make Home Wall", "—", "Desks", "Desk Picker… ⇧⌘D", "Save Desk As…", "—",
+                                  "Bring All to Front"])
+        #expect(rows(.help) == ["Hesper Help", "Keyboard Shortcuts… ⌘/", "hesperctl Reference", "Report a Problem"])
+        // The submenus and the window list are AppKit's: the model holds their anchors.
+        #expect(ids(m[.hesper]).contains(.services) && ids(m[.window]).contains(.desks))
+    }
+
+    /// Every command with a menu path is placed exactly once, and nothing
+    /// else is on the bar.
+    @Test func everyMenuCommandIsPlacedOnce() {
+        let placed = ids(m().menus.flatMap(\.items))
+        var seen: [CommandID: Int] = [:]
+        for id in placed { seen[id, default: 0] += 1 }
+        for (id, n) in seen where n != 1 { Issue.record("\(id) placed \(n) times") }
+        #expect(Set(placed) == Set(CommandRegistry.all.compactMap { $0.menu == nil ? nil : $0.id }))
+        // No menu section is empty and no two separators touch.
+        for menu in m().menus {
+            #expect(menu.items.first != .separator && menu.items.last != .separator, Comment(rawValue: menu.title))
+            for (a, b) in zip(menu.items, menu.items.dropFirst()) { #expect(!(a == .separator && b == .separator), Comment(rawValue: menu.title)) }
+        }
+    }
+
+    private func m() -> MenuModel { MenuModel.build() }
+
     // MARK: Dynamic titles
+
 
     @Test func undoTitleNamesTheAction() {
         #expect(MenuModel.undoTitle(nil) == "Undo")

@@ -142,37 +142,10 @@ import Testing
         }
     }
 
-    // MARK: Menus
-
-    /// The menu bar the registry generates, against the spec's table
-    /// ("UI ideation › Menu bar"), item by item and in order.
-    @Test func menuModelMatchesTheSpecTable() {
-        let m = MenuModel.build()
-        func titles(_ bar: MenuBar) -> [String] {
-            m[bar].map { if case .command(_, let t, _) = $0 { return t }; return "—" }
-        }
-        #expect(titles(.hesper) == ["About Hesper", "—", "Settings…", "—", "Services", "—", "Hide Hesper", "Hide Others", "Show All", "—", "Quit Hesper"])
-        #expect(titles(.file) == ["New Agent", "Quick Launch…", "New Wall Window", "—", "Open in New Window", "Open in New Tab", "—", "Close"])
-        #expect(titles(.edit) == ["Undo", "Redo", "—", "Cut", "Copy", "Paste", "Select All", "Delete", "—", "Find"])
-        #expect(titles(.agents) == ["Open / Back to Wall", "Leave Focus", "—", "Needs You…", "—", "Allow", "Always Allow", "Deny…", "—",
-                                    "Send to Background", "Kill", "Tidy Up Finished Agents", "Reopen Closed Agent", "—",
-                                    "Move to Another Mac…", "Rename…", "Resume"])
-        #expect(titles(.view) == ["Command Palette", "History", "Review", "Routines", "—", "Project Sidebar", "Wall Scope…", "—"]
-            + WallArrangement.allCases.map(\.title) + ["Next Layout", "Dense Cards", "—", "Previous Agent", "Next Agent", "Previous Band", "Next Band", "—", "Enter Full Screen"])
-        #expect(titles(.window) == ["Minimize", "Zoom", "—", "Show Wall", "Make Home Wall", "—", "Desks", "Desk Picker…", "Save Desk As…", "—", "Bring All to Front"])
-        #expect(titles(.help) == ["Hesper Help", "Keyboard Shortcuts…", "hesperctl Reference", "Report a Problem"])
-        // Key equivalents are the registry's chords.
-        let items = m.menus.flatMap(\.items)
-        #expect(items.contains { $0 == .command(.closeAgent, title: "Close", chord: KeyChord(.char("w"), command: true)) })
-        #expect(items.contains { $0 == .command(.deskPicker, title: "Desk Picker…", chord: KeyChord(.char("d"), command: true, shift: true)) })
-        #expect(items.contains { $0 == .command(.showShortcuts, title: "Keyboard Shortcuts…", chord: KeyChord(.char("/"), command: true)) })
-        // Every menu item is a registered command, and every menu command is placed once.
-        let placed = items.compactMap { if case .command(let id, _, _) = $0 { return id }; return nil }
-        #expect(Set(placed).count == placed.count)
-        #expect(Set(placed) == Set(CommandRegistry.all.compactMap { $0.menu == nil ? nil : $0.id }))
-    }
+    // The generated menu bar against the spec's table: MenuModelTests.
 
     // MARK: Routers
+
 
     /// Every registry chord, in every surface it is live in, comes out of
     /// that surface's router as the registered command (or as "not mine"

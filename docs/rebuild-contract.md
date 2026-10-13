@@ -4547,6 +4547,22 @@ by surface) read the table; Help ▸ Keyboard Shortcuts ⌘/ is wired to a
 stub until phase 4's sheet. `KeyChord.label` / `KeyChord(label:)` are the
 one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
 
+**The menu bar** (`MenuModel.build`, pinned item by item in
+`MenuModelTests.menuBarMatchesTheSpecTable`; a line is a section):
+
+| Menu | Items |
+|---|---|
+| Hesper | About Hesper · Settings… ⌘, · Services ▸ · Hide Hesper ⌘H, Hide Others ⌥⌘H, Show All · Quit Hesper ⌘Q |
+| File | New Agent ⌘N, Quick Launch… (the hotkey in Settings), New Wall Window ⌥⌘N · Open in New Window ⌥⌘⏎, Open in New Tab · Close ⌘W |
+| Edit | Undo ⌘Z (names the action), Redo ⇧⌘Z · Cut ⌘X, Copy ⌘C, Paste ⌘V, Select All ⌘A, Delete · Find ⌘F (History's search while the sheet is open) |
+| Agents | Open / Back to Wall ⌘⏎, Leave Focus ⌘esc · Needs You… ⌘J · Allow, Always Allow (A on the tile), Deny… (N) · Send to Background ⌥⌘W, Kill ⌃⌘W, Tidy Up Finished Agents ⇧⌘W, Reopen Closed Agent ⇧⌘T · Move to Another Mac… ⇧⌘M, Rename…, Resume |
+| View | Command Palette ⌘K, History ⌘Y, Review ⌘R, Routines ⇧⌘R (hidden placeholder) · Project Sidebar ⌘0, Wall Scope… ⌃⌘S · Grid + Shelf ⌥⌘1, Columns ⌥⌘2, Treemap ⌥⌘3, Main + Stack ⌥⌘4, Grid ⌥⌘5, Next Layout ⌥⌘L, Dense Cards · Previous Agent ⌥⌘←, Next Agent ⌥⌘→, Previous Band ⌥⌘↑, Next Band ⌥⌘↓ · Enter / Exit Full Screen ⌃⌘F |
+| Window | Minimize ⌘M, Zoom · Show Wall ⇧⌘0, Make Home Wall · Desks ▸, Desk Picker… ⇧⌘D, Save Desk As… · Bring All to Front · the window list (AppKit) |
+| Help | Hesper Help, Keyboard Shortcuts… ⌘/, hesperctl Reference, Report a Problem (the GitHub issues page) |
+
+Only ⌘ chords become key equivalents: Always Allow's A and Deny's N
+live on the selected tile, Quick Launch's hotkey is the system's.
+
 **Invariants** (`CommandsTests`): no chord is bound twice within one
 surface (a chord bound everywhere conflicts with the same chord in any
 surface); every command with a chord has a menu path or sits in an
@@ -4554,9 +4570,14 @@ exemption list with its reason (the wall's selection keys, the composer's,
 the overlay family's and the inbox, History and Review verbs: their key
 caps sit on the surface's controls); every surface's router resolves every
 registered chord to the registered command (the test walks the table);
-plus: every shortcut in the README's "Using it" table is registered, the
-generated menu tree equals the spec's menu table, Close / Kill / Move are
-disabled with nothing selected and Routines is hidden.
+plus: every shortcut in the README's "Using it" table is registered,
+Close / Kill / Move are disabled with nothing selected and Routines is
+hidden. `MenuModelTests` holds the menus: the bar's full tree with its
+key equivalents in the spec's order, every command with a menu path
+placed exactly once and nothing else on the bar, no empty section, the
+Dock and status-bar items, the Undo and full-screen titles, and the
+validation outcomes below.
+
 
 **Validation** (`MenuModelTests`): every generated item asks the
 registry with the key window's `CommandContext`. Allow, Always Allow and
