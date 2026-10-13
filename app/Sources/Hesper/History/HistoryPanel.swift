@@ -83,9 +83,10 @@ struct HistoryFilterHandle {
 /// wall window over the wall (which keeps running underneath: no mode
 /// change, no attach, no relayout). A modal sheet: a Night scrim over the
 /// wall (it takes every click, scroll and hover; a click closes) and one
-/// opaque Panel, a little above the middle: the
-/// search field with the scope (All · History, ⇥ switches), the filter
-/// Pills (project, Mac, tool, age, more), the list (virtualized
+/// opaque Panel, a little above the middle, in the SheetChrome frame: the
+/// title row (History, the count, close × esc), the toolbar (the scope
+/// segments All · History, ⇥ switches; the filter Pills: project, Mac,
+/// tool, age, more), then the search field, the list (virtualized
 /// NSTableView, fixed rows drawn directly, pages by cursor ahead of the
 /// scroll) and on the right the preview of the selected session.
 @MainActor
@@ -111,6 +112,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
 
     // Views.
     private let panel = PanelView()
+    let chrome = SheetChromeView(title: "History", symbol: "clock.arrow.circlepath")
     private let box = FlippedView()
     private let magnifier = NSImageView()
     private let allPill = PillView(SearchScope.all.title, variant: .segment(selected: false))
@@ -163,27 +165,43 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         setAccessibilityLabel("History search")
 
         addSubview(panel)
-        box.frame = panel.contentView.bounds
+        chrome.onClose = { [weak self] in self?.close() }
+        chrome.closeButton.setAccessibilityIdentifier("history.close")
+        chrome.frame = panel.contentView.bounds
+        chrome.autoresizingMask = [.width, .height]
+        panel.contentView.addSubview(chrome)
+        box.frame = chrome.contentView.bounds
         box.autoresizingMask = [.width, .height]
-        panel.contentView.addSubview(box)
+        chrome.contentView.addSubview(box)
 
-        // The field row: magnifier, scope (All · History ⇥), the field.
-        magnifier.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
-        magnifier.symbolConfiguration = .init(pointSize: CGFloat(DS.TextStyle.panelTitle.size), weight: .regular)
-        magnifier.contentTintColor = Theme.ns(.dim)
-        box.addSubview(magnifier)
+        // The toolbar: the scope (All · History ⇥), the filter Pills, the count.
         for (p, scope) in [(allPill, SearchScope.all), (historyPill, SearchScope.history)] {
             p.setAccessibilityElement(true)
             p.setAccessibilityRole(.radioButton)
             p.setAccessibilityLabel("Scope: \(scope.title)")
             p.setAccessibilityValue(scope == .history ? "selected" : "")
             p.toolTip = "\(scope.title) (\(scope.shortcut))"
-            box.addSubview(p)
+            chrome.toolbar.addView(p, in: .leading)
         }
         allPill.setAccessibilityIdentifier("history.scope.all")
         allPill.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(allScopeClicked)))
         tabKbd.toolTip = "⇥ switches scope"
-        box.addSubview(tabKbd)
+        chrome.toolbar.addView(tabKbd, in: .leading)
+        chrome.toolbar.setCustomSpacing(DS.Spacing.l, after: tabKbd)
+        // The whole Pills that fit (FilterRow hides the rest).
+        filters.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        chrome.toolbar.addView(filters, in: .leading)
+        countLabel.font = .ds(.meta)
+        countLabel.textColor = Theme.ns(.dim)
+        countLabel.alignment = .right
+        countLabel.lineBreakMode = .byTruncatingHead
+        chrome.toolbar.addView(countLabel, in: .trailing)
+
+        // The field row: magnifier, the field.
+        magnifier.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)
+        magnifier.symbolConfiguration = .init(pointSize: CGFloat(DS.TextStyle.panelTitle.size), weight: .regular)
+        magnifier.contentTintColor = Theme.ns(.dim)
+        box.addSubview(magnifier)
 
         // A plain field (no search-field cell: its placeholder and cancel
         // button sat at their own insets).
@@ -215,18 +233,11 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         progress.setAccessibilityIdentifier("history.indexing")
         box.addSubview(progress)
 
-        countLabel.font = .ds(.meta)
-        countLabel.textColor = Theme.ns(.dim)
-        countLabel.alignment = .right
-        countLabel.lineBreakMode = .byTruncatingHead
-        box.addSubview(countLabel)
         emptyLabel.font = .ds(.body)
         emptyLabel.textColor = Theme.ns(.dim)
         emptyLabel.alignment = .center
         emptyLabel.lineBreakMode = .byTruncatingTail
         box.addSubview(emptyLabel)
-
-        box.addSubview(filters)
 
         let col = NSTableColumn(identifier: .init("s"))
         table.addTableColumn(col)
@@ -408,10 +419,12 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         super.layout()
         Self.layouts += 1
         panel.frame = SearchLook.historyFrame(in: bounds.size)
-        // The Panel's content (and the box in it) at their size now, not
-        // in the Panel's own layout pass after this one.
+        // The Panel's content (the chrome and the box in it) at their size
+        // now, not in the Panel's own layout pass after this one.
         panel.layoutSubtreeIfNeeded()
-        box.frame = panel.contentView.bounds
+        chrome.frame = panel.contentView.bounds
+        chrome.layoutSubtreeIfNeeded()
+        box.frame = chrome.contentView.bounds
         layoutBox()
     }
 
@@ -421,15 +434,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         // Field row.
         let ms = CGFloat(DS.TextStyle.panelTitle.size) + DS.Spacing.xs
         magnifier.frame = NSRect(x: pad, y: ((fh - ms) / 2).rounded(), width: ms, height: ms)
-        var x = magnifier.frame.maxX + DS.Spacing.m
-        for p in [allPill, historyPill] {
-            let pw = p.intrinsicContentSize.width
-            p.frame = NSRect(x: x, y: ((fh - Pill.height) / 2).rounded(), width: pw, height: Pill.height)
-            x += pw + DS.Spacing.xs
-        }
-        let ks = tabKbd.intrinsicContentSize
-        tabKbd.frame = NSRect(x: x, y: ((fh - ks.height) / 2).rounded(), width: ks.width, height: ks.height)
-        x = tabKbd.frame.maxX + DS.Spacing.m
+        let x = magnifier.frame.maxX + DS.Spacing.m
         let fieldH = ceil(searchField.intrinsicContentSize.height)
         searchField.frame = NSRect(x: x, y: ((fh - fieldH) / 2).rounded(), width: max(0, w - pad - x), height: fieldH)
         headerLine.frame = NSRect(x: 0, y: fh, width: w, height: 1)
@@ -440,18 +445,13 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         let footerTop = h - SearchLook.footerHeight
         hints.frame = NSRect(x: 0, y: footerTop, width: w, height: SearchLook.footerHeight)
 
-        // Preview (right), the list with its filters (left).
+        // Preview (right), the list (left).
         let previewW = min(SearchLook.previewMax, max(SearchLook.previewMin, (w * SearchLook.previewFraction).rounded()))
         let paneTop = fh + 1
         divider.frame = NSRect(x: w - previewW - 1, y: paneTop, width: 1, height: max(0, footerTop - paneTop))
         cardHost.frame = NSRect(x: w - previewW, y: paneTop, width: previewW, height: max(0, footerTop - paneTop))
         let listW = divider.frame.minX
-        let fy = paneTop + DS.Spacing.m
-        let countW = min(listW / 3, ceil(countLabel.intrinsicContentSize.width) + DS.Spacing.xs)
-        countLabel.frame = NSRect(x: listW - DS.Spacing.l - countW, y: fy + ((Pill.height - countLabel.intrinsicContentSize.height) / 2).rounded(),
-                                  width: countW, height: countLabel.intrinsicContentSize.height)
-        filters.frame = NSRect(x: DS.Spacing.l, y: fy, width: max(0, countLabel.frame.minX - DS.Spacing.l - DS.Spacing.m), height: Pill.height)
-        let listTop = fy + Pill.height + DS.Spacing.m
+        let listTop = paneTop + DS.Spacing.m
         scroll.frame = NSRect(x: DS.Spacing.s, y: listTop, width: max(0, listW - 2 * DS.Spacing.s), height: max(0, footerTop - listTop - DS.Spacing.xs))
         table.tableColumns.first?.width = scroll.contentSize.width
         emptyLabel.frame = NSRect(x: DS.Spacing.l, y: listTop + DS.Spacing.xxl, width: max(0, listW - 2 * DS.Spacing.l), height: emptyLabel.intrinsicContentSize.height)
@@ -570,14 +570,13 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     }
 
     private func updateCount() {
+        // The count is the title row's Pill; the toolbar's label says when
+        // there are more pages, or how far the first index is.
         let n = rows.count
-        let count = n == 0 ? "" : "\(n)\(list.hasMore ? "+" : "") session\(n == 1 ? "" : "s")"
-        let label = hub.indexing.map { "indexing \($0.done.formatted()) of \($0.total.formatted())…" } ?? count
-        if countLabel.stringValue != label {
-            let relayout = countLabel.stringValue.count != label.count
-            countLabel.stringValue = label
-            if relayout { needsLayout = true } // its width (not on every page)
-        }
+        let count = n == 0 ? nil : n
+        if chrome.count != count { chrome.count = count }
+        let label = hub.indexing.map { "indexing \($0.done.formatted()) of \($0.total.formatted())…" } ?? (list.hasMore ? "more below" : "")
+        if countLabel.stringValue != label { countLabel.stringValue = label }
         if !list.loaded {
             emptyLabel.stringValue = "Loading…"
         } else if rows.isEmpty {
@@ -1122,7 +1121,15 @@ final class FilterRow: NSView {
             pills = menus.map { FilterPill(menu: $0, onChoose: onChoose) }
             for p in pills { addSubview(p) }
         }
+        invalidateIntrinsicContentSize()
         needsLayout = true
+    }
+
+    /// Every Pill at its width (the toolbar compresses the row when they
+    /// don't fit; `layout` then hides the ones past the edge).
+    override var intrinsicContentSize: NSSize {
+        let w = pills.reduce(CGFloat(0)) { $0 + $1.intrinsicContentSize.width } + CGFloat(max(0, pills.count - 1)) * DS.Spacing.xs
+        return NSSize(width: w, height: Pill.height)
     }
 
     override func layout() {

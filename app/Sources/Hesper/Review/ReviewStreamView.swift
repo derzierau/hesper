@@ -19,7 +19,6 @@ enum ReviewLook {
     static let evidenceWidth: CGFloat = 300
     /// The inbox's share of the left column when narrow.
     static let narrowInboxFraction: CGFloat = 0.42
-    static let headerHeight: CGFloat = 48
     static let itemHeaderHeight: CGFloat = 52
     static let inboxRowHeight: CGFloat = 52
     static let noteEditorHeight: CGFloat = 88

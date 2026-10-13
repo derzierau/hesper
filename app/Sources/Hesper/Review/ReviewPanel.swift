@@ -72,10 +72,11 @@ enum ReviewPanelHost {
 }
 
 /// Review (⌘R): a modal sheet over the wall like History (a Night scrim,
-/// one opaque Panel). Left the inbox (every Mac, ranked), middle the
-/// selected item's header and its changes as one stream, right the
-/// evidence, risk and attention; narrow, the evidence goes under the
-/// inbox. Keys: ReviewKeys.
+/// one opaque Panel in the SheetChrome frame: the title row with the
+/// count and the close × esc, the toolbar, the footer). Left the inbox
+/// (every Mac, ranked), middle the selected item's header and its changes
+/// as one stream, right the evidence, risk and attention; narrow, the
+/// evidence goes under the inbox. Keys: ReviewKeys.
 @MainActor
 final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     let session: ReviewSession
@@ -85,8 +86,9 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     private(set) var isOpen = false
 
     private let panel = PanelView()
+    let chrome = SheetChromeView(title: "Review", symbol: "checklist")
     private let box = FlippedView()
-    private let header: NSHostingView<ReviewSheetHeader>
+    private let meta: NSHostingView<ReviewSheetMeta>
     private let itemHeader: NSHostingView<ReviewItemHeader>
     private let evidence: NSHostingView<ReviewEvidencePanel>
     private let hints = NSHostingView(rootView: Hints(items: []))
@@ -120,7 +122,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     init(session: ReviewSession, machineNames: @escaping () -> [String: String]) {
         self.session = session
         self.machineNames = machineNames
-        header = NSHostingView(rootView: ReviewSheetHeader(session: session, machineNames: [:]))
+        meta = NSHostingView(rootView: ReviewSheetMeta(session: session, machineNames: [:]))
         itemHeader = NSHostingView(rootView: ReviewItemHeader(session: session, machineNames: [:]))
         evidence = NSHostingView(rootView: ReviewEvidencePanel(session: session))
         stream = ReviewStreamView(session: session)
@@ -133,11 +135,18 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         setAccessibilityRole(.group)
         setAccessibilityLabel("Review")
         addSubview(panel)
-        box.frame = panel.contentView.bounds
+        chrome.onClose = { [weak self] in self?.close() }
+        chrome.closeButton.setAccessibilityIdentifier("review.close")
+        chrome.frame = panel.contentView.bounds
+        chrome.autoresizingMask = [.width, .height]
+        panel.contentView.addSubview(chrome)
+        box.frame = chrome.contentView.bounds
         box.autoresizingMask = [.width, .height]
-        panel.contentView.addSubview(box)
+        chrome.contentView.addSubview(box)
+        meta.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        chrome.toolbar.addView(meta, in: .leading)
 
-        for v in [header, itemHeader, evidence, hints] as [NSView] { box.addSubview(v) }
+        for v in [itemHeader, evidence, hints] as [NSView] { box.addSubview(v) }
         for d in dividers { d.wantsLayer = true; box.addSubview(d) }
 
         let col = NSTableColumn(identifier: .init("i"))
@@ -263,7 +272,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
 
     private func refreshNames() {
         let names = machineNames()
-        header.rootView = ReviewSheetHeader(session: session, machineNames: names)
+        meta.rootView = ReviewSheetMeta(session: session, machineNames: names)
         itemHeader.rootView = ReviewItemHeader(session: session, machineNames: names)
     }
 
@@ -305,16 +314,17 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         super.layout()
         panel.frame = ReviewLook.frame(in: bounds.size)
         panel.layoutSubtreeIfNeeded()
-        box.frame = panel.contentView.bounds
+        chrome.frame = panel.contentView.bounds
+        chrome.layoutSubtreeIfNeeded()
+        box.frame = chrome.contentView.bounds
         layoutBox()
     }
 
     private func layoutBox() {
         let w = box.bounds.width, h = box.bounds.height
-        let hh = ReviewLook.headerHeight, fh = SearchLook.footerHeight
-        header.frame = NSRect(x: 0, y: 0, width: w, height: hh)
+        let fh = SearchLook.footerHeight
         hints.frame = NSRect(x: 0, y: h - fh, width: w, height: fh)
-        let top = hh, bottom = h - fh, paneH = max(0, bottom - top)
+        let top: CGFloat = 0, bottom = h - fh, paneH = max(0, bottom - top)
         let wide = w >= ReviewLook.wideMin
         let leftW = wide ? ReviewLook.inboxWidth : ReviewLook.narrowInboxWidth
         let rightW = wide ? ReviewLook.evidenceWidth : 0
@@ -356,6 +366,8 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         let editing = session.editingNote
         _ = session.loading
         guard isOpen else { return } // closed: nothing to show (and no diffs to fetch)
+        let count = items.isEmpty ? nil : items.count
+        if chrome.count != count { chrome.count = count }
         if items != shownItems { reloadInbox() } else { syncInboxSelection(selected) }
         if editing != shownEditing { editingChanged(editing) }
         updateEmpty()

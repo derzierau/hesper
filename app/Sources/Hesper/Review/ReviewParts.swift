@@ -3,11 +3,12 @@ import HesperCore
 import SwiftUI
 
 // The review sheet's chrome (SwiftUI: small, observes the session): the
-// sheet's header, the selected item's header with its actions, the
+// toolbar's meta text, the selected item's header with its actions, the
 // evidence panel; and the inbox's rows (AppKit, drawn directly).
 
-/// "Review  3 ready · on laptop, mini" … "⌘R".
-struct ReviewSheetHeader: View {
+/// The toolbar's meta: "on laptop, mini", the Macs that can't review,
+/// what the sheet is busy with.
+struct ReviewSheetMeta: View {
     var session: ReviewSession
     var machineNames: [String: String]
 
@@ -15,25 +16,18 @@ struct ReviewSheetHeader: View {
         let items = session.items
         let macs = Array(Set(items.map(\.machine))).sorted().map { machineNames[$0] ?? $0 }
         HStack(spacing: DS.Spacing.m) {
-            Image(systemName: "checklist").font(.ds(.panelTitle)).foregroundStyle(Theme.dim)
-            Text("Review").font(.ds(.panelTitle, .semibold)).foregroundStyle(Theme.fg)
-            Text(items.isEmpty ? "nothing ready" : "\(items.count) ready" + (macs.isEmpty ? "" : " · " + macs.joined(separator: ", ")))
+            Text(items.isEmpty ? "nothing ready" : macs.isEmpty ? "" : "on " + macs.joined(separator: ", "))
                 .font(.ds(.chrome)).foregroundStyle(Theme.dim).lineLimit(1)
             if !session.hub.support.unsupportedMachines.isEmpty {
                 let off = session.hub.support.unsupportedMachines.sorted().map { machineNames[$0] ?? $0 }.joined(separator: ", ")
                 Text("· \(off): update hesperd to review there").font(.ds(.chrome)).foregroundStyle(Theme.dim).lineLimit(1)
                     .accessibilityIdentifier("review.unsupported")
             }
-            Spacer(minLength: DS.Spacing.m)
             if let busy = session.busy {
                 ProgressView().controlSize(.small)
                 Text(busy).font(.ds(.chrome)).foregroundStyle(Theme.fg2).lineLimit(1)
             }
-            Kbd("⌘R")
         }
-        .padding(.horizontal, DS.Spacing.xl)
-        .frame(height: ReviewLook.headerHeight)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.stroke).frame(height: 1) }
     }
 }
 
