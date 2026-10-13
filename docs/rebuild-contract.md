@@ -931,8 +931,9 @@ glow, inline Allow / Always / Deny… (also ⏎ / A / N on the selected tile) in
 the card's own attention band, summary line for done/idle, exited band with
 Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ stepping in wall order.
 ⌘J attention queue. Status (counts, machines with RTT, clickable attention
-chips → ⌘J, working count), the layout switch, New Agent and ⌘K search in
-the window's unified toolbar. Menu bar item (counts, the queue, New Agent). Notifications on
+chips → ⌘J, working count), the layout switch, New Agent, ⌘K search and a
+⋯ overflow with the View menu's wall commands in the window's unified
+toolbar. Menu bar item (counts, the queue, New Agent). Notifications on
 entering approval/question/error unless the app is active and focused on
 that agent (click opens it). ⌘N sheet (multi-line task, name, machine,
 profile with the daemon's project/kind default, recent projects + Choose
@@ -4377,7 +4378,15 @@ empty wall's three rows are KeyButtons (New agent ⌘N, History ⌘Y while
 hesperd has sessions, Search ⌘K; key caps from the registry) instead of
 one button and two labels. The Columns edge fades' chevron pills are
 buttons that scroll one page (`WallView.page`), with a button role and
-press action for VoiceOver.
+press action for VoiceOver. The top bar ends in a ⋯ IconButton
+(`toolbar.more`) whose menu is the View menu's wall sections, item for
+item with the same key equivalents (`ToolbarOverflow.items`, tested
+against `MenuModel`): Project Sidebar, Wall Scope…, the layouts and Next
+Layout with the current one checked, Dense Cards checked when on, Enter
+/ Exit Full Screen; the sheets and the stepping chords stay out (they
+have the search field, the pills and the tiles). The scope segments,
+layout, machines, review, background and attention controls are
+unchanged and keep their accessibility identifiers.
 
 ## Wire names kept from Ghosty
 
