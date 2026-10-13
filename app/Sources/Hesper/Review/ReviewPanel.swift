@@ -99,10 +99,12 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
     let stream: ReviewStreamView
     private let emptyLabel = NSTextField(labelWithString: "")
     private let dividers = [NSView(), NSView(), NSView()]
-    // The note editor under the stream.
+    // The note editor under the stream: the anchor, Save ⌘⏎ and Cancel
+    // esc, the field.
     private let noteBox = FlippedView()
     private let noteLabel = NSTextField(labelWithString: "")
     let noteField = NSTextField()
+    private(set) var noteButtons: [KeyButtonView] = []
     private var shownItems: [ReviewItem] = []
 
     override var isFlipped: Bool { true }
@@ -203,7 +205,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         noteLabel.textColor = Theme.ns(.question)
         noteField.font = .ds(.body)
         noteField.textColor = Theme.ns(.text)
-        noteField.placeholderString = "What should the agent change here? ⌘↩ saves · esc cancels"
+        noteField.placeholderString = "What should the agent change here?"
         noteField.focusRingType = .none
         noteField.isBordered = false
         noteField.drawsBackground = false
@@ -213,6 +215,15 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         noteField.setAccessibilityIdentifier("review.note")
         noteBox.addSubview(noteLabel)
         noteBox.addSubview(noteField)
+        let save = KeyButtonView("Save", kbd: KeyChord(.enter, command: true).label, variant: .primary(.question)) { [weak self] in
+            guard let self else { return }
+            self.session.saveNote(self.noteField.stringValue)
+        }
+        save.setAccessibilityIdentifier("review.note.save")
+        let cancel = KeyButtonView("Cancel", kbd: SheetChromeView.closeKey) { [weak self] in self?.session.cancelNote() }
+        cancel.setAccessibilityIdentifier("review.note.cancel")
+        noteButtons = [save, cancel]
+        for b in noteButtons { noteBox.addSubview(b) }
         box.addSubview(noteBox)
 
         session.onStream = { [weak self] in self?.streamChanged() }
@@ -371,8 +382,17 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         stream.frame = NSRect(x: midX, y: top + ih, width: midW, height: max(0, bottom - top - ih - noteH))
         noteBox.isHidden = !editing
         noteBox.frame = NSRect(x: midX + DS.Spacing.m, y: bottom - noteH + DS.Spacing.s, width: max(0, midW - 2 * DS.Spacing.m), height: max(0, noteH - 2 * DS.Spacing.s))
-        let lh = ceil(noteLabel.intrinsicContentSize.height)
-        noteLabel.frame = NSRect(x: DS.Spacing.m, y: DS.Spacing.s, width: max(0, noteBox.bounds.width - 2 * DS.Spacing.m), height: lh)
+        // The first row: the anchor on the left, Save and Cancel on the right.
+        let lh = KeyButton.height
+        var bx = noteBox.bounds.width - DS.Spacing.m
+        for b in noteButtons.reversed() {
+            let s = b.intrinsicContentSize
+            bx -= s.width
+            b.frame = NSRect(x: bx, y: DS.Spacing.s, width: s.width, height: lh)
+            bx -= DS.Spacing.xs
+        }
+        let labelH = ceil(noteLabel.intrinsicContentSize.height)
+        noteLabel.frame = NSRect(x: DS.Spacing.m, y: DS.Spacing.s + ((lh - labelH) / 2).rounded(), width: max(0, bx - DS.Spacing.s - DS.Spacing.m), height: labelH)
         noteField.frame = NSRect(x: DS.Spacing.m, y: DS.Spacing.s + lh + DS.Spacing.xs, width: max(0, noteBox.bounds.width - 2 * DS.Spacing.m),
                                  height: max(0, noteBox.bounds.height - lh - 2 * DS.Spacing.s - DS.Spacing.xs))
         let eh = emptyLabel.intrinsicContentSize.height * 2

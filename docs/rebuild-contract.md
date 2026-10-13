@@ -4264,7 +4264,14 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
   one `CTLine` each, changed words as tinted rects behind the text),
   notes and the line under each hunk. Only notes and that line are
   measured; code geometry never is. The file being read keeps its
-  header at the top. `review.diff` is fetched and turned into rows off
+  header at the top. A hunk header shows Seen V · Reject X · Note C as
+  KeyButtons at its right while the pointer is over the hunk or it is
+  the focused one; a foldable file's header carries a fold caret (⏎,
+  ▾ open / ▸ folded); a right-click on any row offers the same verbs as
+  a menu. The bar takes its clicks itself (`ReviewCellBar`), since a
+  mouseDown that reaches the table starts its tracking loop and eats
+  the mouseUp the buttons press on. `review.diff` is fetched and turned
+  into rows off
   the main thread. Files come in reading order (hesperd's `order`, else
   the same rules here: risky and schema first, a test right after its
   code, formatting-only and generated last and folded; never
@@ -4274,7 +4281,8 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
   (toggle), X reject the hunk (`review.reject`, one at a time against
   the diff as it is then; hunk ids are positions), C a note on the
   clicked line (else the hunk's first change; the editor under the
-  stream: ⌘↩ or ⇧↩ saves, esc cancels), ⏎ open/fold a folded file,
+  stream, with Save ⌘⏎ and Cancel esc KeyButtons: ⌘↩ or ⇧↩ saves, esc
+  cancels), ⏎ open/fold a folded file,
   ⇧↩ send every note back as one instruction (`review.sendBack`),
   ⌘↩ accept and commit (`review.accept`; with hunks not marked seen,
   the first ⌘↩ asks in the status line, with Confirm ⌘⏎ and Cancel esc
