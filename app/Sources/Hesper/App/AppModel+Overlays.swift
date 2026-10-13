@@ -61,6 +61,14 @@ enum PopoverKind: Equatable {
     /// ⌘⏎ applies the highlighted row and keeps the popover open (the
     /// title row's pin button does the same).
     var keepsOpen: Bool { self == .layout || self == .scope }
+    /// A name field (rename, desk name): a click outside keeps it open;
+    /// Save and Cancel are its buttons.
+    var hasField: Bool {
+        switch self {
+        case .rename, .deskName: return true
+        default: return false
+        }
+    }
     /// Typing filters the list.
     var filterable: Bool {
         switch self {

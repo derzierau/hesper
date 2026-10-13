@@ -131,8 +131,10 @@ struct OverlayRoot: View {
                     .transition(OverlayLook.transition(reduceMotion: reduceMotion))
                 }
                 if let p = model.popover {
+                    // A click outside closes a list; a name field stays
+                    // (Cancel or esc leaves it, never a stray click).
                     Color.black.opacity(0.001)
-                        .onTapGesture { model.closePopover() }
+                        .onTapGesture { if !p.hasField { model.closePopover() } }
                     popover(p, in: geo.size)
                         .id(p.key)
                         .transition(OverlayLook.transition(reduceMotion: reduceMotion))
@@ -352,9 +354,10 @@ struct UndoToast: View {
 // MARK: - The background tray
 
 /// ⌥⌘W's tray: "Background · 2" and how many need you, then a Row per
-/// agent (its StateMark, name, "machine · tool · age"), the selected one
-/// with ⏎. ⏎ / click brings it back onto its wall (one that needs you
-/// opens like ⌘J), ⌘W closes it, esc dismisses.
+/// agent (its StateMark, name, "machine · tool · age") with a Bring back
+/// button, the selected one's carrying ⏎. ⏎ / click brings it back onto
+/// its wall (one that needs you opens like ⌘J), ⌘W (the context menu's
+/// Close) closes it, esc dismisses.
 struct BackgroundPanel: View {
     struct RowData: Identifiable {
         var agent: Agent
@@ -396,13 +399,18 @@ struct BackgroundPanel: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
-                        Row(title: r.agent.name, meta: r.meta, mark: StateMarkKind(r.agent.state), kbd: i == selected ? "⏎" : nil, selected: i == selected)
-                            .onTapGesture { onBringBack(r.agent) }
-                            .contextMenu {
-                                Button("Bring Back") { onBringBack(r.agent) }
-                                Button("Close") { onClose(r.agent) }
-                            }
-                            .accessibilityIdentifier("background.row.\(r.id)")
+                        HStack(spacing: DS.Spacing.s) {
+                            Row(title: r.agent.name, meta: r.meta, mark: StateMarkKind(r.agent.state), selected: i == selected)
+                            KeyButton("Bring back", kbd: i == selected ? "⏎" : nil) { onBringBack(r.agent) }
+                                .accessibilityIdentifier("background.bringBack.\(r.id)")
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { onBringBack(r.agent) }
+                        .contextMenu {
+                            Button("Bring Back") { onBringBack(r.agent) }
+                            Button("Close") { onClose(r.agent) }
+                        }
+                        .accessibilityIdentifier("background.row.\(r.id)")
                     }
                 }
             }
@@ -618,7 +626,8 @@ struct AttentionItem: View {
 /// A popover's list (keys come through the window: ↑↓ ⏎ ⌘⏎ esc; a
 /// filterable one types into its field, which has the keyboard while it
 /// is open). The layout and scope popovers' title row carries a pin
-/// (apply the highlighted row and keep it open, ⌘⏎) and a × (esc).
+/// (apply the highlighted row and keep it open, ⌘⏎) and a × (esc); a name
+/// popover (rename, desk name) has Save ⏎ and Cancel esc under its field.
 struct PopoverPanel: View {
     @Bindable var model: AppModel
     var kind: PopoverKind
@@ -689,16 +698,11 @@ struct PopoverPanel: View {
                     model.popoverLists[kind.key] = l
                 }
             }
-            if let f = content.field, case .rename(let id) = kind {
-                field(f, text: Binding(get: { model.renameText[id] ?? "" }, set: { model.renameText[id] = $0 }), id: "rename.field") {
-                    if let a = model.agent(id), let n = model.renameText[id], !n.isEmpty { model.rename(a, to: n) }
-                }
+            if let f = content.field, let submit = fieldSubmit, case .rename(let id) = kind {
+                field(f, text: Binding(get: { model.renameText[id] ?? "" }, set: { model.renameText[id] = $0 }), id: "rename.field", submit: submit)
             }
-            if let f = content.field, case .deskName(let id) = kind {
-                field(f, text: $model.deskNameText, id: "desk.name") {
-                    let n = model.deskNameText
-                    if !n.isEmpty { model.closePopover(); model.deskNameSubmit?(id, n) }
-                }
+            if let f = content.field, let submit = fieldSubmit, case .deskName = kind {
+                field(f, text: $model.deskNameText, id: "desk.name", submit: submit)
             }
             if content.items.isEmpty && content.field == nil {
                 Text(content.empty).font(.ds(.chrome)).foregroundStyle(Theme.dim).padding(.horizontal, DS.Spacing.m).frame(height: OverlayLook.rowHeight)
@@ -726,11 +730,40 @@ struct PopoverPanel: View {
                 Text(n).font(.ds(.chrome)).foregroundStyle(Theme.muted).lineLimit(2)
                     .padding(.horizontal, DS.Spacing.m).frame(height: Self.noteHeight - DS.Spacing.xs, alignment: .leading)
             }
-            Hints(items: content.hints)
+            if let buttons = fieldButtons { buttons } else { Hints(items: content.hints) }
         }
         .padding(.horizontal, DS.Spacing.s)
         .padding(.top, DS.Spacing.s)
         .frame(width: width, alignment: .topLeading)
+    }
+
+    /// A name field's submit (⏎, Save).
+    private var fieldSubmit: (() -> Void)? {
+        switch kind {
+        case .rename(let id):
+            return { if let a = model.agent(id), let n = model.renameText[id], !n.isEmpty { model.rename(a, to: n) } }
+        case .deskName(let id):
+            return { let n = model.deskNameText; if !n.isEmpty { model.closePopover(); model.deskNameSubmit?(id, n) } }
+        default:
+            return nil
+        }
+    }
+
+    /// Save ⏎ and Cancel esc in the footer's place (a name popover).
+    @ViewBuilder private var fieldButtons: (some View)? {
+        if let submit = fieldSubmit {
+            let id = { if case .rename = kind { return "rename" } else { return "desk.name" } }()
+            HStack(spacing: DS.Spacing.s) {
+                Spacer(minLength: 0)
+                KeyButton("Cancel", kbd: "esc") { model.closePopover() }
+                    .accessibilityIdentifier("\(id).cancel")
+                KeyButton("Save", kbd: "⏎", variant: .primary(.working), action: submit)
+                    .accessibilityIdentifier("\(id).save")
+            }
+            .padding(.horizontal, DS.Spacing.m)
+            .frame(height: Hints.height)
+            .overlay(alignment: .top) { Rectangle().fill(OverlayLook.line).frame(height: 1) }
+        }
     }
 
     private func field(_ placeholder: String, text: Binding<String>, id: String, submit: @escaping () -> Void) -> some View {

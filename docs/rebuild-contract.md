@@ -1431,6 +1431,11 @@ Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
 - **Undo toast.** Undo ⌘Z and Reopen ⇧⌘T are KeyButtons (chords from the
   command table); "Show ↗" on a start toast stays a button
   (`toast.action`).
+- **Rename, desk name.** Save ⏎ and Cancel esc under the field; a click
+  outside keeps the popover (Save, Cancel or esc leave it, a stray click
+  no longer discards). The background tray's rows carry a Bring back
+  button (⏎ on the selected row) and keep their context menu (Bring Back,
+  Close).
 
 #### As built — windows (multi-window iteration 1)
 
