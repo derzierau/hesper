@@ -1324,7 +1324,9 @@ width; ⌥⌘1–4 stay). Deny… expands the band into a one-line message field
 in place. ⌘W stops at once / removes at once (committed after 6 s) with
 an undo toast (⌘Z, its button); stop undoes by resuming; only removing
 an agent whose local worktree has uncommitted changes (`git status
---porcelain`) asks, inline on the tile (⏎ remove anyway, esc keep).
+--porcelain`) asks, inline on the tile (⏎ remove anyway, esc keep, while
+the wall has the keyboard; in focus or on an active tile the terminal
+keeps ⏎ and esc and the strip's buttons answer).
 Settings ⌘, is a window (General: layout, tile font, min width; Quick
 Launch; Notifications; Profiles per kind). Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).

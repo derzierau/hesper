@@ -23,13 +23,17 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     private var textHasFocus: Bool { firstResponder is NSText }
     private var composerHasFocus: Bool { firstResponder is ComposerTextView }
 
+    /// A terminal (focus, an active tile) or a composer with the keyboard
+    /// keeps every plain key: a strip that is merely visible never takes
+    /// ⏎ or esc from the agent (its buttons answer it).
+    private var terminalOrComposerHasFocus: Bool { firstResponder is GhosttySurfaceView || firstResponder is ComposerTextView }
+
     /// A close asking on the agent's strip (needs you, a running command,
-    /// its worktree) takes ⏎ and esc first, wherever the keyboard is
-    /// (the wall, an active tile, the focus view's terminal).
+    /// its worktree) takes ⏎ and esc first while the wall has the keyboard.
     private func closeStripKey(_ event: NSEvent) -> Bool {
         if moveStripKey(event) { return true }
         guard event.type == .keyDown, let model, let p = model.closeConfirm, !model.showPalette, model.popover == nil,
-              model.current?.id == p.id || model.selectedID == p.id else { return false }
+              !terminalOrComposerHasFocus, model.current?.id == p.id || model.selectedID == p.id else { return false }
         let chord = KeyChord(event: event)
         guard chord.plain && !chord.shift else { return false }
         if chord.key == .enter { model.confirmClose(); return true }
@@ -41,7 +45,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     /// here, the other Mac can't take it): ⏎ goes on, esc dismisses.
     private func moveStripKey(_ event: NSEvent) -> Bool {
         guard event.type == .keyDown, let model, let p = model.moveConfirm, !model.showPalette, model.popover == nil,
-              model.current?.id == p.id || model.selectedID == p.id else { return false }
+              !terminalOrComposerHasFocus, model.current?.id == p.id || model.selectedID == p.id else { return false }
         let chord = KeyChord(event: event)
         guard chord.plain && !chord.shift else { return false }
         if chord.key == .enter { model.confirmMove(); return true }
