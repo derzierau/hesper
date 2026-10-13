@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var quickLaunch: QuickLaunchController?
     var appControl: AppControl?
     var menus: MenuBuilder!
+    /// The History item's hub observation (HistoryMenu.track), dropped
+    /// when the bar is rebuilt.
+    private var historyMenuObserver: UUID?
     let hotKey = GlobalHotKey()
     private var automated = false
 
@@ -180,6 +183,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Menu (the command registry; the window routes the keys first)
 
     private func buildMenu() {
+        // A rebuild (a rebound shortcut): the old bar gives the Desks
+        // submenu back (one supermenu per NSMenu) and its History item
+        // stops watching the hub.
+        menus?.items[.desks]?.submenu = nil
+        HistoryHub.shared(for: model).unobserve(historyMenuObserver)
         menus = MenuBuilder(run: { [weak self] id in self?.run(id) }, context: { [weak self] in self?.commandContext() ?? .none })
         menus.arrangement = { [weak self] in
             guard let self else { return 0 }
@@ -190,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menus.desksMenu = windows.desks.desksMenu
         menus.install()
-        if let history = menus.items[.history] { HistoryMenu.track(history, model: model) } // hidden while hesperd has no sessions.*
+        if let history = menus.items[.history] { historyMenuObserver = HistoryMenu.track(history, model: model) } // hidden while hesperd has no sessions.*
         #if DEBUG
         // Debug builds only: the design system gallery (screenshot review).
         let debug = NSMenuItem()
