@@ -243,10 +243,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .arrangement, .cycleArrangement: windows.activeWall.model.perform(command)
         case .stepPrevious where NSApp.keyWindow is AgentWindow, .stepNext where NSApp.keyWindow is AgentWindow:
             (NSApp.keyWindow as? AgentWindow)?.step(command == .stepNext ? 1 : -1)
-        case .closeAgent where NSApp.keyWindow is AgentWindow:
-            (NSApp.keyWindow as? AgentWindow)?.closeKeepingAgent() // the window only; the agent stays on its wall
-        case .closeAgent where windows.activeModel == nil:
-            NSApp.keyWindow?.performClose(nil) // Settings, First Run, the gallery: the window
+        case .closeAgent where commandContext().closeTarget == .window:
+            if let w = NSApp.keyWindow as? AgentWindow { w.closeKeepingAgent() } // the window only; the agent stays on its wall
+            else { NSApp.keyWindow?.performClose(nil) } // Settings, First Run, the gallery
+
         default: windows.activeModel?.perform(command)
         }
     }

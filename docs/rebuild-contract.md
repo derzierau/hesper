@@ -4556,7 +4556,12 @@ running, Resume one that has ended; Open in New Window / Tab need a
 selected agent on a wall (not in an agent window); Make Home Wall is
 enabled on a wall that is not the desk's first (`isHomeWall`); View ▸
 Enter Full Screen reads Exit Full Screen while the key window is in it
-(`inFullScreen`, also the toolbar's ⋯ menu). The standard AppKit items
+(`inFullScreen`, also the toolbar's ⋯ menu). File ▸ Close acts by the
+key window's kind (`CommandContext.closeTarget`): the selected agent or
+draft on a wall; the window in an agent window, where the agent keeps
+running on its wall, and in Settings, First Run and the gallery. The
+standard AppKit items
+
 (About, Hide, Cut, Copy, Paste, Minimize, Zoom, …) validate up the
 responder chain as in any Mac app.
 

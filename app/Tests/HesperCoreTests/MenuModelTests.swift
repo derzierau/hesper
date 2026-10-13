@@ -74,7 +74,22 @@ import Testing
         }
     }
 
+    /// ⌘W per window kind (decision 1): the agent on a wall, the window
+    /// in an agent window and in the plain windows, and Close is enabled
+    /// there without a selection.
+    @Test func closeFollowsTheKeyWindow() {
+        #expect(CommandContext(selectedState: .working, keyWindow: .wall).closeTarget == .agent)
+        #expect(CommandContext(keyWindow: .wall, hasDraft: true).closeTarget == .agent)
+        #expect(CommandContext(selectedState: .working, keyWindow: .agentWindow).closeTarget == .window)
+        #expect(CommandContext(keyWindow: .other).closeTarget == .window)
+        #expect(availability(.closeAgent, CommandContext(selectedState: .working, keyWindow: .agentWindow)) == .enabled)
+        #expect(availability(.closeAgent, CommandContext(keyWindow: .other)) == .enabled)
+        #expect(availability(.closeAgent, CommandContext(keyWindow: .wall, hasDraft: true)) == .enabled)
+        #expect(isDisabled(.closeAgent, CommandContext(keyWindow: .wall)))
+    }
+
     @Test func makeHomeWallOnlyOnAnotherWall() {
+
         #expect(availability(.makeHomeWall, CommandContext(isHomeWall: false)) == .enabled)
         #expect(isDisabled(.makeHomeWall, CommandContext(isHomeWall: true)))
         #expect(isDisabled(.makeHomeWall, CommandContext(keyWindow: .agentWindow)))

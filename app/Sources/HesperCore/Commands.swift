@@ -133,7 +133,16 @@ public struct CommandContext: Equatable, Sendable {
 
     /// A wall or agent window is in front with an agent selected.
     var hasSelection: Bool { selectedState != nil && keyWindow != .other }
+
+    /// What File ▸ Close (⌘W) acts on: the selected agent or draft on a
+    /// wall; the window everywhere else (an agent window closes and its
+    /// agent keeps running on its wall; Settings, First Run and the
+    /// gallery just close).
+    public var closeTarget: CloseTarget { keyWindow == .wall ? .agent : .window }
 }
+
+public enum CloseTarget: Equatable, Sendable { case agent, window }
+
 
 /// Every command. Cases named after the `AppCommand` they run where one
 /// exists; surface verbs carry the surface's name.
