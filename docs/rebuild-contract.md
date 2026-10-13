@@ -1765,6 +1765,17 @@ state · elapsed, machine · tool. Right: the "typing ⌘esc" chip
 (`focus.needsYou`, ⌘J; none: no Pill) and ⋯ (`focus.menu`) with the
 agent's menu (the tile menu without "Open Full Size").
 
+**Tests.** HesperCore: `TileActionsTests` (verbs per state, what folds at
+a width, identifiers), `DraftStartControlTests` (the split button's
+menu, titles), `DesignTokensTests` (`focusRing`). UI (`make -C app
+test-ui`, section 8f, not run by agents): the controls pressed by
+accessibility identifier (`SelfTest.press`, `accessibilityPerformPress`
+as VoiceOver would): Allow allows, Deny… opens the field and its Cancel
+folds it, the header's open full size opens focus, ‹ › step and "‹ Wall"
+returns, the close strip is first responder (`StripKeyView`) when it
+appears and esc on it gives the wall the keys back, its Keep button keeps
+the agent, a draft's × discards it.
+
 #### As built — drop to attach
 
 Request: "We are unable to drag and drop files into the terminals. Make

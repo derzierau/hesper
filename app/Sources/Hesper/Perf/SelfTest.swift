@@ -467,6 +467,7 @@ final class SelfTest {
         }
 
         await runDrops()
+        await runPointerPaths()
 
         // 9. Drafts: ⌘N puts a draft tile right of the selected tile.
         guard let anchor = model.wall.first(where: { $0.isRunning && !$0.state.showsSummary }) else { return finish(reattach) }
@@ -682,6 +683,100 @@ final class SelfTest {
     }
 
     static let parkedText = "selftest draft kept for the restart"
+
+    /// 8f. Pointer paths (phase 3): every verb a tile, a strip, the focus
+    /// header or a draft shows is a control, pressed here by its
+    /// accessibility identifier: the strip's Allow, Deny… and its Cancel,
+    /// the header's open full size, the focus header's ‹ › and back, the
+    /// close strip taking the keyboard and giving it back, a draft's ×.
+    private func runPointerPaths() async {
+        model.deactivateTile()
+        if model.mode == .focus { model.exitFocus() }
+        await Harness.sleep(0.3)
+        let live = model.wall.filter { $0.isRunning && !(self.root.wall.tiles[$0.id]?.onShelf ?? true) }
+        guard live.count >= 2 else { return check("pointer paths: two live tiles", false, "\(live.count)") }
+        let x = live[0], y = live[1]
+        await setState(x.id, "approval", attention: ["kind": "approval", "title": "Bash", "detail": "git push", "options": ["allow", "always", "deny"]])
+        model.select(x.id)
+        window.makeFirstResponder(root.wall)
+        let strip = await Harness.wait(3) { self.press("approve.allow", check: false) }
+        check("the approval strip's Allow is a button", strip)
+        let allowed = await Harness.wait(3) { self.model.agent(x.id)?.state == .working }
+        check("clicking Allow allows (the agent works on)", allowed, model.agent(x.id)?.state.rawValue ?? "?")
+        await setState(x.id, "approval", attention: ["kind": "approval", "title": "Bash", "detail": "git push", "options": ["allow", "always", "deny"]])
+        _ = await Harness.wait(3) { self.press("approve.deny", check: false) }
+        let denyOpen = await Harness.wait(3) { self.model.denyOpen == x.id }
+        check("clicking Deny… opens the message field", denyOpen)
+        _ = await Harness.wait(3) { self.press("deny.cancel", check: false) }
+        let denyClosed = await Harness.wait(3) { self.model.denyOpen == nil && self.model.agent(x.id)?.state == .approval }
+        check("the deny field's Cancel folds it back", denyClosed)
+        await setState(x.id, "working")
+
+        // The header's open full size, then the focus header's ‹ ›, and back.
+        model.select(x.id)
+        window.makeFirstResponder(root.wall)
+        _ = await Harness.wait(3) { self.press("tile.openFull", check: false) }
+        let focused = await Harness.wait(3) { self.model.mode == .focus && self.model.focusedID == x.id }
+        check("the header's open full size button opens focus", focused, "\(model.mode) \(model.focusedID ?? "nil")")
+        _ = await Harness.wait(3) { self.press("focus.next", check: false) }
+        let stepped = await Harness.wait(3) { self.model.focusedID == y.id }
+        check("the focus header's › steps to the next agent", stepped, model.focusedID ?? "nil")
+        _ = await Harness.wait(3) { self.press("focus.previous", check: false) }
+        let steppedBack = await Harness.wait(3) { self.model.focusedID == x.id }
+        check("‹ steps back", steppedBack, model.focusedID ?? "nil")
+        _ = await Harness.wait(3) { self.press("focus.back", check: false) }
+        let onWall = await Harness.wait(3) { self.model.mode == .wall }
+        check("the focus header's ‹ Wall returns to the wall", onWall)
+
+        // The close strip takes the keyboard when it appears, esc is its
+        // own, and the wall has the keys again once it is gone; its
+        // Keep button does the same.
+        await setState(x.id, "approval", attention: ["kind": "approval", "title": "Bash", "detail": "git push", "options": ["allow", "always", "deny"]])
+        _ = await Harness.wait(3) { self.model.agent(x.id)?.state == .approval }
+        model.select(x.id)
+        window.makeFirstResponder(root.wall)
+        if let agent = model.agent(x.id) { model.requestClose(agent) }
+        let stripFocused = await Harness.wait(3) { self.model.closeConfirm?.id == x.id && self.window.firstResponder is StripKeyView }
+        check("the close strip takes the keyboard when it appears", stripFocused,
+              "confirm=\(model.closeConfirm?.id ?? "nil") first=\(String(describing: window.firstResponder))")
+        Harness.press("\u{1b}", keyCode: 53, window: window)
+        let kept = await Harness.wait(3) { self.model.closeConfirm == nil && self.window.firstResponder === self.root.wall }
+        check("esc on the strip keeps the agent and gives the wall the keys back", kept,
+              "confirm=\(model.closeConfirm?.id ?? "nil") first=\(String(describing: window.firstResponder))")
+        if let agent = model.agent(x.id) { model.requestClose(agent) }
+        _ = await Harness.wait(3) { self.press("close.cancel", check: false) }
+        let keptByButton = await Harness.wait(3) { self.model.closeConfirm == nil && self.model.agent(x.id) != nil }
+        check("the close strip's Keep button keeps the agent", keptByButton)
+        await setState(x.id, "working")
+
+        // A draft's × discards it (empty: nothing asks).
+        Harness.press("n", keyCode: 0x2D, flags: .command, window: window)
+        let draft = model.editingDraftID
+        _ = await Harness.wait(3) { draft.map { self.root.wall.draftTiles[$0] != nil } ?? false }
+        _ = await Harness.wait(3) { self.press("draft.discard", check: false) }
+        let discarded = await Harness.wait(3) { draft.map { self.model.draft($0) == nil } ?? false }
+        check("a draft's × discards it", discarded, draft ?? "no draft")
+        if let draft, model.draft(draft) != nil { removeTestDraft(draft) }
+    }
+
+    /// Presses the control with accessibility identifier `id` in the
+    /// window (an AppKit view, or a SwiftUI button inside a hosting view),
+    /// as VoiceOver would. `check`: false: a miss is just false (polling).
+    @discardableResult
+    private func press(_ id: String, check: Bool = true) -> Bool {
+        func find(_ e: NSAccessibilityProtocol) -> NSAccessibilityProtocol? {
+            if e.accessibilityIdentifier() == id { return e }
+            for c in e.accessibilityChildren() ?? [] {
+                if let p = c as? NSAccessibilityProtocol, let f = find(p) { return f }
+            }
+            return nil
+        }
+        guard let root = window.contentView, let e = find(root) else {
+            if check { self.check("control \(id) exists", false) }
+            return false
+        }
+        return e.accessibilityPerformPress()
+    }
 
     /// 8e. Drop to attach: a file dropped on a read-only tile makes it
     /// active and arrives as one bracketed paste (the fake TUI shows a
