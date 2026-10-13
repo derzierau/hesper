@@ -30,8 +30,8 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let model, event.type == .keyDown else { return super.performKeyEquivalent(with: event) }
         if ShortcutsSheetHost.handleKeyEquivalent(event, window: self) { return true } // keyboard shortcuts: the sheet's ⌘ keys
-        if HistoryPanelHost.handleKeyEquivalent(event, window: self) { return true } // shared history: the panel's ⌘ keys
-        if ReviewPanelHost.handleKeyEquivalent(event, window: self) { return true } // review: the sheet's ⌘ keys
+        if model.popover == nil, HistoryPanelHost.handleKeyEquivalent(event, window: self) { return true } // shared history: the panel's ⌘ keys (a popover over it has the keys)
+        if model.popover == nil, ReviewPanelHost.handleKeyEquivalent(event, window: self) { return true } // review: the sheet's ⌘ keys
         let chord = KeyChord(event: event)
         // An open overlay's ⌘ chords come from the registry's surface, so a
         // rebound palette or tray chord (ShortcutOverrides) holds here too.
@@ -92,7 +92,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, ShortcutsSheetHost.handleKey(event, window: self) { return } // keyboard shortcuts: esc
-        if event.type == .keyDown, !(model?.showPalette ?? false), HistoryPanelHost.handleKey(event, window: self) { return } // shared history
+        if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, HistoryPanelHost.handleKey(event, window: self) { return } // shared history
         if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, ReviewPanelHost.handleKey(event, window: self) { return } // review
         if event.type == .keyDown, let model {
             let chord = KeyChord(event: event)

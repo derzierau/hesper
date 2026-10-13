@@ -76,6 +76,16 @@ public enum SearchKeys {
     public static func opensPalette(_ k: KeyChord) -> Bool {
         CommandRegistry.resolve(k, in: .history) == .palette
     }
+
+    /// Another sheet's or overlay's chord (⌘K palette, ⌘R Review, ⌘J
+    /// inbox): the sheet closes and lets the window run it, as Review and
+    /// the shortcuts sheet do.
+    public static func passesThrough(_ k: KeyChord) -> Bool {
+        switch CommandRegistry.resolve(k, in: .history) {
+        case .palette, .review, .nextAttention: return true
+        default: return false
+        }
+    }
 }
 
 // MARK: Rows

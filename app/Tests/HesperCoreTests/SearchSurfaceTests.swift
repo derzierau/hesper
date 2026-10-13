@@ -31,6 +31,9 @@ import Testing
         // ⌘K is the window's: the sheet closes for the palette.
         #expect(SearchKeys.opensPalette(KeyChord(.char("k"), command: true)))
         #expect(!SearchKeys.opensPalette(KeyChord(.char("k"), command: true, option: true)) && !SearchKeys.opensPalette(KeyChord(.char("k"))))
+        // ⌘R and ⌘J too: the sheet steps aside for Review and the inbox.
+        #expect(SearchKeys.passesThrough(KeyChord(.char("r"), command: true)) && SearchKeys.passesThrough(KeyChord(.char("j"), command: true)))
+        #expect(!SearchKeys.passesThrough(KeyChord(.char("y"), command: true)) && !SearchKeys.passesThrough(KeyChord(.char("w"), command: true)))
     }
 
     @Test func ages() {

@@ -859,11 +859,12 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         let fieldSel = searchHasFocus && ((window?.firstResponder as? NSTextView)?.selectedRange().length ?? 0) > 0
         let action = SearchKeys.history(chord, keyCode: event.keyCode, characters: event.characters, focus: focus, fieldHasSelection: fieldSel)
         if equivalent {
-            // ⌘ chords: ⌘F ⌘C ⌘Y ⌘↑ ⌘↓ ⌘⏎ are the panel's; ⌘K closes the
-            // panel for the palette (the window's, as in Review; ⇥ is the
-            // All scope with the query); the rest (⌘Z, ⌘W…) the window's.
+            // ⌘ chords: ⌘F ⌘C ⌘Y ⌘↑ ⌘↓ ⌘⏎ are the panel's; ⌘K ⌘R ⌘J close
+            // the panel for the palette, Review and the inbox (the window's,
+            // as in Review; ⇥ is the All scope with the query); the rest
+            // (⌘Z, ⌘W…) the window's.
             guard chord.command else { return false }
-            if SearchKeys.opensPalette(chord) { close(); return false }
+            if SearchKeys.passesThrough(chord) { close(); return false }
             if action == .history(.pass) { return false }
         } else if chord.command {
             return false // performKeyEquivalent handles ⌘ chords
