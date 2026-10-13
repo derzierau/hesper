@@ -554,14 +554,15 @@ extension AppModel {
                                    detail: "draft", dot: Theme.Token.working.hex, stateMark: .starting,
                                    run: { [weak self] in self?.showPalette = false; self?.editDraft(d.id) }))
         }
-        var actions: [OverlayItem] = [
-            OverlayItem(id: "a:new", title: "New agent", detail: "⌘N", run: { [weak self] in self?.showPalette = false; self?.newDraft() }),
-            OverlayItem(id: "a:next", title: "Next needing attention", detail: "⌘J", run: { [weak self] in self?.showPalette = false; self?.perform(.nextAttention) }),
-            OverlayItem(id: "a:quick", title: "Quick launch", detail: settings.hotKey.label, run: { [weak self] in self?.showPalette = false; self?.onQuickLaunch?() }),
-            OverlayItem(id: "a:tidy", title: "Tidy up: close finished agents", detail: "⇧⌘W", run: { [weak self] in self?.showPalette = false; self?.tidyUp() }),
-        ]
-        if let top = closeBook.reopen.top {
-            actions.append(OverlayItem(id: "a:reopen", title: "Reopen \(top.name)", detail: "⇧⌘T", run: { [weak self] in self?.showPalette = false; self?.reopenLast() }))
+        // The registry's palette commands: title, Kbd and availability from
+        // the table; what each runs is here.
+        var actions: [OverlayItem] = []
+        let ctx = commandContext()
+        for c in CommandRegistry.all where c.palette {
+            guard c.availability(ctx) == .enabled, let run = paletteRun(c.id) else { continue }
+            let title = c.id == .reopenClosed ? closeBook.reopen.top.map { "Reopen \($0.name)" } ?? c.title : c.title
+            let detail = c.id == .quickLaunch ? settings.hotKey.label : c.chord?.label ?? ""
+            actions.append(OverlayItem(id: "a:\(c.id.key)", title: title, detail: detail, run: { [weak self] in self?.showPalette = false; run() }))
         }
         // The selected agent's actions, and those of agents the query names.
         let q = paletteList.query.trimmingCharacters(in: .whitespaces)
@@ -583,11 +584,11 @@ extension AppModel {
                                    run: { [weak self] in self?.showPalette = false; self?.newDraft(machine: m.short) }))
         }
         for (i, a) in WallArrangement.allCases.enumerated() {
-            out.append(OverlayItem(id: "layout:\(a.rawValue)", section: "Layouts", title: "Layout: \(a.title)", detail: "⌥⌘\(i + 1)", checked: a == arrangement,
+            out.append(OverlayItem(id: "layout:\(a.rawValue)", section: "Layouts", title: "Layout: \(a.title)", detail: CommandRegistry.labels(.arrangement(i)).first ?? "", checked: a == arrangement,
                                    run: { [weak self] in self?.showPalette = false; self?.arrangement = a }))
         }
         out += historyPaletteItems() // shared history: "History" (async FTS results)
-        out.append(OverlayItem(id: "s:settings", section: "Settings", title: "Settings…", detail: "⌘,", run: { [weak self] in self?.showPalette = false; self?.onShowSettings?() }))
+        out.append(OverlayItem(id: "s:settings", section: "Settings", title: "Settings…", detail: CommandRegistry.labels(.settings).first ?? "", run: { [weak self] in self?.showPalette = false; self?.onShowSettings?() }))
         for n in [60, 80, 100] {
             out.append(OverlayItem(id: "s:min\(n)", section: "Settings", title: "Minimum card width: \(n) characters", checked: minChars == n,
                                    run: { [weak self] in self?.showPalette = false; self?.minChars = n }))
@@ -595,6 +596,19 @@ extension AppModel {
         out.append(OverlayItem(id: "s:notify", section: "Settings", title: settings.notificationsEnabled ? "Turn notifications off" : "Turn notifications on",
                                run: { [weak self] in self?.showPalette = false; self?.settings.notificationsEnabled.toggle() }))
         return out
+    }
+
+    /// What a palette action row runs (nil: the model can't run it here).
+    private func paletteRun(_ id: CommandID) -> (@MainActor () -> Void)? {
+        switch id {
+        case .newAgent: return { [weak self] in self?.newDraft() }
+        case .quickLaunch: return { [weak self] in self?.onQuickLaunch?() }
+        case .tidyUp: return { [weak self] in self?.tidyUp() }
+        case .reopenClosed: return { [weak self] in self?.reopenLast() }
+        default:
+            guard let cmd = KeyRouter.command(for: id) else { return nil }
+            return { [weak self] in self?.perform(cmd) }
+        }
     }
 
     func agentActions(_ a: Agent) -> [OverlayItem] {
