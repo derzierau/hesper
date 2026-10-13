@@ -187,6 +187,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         }
         allPill.setAccessibilityIdentifier("history.scope.all")
         allPill.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(allScopeClicked)))
+        allPill.onPress = { [weak self] in self?.switchScope() }
         tabKbd.toolTip = "⇥ switches scope"
         chrome.toolbar.addView(tabKbd, in: .leading)
         chrome.toolbar.setCustomSpacing(DS.Spacing.l, after: tabKbd)

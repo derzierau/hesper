@@ -393,6 +393,9 @@ struct NeedsYouStrip: View {
         .contentShape(Rectangle())
         .onTapGesture { onOpen(a.id) }
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onOpen(a.id) }
+        .accessibilityAction(named: "Allow") { if a.state == .approval { onAllow(a) } }
         .accessibilityIdentifier("home.card.\(a.id)")
     }
 

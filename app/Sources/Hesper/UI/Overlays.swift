@@ -399,6 +399,11 @@ struct BackgroundPanel: View {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
                         HStack(spacing: DS.Spacing.s) {
                             Row(title: r.agent.name, meta: r.meta, mark: StateMarkKind(r.agent.state), selected: i == selected)
+                                .accessibilityLabel("\(r.agent.name), \(r.meta)")
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityAction { onBringBack(r.agent) }
+                                .accessibilityAction(named: "Close") { onClose(r.agent) }
+                                .accessibilityIdentifier("background.row.\(r.id)")
                             KeyButton("Bring back", kbd: i == selected ? "⏎" : nil) { onBringBack(r.agent) }
                                 .accessibilityIdentifier("background.bringBack.\(r.id)")
                         }
@@ -408,7 +413,6 @@ struct BackgroundPanel: View {
                             Button("Bring Back") { onBringBack(r.agent) }
                             Button("Close") { onClose(r.agent) }
                         }
-                        .accessibilityIdentifier("background.row.\(r.id)")
                     }
                 }
             }
@@ -607,7 +611,9 @@ struct AttentionItem: View {
         .onTapGesture { onSelect() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(a.name), \(a.machine), \(stateLabel): \(entry.question)")
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { onSelect() }
+        .accessibilityAction(named: "Open") { onOpen() }
         .accessibilityIdentifier("attention.item.\(a.id)")
     }
 
@@ -712,10 +718,15 @@ struct PopoverPanel: View {
                             if i > 0, item.section != content.items[i - 1].section {
                                 Rectangle().fill(OverlayLook.line).frame(height: 1).padding(.vertical, DS.Spacing.xxs)
                             }
+                            let pick = { if item.enabled { var l = list; l.index = i; model.popoverList = l; _ = model.popoverKey(.activate) } }
                             OverlayRow(title: item.title, detail: item.detail, mark: item.mark, dot: item.dot, checked: item.checked,
                                        selected: i == sel, enabled: item.enabled, stateMark: item.stateMark)
                                 .id(i)
-                                .onTapGesture { if item.enabled { var l = list; l.index = i; model.popoverList = l; _ = model.popoverKey(.activate) } }
+                                .onTapGesture(perform: pick)
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel(item.title)
+                                .accessibilityAddTraits(i == sel ? [.isButton, .isSelected] : .isButton)
+                                .accessibilityAction { pick() }
                                 .accessibilityIdentifier("popover.row.\(item.id)")
                         }
                     }

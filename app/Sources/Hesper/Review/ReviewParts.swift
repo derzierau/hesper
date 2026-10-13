@@ -235,10 +235,24 @@ struct ReviewAttentionStrip: View {
                 Rectangle().fill(color(m)).frame(width: Self.cell, height: Self.cell)
                     .overlay(Rectangle().strokeBorder(i == focused ? Theme.color(.working) : .clear, lineWidth: 1.5))
                     .onTapGesture { onPick(i) }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Hunk \(i + 1), \(Self.name(m))")
+                    .accessibilityAddTraits(i == focused ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityAction { onPick(i) }
+                    .accessibilityIdentifier("review.strip.\(i)")
             }
         }
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Hunks seen: \(marks.filter { $0 == .seen }.count) of \(marks.count)")
+    }
+
+    static func name(_ m: ReviewAttention.Mark) -> String {
+        switch m {
+        case .seen: return "seen"
+        case .rejected: return "rejected"
+        case .noted: return "noted"
+        case .unseen: return "unseen"
+        }
     }
 
     private func color(_ m: ReviewAttention.Mark) -> Color {

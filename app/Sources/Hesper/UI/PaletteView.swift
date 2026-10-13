@@ -37,6 +37,11 @@ struct PaletteView: View {
                             row(item, selected: i == sel, history: history[item.id])
                                 .id(i)
                                 .onTapGesture { if item.enabled { item.run() } }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel(item.title)
+                                .accessibilityAddTraits(i == sel ? [.isButton, .isSelected] : .isButton)
+                                .accessibilityAction { if item.enabled { item.run() } }
+                                .accessibilityIdentifier("palette.row.\(item.id)")
                         }
                         if list.isEmpty {
                             Text(model.paletteScope == nil ? "Nothing matches. ⇥ searches History." : "Nothing matches")

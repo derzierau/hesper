@@ -154,6 +154,7 @@ Pill("Search", variant: .segment(selected: false), kbd: "⌘K")
 
 let p = PillView("Working", variant: .status, mark: .working)   // AppKit
 p.count = 3
+p.onPress = { switchScope() }   // a clickable pill: VoiceOver presses it through this
 ```
 
 ### Kbd

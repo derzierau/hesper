@@ -493,6 +493,8 @@ final class SelfTest {
         await runDrops()
         await runPointerPaths()
         await runShortcuts()
+        await runAccessibility()
+        await runRebinding()
 
         // 9. Drafts: ⌘N puts a draft tile right of the selected tile.
         guard let anchor = model.wall.first(where: { $0.isRunning && !$0.state.showsSummary }) else { return finish(reattach) }
@@ -820,6 +822,87 @@ final class SelfTest {
         NSApp.windows.first { $0.title == "Settings" }?.close()
         window.makeKeyAndOrderFront(nil)
         _ = await Harness.wait(3) { self.window.isKeyWindow }
+    }
+
+    /// Accessibility by construction (phase 5): a tile's context menu is
+    /// its custom actions, the palette's rows are buttons VoiceOver can
+    /// press, the History scope pill presses.
+    private func runAccessibility() async {
+        model.deactivateTile()
+        if model.mode == .focus { model.exitFocus() }
+        window.makeFirstResponder(root.wall)
+        if let t = root.wall.tiles.values.first(where: { !$0.isHidden }) {
+            let names = (t.accessibilityCustomActions() ?? []).map(\.name)
+            check("a tile exposes its context menu as custom actions", !names.isEmpty, names.joined(separator: ", "))
+        }
+        Harness.press("k", keyCode: 0x28, flags: .command, window: window)
+        let row = await Harness.wait(3) { self.control("palette.row.a:toggleSidebar")?.accessibilityRole() == .button }
+        check("a palette row is a button", row)
+        let wasOpen = model.sidebarVisible
+        _ = press("palette.row.a:toggleSidebar", check: false)
+        let pressed = await Harness.wait(3) { !self.model.showPalette && self.model.sidebarVisible != wasOpen }
+        check("pressing a palette row runs it and closes the palette", pressed)
+        if pressed { model.perform(.toggleSidebar) }
+        if model.showPalette { Harness.press("\u{1b}", keyCode: 53, window: window) }
+        Harness.press("y", keyCode: 0x10, flags: .command, window: window)
+        let history = await Harness.wait(3) { HistoryPanelHost.isOpen(self.model) && self.control("history.scope.all") != nil }
+        check("History's All pill is reachable", history)
+        _ = press("history.scope.all", check: false)
+        let switched = await Harness.wait(3) { self.model.showPalette && !HistoryPanelHost.isOpen(self.model) }
+        check("pressing the All pill switches the scope to the palette", switched)
+        if model.showPalette { Harness.press("\u{1b}", keyCode: 53, window: window) }
+        if HistoryPanelHost.isOpen(model) { Harness.press("\u{1b}", keyCode: 53, window: window) }
+        _ = await Harness.wait(3) { !self.model.showPalette && !HistoryPanelHost.isOpen(self.model) }
+    }
+
+    /// Settings › Shortcuts rebinding (phase 5): the recorder refuses a
+    /// taken chord with its reason, takes a free one (the menu bar
+    /// follows), Reset restores the default.
+    private func runRebinding() async {
+        guard let delegate = NSApp.delegate as? AppDelegate else { return }
+        model.settings.shortcutOverrides.resetAll()
+        delegate.showSettings()
+        NotificationCenter.default.post(name: SettingsView.showPane, object: nil, userInfo: ["pane": SettingsView.Pane.shortcuts])
+        guard let settings = await Harness.wait(3, { NSApp.windows.first { $0.title == "Settings" && $0.isVisible } != nil })
+            ? NSApp.windows.first(where: { $0.title == "Settings" }) : nil else { return check("Settings opens on Shortcuts", false) }
+        func post(_ chars: String, keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+            // Through the queue, so the recorder's local monitor sees it.
+            if let e = Harness.keyEvent(chars, keyCode: keyCode, flags: flags, window: settings) { NSApp.postEvent(e, atStart: false) }
+        }
+        let recorder = await Harness.wait(3) { self.press(accessibilityID: "settings.shortcut.record.tidyUp", in: settings) }
+        check("Settings › Shortcuts has a recorder on Tidy Up", recorder)
+        post("n", keyCode: 0x2D, flags: .command)
+        let refused = await Harness.wait(3) { self.control("settings.shortcut.reason.tidyUp", in: settings) != nil }
+        check("recording ⌘N on Tidy Up is refused (New Agent has it)", refused && model.settings.shortcutOverrides.isEmpty)
+        _ = await Harness.wait(3) { self.press(accessibilityID: "settings.shortcut.record.tidyUp", in: settings) }
+        post("U", keyCode: 0x20, flags: [.command, .shift])
+        let moved = await Harness.wait(3) {
+            self.model.settings.shortcutOverrides[.tidyUp] == .chord(KeyChord(.char("u"), command: true, shift: true))
+                && delegate.menus.items[.tidyUp]?.keyEquivalent == "u" && delegate.menus.items[.tidyUp]?.keyEquivalentModifierMask == [.command, .shift]
+        }
+        check("recording ⇧⌘U moves Tidy Up there and the menu bar follows", moved,
+              "override=\(String(describing: model.settings.shortcutOverrides[.tidyUp])) menu=\(delegate.menus.items[.tidyUp]?.keyEquivalent ?? "")")
+        let routed = KeyRouter.route(KeyChord(.char("u"), command: true, shift: true), mode: .wall, selectedState: nil) == .tidyUp
+            && KeyRouter.route(KeyChord(.char("w"), command: true, shift: true), mode: .wall, selectedState: nil) == .none
+        check("the router looks the new chord up at key time", routed)
+        _ = await Harness.wait(3) { self.press(accessibilityID: "settings.shortcut.reset.tidyUp", in: settings) }
+        let reset = await Harness.wait(3) { self.model.settings.shortcutOverrides.isEmpty && delegate.menus.items[.tidyUp]?.keyEquivalent == "w" }
+        check("Reset restores ⇧⌘W", reset)
+        model.settings.shortcutOverrides.resetAll()
+        settings.close()
+        window.makeKeyAndOrderFront(nil)
+        _ = await Harness.wait(3) { self.window.isKeyWindow }
+    }
+
+    /// The control with accessibility identifier `id` in `window`.
+    private func control(_ id: String, in window: NSWindow) -> NSAccessibilityProtocol? {
+        func find(_ el: Any) -> NSAccessibilityProtocol? {
+            guard let a = el as? NSAccessibilityProtocol else { return nil }
+            if a.accessibilityIdentifier() == id { return a }
+            for c in a.accessibilityChildren() ?? [] { if let f = find(c) { return f } }
+            return nil
+        }
+        return find(window)
     }
 
     /// The control with accessibility identifier `id` in the window (an

@@ -4712,6 +4712,24 @@ Sidebar rows and machine chips press like a click and expose their
 context menus as accessibility custom actions (above, "Project
 sidebar").
 
+**Accessible by construction (phase 5).** Every row and card a click
+acts on is a button to VoiceOver and Full Keyboard Access: a button
+role (SwiftUI `.isButton`, AppKit `accessibilityPerformPress`), a
+label and an identifier. The palette's rows (`palette.row.<item id>`;
+an action row's id is `a:<command id>`), the popovers' rows
+(`popover.row.<item id>`), the background tray's rows
+(`background.row.<agent id>`, Close as a custom action), the inbox's
+items (`attention.item.<agent id>`: press selects, Open is a custom
+action), the home wall's needs-you cards (`home.card.<agent id>`, Allow
+as a custom action on an approval), Review's attention strip cells
+(`review.strip.<n>`, "Hunk n, seen") and History's All scope pill
+(`PillView.onPress`) press like a click; completion rows and the ghost
+cards' Resume / Forget were buttons already. A tile exposes its context
+menu's enabled items as accessibility custom actions, like a band
+heading. The self-test (`runAccessibility`, `runRebinding`) checks the
+tile's actions, a palette row's role and press, the History pill, and
+the Settings recorder.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

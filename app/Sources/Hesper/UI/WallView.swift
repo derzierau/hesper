@@ -475,6 +475,18 @@ final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
         model?.tileMenu?(agent.id) ?? super.menu(for: event)
     }
 
+    /// VoiceOver: the context menu's enabled items as custom actions on
+    /// the tile (like a band heading's).
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        guard let menu = model?.tileMenu?(agent.id) else { return nil }
+        return menu.items.filter { $0.isEnabled && !$0.isSeparatorItem && $0.action != nil }.map { mi in
+            NSAccessibilityCustomAction(name: mi.title) {
+                guard let action = mi.action else { return false }
+                return NSApp.sendAction(action, to: mi.target, from: mi)
+            }
+        }
+    }
+
     /// A right-click in the active tile's terminal: the same menu, with
     /// the terminal's own Copy / Paste / Select All.
     func terminalMenu(for surface: GhosttySurfaceView) -> NSMenu? {
