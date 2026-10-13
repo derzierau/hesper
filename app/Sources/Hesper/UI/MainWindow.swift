@@ -387,6 +387,11 @@ final class RootView: NSView {
 
     private func agentsChanged() {
         wall.sync()
+        // The deny field went (Send ⏎ or Cancel esc): the keyboard goes back
+        // to the terminal or the wall, as a strip's does.
+        let denyOpen = model.denyOpen != nil
+        if shownDeny && !denyOpen { restoreKeyboard() }
+        shownDeny = denyOpen
         if showsSidebar { sidebar.reload() }
         if model.mode == .focus, let id = focus.agentID {
             if let a = model.agent(id) { focus.apply(a, connected: model.isConnected) } else { model.exitFocus() }
@@ -394,6 +399,7 @@ final class RootView: NSView {
     }
 
     private var shownMode: AppMode = .wall
+    private var shownDeny = false
 
     private func modeChanged() {
         wall.updateSelection()
