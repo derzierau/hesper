@@ -544,6 +544,25 @@ final class SelfTest {
         check("esc keeps the draft as a quiet tile on the shelf", parked && model.editingDraftID == nil)
         let parkedSaved = await Harness.waitAsync(5) { await self.daemonDraft(kept)?.parked == true }
         check("the kept draft is saved (parked)", parkedSaved)
+        // Plain esc with the completion list open closes the list and keeps
+        // editing the draft. Sent through NSApp.sendEvent, the real path:
+        // AppKit offers every key down, plain ones too, to the window's
+        // performKeyEquivalent before keyDown, so the window must pass esc
+        // on to the text view, which asks the list first.
+        Harness.press("n", keyCode: 0x2D, flags: .command, window: window)
+        if let cid = model.editingDraftID, let tv = root.wall.draftTiles[cid]?.editor.textView {
+            _ = await Harness.wait(2) { self.window.firstResponder === tv }
+            typeIntoDraft(cid, "@")
+            let listed = await Harness.wait(2) { tv.composer?.completion != nil }
+            check("@ in a draft shows the completion list", listed)
+            if let e = Harness.keyEvent("\u{1b}", keyCode: 53, window: window) { NSApp.sendEvent(e) }
+            let closed = await Harness.wait(2) { tv.composer?.completion == nil }
+            check("esc through NSApp.sendEvent closes the completion list and keeps editing the draft",
+                  closed && model.editingDraftID == cid, "closed \(closed) editing \(model.editingDraftID ?? "nil")")
+            tv.deleteBackward(nil) // empty again: esc discards it
+            Harness.press("\u{1b}", keyCode: 53, window: window)
+            _ = await Harness.wait(2) { self.model.draft(cid) == nil }
+        }
         Harness.press("n", keyCode: 0x2D, flags: .command, window: window)
         let empty = model.editingDraftID
         _ = await Harness.wait(2) { empty.map { self.window.firstResponder === self.root.wall.draftTiles[$0]?.editor.textView } ?? false }
