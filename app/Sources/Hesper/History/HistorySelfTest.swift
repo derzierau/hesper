@@ -368,6 +368,29 @@ final class HistorySelfTest {
         check("esc closes History", !p.isOpen)
         await Harness.sleep(0.4)
 
+        // 7b. The chrome's pointer paths: the close × and a footer KeyButton.
+        await openHistory()
+        _ = await settled()
+        p.chrome.closeButton.performClick(nil)
+        check("the title row's close × closes History", !p.isOpen)
+        await Harness.sleep(0.4)
+        await openHistory()
+        _ = await settled()
+        guard let pick2 = p.list.items.firstIndex(where: { !$0.isLive && !$0.external && $0.movedTo == nil }) else {
+            check("a past session for the footer", false); return finish()
+        }
+        p.select(row: pick2)
+        let footer = p.footerButtons
+        check("the footer shows Resume ⏎, Fork ⌥⏎, Open full size ⌘⏎, enabled for a past session",
+              footer.map(\.kbd) == ["⏎", "⌥⏎", "⌘⏎"] && footer.allSatisfy(\.isEnabled), footer.map { "\($0.label) \($0.isEnabled)" }.joined(separator: ", "))
+        let beforeFooter = Set(model.registry.agents.keys)
+        _ = footer.first?.accessibilityPerformPress()
+        let resumedByFooter = await Harness.wait(4) { Set(self.model.registry.agents.keys).subtracting(beforeFooter).count == 1 }
+        cs = await calls()
+        check("the footer's Resume ⏎ resumes the selected session (sessions.resume) and closes", resumedByFooter
+              && cs.contains { $0.method == "sessions.resume" } && !p.isOpen, cs.map(\.method).joined(separator: ", "))
+        await Harness.sleep(0.4)
+
         // 8. Ghost cards: a removed agent stays on its band's shelf.
         await ghostCards()
         // 9. ⌘K: History section.
