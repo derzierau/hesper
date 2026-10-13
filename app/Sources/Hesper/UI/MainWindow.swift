@@ -79,6 +79,8 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
             let cmd = KeyRouter.route(chord, mode: .compose, selectedState: nil)
             switch cmd {
             case .passThrough, .none: return super.performKeyEquivalent(with: event)
+            case .leaveDraft, .startDraftAndNew: // plain esc, ⌥⏎: ComposerTextView.keyDown, after its completion list
+                return super.performKeyEquivalent(with: event)
             default: model.perform(cmd); return true
             }
         }

@@ -999,15 +999,8 @@ final class WallView: NSView {
     override func keyDown(with event: NSEvent) {
         guard let model else { return }
         let chord = KeyChord(event: event)
-        // An inline question on the selected tile takes ⏎ and esc.
-        if let p = model.closeConfirm, p.id == model.selectedID {
-            if chord.key == .enter && chord.plain { model.confirmClose(); return }
-            if chord.key == .escape && chord.plain { model.cancelClose(); return }
-        }
-        if let p = model.moveConfirm, p.id == model.selectedID {
-            if chord.key == .enter && chord.plain { model.confirmMove(); return }
-            if chord.key == .escape && chord.plain { model.cancelMove(); return }
-        }
+        // An inline question on the selected tile (a close or move asking)
+        // took ⏎ and esc already: MainWindow.sendEvent.
         // The active tile whose read-write terminal hasn't taken the
         // keyboard yet (it swaps in ≤ 800 ms after "start typing"): its keys
         // still go to the agent, in order.
