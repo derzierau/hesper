@@ -85,6 +85,15 @@ final class ReviewStreamView: NSScrollView, NSTableViewDataSource, NSTableViewDe
     private var lastHeight: CGFloat = 0
     /// Rows built (perf: what the table mounted).
     private(set) var cellsMade = 0
+    /// The hunk under the pointer (any of its rows): its header shows the bar.
+    private(set) var hoveredHunk: Int?
+
+    func hover(_ ordinal: Int?) {
+        guard ordinal != hoveredHunk else { return }
+        hoveredHunk = ordinal
+        table.enumerateAvailableRowViews { rv, _ in rv.subviews.forEach { ($0 as? ReviewRowCell)?.refreshBars() } }
+        sticky.refreshBars()
+    }
 
     init(session: ReviewSession) {
         self.session = session
@@ -395,8 +404,8 @@ final class ReviewRowCell: NSView {
     private var hunkBar: ReviewCellBar?
     /// A foldable file's caret (⏎): ▾ open on its header, ▸ when folded.
     private var caret: ReviewCellBar?
-    private var hovering = false { didSet { if oldValue != hovering { updateBars() } } }
     private var tracking: NSTrackingArea?
+    private var stream: ReviewStreamView? { enclosingScrollView as? ReviewStreamView }
 
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
@@ -466,7 +475,7 @@ final class ReviewRowCell: NSView {
         switch kind {
         case .hunk:
             let o = s.hunkOrdinal(atRow: row)
-            hunk = hovering || (o != nil && o == session?.focused)
+            hunk = o != nil && (o == stream?.hoveredHunk || o == session?.focused)
         case .file(let f) where s.files[f].foldedByDefault: fold = (true, "Fold")
         case .folded: fold = (false, "Unfold")
         default: break
@@ -504,8 +513,8 @@ final class ReviewRowCell: NSView {
         tracking = t
     }
 
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
+    override func mouseEntered(with event: NSEvent) { stream?.hover(session?.stream?.hunkOrdinal(atRow: row)) }
+    override func mouseExited(with event: NSEvent) { stream?.hover(nil) }
 
     private var accessibilityText: String {
         guard let s = session?.stream else { return "" }
