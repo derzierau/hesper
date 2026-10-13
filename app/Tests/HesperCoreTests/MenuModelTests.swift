@@ -41,7 +41,27 @@ import Testing
 
     }
 
+    // MARK: Status bar
+
+    /// The fixed section keeps its labels; a key equivalent only where the
+    /// chord is app-wide, Quick Launch's hotkey in its label.
+    @Test func statusMenuKeepsItsLabelsAndAppWideChords() {
+        let items = MenuModel.statusItems(hotKey: "⌃⌥Space")
+        #expect(items == [.command(.showWall, title: "Open Hesper", chord: KeyChord(.char("0"), command: true, shift: true)),
+                          .command(.newAgent, title: "New agent…", chord: KeyChord(.char("n"), command: true)),
+                          .command(.history, title: "History…", chord: KeyChord(.char("y"), command: true)),
+                          .command(.review, title: "Review…", chord: KeyChord(.char("r"), command: true)),
+                          .separator,
+                          .command(.quickLaunch, title: "Quick Launch…  ⌃⌥Space", chord: nil),
+                          .command(.settings, title: "Settings…", chord: KeyChord(.char(","), command: true)),
+                          .separator,
+                          .command(.quit, title: "Quit Hesper", chord: KeyChord(.char("q"), command: true))])
+        #expect(ids(MenuModel.statusItems(hotKey: "⌃⌥Space", context: CommandContext(historySupported: false)))
+                == [.showWall, .newAgent, .review, .quickLaunch, .settings, .quit])
+    }
+
     // MARK: Validation
+
 
 
     private func availability(_ id: CommandID, _ c: CommandContext) -> Availability { CommandRegistry.command(id)!.availability(c) }

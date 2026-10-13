@@ -611,8 +611,29 @@ public struct MenuModel: Equatable, Sendable {
         items(dock, registry: registry, context: context)
     }
 
+    /// The status-bar menu's fixed section, after the agent groups: the
+    /// labels it always had, the key equivalent only where the chord is
+    /// the app-wide one (⌘N, ⌘Y, ⌘R, ⇧⌘0, ⌘, and ⌘Q; Quick Launch shows
+    /// the hotkey in its label instead, since no window binds it).
+    public static let statusLabels: [(CommandID, String)] = [
+        (.showWall, "Open Hesper"), (.newAgent, "New agent…"), (.history, "History…"), (.review, "Review…"),
+        (.quickLaunch, "Quick Launch…"), (.settings, "Settings…"), (.quit, "Quit Hesper"),
+    ]
+
+    public static func statusItems(registry: [Command] = CommandRegistry.all, hotKey: String, context: CommandContext = .none) -> [Item] {
+        var out: [Item] = []
+        for (id, label) in statusLabels {
+            guard let c = registry.first(where: { $0.id == id }), c.availability(context) != .hidden else { continue }
+            if id == .quickLaunch || id == .quit { out.append(.separator) }
+            let title = id == .quickLaunch ? "\(label)  \(hotKey)" : label
+            out.append(.command(id, title: title, chord: c.surfaces.contains(.everywhere) ? c.chord : nil))
+        }
+        return out
+    }
+
     /// `ids` as items with their registry titles and chords; a hidden one
     /// (History while hesperd has no sessions.*) is left out.
+
     static func items(_ ids: [CommandID], registry: [Command], context: CommandContext) -> [Item] {
         ids.compactMap { id in
             guard let c = registry.first(where: { $0.id == id }), c.availability(context) != .hidden else { return nil }

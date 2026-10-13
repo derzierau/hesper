@@ -4533,7 +4533,13 @@ so the window list and Help's search field come from it. The Dock menu
 (`MenuModel.dockItems`, `applicationDockMenu`) is New Agent, Needs You…,
 History (while supported) and Review with the registry's titles; each
 brings the wall in front first, and Review opens the sheet rather than
-toggling it. The ⌘K
+toggling it. The status-bar menu's fixed section below the agent groups
+(`MenuModel.statusItems`) keeps its labels (Open Hesper, New agent…,
+History…, Review…, Quick Launch…, Settings…, Quit Hesper) and shows a key
+equivalent only where the chord is the app-wide one (⇧⌘0, ⌘N, ⌘Y, ⌘R,
+⌘, and ⌘Q); Quick Launch… carries the hotkey in its label and toggles
+the panel; History… leaves while hesperd has no sessions.*. The ⌘K
+
 
 
 palette's "Actions" rows and Settings › Shortcuts (`ShortcutList.groups`,
