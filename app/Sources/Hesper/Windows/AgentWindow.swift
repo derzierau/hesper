@@ -173,10 +173,10 @@ final class AgentWindow: MainWindow {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let c = controller, event.type == .keyDown, let model,
-              !model.showPalette, model.popover == nil, attachedSheet == nil else { return super.performKeyEquivalent(with: event) }
+              !model.showPalette, attachedSheet == nil else { return super.performKeyEquivalent(with: event) }
         let cmd = KeyRouter.route(KeyChord(event: event), mode: .focus, selectedState: model.current?.state)
         switch cmd {
-        case .closeAgent:
+        case .closeAgent where model.popover != .background: // the tray's ⌘W closes its agent (MainWindow)
             closeKeepingAgent()
         case .backgroundAgent:
             model.perform(.backgroundAgent) // to the background (same rules); the window follows (closeInFocus)
