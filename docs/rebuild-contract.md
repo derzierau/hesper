@@ -4387,8 +4387,10 @@ disabled with nothing selected and Routines is hidden.
 **Bindings that changed with the registry.** ⌥⌘↑ ⌥⌘↓ step bands
 everywhere (View ▸ Previous / Next Band; ⌥↑ ⌥↓ stay wall-only aliases);
 J K move in History as in the inbox; ⇧⏎ in History no longer resumes;
-⌘W in Settings, First Run and the gallery closes that window (File ▸
-Close). The two primitives phase 3 builds the pointer paths with,
+⌘⏎ in History resumes and opens the agent full size (the overlay
+family's "open full size") and M continues on the other Mac, a list
+verb like F C A R; ⌘W in Settings, First Run and the gallery closes
+that window (File ▸ Close). The two primitives phase 3 builds the pointer paths with,
 `KeyButton` and `SheetChrome`, are in `docs/design-system.md`.
 
 ## Wire names kept from Ghosty
