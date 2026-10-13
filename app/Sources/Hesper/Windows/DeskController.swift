@@ -302,30 +302,25 @@ final class DeskController: NSObject, NSMenuDelegate {
         m.deskNameSubmit = { [weak self] id, name in self?.nameSubmitted(id, name) }
     }
 
-    private let desksMenu = NSMenu(title: "Desks")
+    /// Window ▸ Desks (MenuBuilder hangs it in; filled when it opens).
+    lazy var desksMenu: NSMenu = {
+        let m = NSMenu(title: "Desks")
+        m.delegate = self
+        return m
+    }()
 
-    func installMenus(in wm: NSMenu, at index: Int) {
-        func item(_ title: String, _ key: String, _ mods: NSEvent.ModifierFlags, _ action: @escaping @MainActor () -> Void) -> NSMenuItem {
-            let i = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: key)
-            i.keyEquivalentModifierMask = mods
-            let act = MenuAction(action)
-            i.target = act
-            i.representedObject = act
-            return i
-        }
-        desksMenu.delegate = self
-        let sub = NSMenuItem(title: "Desks", action: nil, keyEquivalent: "")
-        sub.submenu = desksMenu
-        wm.insertItem(sub, at: index)
-        wm.insertItem(item("Desk Picker…", "d", [.command, .shift]) { [weak self] in self?.showPicker() }, at: index + 1)
-        wm.insertItem(item("Save Desk As…", "", []) { [weak self] in
-            guard let self else { return }
-            let m = self.manager.activeWall.model
-            self.manager.activeWall.window.makeKeyAndOrderFront(nil)
+    /// The Window menu's desk commands; false when `id` is not one.
+    func run(_ id: CommandID) -> Bool {
+        switch id {
+        case .deskPicker: showPicker()
+        case .saveDeskAs:
+            let m = manager.activeWall.model
+            manager.activeWall.window.makeKeyAndOrderFront(nil)
             m.deskNameText = ""
             m.openPopover(.deskName(""))
-        }, at: index + 2)
-        wm.insertItem(.separator(), at: index + 3)
+        default: return false
+        }
+        return true
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

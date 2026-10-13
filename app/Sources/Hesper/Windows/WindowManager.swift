@@ -783,49 +783,26 @@ final class WindowManager: NSObject {
 
     // MARK: Menus
 
-    /// Adds the window commands to the app's menus (built by AppDelegate).
-    func installMenus() {
-        guard let main = NSApp.mainMenu else { return }
-        func item(_ title: String, _ key: String, _ mods: NSEvent.ModifierFlags, _ action: @escaping @MainActor () -> Void) -> NSMenuItem {
-            let i = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: key)
-            i.keyEquivalentModifierMask = mods
-            let act = MenuAction(action)
-            i.target = act
-            i.representedObject = act
-            return i
+    /// The window layer's menu commands (MenuBuilder → AppDelegate.run);
+    /// false when `id` is not one of them.
+    func run(_ id: CommandID) -> Bool {
+        switch id {
+        case .newWallWindow: newWall()
+        case .openInNewWindow:
+            guard let id = activeWall.model.selectedID else { return true }
+            openAgentWindow(id)
+        case .openInNewTab:
+            guard let id = activeWall.model.selectedID else { return true }
+            openAgentWindow(id, asTab: true)
+        case .wallScope:
+            let w = activeWall
+            bringForward(w.window)
+            showScopePopover(for: w.model)
+        case .makeHomeWall: makeHome(activeWall)
+        case .deskPicker, .saveDeskAs: return desks.run(id)
+        default: return false
         }
-        if let agents = main.items.first(where: { $0.submenu?.title == "Agents" })?.submenu {
-            let at = (agents.items.firstIndex { $0.title == "Open / Back to Wall" } ?? agents.items.count - 1) + 1
-            agents.insertItem(item("Open in New Window", "\r", [.command, .option]) { [weak self] in
-                guard let self, let id = self.activeWall.model.selectedID else { return }
-                self.openAgentWindow(id)
-            }, at: at)
-            agents.insertItem(item("Open in New Tab", "", []) { [weak self] in
-                guard let self, let id = self.activeWall.model.selectedID else { return }
-                self.openAgentWindow(id, asTab: true)
-            }, at: at + 1)
-        }
-        if let wm = NSApp.windowsMenu {
-            wm.insertItem(item("New Wall Window", "n", [.command, .option]) { [weak self] in self?.newWall() }, at: 0)
-            wm.insertItem(item("Project Sidebar", "0", [.command]) { [weak self] in
-                guard let self else { return }
-                self.activeWall.model.sidebarVisible.toggle()
-            }, at: 0)
-            wm.insertItem(item("Wall Scope…", "s", [.command, .control]) { [weak self] in
-                guard let self else { return }
-                let w = self.activeWall
-                self.bringForward(w.window)
-                self.showScopePopover(for: w.model)
-            }, at: 1)
-            wm.insertItem(item("Make Home Wall", "", []) { [weak self] in
-                guard let self else { return }
-                self.makeHome(self.activeWall)
-            }, at: 2)
-            wm.insertItem(.separator(), at: 3)
-            desks.installMenus(in: wm, at: 4)
-            wm.addItem(.separator())
-            wm.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
-        }
+        return true
     }
 }
 

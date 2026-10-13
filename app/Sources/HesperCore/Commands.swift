@@ -105,6 +105,8 @@ public struct CommandContext: Equatable, Sendable {
     public var wallEmpty: Bool
     /// An agent was closed recently (⇧⌘T).
     public var canReopen: Bool
+    /// An undo toast is up, or a text field has the keyboard.
+    public var canUndo: Bool
     /// hesperd has sessions.* (the History items show).
     public var historySupported: Bool
     public var historyOpen: Bool
@@ -113,10 +115,10 @@ public struct CommandContext: Equatable, Sendable {
     public var popoverOpen: Bool
 
     public init(selectedState: AgentState? = nil, selectedRunning: Bool = false, mode: AppMode = .wall, keyWindow: KeyWindowKind = .wall,
-                hasDraft: Bool = false, reviewCount: Int = 0, wallEmpty: Bool = true, canReopen: Bool = false, historySupported: Bool = true,
-                historyOpen: Bool = false, reviewOpen: Bool = false, paletteOpen: Bool = false, popoverOpen: Bool = false) {
+                hasDraft: Bool = false, reviewCount: Int = 0, wallEmpty: Bool = true, canReopen: Bool = false, canUndo: Bool = false,
+                historySupported: Bool = true, historyOpen: Bool = false, reviewOpen: Bool = false, paletteOpen: Bool = false, popoverOpen: Bool = false) {
         self.selectedState = selectedState; self.selectedRunning = selectedRunning; self.mode = mode; self.keyWindow = keyWindow
-        self.hasDraft = hasDraft; self.reviewCount = reviewCount; self.wallEmpty = wallEmpty; self.canReopen = canReopen
+        self.hasDraft = hasDraft; self.reviewCount = reviewCount; self.wallEmpty = wallEmpty; self.canReopen = canReopen; self.canUndo = canUndo
         self.historySupported = historySupported; self.historyOpen = historyOpen; self.reviewOpen = reviewOpen
         self.paletteOpen = paletteOpen; self.popoverOpen = popoverOpen
     }
@@ -391,7 +393,9 @@ public enum CommandRegistry {
     ]
 
     private static let edit: [Command] = [
-        Command(.undo, "Undo", menu: MenuPath(.edit, 0, 0), chord: .cmd("z"), surfaces: [.everywhere]),
+        // The title names the action ("Undo Close"); a text field's own undo first.
+        Command(.undo, "Undo", menu: MenuPath(.edit, 0, 0), chord: .cmd("z"), surfaces: [.everywhere],
+                availability: { $0.canUndo ? .enabled : .disabled("Nothing to undo") }),
         Command(.redo, "Redo", menu: MenuPath(.edit, 0, 1), chord: .cmd("z", shift: true), surfaces: [.everywhere]),
         Command(.cut, "Cut", menu: MenuPath(.edit, 1, 0), chord: .cmd("x"), surfaces: [.everywhere]),
         // History: the selected text, or the session id when none is selected.
