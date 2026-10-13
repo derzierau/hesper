@@ -2,7 +2,7 @@ import AppKit
 import HesperCore
 import SwiftUI
 
-/// SheetChrome: the frame History, Review and Routines share inside their
+/// SheetChrome: the frame History, Review and Keyboard Shortcuts share inside their
 /// Panel. A title row (StateMark or SF Symbol, title in `panelTitle`
 /// semibold, a count Pill, then the `esc` key cap and a close ×
 /// IconButton), a toolbar row of KeyButtons for the sheet's verbs, the

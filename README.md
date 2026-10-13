@@ -378,7 +378,7 @@ pick a profile per agent, per project or per kind:
 | ⌥⌘W / ⌃⌘W / ⇧⌘W | Send the agent to the background / kill it / tidy up finished agents. ⇧⌘T reopens the last closed one. |
 | ⇧⌘M | Move the agent to another Mac |
 | ⌥⌘1–5 / ⌥⌘L | Layouts / next layout. ⌘0 project sidebar, ⌃⌘S wall scope, ⌥⌘N new wall window, ⇧⌘0 show the wall, ⇧⌘D desk picker. |
-| ⌘/ | Every shortcut, by surface and searchable (Help ▸ Keyboard Shortcuts); Settings › Shortcuts lists the same table and rebinds any of them |
+| ⌘/ | Every shortcut, by surface and searchable (Help ▸ Keyboard Shortcuts); Settings › Shortcuts lists the same table and rebinds the app's own (the standard macOS items and the hotkey stay) |
 
 Esc always goes to the agent, since Claude and Codex use it. Every key and
 menu item comes from one table in the app (⌘/ and Settings › Shortcuts list

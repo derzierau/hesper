@@ -51,7 +51,8 @@ comes from `DS`.
 12. **Focus rings follow Full Keyboard Access.** A field or list that
     turns its focus ring off for looks sets `focusRingType =
     DS.focusRingType`, never `.none`: the ring is off as usual and comes
-    back when Full Keyboard Access is on, so ⇥ always has a visible
+    back when Full Keyboard Access is on (read when the view is made; a
+    change shows on the next open or launch), so ⇥ always has a visible
     target. Views that take part in ⇥ are linked with `nextKeyView`
     (`RootView.joinKeyViewLoop`, the sheets' fields and lists).
 
@@ -226,9 +227,9 @@ hairline, `line` fill on hover) and `.icon(symbol)` (an IconButton whose
 tooltip carries the key). Disabled draws at 40%.
 
 ```swift
-KeyButton("Allow", kbd: "⏎", variant: .primary(.signal)) { model.answer(a, .allow) }
-KeyButton("Always", kbd: "A") { model.answer(a, .always) }
-KeyButton("Open full size", kbd: "⌘⏎", variant: .icon("arrow.up.left.and.arrow.down.right")) { model.focus(a.id) }
+KeyButton("Allow", kbd: CommandRegistry.cap(.activateTile, in: .wall), variant: .primary(.signal)) { model.answer(a, .allow) }
+KeyButton("Always", kbd: CommandRegistry.cap(.answer(.always), in: .wall)) { model.answer(a, .always) }
+KeyButton("Open full size", kbd: CommandRegistry.cap(.toggleFocus), variant: .icon("arrow.up.left.and.arrow.down.right")) { model.focus(a.id) }
 
 let b = KeyButtonView("Close", kbd: "⏎", variant: .primary(.signal)) { model.confirmClose() }   // AppKit
 b.isEnabled = false
@@ -236,7 +237,7 @@ b.isEnabled = false
 
 ### SheetChrome
 
-The frame History, Review and Routines share inside their Panel: a title
+The frame History, Review and Keyboard Shortcuts share inside their Panel: a title
 row (StateMark or SF Symbol, title in `panelTitle` semibold, a count
 Pill, the `esc` key cap and a close × IconButton), a toolbar row of
 KeyButtons for the sheet's verbs, the content, and a footer row of
@@ -247,17 +248,17 @@ toolbar and footer are left out when empty. Closing is the host's
 
 ```swift
 SheetChrome(title: "Review", symbol: "checkmark.seal", count: 3, toolbar: {
-    KeyButton("Next file", kbd: "N") { session.nextFile() }
+    KeyButton("Next file", kbd: CommandRegistry.cap(.reviewNextFile, in: .review)) { session.nextFile() }
     Spacer()
-    KeyButton("Accept & commit", kbd: "⌘⏎", variant: .primary(.done)) { session.accept() }
+    KeyButton("Accept & commit", kbd: CommandRegistry.cap(.reviewAccept, in: .review), variant: .primary(.done)) { session.accept() }
 }, footer: {
-    KeyButton("Seen", kbd: "V") { session.toggleSeen() }
+    KeyButton("Seen", kbd: CommandRegistry.cap(.reviewSeen, in: .review)) { session.toggleSeen() }
 }, onClose: { close() }) {
     list
 }
 
 let chrome = SheetChromeView(title: "History", mark: .working, count: 128) { [weak self] in self?.close() }   // AppKit
-chrome.toolbar.addArrangedSubview(KeyButtonView("All", kbd: "⇥") { … })
+chrome.toolbar.addArrangedSubview(KeyButtonView("All", kbd: CommandRegistry.cap(.historySwitchScope, in: .history)) { … })
 chrome.contentView.addSubview(table)
 ```
 

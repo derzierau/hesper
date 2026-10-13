@@ -1473,7 +1473,7 @@ Move to… (the move popover on the tile), Stop / Resume / Remove (the
 undoable ones), Rename… (the rename popover)) do the same. ⌥⇧-click opens
 it as a tab of the frontmost agent window. An agent that already has a
 window gets that window brought forward, never a second one. ⌥⌘N opens a
-wall window (⌘N stays "new agent"); ⌃⌘S (Window menu) opens the wall's
+wall window (⌘N stays "new agent"); ⌃⌘S (View menu) opens the wall's
 scope popover.
 
 **Agent window.** The content is the app's RootView held in focus mode on
@@ -1555,7 +1555,7 @@ agent in every wall; agent windows tint their title bar. The Dock badge
 the key window's model (layouts on the frontmost wall); when the key
 window is neither a wall nor an agent window (Settings, First Run, the
 Design Gallery) the Agents menu's Close, Send to Background, Kill, Tidy
-Up and Move are disabled, the chords do nothing, and ⌘W (Window ▸
+Up and Move are disabled, the chords do nothing, and ⌘W (File ▸
 Close) closes that window.
 
 **Restoration** (`WindowRestorer`, explicit file, not NSWindowRestoration):
@@ -2060,7 +2060,7 @@ goes to the head. Without project data every agent is its own unit (the
 old behaviour). Capacity is still counted in minimum cards (band headers
 not counted).
 
-**Project sidebar** (⌘0 per wall, View/Window ▸ Project Sidebar; Show
+**Project sidebar** (⌘0 per wall, View ▸ Project Sidebar; Show
 Wall moved to ⇧⌘0): All, Groups (group → its projects, packages with
 agents under their repo), Other projects, scratch; counts of agents
 everywhere and a rose dot where something needs you; the current scope
@@ -3254,7 +3254,7 @@ over synthetic transcripts), and the regression suites the shared files
 touch: `make -C app test-ui test-ui-windows test-ui-projects
 test-ui-desks` (or all of them: `make -C app test`).
 
-**History is a panel over the wall, not a wall mode.** ⌘Y (Agents ▸
+**History is a panel over the wall, not a wall mode.** ⌘Y (View ▸
 History, the project sidebar's "Show History (⌘Y)" per project, ⇥ on a
 ⌘K History row) opens it on the window's content area: the overlay
 family's look (its keys: the registry's `.history` surface, "As built —
@@ -3314,7 +3314,8 @@ two lines (at least 0.8 s, at most 12 s, typing into it hides it).
 **Keys** (`HistoryKeys`, the overlay family's): ↑↓ select (also from the
 search field), ⌘↑ ⌘↓ / Home End first / last, page up/down, ⏎ resume,
 ⌘⏎ resume and open the agent full size (focus), ⌥⏎ fork, ⇥ the All
-scope with the query (⇧⇥ field ↔ list, where F C A M R ⌫ act; typing
+scope with the query (⇧⇥ field ↔ list, where J K move as in the inbox
+and F C A M R ⌫ act; typing
 any other character goes back to the search with it), ⌘F the search, ⌘C
 copy id (the field's own copy when text is selected), esc / ⌘Y close;
 ⌘K closes the panel for the palette (`SearchKeys.opensPalette`, the
@@ -4681,11 +4682,8 @@ Enter Full Screen reads Exit Full Screen while the key window is in it
 key window's kind (`CommandContext.closeTarget`): the selected agent or
 draft on a wall; the window in an agent window, where the agent keeps
 running on its wall, and in Settings, First Run and the gallery. The
-standard AppKit items
-
-(About, Hide, Cut, Copy, Paste, Minimize, Zoom, …) validate up the
-responder chain as in any Mac app.
-
+standard AppKit items (About, Hide, Cut, Copy, Paste, Minimize, Zoom, …)
+validate up the responder chain as in any Mac app.
 
 **Bindings that changed with the registry.** ⌥⌘↑ ⌥⌘↓ step bands
 everywhere (View ▸ Previous / Next Band; ⌥↑ ⌥↓ stay wall-only aliases);
@@ -4746,8 +4744,9 @@ its search field and list, Review its inbox, stream and note field
 (while it shows); the shortcuts sheet is one hosting view. Focus rings
 turned off for looks (the sidebar filter, History's field and list,
 Review's note field and stream) are `DS.focusRingType`: off as usual,
-on while Full Keyboard Access is enabled (`docs/design-system.md`
-rule 12).
+on while Full Keyboard Access is enabled, read when the view is made
+(a change takes effect on the next open or launch;
+`docs/design-system.md` rule 12).
 
 ## Wire names kept from Ghosty
 
