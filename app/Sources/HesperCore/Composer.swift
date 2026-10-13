@@ -484,8 +484,11 @@ public enum DraftStartControl {
     /// launch panel closes after starting, so it has nothing to offer
     /// and no ▾.
     public static func menu(quick: Bool) -> [Item] {
-        quick ? [] : [Item(title: "Start and open another", keys: "⌥⏎", openNext: true)]
+        quick ? [] : [Item(title: "Start and open another", keys: CommandRegistry.cap(.startDraftAndNew) ?? "", openNext: true)]
     }
+
+    /// The Start button's key cap, as the registry spells it ("⌘⏎").
+    public static var startKeys: String { CommandRegistry.cap(.startDraft) ?? "" }
 
     /// The esc button next to it: a wall draft is kept (parked), the
     /// quick launch panel closes.

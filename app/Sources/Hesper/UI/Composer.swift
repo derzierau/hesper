@@ -546,7 +546,7 @@ struct DraftChips: View {
     }
 
     /// The worktree toggle's chord (the composer's `toggleWorktree`).
-    static let worktreeKeys = "⌥⌘B"
+    static var worktreeKeys: String { CommandRegistry.cap(.toggleWorktree) ?? "" }
 }
 
 /// The footer: the token keys, Keep / Close esc, and the Start control:
@@ -578,13 +578,13 @@ struct DraftFooter: View {
             }
             Spacer(minLength: DS.Spacing.s)
             if !narrow {
-                KeyButton(DraftStartControl.leaveTitle(quick: quick), kbd: "esc", action: onLeave)
+                KeyButton(DraftStartControl.leaveTitle(quick: quick), kbd: CommandRegistry.cap(.leaveDraft), action: onLeave)
                     .accessibilityIdentifier("draft.leave")
             }
             if composer.busy { ProgressView().controlSize(.mini) }
             HStack(spacing: DS.Spacing.xxs) {
-                KeyButton(DraftStartControl.title(busy: composer.busy, bringing: bringing != nil), kbd: "⌘⏎", variant: .primary(.working), action: onStart)
-                    .help(composer.needsFolder ? "Choose a folder first (⌘⏎ opens the list)" : composer.startsScratch ? "Start in a new scratch (⌘⏎)" : "Start (⌘⏎)")
+                KeyButton(DraftStartControl.title(busy: composer.busy, bringing: bringing != nil), kbd: CommandRegistry.cap(.startDraft), variant: .primary(.working), action: onStart)
+                    .help(composer.needsFolder ? "Choose a folder first (\(DraftStartControl.startKeys) opens the list)" : composer.startsScratch ? "Start in a new scratch (\(DraftStartControl.startKeys))" : "Start (\(DraftStartControl.startKeys))")
                     .accessibilityIdentifier("draft.start")
                 let more = DraftStartControl.menu(quick: quick)
                 if !more.isEmpty {
@@ -635,7 +635,7 @@ struct DraftHeader: View {
                     .accessibilityIdentifier("draft.status")
             }
             if let onDiscard {
-                IconButton("xmark", help: "Discard draft", shortcut: "⌘W", action: onDiscard)
+                IconButton("xmark", help: "Discard draft", shortcut: CommandRegistry.cap(.closeAgent, in: .composer), action: onDiscard)
                     .accessibilityIdentifier("draft.discard")
             }
         }

@@ -4549,6 +4549,16 @@ toggles; ⌘K ⌘Y ⌘R ⌘J close it and go on to their owner. Accessibility:
 `shortcuts`, `shortcuts.search`, `shortcuts.section.<surface>`,
 `shortcuts.row.<command id>`, `shortcuts.settings`, `shortcuts.close`.
 
+**Key caps come from the table.** An IconButton tooltip or KeyButton cap
+that names a registry command reads its chord through
+`CommandRegistry.cap(id, in:)` (the toolbar's + and search, the review,
+background and needs-you pills, the focus header's ‹ › and typing hint,
+the composer's Start, Keep / Close, worktree chip and discard ×, the
+palette's and the popovers' footers, the inbox's Open and Continue, the
+quick launch Close, the band +); only hints for keys that are not
+commands (the close and move strips' ⏎ esc, the deny field, ghost cards,
+End) spell their key.
+
 **Settings › Shortcuts.** The same sections, every one open, as
 SettingsSections of Rows (`settings.shortcut.<command id>`); the Quick
 Launch row shows the configured hotkey while quick launch is on. A row

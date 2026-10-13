@@ -147,18 +147,18 @@ struct PaletteView: View {
         return HStack(spacing: DS.Spacing.s) {
             Text("\(list.count) results").font(.ds(.meta, .medium)).foregroundStyle(Theme.dim)
             Spacer(minLength: 0)
-            KeyButton("Run", kbd: "⏎") { _ = model.paletteKey(.activate) }
+            KeyButton("Run", kbd: CommandRegistry.cap(.overlayActivate)) { _ = model.paletteKey(.activate) }
                 .disabled(item == nil)
                 .accessibilityIdentifier("palette.run")
-            KeyButton("Open full size", kbd: "⌘⏎") { _ = model.paletteKey(.alternate) }
+            KeyButton("Open full size", kbd: CommandRegistry.cap(.overlayAlternate)) { _ = model.paletteKey(.alternate) }
                 .disabled(item?.alternate == nil)
                 .accessibilityIdentifier("palette.alternate")
             if !scoped {
-                KeyButton(agent ? "Actions" : "History", kbd: "⇥") { _ = model.paletteKey(.actOn) }
+                KeyButton(agent ? "Actions" : "History", kbd: CommandRegistry.cap(.overlayActOn)) { _ = model.paletteKey(.actOn) }
                     .disabled(!agent && !model.historyAvailable)
                     .accessibilityIdentifier("palette.actOn")
             }
-            KeyButton(scoped ? "Back" : "Close", kbd: "esc") { _ = model.paletteKey(.close) }
+            KeyButton(scoped ? "Back" : "Close", kbd: CommandRegistry.cap(.closeOverlay)) { _ = model.paletteKey(.close) }
                 .accessibilityIdentifier("palette.close")
         }
         .padding(.horizontal, DS.Spacing.m)

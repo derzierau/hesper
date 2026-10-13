@@ -69,7 +69,7 @@ struct TileHeader: View {
                     if !compact { Kbd("⌘esc") }
                 }
                 .fixedSize()
-                .help("Typing goes to the agent; ⌘esc leaves")
+                .help("Typing goes to the agent; \(CommandRegistry.cap(.exitFocus) ?? "") leaves")
                 .accessibilityIdentifier("tile.typing")
             }
             status.layoutPriority(1)

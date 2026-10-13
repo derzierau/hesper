@@ -231,7 +231,7 @@ struct QuickHeader: View {
             Spacer()
             Image(systemName: "rectangle.grid.2x2").font(.ds(.meta)).foregroundStyle(Theme.dim)
             Text("joins the wall").font(.ds(.chrome)).foregroundStyle(Theme.dim)
-            KeyButton("Close", kbd: "esc", variant: .icon("xmark"), action: onClose)
+            KeyButton("Close", kbd: CommandRegistry.cap(.leaveDraft, in: .quickLaunch), variant: .icon("xmark"), action: onClose)
                 .accessibilityIdentifier("quicklaunch.close")
         }
         .padding(.horizontal, DS.Spacing.xl)

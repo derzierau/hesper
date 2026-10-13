@@ -266,9 +266,9 @@ struct FocusHeader: View {
             KeyButton("‹ Wall", kbd: TileActions.focusKeys, action: onBack)
                 .accessibilityIdentifier("focus.back")
             HStack(spacing: 0) {
-                IconButton("chevron.left", help: "Previous agent", shortcut: "⌥⌘←") { onStep(-1) }
+                IconButton("chevron.left", help: "Previous agent", shortcut: CommandRegistry.cap(.stepPrevious)) { onStep(-1) }
                     .accessibilityIdentifier("focus.previous")
-                IconButton("chevron.right", help: "Next agent", shortcut: "⌥⌘→") { onStep(1) }
+                IconButton("chevron.right", help: "Next agent", shortcut: CommandRegistry.cap(.stepNext)) { onStep(1) }
                     .accessibilityIdentifier("focus.next")
             }
             .fixedSize()
@@ -302,14 +302,14 @@ struct FocusHeader: View {
                 Kbd("⌘esc")
             }
             .fixedSize()
-            .help("Typing goes to the agent; ⌘esc returns to the wall")
+            .help("Typing goes to the agent; \(CommandRegistry.cap(.exitFocus) ?? "") returns to the wall")
             .accessibilityIdentifier("focus.typing")
             if needsYou > 0 {
                 Button(action: onNeedsYou) {
                     Pill(needsYou == 1 ? "needs you" : "need you", mark: .needsYou, count: needsYou)
                 }
                 .buttonStyle(.plain)
-                .help("Next agent that needs you (⌘J)")
+                .help(IconButton.tooltip("Next agent that needs you", CommandRegistry.cap(.nextAttention)))
                 .accessibilityIdentifier("focus.needsYou")
             }
             IconButton("ellipsis", help: "More", action: onMenu)

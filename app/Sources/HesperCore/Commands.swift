@@ -344,6 +344,11 @@ public enum CommandRegistry {
         return chords.map(\.label)
     }
 
+    /// The key cap a control shows for `id` ("⌘N"): its first chord live
+    /// in `surface` (nil: its default chord). IconButton tooltips and
+    /// KeyButton caps read it rather than spelling the chord.
+    public static func cap(_ id: CommandID, in surface: Surface? = nil) -> String? { labels(id, in: surface).first }
+
     /// The commands with a chord live in `surface`, in table order; for
     /// `.everywhere` only those bound everywhere.
     public static func bound(in surface: Surface) -> [Command] {

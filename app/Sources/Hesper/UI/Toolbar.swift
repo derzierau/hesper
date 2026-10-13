@@ -280,7 +280,7 @@ struct TopBarTrailingContent: View {
                     .id(layout.current) // a new button (symbol, tooltip) whenever the wall's arrangement changes
                     .barAnchor("layout")
                     .accessibilityIdentifier("toolbar.layout")
-                IconButton("plus", help: "New agent", shortcut: "⌘N") { actions.newAgent() }
+                IconButton("plus", help: "New agent", shortcut: CommandRegistry.cap(.newAgent)) { actions.newAgent() }
                     .accessibilityIdentifier("toolbar.new")
             }
             machines
@@ -299,7 +299,7 @@ struct TopBarTrailingContent: View {
     /// The search field affordance: opens the palette (⌘K); an icon when narrow.
     @ViewBuilder private var search: some View {
         if data.compact {
-            IconButton("magnifyingglass", help: "Search agents and history", shortcut: "⌘K") { actions.search() }
+            IconButton("magnifyingglass", help: "Search agents and history", shortcut: CommandRegistry.cap(.palette)) { actions.search() }
                 .accessibilityIdentifier("toolbar.search")
         } else {
             let shape = DS.Radius.shape(DS.Radius.control)
@@ -316,7 +316,7 @@ struct TopBarTrailingContent: View {
                 .contentShape(shape)
             }
             .buttonStyle(.plain)
-            .help("Agents, projects, machines, actions, history (⌘K)")
+            .help(IconButton.tooltip("Agents, projects, machines, actions, history", CommandRegistry.cap(.palette)))
             .accessibilityLabel("Search")
             .accessibilityIdentifier("toolbar.search")
         }
@@ -380,7 +380,7 @@ struct ReviewPill: View {
             }
             .buttonStyle(.plain)
             .fixedSize()
-            .help("Ready to review (⌘R)")
+            .help(IconButton.tooltip("Ready to review", CommandRegistry.cap(.review)))
             .accessibilityLabel("\(data.review) ready to review")
             .accessibilityIdentifier("topbar.review")
         }
@@ -407,7 +407,7 @@ struct BackgroundPill: View {
             .buttonStyle(.plain)
             .fixedSize()
             .barAnchor("background")
-            .help("Running in the background (⌥⌘W sends the selected agent here)")
+            .help("Running in the background (\(CommandRegistry.cap(.backgroundAgent) ?? "") sends the selected agent here)")
             .accessibilityLabel("\(b.count) in the background")
             .accessibilityIdentifier("topbar.background")
         }
@@ -438,7 +438,7 @@ struct AttentionPill: View {
             .buttonStyle(.plain)
             .fixedSize()
             .barAnchor("attention")
-            .help("What needs you (⌘J)")
+            .help(IconButton.tooltip("What needs you", CommandRegistry.cap(.nextAttention)))
             .accessibilityLabel("\(c.needingYou) need\(c.needingYou == 1 ? "s" : "") you")
             .accessibilityIdentifier("topbar.approvals")
         }
