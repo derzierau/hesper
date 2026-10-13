@@ -604,7 +604,7 @@ extension AppModel {
         // the table; what each runs is here.
         var actions: [OverlayItem] = []
         let ctx = commandContext()
-        for c in CommandRegistry.all where c.palette {
+        for c in CommandRegistry.active.commands where c.palette {
             guard c.availability(ctx) == .enabled, let run = paletteRun(c.id) else { continue }
             let title = c.id == .reopenClosed ? closeBook.reopen.top.map { "Reopen \($0.name)" } ?? c.title : c.title
             let detail = c.id == .quickLaunch ? settings.hotKey.label : c.chord?.label ?? ""
