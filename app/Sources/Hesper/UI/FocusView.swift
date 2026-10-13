@@ -9,7 +9,7 @@ import SwiftUI
 /// in the terminal background), the attention band below. Stepping to the
 /// previous / next agent slides the card in from that side.
 @MainActor
-final class FocusView: NSView, TerminalDropTarget {
+final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
     private weak var model: AppModel?
     private(set) var terminal: AgentTerminal?
     private let card = FlippedView()
@@ -83,6 +83,15 @@ final class FocusView: NSView, TerminalDropTarget {
     }
 
     var agentID: String? { terminal?.agent.id }
+
+    /// A right-click in the terminal: the agent's menu with the terminal's
+    /// own Copy / Paste / Select All.
+    func terminalMenu(for surface: GhosttySurfaceView) -> NSMenu? {
+        guard let id = agentID, let menu = model?.tileMenu?(id) else { return nil }
+        menu.addItem(.separator())
+        menu.addItem(surface.terminalMenuItem())
+        return menu
+    }
 
     /// Window layer: whether a new terminal starts as the PTY's size owner
     /// (SizeOwnership adjusts it as windows become key).

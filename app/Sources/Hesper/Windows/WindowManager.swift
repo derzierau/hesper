@@ -663,15 +663,22 @@ final class WindowManager: NSObject {
     private func tileMenu(_ id: String, model: AppModel) -> NSMenu? {
         guard let a = model.agent(id) else { return nil }
         let menu = NSMenu()
-        func add(_ title: String, _ key: String = "", _ mods: NSEvent.ModifierFlags = [], _ action: @escaping @MainActor () -> Void) {
+        func add(_ title: String, _ key: String = "", _ mods: NSEvent.ModifierFlags = [], id: NSUserInterfaceItemIdentifier? = nil,
+                 _ action: @escaping @MainActor () -> Void) {
             let i = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: key)
             i.keyEquivalentModifierMask = mods
+            i.identifier = id
             let act = MenuAction(action)
             i.target = act
             i.representedObject = act
             menu.addItem(i)
         }
-        add(book.handle(for: id) == nil ? "Open in New Window" : "Show Window", "\r", [.command, .option]) { [weak self] in self?.openAgentWindow(id) }
+        // The header's ⋯ and the terminal's right-click open this menu too:
+        // the pointer's way to the focus view.
+        if model.mode != .focus { add("Open Full Size", "\r", [.command]) { [weak model] in model?.focus(id) } }
+        add(book.handle(for: id) == nil ? "Open in New Window" : "Show Window", "\r", [.command, .option], id: TileMenuItem.openWindow) { [weak self] in
+            self?.openAgentWindow(id)
+        }
         add("Open in New Tab") { [weak self] in self?.openAgentWindow(id, asTab: true) }
         menu.addItem(.separator())
         // Moving work across Macs: one item per Mac it can go to (none

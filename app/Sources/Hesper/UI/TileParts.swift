@@ -4,8 +4,9 @@ import SwiftUI
 
 /// Card header (26 pt Comfortable, 22 Compact: `DS.tileHeader`): the state
 /// square, the name (Geist 600), one quiet truncated project · branch
-/// segment, then on the right the status (elapsed while working), the
-/// focus Kbd on hover and machine · tool in Mono. No chips: a remote
+/// segment, then on the right the status (elapsed while working), machine
+/// · tool in Mono, and two quiet IconButtons (full opacity on hover):
+/// open full size ⌘⏎ and ⋯ for the tile's menu. No chips: a remote
 /// machine is only colored `horizon`.
 struct TileHeader: View {
     var agent: Agent
@@ -29,9 +30,14 @@ struct TileHeader: View {
     var machineLabel: String? = nil
     /// Ended by ⌃⌘W: the status says "Killed".
     var killed = false
+    /// The header's buttons: open full size (⌘⏎), the tile's menu (⋯).
+    var onOpenFull: (() -> Void)? = nil
+    var onMenu: (() -> Void)? = nil
 
-    /// The focus (open full size) shortcut, shown on hover.
-    static let focusKeys = "⌘↩"
+    /// The focus (open full size) shortcut.
+    static let focusKeys = TileActions.focusKeys
+    /// The buttons' opacity until the pointer is over the tile.
+    static let quietOpacity = 0.5
     /// The project square: the same 6 pt square as the band heading.
     static let swatch: CGFloat = DS.Spacing.s
 
@@ -67,17 +73,20 @@ struct TileHeader: View {
                 .accessibilityIdentifier("tile.typing")
             }
             status.layoutPriority(1)
-            if hovering && !typing && !compact {
-                Kbd(Self.focusKeys)
-                    .help("Open full size (\(Self.focusKeys))")
-                    .accessibilityIdentifier("tile.focusHint")
-            }
             Text(compact ? machine : "\(machine) · \(Theme.kindLabel(agent.kind))")
                 .font(.ds(.meta))
                 .foregroundStyle(local ? Theme.dim : Theme.color(.horizon))
                 .lineLimit(1)
                 .fixedSize()
                 .accessibilityIdentifier("tile.mark")
+            HStack(spacing: 0) {
+                IconButton("arrow.up.left.and.arrow.down.right", help: "Open full size", shortcut: Self.focusKeys) { onOpenFull?() }
+                    .accessibilityIdentifier("tile.openFull")
+                IconButton("ellipsis", help: "More") { onMenu?() }
+                    .accessibilityIdentifier("tile.menu")
+            }
+            .fixedSize()
+            .opacity(hovering ? 1 : Self.quietOpacity)
         }
         .padding(.horizontal, DS.Spacing.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

@@ -1450,7 +1450,8 @@ picking another agent opens that agent's window. `tabbingIdentifier
 Move Tab to New Window and dragging tabs out are AppKit's; full screen
 (`.fullScreenPrimary`), the Window menu lists agent windows by name, ⌘`
 cycles. Wall windows don't tab. The tile of an agent with a window shows a
-↗ badge on its top-right corner. Removing the agent closes its window.
+↗ badge on its top-right corner (a click shows the window). Removing the
+agent closes its window.
 
 **Size rule with several windows** (`SizeOwnership`, pure rule
 `HesperCore/SizeOwner.swift`): among the read-write candidates for an
@@ -1698,6 +1699,20 @@ than 420 pt) and moves Always and Open behind a ⋯ `IconButton`
 (`tile.more`) whose menu shows the same key caps, instead of dropping
 them. Key caps show only where the keys work (the selected, not active
 wall tile); a tight tile shows none. Tests: `TileActionsTests`.
+
+**Tile header.** After machine · tool, two IconButtons at half opacity
+(full while the pointer is over the tile): "Open full size (⌘⏎)"
+(`tile.openFull`, the focus view) and ⋯ (`tile.menu`), which pops up the
+same menu as a right-click / ⌃-click, now starting with "Open Full Size
+⌘↩" (not in focus) and "Open in New Window ⌥⌘↩". The ↗ badge of an agent
+with its own window is a button (`tile.windowMarker`): a click shows that
+window, as ⇧-click does, through the menu's "Show Window" item
+(`AppModel+Pointer.swift`: `openAgentWindow`, `showTileMenu`). A
+right-click in an **active terminal** (an active tile, the focus view, an
+agent window: `GhosttySurfaceView.rightMouseDown`, `TerminalMenuHost`)
+shows the tile's menu with a Terminal submenu (Copy, Paste, Select All on
+that surface); when the menu closes libghostty still gets the click
+(press and release), so a TUI that reports the mouse sees it.
 
 #### As built — drop to attach
 

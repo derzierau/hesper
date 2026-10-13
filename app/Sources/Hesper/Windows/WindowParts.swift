@@ -4,10 +4,12 @@ import SwiftUI
 
 /// The ↗ badge on a tile whose agent has its own window: a small pill
 /// hanging on the card's top-right corner (outside the header, so it never
-/// covers the header's chips).
+/// covers the header's chips). A click brings that window forward (like
+/// ⇧-click on the tile).
 @MainActor
 final class AgentWindowMarker: NSView {
     private let label = NSTextField(labelWithString: "↗")
+    var onClick: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -20,7 +22,10 @@ final class AgentWindowMarker: NSView {
         label.alignment = .center
         addSubview(label)
         isHidden = true
-        toolTip = "Open in its own window"
+        toolTip = "Show its window"
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Show its window")
         setAccessibilityIdentifier("tile.windowMarker")
     }
 
@@ -48,7 +53,11 @@ final class AgentWindowMarker: NSView {
         label.frame = NSRect(x: 0, y: ((s - h) / 2).rounded(), width: s, height: h)
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() }
+    }
+    override func accessibilityPerformPress() -> Bool { onClick?(); return true }
 }
 
 // MARK: Title stop (agent windows)
