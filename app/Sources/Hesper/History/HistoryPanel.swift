@@ -838,10 +838,11 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         let fieldSel = searchHasFocus && ((window?.firstResponder as? NSTextView)?.selectedRange().length ?? 0) > 0
         let action = SearchKeys.history(chord, keyCode: event.keyCode, characters: event.characters, focus: focus, fieldHasSelection: fieldSel)
         if equivalent {
-            // ⌘ chords: ⌘F ⌘C ⌘Y ⌘↑ ⌘↓ ⌘⏎ are the panel's; ⌘K is the All
-            // scope (the query comes along); the rest (⌘Z, ⌘W…) the window's.
+            // ⌘ chords: ⌘F ⌘C ⌘Y ⌘↑ ⌘↓ ⌘⏎ are the panel's; ⌘K closes the
+            // panel for the palette (the window's, as in Review; ⇥ is the
+            // All scope with the query); the rest (⌘Z, ⌘W…) the window's.
             guard chord.command else { return false }
-            if chord.key == .char("k") && !chord.option && !chord.control { switchScope(); return true }
+            if chord.key == .char("k") && !chord.option && !chord.control { close(); return false }
             if action == .history(.pass) { return false }
         } else if chord.command {
             return false // performKeyEquivalent handles ⌘ chords
@@ -889,7 +890,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
                 controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
             }
             updateHints()
-        case .resume, .resumeHere, .fork, .continueOther, .archive, .delete, .copyID:
+        case .resume, .fork, .continueOther, .archive, .delete, .copyID:
             guard let s = selectedSession else { NSSound.beep(); return }
             act(a, on: s)
         case .pass: break
@@ -912,8 +913,6 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         switch a {
         case .resume:
             actions.resume(s, here: false, changes: changes) { [weak self] in self?.close() }
-        case .resumeHere:
-            continueOnOtherMac(s)
         case .fork:
             card.busy = "forking…"
             actions.fork(s) { [weak self] ok in self?.card.busy = nil; if ok { self?.close() } }

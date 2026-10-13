@@ -436,8 +436,8 @@ struct BackgroundPanel: View {
 /// its machine (and "other wall" / "other Mac"), the exact question and
 /// its answers inline — approvals "1 Allow · 2 Always · 3 Deny",
 /// numbered questions one Pill per option, free text "Open". J/K or ↑↓
-/// move, 1–9 answer the selected item, ⏎ its first answer, ⌘O (⌘⏎) opens
-/// its tile, esc closes. Empty: "Nothing needs you." and it closes itself
+/// move, 1–9 answer the selected item, ⏎ its first answer, ⌘⏎ opens its
+/// tile, esc closes. Empty: "Nothing needs you." and it closes itself
 /// after a second.
 struct AttentionPanel: View {
     @Bindable var model: AppModel
@@ -446,7 +446,7 @@ struct AttentionPanel: View {
 
     static let width = OverlayLook.inboxWidth
     static let emptyText = "Nothing needs you."
-    static let hints: [(String, String)] = [("J K", "move"), ("1–9", "answer"), ("⏎", "first"), ("⌘O", "open"), ("esc", "close")]
+    static let hints: [(String, String)] = [("J K", "move"), ("1–9", "answer"), ("⏎", "first"), ("⌘⏎", "open"), ("esc", "close")]
     /// The empty panel closes itself after this long.
     static let emptyClose: Duration = .seconds(1)
     /// Option titles longer than this are cut (the agent has the full text).

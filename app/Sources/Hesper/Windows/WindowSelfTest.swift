@@ -210,16 +210,16 @@ final class WindowSelfTest {
             await setState(moved, "working")
         }
 
-        // ⌘J opens the inbox; ⌘O: to the agent's own window when it has one.
+        // ⌘J opens the inbox; ⌘⏎: to the agent's own window when it has one.
         await setState(a, "approval", attention: ["kind": "approval", "title": "Edit", "detail": "x.go", "options": ["allow", "always", "deny"]])
         _ = await Harness.wait(2) { self.model.agent(a)?.state == .approval }
         await makeKey(main.window)
         await Harness.sleep(0.1)
         Harness.press("j", keyCode: 0x26, flags: .command, window: main.window)
         await Harness.sleep(0.2)
-        Harness.press("o", keyCode: 0x1F, flags: .command, window: main.window)
+        Harness.press("\r", keyCode: 36, flags: .command, window: main.window)
         await Harness.sleep(0.2)
-        check("⌘J, ⌘O goes to the agent's own window", ca?.window?.isKeyWindow ?? false)
+        check("⌘J, ⌘⏎ goes to the agent's own window", ca?.window?.isKeyWindow ?? false)
         let stopped = ca?.stop.kind == .needsYou && ca?.window?.backgroundColor == Theme.windowBG
         let ringMain = main.root.wall.tiles[a]?.ringColor == Theme.stateNS(.approval)
         check("its title stop needs you (no tinted title bar) and its tile is ringed", stopped && ringMain)

@@ -228,7 +228,8 @@ public struct SessionCardText: Equatable, Sendable {
     public var todos: [String]
     public var branch: String
     public var actions: [Action]
-    /// ⌥⏎'s consequence (shown under the actions).
+    /// ⌘⏎'s consequence (shown under the actions; the History panel
+    /// fills it: `SearchPreview.continueNote`).
     public var resumeHereNote: String?
 
     /// - Parameters:
@@ -236,7 +237,6 @@ public struct SessionCardText: Equatable, Sendable {
     public init(_ s: Session, changes: SessionChanges?, loadingChanges: Bool, local: String, machines: [String: String],
                 home: String = NSHomeDirectory()) {
         let mac = SessionFormat.machineName(s.machine, machines)
-        let here = SessionFormat.machineName(local, machines)
         title = s.title.isEmpty ? "(untitled)" : SessionFormat.oneLine(s.title, max: 160)
         var sub = "\(SessionFormat.kindLabel(s.kind)) on \(mac)"
         if let o = SessionFormat.originLabel(s.origin) { sub += " (\(o))" }
@@ -282,13 +282,8 @@ public struct SessionCardText: Equatable, Sendable {
         } else {
             acts.append(Action(key: "⏎", title: s.machine == local || s.machine.isEmpty ? "Resume" : "Resume on \(mac)", primary: true))
         }
-        if s.machine != local && !s.machine.isEmpty && !s.isLive && s.movedTo == nil {
-            acts.append(Action(key: "⌥⏎", title: "Resume here (\(here))", primary: false))
-            resumeHereNote = "continues on \(here), moves ownership; uncommitted work comes along if \(mac) is reachable"
-        } else {
-            resumeHereNote = nil
-        }
-        acts.append(Action(key: "F", title: "Fork", primary: false))
+        resumeHereNote = nil
+        acts.append(Action(key: "⌥⏎", title: "Fork", primary: false))
         acts.append(Action(key: "C", title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
         acts.append(Action(key: "A", title: s.archived ? "Unarchive" : "Archive", primary: false))
         acts.append(Action(key: "⌫", title: "Delete", primary: false))
@@ -305,8 +300,8 @@ public enum HistoryFocus: Equatable, Sendable { case search, list }
 
 public enum HistoryKeyAction: Equatable, Sendable {
     case up, down, pageUp, pageDown, first, last
-    /// ⏎ resume where it ran (live: open the agent); ⌥⏎ resume on this Mac.
-    case resume, resumeHere
+    /// ⏎ resume where it ran (live: open the agent).
+    case resume
     case fork, continueOther, archive, delete, copyID
     /// ⌘F / typing in the list: back to the search field (with the text).
     case focusSearch(String?)
@@ -340,7 +335,7 @@ public enum HistoryKeys {
         case .down: return .down
         case .home where focus == .list: return .first
         case .end where focus == .list: return .last
-        case .enter: return k.option ? .resumeHere : .resume
+        case .enter where !k.option: return .resume
         case .escape: return .close
         case .tab: return k.shift ? .focusSearch(nil) : .focusList
         default: break

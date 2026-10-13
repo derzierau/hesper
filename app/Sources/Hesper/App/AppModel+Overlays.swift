@@ -448,9 +448,6 @@ extension AppModel {
         return true
     }
 
-    /// ⌘O: the selected item's tile.
-    func attentionOpenSelected() -> Bool { attentionKey(.alternate) }
-
     /// Selects an item (a click on it).
     func selectAttention(_ id: String) {
         guard let i = attentionEntries().firstIndex(where: { $0.id == id }) else { return }

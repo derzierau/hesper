@@ -18,7 +18,7 @@ public struct InboxAnswer: Equatable, Sendable {
 
     public var title: String
     public var action: Action
-    /// Its number key (1–9) in the inbox; nil: ⏎ / ⌘O only.
+    /// Its number key (1–9) in the inbox; nil: ⏎ / ⌘⏎ only.
     public var key: Int?
 
     public init(title: String, action: Action, key: Int?) {
@@ -135,8 +135,7 @@ public enum AttentionInbox {
 }
 
 /// The inbox's keys: J/K or ↑/↓ move, 1–9 answer the selected item, ⏎ its
-/// primary answer, ⌘⏎ (and ⌘O, routed by the window) open its tile, esc
-/// closes.
+/// primary answer, ⌘⏎ opens its tile, esc closes.
 public enum InboxKeyAction: Equatable, Sendable {
     case move(Int)
     /// 0-based: the answer with number key `n + 1`.

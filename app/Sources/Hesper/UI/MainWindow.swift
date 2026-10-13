@@ -62,7 +62,6 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
         if model.popover != nil {
             if chord.command && chord.key == .enter { return model.popoverKey(.alternate) }
             if chord.command && chord.key == .char("k") { model.closePopover(); model.perform(.palette); return true }
-            if chord.command && chord.key == .char("o"), model.popover == .attention { return model.attentionOpenSelected() } // ⌘J inbox: open the tile
             if chord.command && !chord.option && !chord.control && !chord.shift && chord.key == .char("w"), model.popover == .background {
                 return model.closeFromTray() // the background tray: ⌘W closes the selected agent
             }

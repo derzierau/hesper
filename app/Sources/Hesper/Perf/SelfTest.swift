@@ -130,7 +130,7 @@ final class SelfTest {
 
         // 3. ⌘J: the inbox. Approval before question, oldest first; the
         // approval answers inline (1 Allow · 2 Always · 3 Deny), free text
-        // opens; J moves, ⌘O opens the tile, ⏎ the first answer, esc closes.
+        // opens; J moves, ⌘⏎ opens the tile, ⏎ the first answer, esc closes.
         await setState(b.id, "question", attention: ["kind": "question", "title": "Question", "detail": "Home or settings?"])
         await Harness.sleep(0.05)
         await setState(c.id, "approval", attention: ["kind": "approval", "title": "Edit", "detail": "x.go", "options": ["allow", "always", "deny"]])
@@ -144,13 +144,13 @@ final class SelfTest {
         check("the approval answers inline, the free-text question opens",
               inbox.first?.answers.map(\.title) == ["Allow", "Always", "Deny"] && inbox.last?.answers.map(\.title) == ["Open"],
               inbox.map { $0.answers.map(\.title).joined(separator: ",") }.joined(separator: " | "))
-        Harness.press("o", keyCode: 0x1F, flags: .command, window: window)
-        check("⌘O opens the selected item's tile", model.popover == nil && model.selectedID == c.id, model.selectedID ?? "nil")
+        Harness.press("\r", keyCode: 36, flags: .command, window: window)
+        check("⌘⏎ opens the selected item's tile", model.popover == nil && model.selectedID == c.id, model.selectedID ?? "nil")
         window.makeFirstResponder(root.wall)
         Harness.press("j", keyCode: 0x26, flags: .command, window: window)
         _ = Harness.press("j", keyCode: 0x26, window: window)
-        Harness.press("o", keyCode: 0x1F, flags: .command, window: window)
-        check("J moves down: ⌘O then opens the question", model.popover == nil && model.selectedID == b.id, model.selectedID ?? "nil")
+        Harness.press("\r", keyCode: 36, flags: .command, window: window)
+        check("J moves down: ⌘⏎ then opens the question", model.popover == nil && model.selectedID == b.id, model.selectedID ?? "nil")
         window.makeFirstResponder(root.wall)
         Harness.press("j", keyCode: 0x26, flags: .command, window: window)
         _ = Harness.press("\r", keyCode: 36, window: window)

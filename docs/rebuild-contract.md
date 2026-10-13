@@ -3120,10 +3120,10 @@ files +/−, uncommitted, ahead/behind, folder on M / folder gone) into a
 slot reserved for it: nothing moves. Actions with keys: **⏎** Resume (on
 its Mac; "Open (live)" when hesperd runs it → that agent's tile or
 window; "Open on M" for a moved entry, which hesperd resumes on the new
-home; running outside Hesper → a toast), **⌥⏎** Resume here ("continues
-on laptop, moves ownership; uncommitted work comes along if mini is
-reachable"; `sessions.resume {id, machine: this Mac}`), **F** Fork,
-**C** Continue in Claude/Codex (the card turns into the brief from
+home; running outside Hesper → a toast), **⌥⏎** Fork, **⌘⏎** Continue
+on the other Mac ("continues on laptop, moves ownership; uncommitted
+work comes along if mini is reachable"; `sessions.resume {id, machine:
+this Mac}`), **C** Continue in Claude/Codex (the card turns into the brief from
 `sessions.brief`, editable, the other kind preselected; ⌘⏎ starts:
 unedited → `sessions.continueAs {id, kind}`; edited → `agents.spawn`
 of that kind in the session's folder on its Mac with the edited text,
@@ -3138,10 +3138,11 @@ two lines (at least 0.8 s, at most 12 s, typing into it hides it).
 
 **Keys** (`HistoryKeys`, the overlay family's): ↑↓ select (also from the
 search field), ⌘↑ ⌘↓ / Home End first / last, page up/down, ⏎ resume,
-⌥⏎ here, ⇥ the list takes the keys (then F C A ⌫ act; typing any other
-character goes back to the search with it), ⇧⇥ / ⌘F the search, ⌘C copy
-id (the field's own copy when text is selected), esc / ⌘Y close; ⌘Z, ⌘K,
-⌘W… stay the window's. A toast never takes the keyboard from the panel.
+⌥⏎ fork, ⌘⏎ continue on the other Mac, ⇥ the All scope with the query
+(⇧⇥ field ↔ list, where F C A ⌫ act; typing any other character goes
+back to the search with it), ⌘F the search, ⌘C copy id (the field's own
+copy when text is selected), esc / ⌘Y close; ⌘K closes the panel for
+the palette; ⌘Z, ⌘W… stay the window's. A toast never takes the keyboard from the panel.
 
 **Ghost cards.** A removed agent (⌘W on an ended one) becomes a dashed
 card in its place on its band's shelf at once (its undo window: ⏎ =
