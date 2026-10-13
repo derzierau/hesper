@@ -996,7 +996,8 @@ UserDefaults `wallArrangement`):
   when an agent comes, goes or moves to/from the shelf — never on approval
   or question. All quiet: the plain fill grid.
 - **B Columns**: one row of full-height cards, `max(min width, width / n)`
-  wide; scrolls sideways, edge fades show cards off screen, the selection
+  wide; scrolls sideways, edge fades show cards off screen (their chevron
+  pill is a button: a click scrolls one page that way), the selection
   scrolls into view.
 - **C Treemap**: squarified, approval/question/error 4, working 2, quiet 1;
   gaps inside the rects, outer margin exact.
@@ -4370,6 +4371,13 @@ J K move in History as in the inbox; ⇧⏎ in History no longer resumes;
 ⌘W in Settings, First Run and the gallery closes that window (File ▸
 Close). The two primitives phase 3 builds the pointer paths with,
 `KeyButton` and `SheetChrome`, are in `docs/design-system.md`.
+
+**Pointer paths (phase 3: bands, sidebar, toolbar, empty wall).** The
+empty wall's three rows are KeyButtons (New agent ⌘N, History ⌘Y while
+hesperd has sessions, Search ⌘K; key caps from the registry) instead of
+one button and two labels. The Columns edge fades' chevron pills are
+buttons that scroll one page (`WallView.page`), with a button role and
+press action for VoiceOver.
 
 ## Wire names kept from Ghosty
 

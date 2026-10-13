@@ -558,6 +558,8 @@ final class WallView: NSView {
         scrollView.verticalScrollElasticity = .automatic
         scrollView.horizontalScrollElasticity = .automatic
         scrollView.contentView.postsBoundsChangedNotifications = true
+        leftFade.onPage = { [weak self] in self?.page(-1) }
+        rightFade.onPage = { [weak self] in self?.page(1) }
         scrollView.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scrollView, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.needsLayout = true }
@@ -684,8 +686,10 @@ final class WallView: NSView {
         }
         order = ids
         syncStrip(model)
-        empty.rootView = EmptyWall(message: items.isEmpty ? model.connectionMessage : nil,
-                                   onNew: { [weak model] in model?.perform(.newAgent) })
+        empty.rootView = EmptyWall(message: items.isEmpty ? model.connectionMessage : nil, historyAvailable: model.historyAvailable,
+                                   onNew: { [weak model] in model?.perform(.newAgent) },
+                                   onHistory: { [weak model] in model?.perform(.history) },
+                                   onSearch: { [weak model] in model?.perform(.palette) })
         empty.isHidden = !items.isEmpty
         if relayout { animateNext = animateNext || animate; needsLayout = true }
     }
@@ -978,6 +982,15 @@ final class WallView: NSView {
         strip.isHidden = true
     }
 
+    /// A fade's chevron pill: the wall scrolls one page (the viewport's
+    /// width) that way, clamped to the content.
+    func page(_ direction: Int) {
+        let clip = scrollView.contentView
+        var o = clip.bounds.origin
+        o.x = max(0, min(frame.width - clip.bounds.width, o.x + CGFloat(direction) * viewport.width))
+        DS.animate(.settle) { clip.animator().setBoundsOrigin(o) } completion: { [weak self] in self?.scrollView.reflectScrolledClipView(clip) }
+    }
+
     /// Shows a soft fade on a side with cards scrolled off it.
     func updateFades() {
         let b = scrollView.contentView.bounds
@@ -1046,17 +1059,30 @@ final class WallView: NSView {
 }
 
 /// A soft gradient at the wall's left or right edge: more cards that way.
+/// Its chevron pill is a button: a click scrolls the wall one page that way.
 final class EdgeFade: NSView {
     private let leading: Bool
+    /// The pill was clicked (the wall pages that way).
+    var onPage: (() -> Void)?
     init(leading: Bool) {
         self.leading = leading
         super.init(frame: .zero)
         isHidden = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(leading ? "Earlier cards" : "More cards")
+        setAccessibilityIdentifier(leading ? "wall.fade.left" : "wall.fade.right")
     }
 
     /// The chevron pill: a Pill-high, twice as tall capsule.
     static let pillWidth = Pill.height
     static let pillHeight = 2 * Pill.height
+
+    /// The pill's rect (the only part that takes clicks).
+    private var pillRect: NSRect {
+        let w = Self.pillWidth, h = Self.pillHeight
+        return NSRect(x: leading ? DS.Spacing.m : bounds.width - w - DS.Spacing.m, y: bounds.midY - h / 2, width: w, height: h)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let bg = Theme.windowBG
@@ -1064,8 +1090,7 @@ final class EdgeFade: NSView {
                            atLocations: [0, 0.35, 1], colorSpace: .sRGB)
         g?.draw(in: bounds, angle: leading ? 0 : 180)
         // A small chevron pill: more cards that way.
-        let w = Self.pillWidth, h = Self.pillHeight, r = w / 2
-        let pill = NSRect(x: leading ? DS.Spacing.m : bounds.width - w - DS.Spacing.m, y: bounds.midY - h / 2, width: w, height: h)
+        let pill = pillRect, r = pill.width / 2
         Theme.ns(.surface).setFill()
         NSBezierPath(roundedRect: pill, xRadius: r, yRadius: r).fill()
         Theme.tileBorder.setStroke()
@@ -1085,15 +1110,25 @@ final class EdgeFade: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    /// Only the pill is a target; the gradient lets clicks reach the cards.
+    override func hitTest(_ point: NSPoint) -> NSView? { pillRect.contains(convert(point, from: superview)) ? self : nil }
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {
+        if pillRect.contains(convert(event.locationInWindow, from: nil)) { onPage?() }
+    }
+    override func accessibilityPerformPress() -> Bool { onPage?(); return true }
+    override func resetCursorRects() { addCursorRect(pillRect, cursor: .pointingHand) }
 }
 
-/// No agents yet (or no daemon): "Nothing running." in Geist 28 and the
-/// three keys that start something: ⌘N new agent (clickable), ⌘Y history,
-/// ⌘K search.
+/// No agents yet (or no daemon): "Nothing running." in Geist 28 and three
+/// KeyButtons that start something: New agent ⌘N, History ⌘Y (when hesperd
+/// has sessions), Search ⌘K; the key caps come from the command registry.
 struct EmptyWall: View {
     var message: String?
+    var historyAvailable = true
     var onNew: () -> Void
+    var onHistory: () -> Void = {}
+    var onSearch: () -> Void = {}
 
     var body: some View {
         VStack(spacing: DS.Spacing.l) {
@@ -1110,11 +1145,14 @@ struct EmptyWall: View {
                 .accessibilityIdentifier("wall.empty")
             } else {
                 VStack(alignment: .leading, spacing: DS.Spacing.s) {
-                    Button(action: onNew) { key("⌘N", "new agent") }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("New agent, Command N")
-                    key("⌘Y", "history")
-                    key("⌘K", "search")
+                    KeyButton("New agent", kbd: Self.key(.newAgent), variant: .primary(.working), action: onNew)
+                        .accessibilityIdentifier("wall.empty.new")
+                    if historyAvailable {
+                        KeyButton("History", kbd: Self.key(.history), action: onHistory)
+                            .accessibilityIdentifier("wall.empty.history")
+                    }
+                    KeyButton("Search", kbd: Self.key(.palette), action: onSearch)
+                        .accessibilityIdentifier("wall.empty.search")
                 }
                 .accessibilityIdentifier("wall.empty")
             }
@@ -1122,14 +1160,7 @@ struct EmptyWall: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func key(_ keys: String, _ what: String) -> some View {
-        HStack(spacing: DS.Spacing.m) {
-            Kbd(keys)
-            Text(what).font(DS.font(.body)).foregroundStyle(Theme.fg2)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-    }
+    private static func key(_ id: CommandID) -> String? { CommandRegistry.labels(id).first }
 }
 
 extension KeyChord {
