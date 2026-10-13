@@ -9,7 +9,7 @@ import HesperCore
 /// nothing to act on shows disabled (its reason as the tooltip) instead
 /// of doing nothing. The dynamic parts stay with their owners: the layout
 /// checkmarks and Dense Cards (`arrangement`, `dense`), Edit ▸ Undo's
-/// title (`undoLabel`), the Desks submenu (DeskController's `desksMenu`),
+/// title (`undoKind`), the Desks submenu (DeskController's `desksMenu`),
 /// History hidden while unsupported (HistoryMenu.track on `items[.history]`)
 /// and the window list (AppKit's, on the Window menu).
 @MainActor
@@ -19,8 +19,9 @@ final class MenuBuilder: NSObject, NSMenuItemValidation, NSMenuDelegate {
     /// The View menu's checkmarks: the frontmost wall's layout and width.
     var arrangement: @MainActor () -> Int = { 0 }
     var dense: @MainActor () -> Bool = { false }
-    /// What ⌘Z would undo ("Close", "Move"), nil for a plain "Undo".
-    var undoLabel: @MainActor () -> String? = { nil }
+    /// What ⌘Z would undo on the app's stack; nil for a plain "Undo" (a
+    /// text view's own undo).
+    var undoKind: @MainActor () -> UndoKind? = { nil }
     /// Window ▸ Desks (DeskController fills it when it opens).
     var desksMenu: NSMenu?
 
@@ -33,7 +34,8 @@ final class MenuBuilder: NSObject, NSMenuItemValidation, NSMenuDelegate {
         self.context = context
     }
 
-    /// Builds the menu bar and installs it (main, windows and services menus).
+    /// Builds the menu bar and installs it (main, windows, services and
+    /// help menus; AppKit adds the window list and Help's search field).
     func install() {
         let main = NSMenu()
         for menu in MenuModel.build().menus {
@@ -58,6 +60,7 @@ final class MenuBuilder: NSObject, NSMenuItemValidation, NSMenuDelegate {
         items[.desks]?.submenu = desksMenu
         NSApp.mainMenu = main
         NSApp.windowsMenu = menus[.window]
+        NSApp.helpMenu = menus[.help]
     }
 
     private func makeItem(_ id: CommandID, title: String, chord: KeyChord?) -> NSMenuItem {
@@ -160,7 +163,8 @@ final class MenuBuilder: NSObject, NSMenuItemValidation, NSMenuDelegate {
             for (i, _) in WallArrangement.allCases.enumerated() { items[.arrangement(i)]?.state = i == current ? .on : .off }
             items[.toggleDense]?.state = dense() ? .on : .off
         } else if menu === menus[.edit] {
-            items[.undo]?.title = undoLabel().map { "Undo \($0)" } ?? "Undo"
+            items[.undo]?.title = MenuModel.undoTitle(undoKind())
+
         }
     }
 }

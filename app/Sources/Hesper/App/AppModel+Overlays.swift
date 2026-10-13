@@ -9,7 +9,18 @@ enum UndoAction: Sendable, Equatable {
     case restoreDraft(Draft)
     /// Shared history: a deleted session (hesperd keeps it 30 s).
     case restoreSession(String)
+
+    /// What Edit ▸ Undo calls it.
+    var kind: UndoKind {
+        switch self {
+        case .reopen(let agents): return agents.count == 1 ? .closeAgent : .tidyUp
+        case .moveBack: return .move
+        case .restoreDraft: return .discardDraft
+        case .restoreSession: return .deleteSession
+        }
+    }
 }
+
 
 /// An agent answered from the ⌘J inbox: the state it answered (a new
 /// question from it is a new item) and when (keys right after an answer

@@ -4522,8 +4522,15 @@ turns it into NSMenus, AppKit selectors for the standard items and
 registry's availability (disabled items carry the reason as a tooltip;
 Routines is a hidden placeholder for its branch). The dynamic parts keep
 their owners: layout checkmarks, Dense Cards and the Undo title (Edit ▸
-Undo names the action; "Undo Close or Move" is gone), the Desks submenu,
-History hidden while hesperd has no sessions.*, the window list. The ⌘K
+Undo names the action from the app's undo stack, `UndoKind`: "Undo Close
+Agent", "Undo Tidy Up", "Undo Move", "Undo Discard Draft", "Undo Delete
+Session", plain "Undo" with nothing to undo and while a text view has
+the keyboard, whose own undo then runs up the responder chain; "Undo
+Close or Move" is gone), the Desks submenu, History hidden while hesperd
+has no sessions.*, the window list. The Services, Window and Help menus
+are registered with AppKit (`servicesMenu`, `windowsMenu`, `helpMenu`),
+so the window list and Help's search field come from it. The ⌘K
+
 palette's "Actions" rows and Settings › Shortcuts (`ShortcutList.groups`,
 by surface) read the table; Help ▸ Keyboard Shortcuts ⌘/ is wired to a
 stub until phase 4's sheet. `KeyChord.label` / `KeyChord(label:)` are the

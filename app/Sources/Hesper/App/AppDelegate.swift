@@ -154,7 +154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return WallArrangement.allCases.firstIndex(of: self.windows.activeWall.model.arrangement) ?? 0
         }
         menus.dense = { [weak self] in (self?.windows.activeWall.model.minChars ?? 80) < 80 }
-        menus.undoLabel = { [weak self] in self?.windows.activeModel?.undoToast?.label }
+        menus.undoKind = { [weak self] in NSApp.keyWindow?.firstResponder is NSText ? nil : self?.windows.activeModel?.undoToast?.action.kind }
+
         menus.desksMenu = windows.desks.desksMenu
         menus.install()
         if let history = menus.items[.history] { HistoryMenu.track(history, model: model) } // hidden while hesperd has no sessions.*

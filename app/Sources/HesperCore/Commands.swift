@@ -587,7 +587,30 @@ public struct MenuModel: Equatable, Sendable {
 
     /// The menu's items (none for an unknown menu).
     public subscript(_ bar: MenuBar) -> [Item] { menus.first { $0.bar == bar }?.items ?? [] }
+
+    /// Edit ▸ Undo's title names what ⌘Z would undo ("Undo Close Agent",
+    /// "Undo Move"); "Undo" with nothing on the app's stack, and while a
+    /// text view has the keyboard (its own undo, up the responder chain).
+    public static func undoTitle(_ kind: UndoKind?) -> String {
+        kind.map { "Undo \($0.verb)" } ?? "Undo"
+    }
 }
+
+/// What the app's undo stack can hold, for the Undo title.
+public enum UndoKind: Equatable, Sendable {
+    case closeAgent, tidyUp, move, discardDraft, deleteSession
+
+    public var verb: String {
+        switch self {
+        case .closeAgent: return "Close Agent"
+        case .tidyUp: return "Tidy Up"
+        case .move: return "Move"
+        case .discardDraft: return "Discard Draft"
+        case .deleteSession: return "Delete Session"
+        }
+    }
+}
+
 
 // MARK: Shortcut groups
 
