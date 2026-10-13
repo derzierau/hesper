@@ -482,7 +482,8 @@ struct OverflowMenuButton: NSViewRepresentable {
                     menu.addItem(.separator())
                 case .command(let id, let title, let chord):
                     let act = MenuAction { [actions] in actions.command(id) }
-                    let mi = NSMenuItem(title: id == .enterFullScreen && fullScreen ? "Exit Full Screen" : title,
+                    let mi = NSMenuItem(title: id == .enterFullScreen ? MenuModel.fullScreenTitle(inFullScreen: fullScreen) : title,
+
                                         action: #selector(MenuAction.run), keyEquivalent: "")
                     mi.target = act
                     mi.representedObject = act

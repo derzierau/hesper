@@ -172,12 +172,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// What the menus validate against: the key window's model.
     func commandContext() -> CommandContext {
         let kind: KeyWindowKind = NSApp.keyWindow is AgentWindow ? .agentWindow : windows.activeModel == nil ? .other : .wall
+        let fullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) ?? false
         guard let m = windows.activeModel else {
             return CommandContext(keyWindow: .other, reviewCount: model.reviewHub.items.count,
-                                  canUndo: NSApp.keyWindow?.firstResponder is NSText, historySupported: HistoryHub.shared(for: model).supported == true)
+                                  canUndo: NSApp.keyWindow?.firstResponder is NSText, historySupported: HistoryHub.shared(for: model).supported == true,
+                                  inFullScreen: fullScreen)
         }
-        return m.commandContext(keyWindow: kind, textHasFocus: NSApp.keyWindow?.firstResponder is NSText)
+        return m.commandContext(keyWindow: kind, textHasFocus: NSApp.keyWindow?.firstResponder is NSText,
+                                isHomeWall: windows.walls.first?.model === m, inFullScreen: fullScreen)
     }
+
 
     /// Runs a menu (or palette) command. AppCommands go to the key
     /// window's model as the keys would; the rest are the app's and the

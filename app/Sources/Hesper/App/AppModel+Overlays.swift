@@ -562,13 +562,15 @@ extension AppModel {
     // MARK: Palette
 
     /// The registry's picture of this model (menus, palette rows).
-    func commandContext(keyWindow: KeyWindowKind = .wall, textHasFocus: Bool = false) -> CommandContext {
+    func commandContext(keyWindow: KeyWindowKind = .wall, textHasFocus: Bool = false, isHomeWall: Bool = false, inFullScreen: Bool = false) -> CommandContext {
         CommandContext(selectedState: current?.state, selectedRunning: current?.isRunning ?? false, mode: mode, keyWindow: keyWindow,
                        hasDraft: editingDraftID != nil || selectedDraft != nil, reviewCount: reviewHub.items.count, wallEmpty: wall.isEmpty,
                        canReopen: closeBook.reopen.top != nil, canUndo: undoToast != nil || textHasFocus,
                        historySupported: HistoryHub.shared(for: self).supported == true, historyOpen: HistoryPanelHost.isOpen(self),
-                       reviewOpen: ReviewPanelHost.isOpen(self), paletteOpen: showPalette, popoverOpen: popover != nil)
+                       reviewOpen: ReviewPanelHost.isOpen(self), paletteOpen: showPalette, popoverOpen: popover != nil,
+                       isHomeWall: isHomeWall, inFullScreen: inFullScreen)
     }
+
 
     func togglePalette() {
         closePopover()

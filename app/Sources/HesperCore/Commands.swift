@@ -113,14 +113,19 @@ public struct CommandContext: Equatable, Sendable {
     public var reviewOpen: Bool
     public var paletteOpen: Bool
     public var popoverOpen: Bool
+    /// The key window is the desk's first wall (Make Home Wall is done).
+    public var isHomeWall: Bool
+    /// The key window is in full screen (the View item says Exit).
+    public var inFullScreen: Bool
 
     public init(selectedState: AgentState? = nil, selectedRunning: Bool = false, mode: AppMode = .wall, keyWindow: KeyWindowKind = .wall,
                 hasDraft: Bool = false, reviewCount: Int = 0, wallEmpty: Bool = true, canReopen: Bool = false, canUndo: Bool = false,
-                historySupported: Bool = true, historyOpen: Bool = false, reviewOpen: Bool = false, paletteOpen: Bool = false, popoverOpen: Bool = false) {
+                historySupported: Bool = true, historyOpen: Bool = false, reviewOpen: Bool = false, paletteOpen: Bool = false, popoverOpen: Bool = false,
+                isHomeWall: Bool = false, inFullScreen: Bool = false) {
         self.selectedState = selectedState; self.selectedRunning = selectedRunning; self.mode = mode; self.keyWindow = keyWindow
         self.hasDraft = hasDraft; self.reviewCount = reviewCount; self.wallEmpty = wallEmpty; self.canReopen = canReopen; self.canUndo = canUndo
         self.historySupported = historySupported; self.historyOpen = historyOpen; self.reviewOpen = reviewOpen
-        self.paletteOpen = paletteOpen; self.popoverOpen = popoverOpen
+        self.paletteOpen = paletteOpen; self.popoverOpen = popoverOpen; self.isHomeWall = isHomeWall; self.inFullScreen = inFullScreen
     }
 
     /// No window in front: what the palette and the shortcuts list use.
@@ -418,7 +423,8 @@ public enum CommandRegistry {
         Command(.denyWithMessage, "Deny…", menu: MenuPath(.agents, 2, 2), chord: .plain("n"), surfaces: [.wall], availability: awaitingApproval),
         Command(.backgroundAgent, "Send to Background", menu: MenuPath(.agents, 3, 0), chord: .cmd("w", option: true), surfaces: [.everywhere],
                 availability: selected),
-        Command(.killAgent, "Kill", menu: MenuPath(.agents, 3, 1), chord: .cmd("w", control: true), surfaces: [.everywhere], availability: selected),
+        Command(.killAgent, "Kill", menu: MenuPath(.agents, 3, 1), chord: .cmd("w", control: true), surfaces: [.everywhere],
+                availability: { !$0.hasSelection ? .disabled("Select an agent first") : $0.selectedRunning ? .enabled : .disabled("The selected agent isn't running") }),
         Command(.tidyUp, "Tidy Up Finished Agents", menu: MenuPath(.agents, 3, 2), chord: .cmd("w", shift: true), surfaces: [.everywhere], palette: true,
                 availability: { $0.keyWindow == .other ? .disabled("Bring a wall in front") : $0.wallEmpty ? .disabled("Nothing to tidy up") : .enabled }),
         Command(.reopenClosed, "Reopen Closed Agent", menu: MenuPath(.agents, 3, 3), chord: .cmd("t", shift: true), surfaces: [.everywhere], palette: true,
@@ -462,7 +468,8 @@ public enum CommandRegistry {
         Command(.minimize, "Minimize", menu: MenuPath(.window, 0, 0), chord: .cmd("m"), surfaces: [.everywhere]),
         Command(.zoom, "Zoom", menu: MenuPath(.window, 0, 1)),
         Command(.showWall, "Show Wall", menu: MenuPath(.window, 1, 0), chord: .cmd("0", shift: true), surfaces: [.everywhere]),
-        Command(.makeHomeWall, "Make Home Wall", menu: MenuPath(.window, 1, 1), availability: onWall),
+        Command(.makeHomeWall, "Make Home Wall", menu: MenuPath(.window, 1, 1),
+                availability: { $0.keyWindow != .wall ? .disabled("Bring a wall in front") : $0.isHomeWall ? .disabled("This is the home wall") : .enabled }),
         Command(.desks, "Desks", menu: MenuPath(.window, 2, 0)),
         Command(.deskPicker, "Desk Picker…", menu: MenuPath(.window, 2, 1), chord: .cmd("d", shift: true), surfaces: [.everywhere]),
         Command(.saveDeskAs, "Save Desk As…", menu: MenuPath(.window, 2, 2)),
@@ -594,7 +601,13 @@ public struct MenuModel: Equatable, Sendable {
     public static func undoTitle(_ kind: UndoKind?) -> String {
         kind.map { "Undo \($0.verb)" } ?? "Undo"
     }
+
+    /// View ▸ Enter Full Screen reads Exit while the key window is in it.
+    public static func fullScreenTitle(inFullScreen: Bool) -> String {
+        inFullScreen ? "Exit Full Screen" : "Enter Full Screen"
+    }
 }
+
 
 /// What the app's undo stack can hold, for the Undo title.
 public enum UndoKind: Equatable, Sendable {

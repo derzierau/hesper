@@ -4547,6 +4547,20 @@ plus: every shortcut in the README's "Using it" table is registered, the
 generated menu tree equals the spec's menu table, Close / Kill / Move are
 disabled with nothing selected and Routines is hidden.
 
+**Validation** (`MenuModelTests`): every generated item asks the
+registry with the key window's `CommandContext`. Allow, Always Allow and
+Deny… are enabled only while the selected agent waits on an approval;
+Close, Background, Move and Rename… need a selected agent (Close also
+takes a draft, and closes the window off a wall); Kill needs one that is
+running, Resume one that has ended; Open in New Window / Tab need a
+selected agent on a wall (not in an agent window); Make Home Wall is
+enabled on a wall that is not the desk's first (`isHomeWall`); View ▸
+Enter Full Screen reads Exit Full Screen while the key window is in it
+(`inFullScreen`, also the toolbar's ⋯ menu). The standard AppKit items
+(About, Hide, Cut, Copy, Paste, Minimize, Zoom, …) validate up the
+responder chain as in any Mac app.
+
+
 **Bindings that changed with the registry.** ⌥⌘↑ ⌥⌘↓ step bands
 everywhere (View ▸ Previous / Next Band; ⌥↑ ⌥↓ stay wall-only aliases);
 J K move in History as in the inbox; ⇧⏎ in History no longer resumes;

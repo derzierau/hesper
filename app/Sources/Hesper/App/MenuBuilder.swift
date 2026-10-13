@@ -162,7 +162,9 @@ final class MenuBuilder: NSObject, NSMenuItemValidation, NSMenuDelegate {
             let current = arrangement()
             for (i, _) in WallArrangement.allCases.enumerated() { items[.arrangement(i)]?.state = i == current ? .on : .off }
             items[.toggleDense]?.state = dense() ? .on : .off
+            items[.enterFullScreen]?.title = MenuModel.fullScreenTitle(inFullScreen: context().inFullScreen)
         } else if menu === menus[.edit] {
+
             items[.undo]?.title = MenuModel.undoTitle(undoKind())
 
         }

@@ -17,4 +17,68 @@ import Testing
         #expect(MenuModel.undoTitle(.discardDraft) == "Undo Discard Draft")
         #expect(MenuModel.undoTitle(.deleteSession) == "Undo Delete Session")
     }
+
+    @Test func fullScreenTitleToggles() {
+        #expect(MenuModel.fullScreenTitle(inFullScreen: false) == "Enter Full Screen")
+        #expect(MenuModel.fullScreenTitle(inFullScreen: true) == "Exit Full Screen")
+    }
+
+    // MARK: Validation
+
+    private func availability(_ id: CommandID, _ c: CommandContext) -> Availability { CommandRegistry.command(id)!.availability(c) }
+    private func isDisabled(_ id: CommandID, _ c: CommandContext) -> Bool { if case .disabled = availability(id, c) { return true }; return false }
+
+    static let working = CommandContext(selectedState: .working, selectedRunning: true)
+    static let approval = CommandContext(selectedState: .approval, selectedRunning: true)
+    static let exited = CommandContext(selectedState: .exited, selectedRunning: false)
+    static let nothing = CommandContext()
+
+    /// Allow / Always Allow / Deny… only while the selected agent waits on
+    /// an approval.
+    @Test func approvalItemsFollowTheSelectedState() {
+        for id in [CommandID.answer(.allow), .answer(.always), .denyWithMessage] {
+            #expect(availability(id, Self.approval) == .enabled)
+            #expect(isDisabled(id, Self.working))
+            #expect(isDisabled(id, Self.exited))
+            #expect(isDisabled(id, Self.nothing))
+            #expect(isDisabled(id, CommandContext(selectedState: .approval, keyWindow: .other)), "no wall in front")
+        }
+    }
+
+    /// Close, Kill, Background, Move, Rename and Resume per state.
+    @Test func lifecycleItemsFollowTheSelectedState() {
+        for id in [CommandID.closeAgent, .killAgent, .backgroundAgent, .moveAgent, .renameAgent] {
+            #expect(availability(id, Self.working) == .enabled, "\(id)")
+            #expect(isDisabled(id, Self.nothing), "\(id) with nothing selected")
+        }
+        // An ended agent: Resume, not Kill.
+        #expect(isDisabled(.killAgent, Self.exited))
+        #expect(availability(.resumeAgent, Self.exited) == .enabled)
+        #expect(isDisabled(.resumeAgent, Self.working))
+        #expect(isDisabled(.resumeAgent, Self.nothing))
+        #expect(availability(.closeAgent, Self.exited) == .enabled)
+        #expect(availability(.renameAgent, Self.exited) == .enabled)
+        // Settings in front: the lifecycle chords do nothing (⌘W closes the window).
+        let settings = CommandContext(selectedState: .working, selectedRunning: true, keyWindow: .other)
+        for id in [CommandID.killAgent, .backgroundAgent, .moveAgent, .renameAgent, .resumeAgent] { #expect(isDisabled(id, settings), "\(id)") }
+        #expect(availability(.closeAgent, settings) == .enabled)
+    }
+
+    /// Open in New Window / Tab need a selected agent on a wall.
+    @Test func openInNewWindowNeedsASelectedAgentOnAWall() {
+        for id in [CommandID.openInNewWindow, .openInNewTab] {
+            #expect(availability(id, Self.working) == .enabled)
+            #expect(isDisabled(id, Self.nothing))
+            #expect(isDisabled(id, CommandContext(selectedState: .working, keyWindow: .agentWindow)))
+            #expect(isDisabled(id, CommandContext(selectedState: .working, keyWindow: .other)))
+        }
+    }
+
+    @Test func makeHomeWallOnlyOnAnotherWall() {
+        #expect(availability(.makeHomeWall, CommandContext(isHomeWall: false)) == .enabled)
+        #expect(isDisabled(.makeHomeWall, CommandContext(isHomeWall: true)))
+        #expect(isDisabled(.makeHomeWall, CommandContext(keyWindow: .agentWindow)))
+        #expect(isDisabled(.makeHomeWall, CommandContext(keyWindow: .other)))
+    }
 }
+
