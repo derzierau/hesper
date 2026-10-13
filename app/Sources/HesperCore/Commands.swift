@@ -604,6 +604,23 @@ public struct MenuModel: Equatable, Sendable {
     /// The menu's items (none for an unknown menu).
     public subscript(_ bar: MenuBar) -> [Item] { menus.first { $0.bar == bar }?.items ?? [] }
 
+    /// The Dock menu: the app's main ways in, with the registry's titles.
+    public static let dock: [CommandID] = [.newAgent, .nextAttention, .history, .review]
+
+    public static func dockItems(registry: [Command] = CommandRegistry.all, context: CommandContext = .none) -> [Item] {
+        items(dock, registry: registry, context: context)
+    }
+
+    /// `ids` as items with their registry titles and chords; a hidden one
+    /// (History while hesperd has no sessions.*) is left out.
+    static func items(_ ids: [CommandID], registry: [Command], context: CommandContext) -> [Item] {
+        ids.compactMap { id in
+            guard let c = registry.first(where: { $0.id == id }), c.availability(context) != .hidden else { return nil }
+            return .command(id, title: c.title, chord: c.chord)
+        }
+    }
+
+
     /// Edit ▸ Undo's title names what ⌘Z would undo ("Undo Close Agent",
     /// "Undo Move"); "Undo" with nothing on the app's stack, and while a
     /// text view has the keyboard (its own undo, up the responder chain).

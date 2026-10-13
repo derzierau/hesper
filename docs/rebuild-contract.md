@@ -4529,7 +4529,12 @@ the keyboard, whose own undo then runs up the responder chain; "Undo
 Close or Move" is gone), the Desks submenu, History hidden while hesperd
 has no sessions.*, the window list. The Services, Window and Help menus
 are registered with AppKit (`servicesMenu`, `windowsMenu`, `helpMenu`),
-so the window list and Help's search field come from it. The ⌘K
+so the window list and Help's search field come from it. The Dock menu
+(`MenuModel.dockItems`, `applicationDockMenu`) is New Agent, Needs You…,
+History (while supported) and Review with the registry's titles; each
+brings the wall in front first, and Review opens the sheet rather than
+toggling it. The ⌘K
+
 
 palette's "Actions" rows and Settings › Shortcuts (`ShortcutList.groups`,
 by surface) read the table; Help ▸ Keyboard Shortcuts ⌘/ is wired to a

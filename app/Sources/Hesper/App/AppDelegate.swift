@@ -116,6 +116,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// The Dock menu: New Agent, Needs You…, History, Review, from the
+    /// registry. Each brings the wall in front first, as the status item does.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        for case .command(let id, let title, _) in MenuModel.dockItems(context: commandContext()) {
+            let i = NSMenuItem(title: title, action: #selector(runDockItem(_:)), keyEquivalent: "")
+            i.target = self
+            i.representedObject = CommandRef(id)
+            i.setAccessibilityIdentifier("dock.\(id.key)")
+            menu.addItem(i)
+        }
+        return menu
+    }
+
+    @objc private func runDockItem(_ sender: NSMenuItem) {
+        guard let ref = sender.representedObject as? CommandRef else { return }
+        showWindow()
+        switch ref.id {
+        case .review: windows.frontModel.openReview(select: nil) // opens, never toggles closed
+        default: if let cmd = KeyRouter.command(for: ref.id) { windows.frontModel.perform(cmd) } else { run(ref.id) }
+        }
+    }
+
+
     func applicationWillTerminate(_ notification: Notification) {
         windows?.restorer.saveNow() // window layer: state restoration
     }

@@ -7,6 +7,11 @@ import Testing
 // validation outcomes the menus show for the states that matter.
 
 @Suite struct MenuModelTests {
+    /// The command ids of `items`, in order (separators left out).
+    private func ids(_ items: [MenuModel.Item]) -> [CommandID] {
+        items.compactMap { if case .command(let id, _, _) = $0 { return id }; return nil }
+    }
+
     // MARK: Dynamic titles
 
     @Test func undoTitleNamesTheAction() {
@@ -23,7 +28,21 @@ import Testing
         #expect(MenuModel.fullScreenTitle(inFullScreen: true) == "Exit Full Screen")
     }
 
+    // MARK: Dock
+
+    @Test func dockMenuListsTheWaysIn() {
+        let items = MenuModel.dockItems()
+        #expect(items == [.command(.newAgent, title: "New Agent", chord: KeyChord(.char("n"), command: true)),
+                          .command(.nextAttention, title: "Needs You…", chord: KeyChord(.char("j"), command: true)),
+                          .command(.history, title: "History", chord: KeyChord(.char("y"), command: true)),
+                          .command(.review, title: "Review", chord: KeyChord(.char("r"), command: true))])
+        // History leaves when hesperd has no sessions.*, as in the menu bar.
+        #expect(ids(MenuModel.dockItems(context: CommandContext(historySupported: false))) == [.newAgent, .nextAttention, .review])
+
+    }
+
     // MARK: Validation
+
 
     private func availability(_ id: CommandID, _ c: CommandContext) -> Availability { CommandRegistry.command(id)!.availability(c) }
     private func isDisabled(_ id: CommandID, _ c: CommandContext) -> Bool { if case .disabled = availability(id, c) { return true }; return false }
