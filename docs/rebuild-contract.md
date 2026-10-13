@@ -1329,9 +1329,9 @@ into a one-line message field
 in place. ⌘W stops at once / removes at once (committed after 6 s) with
 an undo toast (⌘Z, its button); stop undoes by resuming; only removing
 an agent whose local worktree has uncommitted changes (`git status
---porcelain`) asks, inline on the tile (⏎ remove anyway, esc keep, while
-the wall has the keyboard; in focus or on an active tile the terminal
-keeps ⏎ and esc and the strip's buttons answer).
+--porcelain`) asks, inline on the tile (Close anyway ⏎ · Keep esc as
+KeyButtons; the strip takes the keyboard while it shows and gives it
+back after: "pointer paths" below).
 Settings ⌘, is a window (General: layout, tile font, min width; Quick
 Launch; Notifications; Profiles per kind). Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
@@ -1713,6 +1713,23 @@ agent window: `GhosttySurfaceView.rightMouseDown`, `TerminalMenuHost`)
 shows the tile's menu with a Terminal submenu (Copy, Paste, Select All on
 that surface); when the menu closes libghostty still gets the click
 (press and release), so a TUI that reports the mouse sees it.
+
+**Strips take the keyboard.** The close strip (needs you, a running
+command, its worktree) and the move strip (it's working, processes stay
+here, the other Mac can't take it) become first responder when they
+appear (`StripKeys` / `StripKeyView` behind the row), draw a
+`DS.focusRing` (1 px) ring in their tone (`error` for a close that drops
+something, `working` for keeping the worktree and for moves) and own ⏎
+and esc in their `keyDown`; every other key goes up the responder chain,
+so the wall's arrows still move the selection. `MainWindow.sendEvent`
+routes nothing to a strip any more. Their buttons are KeyButtons: Close
+anyway / Keep worktree ⏎ (primary), Discard, Keep esc (`close.primary`,
+`close.secondary`, `close.cancel`); Interrupt and move / Move anyway ⏎,
+Cancel esc (`move.primary`, `move.cancel`). When the strip goes
+(answered, or the agent left) the keyboard returns to where it was: the
+agent of an active tile or the focus view, else the wall; clicking the
+terminal takes it back at any time. A strip that is not first responder
+(the wall was clicked) gets nothing: its buttons answer it.
 
 #### As built — drop to attach
 

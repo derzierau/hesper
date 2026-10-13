@@ -151,6 +151,8 @@ enum DS {
     /// No chrome element is taller than this.
     static let chromeMaxHeight = CGFloat(DesignTokens.Chrome.maxHeight)
     static let bandGap = CGFloat(DesignTokens.Chrome.bandGap)
+    /// The focus ring of a strip that has the keyboard.
+    static let focusRing = CGFloat(DesignTokens.Chrome.focusRing)
 
     /// The wall's density (Settings; AppSettings keeps it in sync).
     @MainActor static var density: Density = .default {

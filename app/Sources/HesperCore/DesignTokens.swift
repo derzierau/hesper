@@ -58,6 +58,9 @@ public enum DesignTokens {
         public static let maxHeight: Double = 28
         /// Between bands (projects) on the wall.
         public static let bandGap: Double = 16
+        /// The ring a strip draws in its mark's tone while it has the
+        /// keyboard (⏎ / esc go to it).
+        public static let focusRing: Double = 1
     }
 
     /// Wall density: one token set, two modes.

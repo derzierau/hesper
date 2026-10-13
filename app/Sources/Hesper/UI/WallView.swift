@@ -506,6 +506,12 @@ final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
         while let s = v, !(s is WallView) { v = s.superview }
         return v
     }
+
+    /// A strip that had the keyboard went away: the keys go back to where
+    /// they were, the agent (an active tile) or the wall.
+    func handBackFocus() {
+        if isActive { terminal.focusInput() } else { window?.makeFirstResponder(enclosingWall) }
+    }
 }
 
 /// The wall: every agent as a live card, and drafts (new agents being
@@ -1012,7 +1018,7 @@ final class WallView: NSView {
         guard let model else { return }
         let chord = KeyChord(event: event)
         // An inline question on the selected tile (a close or move asking)
-        // took ⏎ and esc already: MainWindow.sendEvent.
+        // has the keyboard while it shows: its ⏎ and esc never get here.
         // The active tile whose read-write terminal hasn't taken the
         // keyboard yet (it swaps in ≤ 800 ms after "start typing"): its keys
         // still go to the agent, in order.

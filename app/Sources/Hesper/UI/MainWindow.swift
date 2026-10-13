@@ -23,35 +23,9 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     private var textHasFocus: Bool { firstResponder is NSText }
     private var composerHasFocus: Bool { firstResponder is ComposerTextView }
 
-    /// A terminal (focus, an active tile) or a composer with the keyboard
-    /// keeps every plain key: a strip that is merely visible never takes
-    /// ⏎ or esc from the agent (its buttons answer it).
-    private var terminalOrComposerHasFocus: Bool { firstResponder is GhosttySurfaceView || firstResponder is ComposerTextView }
-
-    /// A close asking on the agent's strip (needs you, a running command,
-    /// its worktree) takes ⏎ and esc first while the wall has the keyboard.
-    private func closeStripKey(_ event: NSEvent) -> Bool {
-        if moveStripKey(event) { return true }
-        guard event.type == .keyDown, let model, let p = model.closeConfirm, !model.showPalette, model.popover == nil,
-              !terminalOrComposerHasFocus, model.current?.id == p.id || model.selectedID == p.id else { return false }
-        let chord = KeyChord(event: event)
-        guard chord.plain && !chord.shift else { return false }
-        if chord.key == .enter { model.confirmClose(); return true }
-        if chord.key == .escape { model.cancelClose(); return true }
-        return false
-    }
-
-    /// A move asking on the agent's strip (it's working, processes stay
-    /// here, the other Mac can't take it): ⏎ goes on, esc dismisses.
-    private func moveStripKey(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown, let model, let p = model.moveConfirm, !model.showPalette, model.popover == nil,
-              !terminalOrComposerHasFocus, model.current?.id == p.id || model.selectedID == p.id else { return false }
-        let chord = KeyChord(event: event)
-        guard chord.plain && !chord.shift else { return false }
-        if chord.key == .enter { model.confirmMove(); return true }
-        if chord.key == .escape { model.cancelMove(); return true }
-        return false
-    }
+    // A close or move asking on the agent's strip owns its ⏎ and esc
+    // itself: the strip is first responder while it shows (StripKeys in
+    // TileParts), and the window routes nothing to it.
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let model, event.type == .keyDown else { return super.performKeyEquivalent(with: event) }
@@ -104,7 +78,6 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     }
 
     override func sendEvent(_ event: NSEvent) {
-        if closeStripKey(event) { return } // closing agents: the strip's ⏎ / esc
         if event.type == .keyDown, !(model?.showPalette ?? false), HistoryPanelHost.handleKey(event, window: self) { return } // shared history
         if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, ReviewPanelHost.handleKey(event, window: self) { return } // review
         if event.type == .keyDown, let model {

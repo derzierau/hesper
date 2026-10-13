@@ -200,9 +200,9 @@ struct AttentionBar: View {
     var body: some View {
         Group {
             if let closeStrip {
-                CloseStripRow(strip: closeStrip, tight: tight)
+                CloseStripRow(strip: closeStrip)
             } else if let moveStrip {
-                MoveStripRow(strip: moveStrip, tight: tight)
+                MoveStripRow(strip: moveStrip)
             } else if let moveProgress {
                 MoveProgressRow(line: moveProgress)
             } else if agent.state == .approval, let deny {
@@ -458,13 +458,13 @@ extension AttentionBar {
 }
 
 /// The close's one question, in the agent's band: "It's waiting for you ·
-/// Close anyway ⏎ · Esc", "npm run dev is still running · Close anyway ⏎ ·
-/// Esc", "3 files changed in its worktree · Keep worktree ⏎ · Discard ·
-/// Esc". Its keys work wherever the keyboard is (MainWindow), so they
-/// always show (not on a tight card).
+/// Close anyway ⏎ · Keep esc", "npm run dev is still running · Close
+/// anyway ⏎ · Keep esc", "3 files changed in its worktree · Keep worktree
+/// ⏎ · Discard · Keep esc". The strip takes the keyboard when it appears
+/// (StripKeys): a ring in its tone says so, and ⏎ / esc are its own.
 struct CloseStripRow: View {
     var strip: AttentionBar.CloseStrip
-    var tight = false
+    @State private var focused = false
 
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
@@ -472,14 +472,15 @@ struct CloseStripRow: View {
             Text(strip.ask.message).font(.ds(.chrome, .medium)).foregroundStyle(Theme.fg).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: DS.Spacing.m)
             HStack(spacing: DS.Spacing.s) {
-                action(strip.ask.primary, key: "⏎", primary: true, run: strip.onPrimary).accessibilityIdentifier("close.primary")
+                KeyButton(strip.ask.primary, kbd: "⏎", variant: .primary(tone), action: strip.onPrimary).accessibilityIdentifier("close.primary")
                 if let second = strip.ask.secondary {
-                    action(second, key: nil, primary: false, run: strip.onSecondary).accessibilityIdentifier("close.secondary")
+                    KeyButton(second, action: strip.onSecondary).accessibilityIdentifier("close.secondary")
                 }
-                action(nil, key: "esc", primary: false, run: strip.onCancel).accessibilityIdentifier("close.cancel")
+                KeyButton("Keep", kbd: "esc", action: strip.onCancel).accessibilityIdentifier("close.cancel")
             }
             .fixedSize()
         }
+        .stripKeys(tone: tone, focused: $focused, onPrimary: strip.onPrimary, onCancel: strip.onCancel)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("tile.closeStrip")
     }
@@ -496,27 +497,98 @@ struct CloseStripRow: View {
 
     /// Closing anyway drops something: the primary is tinted `error`;
     /// keeping the worktree is the safe default (`working`).
-    private var tint: Theme.Token {
+    private var tone: StateMarkKind.Tone {
         if case .worktree = strip.ask { return .working }
         return .error
     }
+}
 
-    private func action(_ title: String?, key: String?, primary: Bool, run: @escaping () -> Void) -> some View {
-        Button(action: run) {
-            HStack(spacing: DS.Spacing.s) {
-                if let title { Text(title).font(.ds(.chrome, .medium)).lineLimit(1) }
-                if let key, !tight || title == nil { Kbd(key) }
+/// A strip that asks (close, move) has the keyboard while it shows: an
+/// invisible view behind the row becomes first responder when it
+/// appears, answers ⏎ and esc itself and passes every other key up (the
+/// wall's arrows still move), and hands the keyboard back when it goes
+/// (the agent of an active tile or the focus view, else the wall). The
+/// row draws a `DS.focusRing` ring in its tone while it has the keys.
+extension View {
+    func stripKeys(tone: StateMarkKind.Tone, focused: Binding<Bool>, onPrimary: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
+        background(StripKeys(focused: focused, onPrimary: onPrimary, onCancel: onCancel))
+            .overlay {
+                if focused.wrappedValue {
+                    DS.Radius.shape(DS.Radius.control).strokeBorder(Theme.color(Theme.token(tone)), lineWidth: DS.focusRing)
+                        .padding(-DS.Spacing.s)
+                }
             }
-            .padding(.horizontal, title == nil ? DS.Spacing.xs : DS.Spacing.m)
-            .frame(height: Pill.height)
-            .background(DS.Radius.shape(DS.Radius.control).fill(primary ? Theme.color(tint).opacity(AttentionBar.primaryFill) : (title == nil ? Color.clear : Theme.chipBG)))
-            .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(primary ? Theme.color(tint).opacity(AttentionBar.primaryStroke) : (title == nil ? Color.clear : Theme.stroke), lineWidth: 1))
-            .foregroundStyle(Theme.fg)
-            .contentShape(Rectangle())
+    }
+}
+
+private struct StripKeys: NSViewRepresentable {
+    @Binding var focused: Bool
+    var onPrimary: () -> Void
+    var onCancel: () -> Void
+
+    func makeNSView(context: Context) -> StripKeyView {
+        let v = StripKeyView()
+        v.onFocus = { focused = $0 }
+        return v
+    }
+
+    func updateNSView(_ v: StripKeyView, context: Context) {
+        v.onPrimary = onPrimary
+        v.onCancel = onCancel
+    }
+}
+
+/// The strip's first responder (StripKeys). `MainWindow` routes nothing
+/// to the strip: these keys are its own.
+@MainActor
+final class StripKeyView: NSView {
+    var onPrimary: (() -> Void)?
+    var onCancel: (() -> Void)?
+    var onFocus: ((Bool) -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window === window else { return }
+            window.makeFirstResponder(self)
         }
-        .buttonStyle(.plain)
-        .help(key.map { "\(title ?? "Cancel") (\($0))" } ?? (title ?? ""))
-        .accessibilityLabel(title ?? "Cancel")
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        guard newWindow == nil, let window, window.firstResponder === self else { return }
+        var v = superview
+        while let s = v {
+            if let t = s as? TileView { t.handBackFocus(); return }
+            if let f = s as? FocusView { f.focusTerminal(); return }
+            v = s.superview
+        }
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { onFocus?(true) }
+        return ok
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let ok = super.resignFirstResponder()
+        if ok { onFocus?(false) }
+        return ok
+    }
+
+    override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self) }
+
+    override func keyDown(with event: NSEvent) {
+        let chord = KeyChord(event: event)
+        if chord.plain && !chord.shift {
+            if chord.key == .enter { onPrimary?(); return }
+            if chord.key == .escape { onCancel?(); return }
+        }
+        super.keyDown(with: event)
     }
 }
 
