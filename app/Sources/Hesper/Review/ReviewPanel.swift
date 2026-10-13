@@ -519,7 +519,7 @@ final class ReviewPanel: NSView, NSTableViewDataSource, NSTableViewDelegate {
         }
         if action == .pass {
             // Another sheet's or overlay's ⌘ key (⌘K, ⌘Y, ⌘J): this one steps aside.
-            if equivalent, session.editingNote == nil, chord.command, case .char(let c) = chord.key, "kyj".contains(c) { close() }
+            if equivalent, session.editingNote == nil, ReviewKeys.passesThrough(chord) { close() }
             return false
         }
         perform(action)
