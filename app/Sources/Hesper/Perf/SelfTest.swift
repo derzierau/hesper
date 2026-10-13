@@ -492,6 +492,7 @@ final class SelfTest {
 
         await runDrops()
         await runPointerPaths()
+        await runShortcuts()
 
         // 9. Drafts: ⌘N puts a draft tile right of the selected tile.
         guard let anchor = model.wall.first(where: { $0.isRunning && !$0.state.showsSummary }) else { return finish(reattach) }
@@ -783,11 +784,47 @@ final class SelfTest {
         if let draft, model.draft(draft) != nil { removeTestDraft(draft) }
     }
 
-    /// Presses the control with accessibility identifier `id` in the
-    /// window (an AppKit view, or a SwiftUI button inside a hosting view),
-    /// as VoiceOver would. `check`: false: a miss is just false (polling).
-    @discardableResult
-    private func press(_ id: String, check: Bool = true) -> Bool {
+    /// Help ▸ Keyboard Shortcuts: ⌘/ opens the sheet over the wall with
+    /// the search field on the keyboard, typing filters the rows, esc and
+    /// ⌘/ close it, the close × and the footer's Settings button work.
+    private func runShortcuts() async {
+        model.deactivateTile()
+        if model.mode == .focus { model.exitFocus() }
+        window.makeFirstResponder(root.wall)
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        let opened = await Harness.wait(3) { ShortcutsSheetHost.isOpen(self.model) && self.control("shortcuts.row.newAgent") != nil }
+        check("⌘/ opens the shortcuts sheet with the registry's rows", opened)
+        let fieldFocused = await Harness.wait(3) { self.window.firstResponder is NSTextView }
+        check("the sheet's search field has the keyboard", fieldFocused, String(describing: window.firstResponder))
+        for c in "close" { Harness.press(String(c), keyCode: 0, window: window) }
+        let filtered = await Harness.wait(3) { self.control("shortcuts.row.closeAgent") != nil && self.control("shortcuts.row.newAgent") == nil }
+        check("typing filters the rows (close keeps Close, drops New Agent)", filtered)
+        Harness.press("\u{1b}", keyCode: 53, window: window)
+        let closed = await Harness.wait(3) { !ShortcutsSheetHost.isOpen(self.model) && self.window.firstResponder === self.root.wall }
+        check("esc closes the sheet and gives the wall the keys back", closed, String(describing: window.firstResponder))
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        _ = await Harness.wait(3) { ShortcutsSheetHost.isOpen(self.model) }
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        let toggled = await Harness.wait(3) { !ShortcutsSheetHost.isOpen(self.model) }
+        check("⌘/ again closes it", toggled)
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        _ = await Harness.wait(3) { self.press("shortcuts.close", check: false) }
+        let closedByButton = await Harness.wait(3) { !ShortcutsSheetHost.isOpen(self.model) }
+        check("the sheet's close × closes it", closedByButton)
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        _ = await Harness.wait(3) { self.press("shortcuts.settings", check: false) }
+        let settings = await Harness.wait(3) {
+            !ShortcutsSheetHost.isOpen(self.model) && NSApp.windows.contains { $0.title == "Settings" && $0.isVisible }
+        }
+        check("the footer's Open Settings › Shortcuts opens Settings", settings)
+        NSApp.windows.first { $0.title == "Settings" }?.close()
+        window.makeKeyAndOrderFront(nil)
+        _ = await Harness.wait(3) { self.window.isKeyWindow }
+    }
+
+    /// The control with accessibility identifier `id` in the window (an
+    /// AppKit view, or a SwiftUI control inside a hosting view).
+    private func control(_ id: String) -> NSAccessibilityProtocol? {
         func find(_ e: NSAccessibilityProtocol) -> NSAccessibilityProtocol? {
             if e.accessibilityIdentifier() == id { return e }
             for c in e.accessibilityChildren() ?? [] {
@@ -795,7 +832,15 @@ final class SelfTest {
             }
             return nil
         }
-        guard let root = window.contentView, let e = find(root) else {
+        return window.contentView.flatMap(find)
+    }
+
+    /// Presses the control with accessibility identifier `id` in the
+    /// window, as VoiceOver would. `check`: false: a miss is just false
+    /// (polling).
+    @discardableResult
+    private func press(_ id: String, check: Bool = true) -> Bool {
+        guard let e = control(id) else {
             if check { self.check("control \(id) exists", false) }
             return false
         }

@@ -29,6 +29,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let model, event.type == .keyDown else { return super.performKeyEquivalent(with: event) }
+        if ShortcutsSheetHost.handleKeyEquivalent(event, window: self) { return true } // keyboard shortcuts: the sheet's ⌘ keys
         if HistoryPanelHost.handleKeyEquivalent(event, window: self) { return true } // shared history: the panel's ⌘ keys
         if ReviewPanelHost.handleKeyEquivalent(event, window: self) { return true } // review: the sheet's ⌘ keys
         let chord = KeyChord(event: event)
@@ -78,6 +79,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     }
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, ShortcutsSheetHost.handleKey(event, window: self) { return } // keyboard shortcuts: esc
         if event.type == .keyDown, !(model?.showPalette ?? false), HistoryPanelHost.handleKey(event, window: self) { return } // shared history
         if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, ReviewPanelHost.handleKey(event, window: self) { return } // review
         if event.type == .keyDown, let model {
@@ -179,6 +181,7 @@ final class RootView: NSView {
         observeChanges { [weak self] in self?.overlayStateChanged() }
         HistoryPanelHost.attach(self) // shared history (⌘Y panel, ghost cards)
         ReviewPanelHost.attach(self) // review (⌘R sheet)
+        ShortcutsSheetHost.attach(self) // keyboard shortcuts (⌘/ sheet)
         observeChanges { [weak self] in
             guard let self else { return }
             _ = (self.model.sidebarVisible, self.model.scope, self.model.machines)
@@ -222,6 +225,7 @@ final class RootView: NSView {
         guard let window else { return }
         if historyPanel?.isOpen == true { return } // shared history: the panel keeps the keyboard (toasts come and go)
         if reviewPanel?.isOpen == true { return } // review: the sheet keeps the keyboard
+        if shortcutsPanel?.isOpen == true { return } // keyboard shortcuts: the search field keeps it
         if window.firstResponder is NSText && !(window.firstResponder is ComposerTextView) && model.denyOpen != nil { return }
         switch model.mode {
         case .focus: focus.focusTerminal()
@@ -308,6 +312,17 @@ final class RootView: NSView {
     }
 
     func reviewClosed() { restoreKeyboard() }
+
+    // MARK: Keyboard shortcuts (the ⌘/ sheet sits over the wall, under the overlays)
+
+    private(set) weak var shortcutsPanel: ShortcutsPanel?
+
+    func addShortcutsPanel(_ p: ShortcutsPanel) {
+        shortcutsPanel = p
+        addSubview(p, positioned: .below, relativeTo: overlay)
+    }
+
+    func shortcutsClosed() { restoreKeyboard() }
 
     private func anchor(for kind: PopoverKind) -> CGRect? {
         switch kind {

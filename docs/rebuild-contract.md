@@ -4525,9 +4525,29 @@ their owners: layout checkmarks, Dense Cards and the Undo title (Edit ▸
 Undo names the action; "Undo Close or Move" is gone), the Desks submenu,
 History hidden while hesperd has no sessions.*, the window list. The ⌘K
 palette's "Actions" rows and Settings › Shortcuts (`ShortcutList.groups`,
-by surface) read the table; Help ▸ Keyboard Shortcuts ⌘/ is wired to a
-stub until phase 4's sheet. `KeyChord.label` / `KeyChord(label:)` are the
+by surface) read the table. `KeyChord.label` / `KeyChord(label:)` are the
 one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
+
+**Help ▸ Keyboard Shortcuts (⌘/).** A modal sheet over the front wall
+like History and Review (`ShortcutsPanel`, hosted by
+`ShortcutsSheetHost` on the window's RootView: a Night scrim that takes
+every click, one opaque Panel in the SheetChrome frame, title "Keyboard
+Shortcuts" with the row count, close × esc). The toolbar row is a search
+field that has the keyboard as the sheet opens; the content is one
+section per surface (`ShortcutsSheet.sections`, HesperCore): a header
+row with the surface's title and count that folds and unfolds on click,
+then a Row per command with its title and key caps. Each command appears
+once: app-wide chords under Everywhere, the rest under the surface the
+user was in when its chord is live there (the sheet opens on the front
+sheet or overlay, else the agent window, Settings, focus, the composer,
+the active tile or the wall), else under the first surface in the
+display order that binds it. That section comes first and open, the
+others folded; a query matches title and key caps and unfolds every
+section that still has rows. The footer is one KeyButton, "Open Settings
+› Shortcuts ⌘,". esc and a scrim click close; ⌘/ (the Help menu item)
+toggles; ⌘K ⌘Y ⌘R ⌘J close it and go on to their owner. Accessibility:
+`shortcuts`, `shortcuts.search`, `shortcuts.section.<surface>`,
+`shortcuts.row.<command id>`, `shortcuts.settings`, `shortcuts.close`.
 
 **Invariants** (`CommandsTests`): no chord is bound twice within one
 surface (a chord bound everywhere conflicts with the same chord in any

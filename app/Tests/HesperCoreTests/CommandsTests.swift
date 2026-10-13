@@ -79,19 +79,22 @@ import Testing
             guard inTable else { continue }
             guard line.hasPrefix("|") else { if !out.isEmpty { break } else { continue } }
             let cell = line.split(separator: "|", omittingEmptySubsequences: false)[1].trimmingCharacters(in: .whitespaces)
-            for token in cell.split(whereSeparator: { $0 == " " || $0 == "/" }) {
-                // "⌥⌘1–5": a range of digits.
-                if let dash = token.firstIndex(of: "–"), token.index(after: dash) < token.endIndex,
-                   let lo = token[token.index(before: dash)].wholeNumberValue, let hi = token[token.index(after: dash)].wholeNumberValue {
-                    let mods = String(token[..<token.index(before: dash)])
-                    for d in lo...hi {
-                        guard let k = KeyChord(label: mods + String(d)) else { throw ReadmeError.badToken(String(token)) }
-                        out.append((String(token), k))
+            // "⌥⌘W / ⌃⌘W" are alternatives; a word that is one chord ("⌘/") stays whole.
+            for word in cell.split(separator: " ") where word != "/" {
+                for token in KeyChord(label: String(word)) != nil ? [word] : word.split(separator: "/") {
+                    // "⌥⌘1–5": a range of digits.
+                    if let dash = token.firstIndex(of: "–"), token.index(after: dash) < token.endIndex,
+                       let lo = token[token.index(before: dash)].wholeNumberValue, let hi = token[token.index(after: dash)].wholeNumberValue {
+                        let mods = String(token[..<token.index(before: dash)])
+                        for d in lo...hi {
+                            guard let k = KeyChord(label: mods + String(d)) else { throw ReadmeError.badToken(String(token)) }
+                            out.append((String(token), k))
+                        }
+                        continue
                     }
-                    continue
+                    guard let k = KeyChord(label: String(token)) else { throw ReadmeError.badToken(String(token)) }
+                    out.append((String(token), k))
                 }
-                guard let k = KeyChord(label: String(token)) else { throw ReadmeError.badToken(String(token)) }
-                out.append((String(token), k))
             }
         }
         if out.isEmpty { throw ReadmeError.noTable }

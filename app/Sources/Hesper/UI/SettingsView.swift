@@ -37,6 +37,8 @@ struct SettingsView: View {
     }
 
     static let size = NSSize(width: 720, height: 540)
+    /// Posted to open a pane (userInfo "pane"): the shortcuts sheet's footer.
+    static let showPane = Notification.Name("hesper.settings.showPane")
     static let sidebarWidth: CGFloat = 196
     static let labelWidth: CGFloat = 168
     static let sliderWidth: CGFloat = 180
@@ -63,6 +65,9 @@ struct SettingsView: View {
         .foregroundStyle(Theme.fg)
         .background(SettingsWindowStyle())
         .ignoresSafeArea()
+        .onReceive(NotificationCenter.default.publisher(for: Self.showPane)) { n in
+            if let p = n.userInfo?["pane"] as? Pane { pane = p }
+        }
     }
 
     private var sidebar: some View {
