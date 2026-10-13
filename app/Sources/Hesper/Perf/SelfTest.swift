@@ -193,8 +193,6 @@ final class SelfTest {
         check("⌥⌘→ in focus steps to the next agent", model.focusedID == b.id, model.focusedID ?? "nil")
         Harness.press("\u{F702}", keyCode: 123, flags: [.command, .option], window: window)
         check("⌥⌘← steps back", model.focusedID == a.id, model.focusedID ?? "nil")
-        Harness.press("]", keyCode: 0x1E, flags: .command, window: window)
-        check("⌘] steps to the next agent", model.focusedID == b.id, model.focusedID ?? "nil")
         Harness.press("\r", keyCode: 36, flags: .command, window: window)
         check("⌘↩ returns to the wall", model.mode == .wall)
         let back = root.wall.tiles.values.allSatisfy { $0.terminal.visible }

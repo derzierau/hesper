@@ -119,7 +119,7 @@ final class AgentWindowController: NSWindowController, NSWindowDelegate {
     let stop = TitleStopAccessory()
 
     /// The model left focus on this agent: ⌘↩ / ⌘Esc show it in a wall;
-    /// the palette, ⌘[ ⌘] or ⌘J picked another agent (its own window).
+    /// the palette, ⌥⌘← ⌥⌘→ or ⌘J picked another agent (its own window).
     private func modeChanged() {
         let target = model.mode == .focus ? model.focusedID : nil
         if model.mode == .focus && target == agentID { rootModeChanged?(); return }
@@ -163,7 +163,7 @@ final class AgentWindowController: NSWindowController, NSWindowDelegate {
 
 /// The wall window's key routing, with the agent window's own meanings:
 /// ⌘W closes the agent and the window (the same rules as on the wall),
-/// ⌥⌘W closes only the window (the agent stays on its wall), ⌥⌘← ⌥⌘→ (⌘[ ⌘]) step
+/// ⌥⌘W closes only the window (the agent stays on its wall), ⌥⌘← ⌥⌘→ step
 /// to the previous / next agent within this window, ⌘N starts a new agent
 /// on the frontmost wall.
 final class AgentWindow: MainWindow {

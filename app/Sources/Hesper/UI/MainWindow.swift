@@ -17,7 +17,7 @@ func observeChanges(_ body: @escaping @MainActor () -> Void) {
 /// the terminal see it, so the wall, the composer and the focus view
 /// behave the same; open overlays get ↑↓ ⏎ ⌘⏎ ⇥ esc and typing first
 /// (OverlayKeys).
-class MainWindow: NSWindow { // not final: the window layer's AgentWindow refines ⌘W, ⌘[ ⌘]
+class MainWindow: NSWindow { // not final: the window layer's AgentWindow refines ⌘W, ⌥⌘← ⌥⌘→
     weak var model: AppModel?
 
     private var textHasFocus: Bool { firstResponder is NSText }

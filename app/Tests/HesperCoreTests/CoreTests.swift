@@ -66,8 +66,6 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
             #expect(KeyRouter.route(KeyChord(.char("j"), command: true), mode: mode, selectedState: nil) == .nextAttention)
             #expect(KeyRouter.route(KeyChord(.char("k"), command: true), mode: mode, selectedState: nil) == .palette)
             #expect(KeyRouter.route(KeyChord(.enter, command: true), mode: mode, selectedState: .working) == .toggleFocus)
-            #expect(KeyRouter.route(KeyChord(.char("["), command: true), mode: mode, selectedState: nil) == .stepPrevious)
-            #expect(KeyRouter.route(KeyChord(.char("]"), command: true), mode: mode, selectedState: nil) == .stepNext)
             #expect(KeyRouter.route(KeyChord(.char("w"), command: true), mode: mode, selectedState: .working) == .closeAgent)
             #expect(KeyRouter.route(KeyChord(.char("M"), command: true, shift: true), mode: mode, selectedState: nil) == .moveAgent)
             #expect(KeyRouter.route(KeyChord(.char("m"), command: true, shift: true), mode: mode, selectedState: nil) == .moveAgent)
@@ -112,13 +110,17 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
         #expect(KeyRouter.route(KeyChord(.char("c"), control: true), mode: .wall, selectedState: .working, typed: "\u{3}") == .none)
     }
 
-    /// ⌥⌘← ⌥⌘→ step agents everywhere (⌘[ ⌘] too); plain ← → in focus
-    /// stay the terminal's.
+    /// ⌥⌘← ⌥⌘→ step agents everywhere; ⌘[ ⌘] no longer do (on a German
+    /// layout ⌘[ is ⌥⌘5, the Grid layout); plain ← → in focus stay the
+    /// terminal's.
     @Test func stepKeys() {
         for mode in [AppMode.wall, .focus] {
             #expect(KeyRouter.route(KeyChord(.left, command: true, option: true), mode: mode, selectedState: .working) == .stepPrevious)
             #expect(KeyRouter.route(KeyChord(.right, command: true, option: true), mode: mode, selectedState: .working) == .stepNext)
         }
+        #expect(KeyRouter.route(KeyChord(.char("["), command: true), mode: .wall, selectedState: nil) == .none)
+        #expect(KeyRouter.route(KeyChord(.char("]"), command: true), mode: .focus, selectedState: nil) == .passThrough)
+        #expect(KeyRouter.route(KeyChord(.char("{"), command: true, shift: true), mode: .wall, selectedState: nil) == .none)
         #expect(KeyRouter.routeActiveTile(KeyChord(.right, command: true, option: true)) == .stepNext)
         #expect(KeyRouter.route(KeyChord(.right), mode: .focus, selectedState: .working) == .passThrough)
         #expect(KeyRouter.route(KeyChord(.left), mode: .focus, selectedState: .working) == .passThrough)

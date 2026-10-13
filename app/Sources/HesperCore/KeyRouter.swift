@@ -105,8 +105,8 @@ public enum AppCommand: Equatable, Sendable {
 /// highlight ring; keys are the wall's: ← → ↑ ↓ Home End move, ⏎ types,
 /// and on a tile that needs you ⏎ / A / N answer first) and **active**
 /// (`routeActiveTile`: the agent gets every key but the app's ⌘ chords).
-/// Plain ← → in focus always belong to the agent; ⌥⌘← ⌥⌘→ (and ⌘[ ⌘])
-/// step to the previous / next agent everywhere.
+/// Plain ← → in focus always belong to the agent; ⌥⌘← ⌥⌘→ step to the
+/// previous / next agent everywhere.
 public enum KeyRouter {
     /// - Parameter typed: the text the key produced (`NSEvent.characters`);
     ///   a printable one on a selected agent or draft is `.typeInto`.
@@ -133,10 +133,6 @@ public enum KeyRouter {
             case .char("k") where !k.shift: return .palette
             case .enter: return .toggleFocus
             case .escape: return .exitFocus // focus: back to the wall; wall: the active tile back to selected
-            case .char("["): return .stepPrevious
-            case .char("]"): return .stepNext
-            case .char("{"): return .stepPrevious
-            case .char("}"): return .stepNext
             case .char("w") where !k.shift: return .closeAgent
             case .char("w"), .char("W"): return .tidyUp
             case .char("t") where k.shift, .char("T"): return .reopenClosed

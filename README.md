@@ -368,7 +368,7 @@ pick a profile per agent, per project or per kind:
 |---|---|
 | ⌘N | New agent: task, machine, profile (Claude, Codex or a shell), project, worktree and branch. ⌘↩ starts it. |
 | ⌘↩ | Focus the selected tile and type into it. Again, or ⌘Esc, returns to the wall. |
-| ⌘[ ⌘] | Previous / next agent |
+| ⌥⌘← ⌥⌘→ | Previous / next agent |
 | ⌘J | Next agent that needs you (approvals, then questions, then errors) |
 | ⏎ / A / N | Allow / always allow / deny the selected tile's approval |
 | ⌘K | Palette: agents, projects, machines, actions |

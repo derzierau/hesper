@@ -409,7 +409,7 @@ that, `kill -QUIT` the daemon: it writes every goroutine to the log.
   header: state dot, name, machine + kind mark. Tiles in `approval` / `question`
   / `error` get a ring and inline actions (Allow / Always / Deny for approvals).
 - **Focus**: ⌘↩ opens a tile full window as `rw --owner` (resizes the PTY to the
-  view); ⌘↩ again or Esc returns. ⌘[ / ⌘] step through agents in wall order.
+  view); ⌘↩ again or Esc returns. ⌥⌘← / ⌥⌘→ step through agents in wall order.
 - **Attention**: ⌘J jumps to the next agent needing you (approval, then
   question, then error; oldest first). Menu bar item with counts; a macOS
   notification on entering approval/question/error (not while focused on it).
@@ -925,7 +925,7 @@ name, project · branch, elapsed time while working, machine · kind chip;
 remote chips in purple), ring for approval / question / error with a soft
 glow, inline Allow / Always / Deny… (also ⏎ / A / N on the selected tile) in
 the card's own attention band, summary line for done/idle, exited band with
-Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ (⌘[ ⌘]) stepping in wall order.
+Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ stepping in wall order.
 ⌘J attention queue. Status (counts, machines with RTT, clickable attention
 chips → ⌘J, working count), the layout switch, New Agent and ⌘K search in
 the window's unified toolbar. Menu bar item (counts, the queue, New Agent). Notifications on
@@ -1042,7 +1042,7 @@ Xcode UI; SwiftPM + Make — XcodeGen would only add a generated project):
 - `make -C app test-ui`: launches the real app against the fake daemon in a
   temp dir and drives it through the user's key paths (28 checks: tiles
   render, terminal area = engine grid (±1 px), ring, ⏎ allow, ⌘J order, ⌘↩
-  focus owning the PTY size, typing, tiles stop rendering in focus, ⌘] step,
+  focus owning the PTY size, typing, tiles stop rendering in focus, ⌥⌘→ step,
   refit after resize, done summary, done → shelf without a terminal, ⌥⌘2 /
   ⌥⌘L / ⌥⌘1 layouts with exact tiles, ⌘⇧M unavailable, ⌘W confirm → exited → resume re-attach, spawn,
   ⌘K). `make -C app test-ui-real` runs the same against the real
@@ -1351,7 +1351,7 @@ terminal frame). The shelf/treemap follow the shown (debounced) state.
 ⏎ on it, typing a character on it, or ⌘J landing on it makes it active
 (a plain click only selects: see "As built — keyboard navigation"): cyan ring, "typing · ⌘esc
 leaves"; every key goes to the agent (Esc, ⏎, arrows, ⌃-keys, IME,
-⌘C/⌘V, selection) except the app's ⌘ shortcuts (⌘N ⌘K ⌘J ⌘W ⌘↩ ⌘[ ⌘] ⌥⌘← ⌥⌘→ ⌘,
+⌘C/⌘V, selection) except the app's ⌘ shortcuts (⌘N ⌘K ⌘J ⌘W ⌘↩ ⌥⌘← ⌥⌘→ ⌘,
 ⌘⇧M ⌘Z ⌥⌘…). ⌘esc (Claude/Codex never see ⌘esc), a click on the wall or
 another tile leaves (back to selected); one per window; double click still opens focus. On
 a selected but not active tile ⏎/A/N still answer approvals. The active
@@ -1432,7 +1432,7 @@ subtitle `machine · kind` plus "needs approval" / "asks a question" /
 "error" / "exited"; the title bar is tinted rose / amber / red while the
 agent needs you. Keys as in focus, except ⌘W closes the window (the
 agent keeps running; Agents ▸ Stop Agent… still stops it), ⌥⌘← ⌥⌘→
-(⌘[ ⌘]) step to the previous / next agent within the window (tabs, or
+step to the previous / next agent within the window (tabs, or
 retargeting: "As built — keyboard navigation"), ⌘↩ / ⌘Esc show the agent in the frontmost
 wall that shows it, ⌘N starts a new agent on the frontmost wall, ⌘K
 picking another agent opens that agent's window. `tabbingIdentifier
@@ -1619,7 +1619,8 @@ and frames identical before and after).
 
 **Single view and agent windows.** Plain ← → (and every other plain key)
 stay the terminal's: Claude and Codex need them. ⌥⌘← / ⌥⌘→ = previous /
-next agent (like a browser's tabs), ⌘[ ⌘] kept as aliases; in the wall's
+next agent (like a browser's tabs; ⌘[ ⌘] were dropped: on a German
+layout ⌘[ is ⌥⌘5, the Grid layout); in the wall's
 focus view in wall order (wrapping); on the wall they move the selection
 in wall order (and keep typing when a tile was active: the next one
 becomes active). In an **agent window** they stay within that window:
@@ -1634,8 +1635,8 @@ skip keeps ⌥⌘→ from ever closing or duplicating another window.
 
 **Discoverability.** Tile footer hints (above), focus / agent window
 header `⌥⌘← →  next agent · ⌘↩ wall`, View ▸ Previous Agent ⌥⌘← / Next
-Agent ⌥⌘→ (⌘[ ⌘] as hidden aliases; moved from the Agents menu; in an
-agent window they act on its tabs / agent).
+Agent ⌥⌘→ (moved from the Agents menu; in an agent window they act on
+its tabs / agent).
 
 **Tests.** HesperCore (`WallNavigationTests`, `CoreTests`): grid rows
 wrap like text, partial row, shelf ↔ grid, main + stack, unplaced cards,

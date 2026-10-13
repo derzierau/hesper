@@ -430,7 +430,6 @@ enum ShortcutList {
                 Item(title: "Open full size / back to the wall", keys: "⌘↩"),
                 Item(title: "Back to the wall", keys: "⌘esc"),
                 Item(title: "Previous / next agent", keys: "⌥⌘← →"),
-                Item(title: "Previous / next agent (also)", keys: "⌘[ ⌘]"),
                 Item(title: "Open in a new window", keys: "⌥⌘↩"),
                 Item(title: "Close (resumable from History)", keys: "⌘W"),
                 Item(title: "Send to the background", keys: "⌥⌘W"),

@@ -254,7 +254,7 @@ struct FocusHeader: View {
             }
             Rectangle().fill(Theme.stroke).frame(width: 1, height: DS.Spacing.l)
             if count > 0 { Text("\(index) of \(count)").font(DS.font(.meta)).foregroundStyle(Theme.dim).fixedSize() } // window layer: agent windows have no wall order
-            // Plain ← → belong to the agent; ⌥⌘← ⌥⌘→ (⌘[ ⌘]) step.
+            // Plain ← → belong to the agent; ⌥⌘← ⌥⌘→ step.
             hint("⌥⌘← →", "agents").accessibilityIdentifier("focus.stepHint")
             hint("⌘↩", "wall")
         }

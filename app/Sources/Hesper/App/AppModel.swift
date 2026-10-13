@@ -632,7 +632,7 @@ final class AppModel {
         onModeChanged?()
     }
 
-    /// ⌥⌘← ⌥⌘→ / ⌘[ ⌘] (Tab on the wall): the previous / next agent in wall
+    /// ⌥⌘← ⌥⌘→ (Tab on the wall): the previous / next agent in wall
     /// order. Focus shows it; on the wall the selection moves, and typing
     /// moves along with it when a tile was active (like switching tabs).
     private func step(_ d: Int) {

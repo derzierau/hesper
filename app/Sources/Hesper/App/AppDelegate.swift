@@ -225,24 +225,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         vm.addItem(cycle)
         vm.addItem(.separator())
         // Previous / Next Agent: ⌥⌘← ⌥⌘→ (plain ← → stay the terminal's in
-        // focus; on the wall they move the selection), ⌘[ ⌘] as hidden
-        // aliases. The window routes the keys first; these show them.
-        func step(_ title: String, _ key: Int, _ alias: String, _ cmd: AppCommand) {
+        // focus; on the wall they move the selection). The window routes
+        // the keys first; these show them.
+        func step(_ title: String, _ key: Int, _ cmd: AppCommand) {
             let i = NSMenuItem(title: title, action: #selector(menuCommand(_:)), keyEquivalent: String(Character(UnicodeScalar(key)!)))
             i.keyEquivalentModifierMask = [.command, .option]
             i.target = self
             i.representedObject = MenuCommand(cmd)
             vm.addItem(i)
-            let a = NSMenuItem(title: title, action: #selector(menuCommand(_:)), keyEquivalent: alias)
-            a.keyEquivalentModifierMask = .command
-            a.target = self
-            a.representedObject = MenuCommand(cmd)
-            a.isHidden = true
-            a.allowsKeyEquivalentWhenHidden = true
-            vm.addItem(a)
         }
-        step("Previous Agent", NSLeftArrowFunctionKey, "[", .stepPrevious)
-        step("Next Agent", NSRightArrowFunctionKey, "]", .stepNext)
+        step("Previous Agent", NSLeftArrowFunctionKey, .stepPrevious)
+        step("Next Agent", NSRightArrowFunctionKey, .stepNext)
         vm.addItem(.separator())
         let dense = NSMenuItem(title: "Dense Cards (60 Characters)", action: #selector(toggleDense), keyEquivalent: "")
         dense.target = self
