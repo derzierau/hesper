@@ -252,11 +252,13 @@ struct SettingsView: View {
 
     // MARK: Shortcuts
 
+    /// The registry grouped by surface (HesperCore `ShortcutList`); the
+    /// quick launch row shows the configured hotkey.
     @ViewBuilder private var shortcuts: some View {
-        ForEach(ShortcutList.groups(hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil), id: \.title) { g in
+        ForEach(ShortcutList.groups(hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil), id: \.surface) { g in
             SettingsSection(g.title) {
                 VStack(spacing: 0) {
-                    ForEach(g.items, id: \.title) { s in Row(title: s.title, kbd: s.keys) }
+                    ForEach(g.items, id: \.id) { s in Row(title: s.title, kbd: s.keys) }
                 }
             }
         }
@@ -410,59 +412,6 @@ private struct SettingsWindowStyle: NSViewRepresentable {
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
         }
-    }
-}
-
-/// Settings › Shortcuts: the app's keys, read only (they mirror KeyRouter
-/// and the menus).
-enum ShortcutList {
-    struct Item { var title: String; var keys: String }
-    struct Group { var title: String; var items: [Item] }
-
-    static func groups(hotKey: String?) -> [Group] {
-        var general = [Item(title: "New agent", keys: "⌘N"), Item(title: "Next agent needing you", keys: "⌘J"),
-                       Item(title: "Search and commands", keys: "⌘K"), Item(title: "History", keys: "⌘Y"),
-                       Item(title: "Review", keys: "⌘R"), Item(title: "Settings", keys: "⌘,")]
-        if let hotKey { general.append(Item(title: "Quick launch, from any app", keys: hotKey)) }
-        return [
-            Group(title: "General", items: general),
-            Group(title: "Agents", items: [
-                Item(title: "Open full size / back to the wall", keys: "⌘↩"),
-                Item(title: "Back to the wall", keys: "⌘esc"),
-                Item(title: "Previous / next agent", keys: "⌥⌘← →"),
-                Item(title: "Open in a new window", keys: "⌥⌘↩"),
-                Item(title: "Close (resumable from History)", keys: "⌘W"),
-                Item(title: "Send to the background", keys: "⌥⌘W"),
-                Item(title: "Kill now (the pane stays)", keys: "⌃⌘W"),
-                Item(title: "Tidy up finished agents", keys: "⇧⌘W"),
-                Item(title: "Reopen the last closed agent", keys: "⇧⌘T"),
-                Item(title: "Move to another Mac", keys: "⇧⌘M"),
-                Item(title: "Undo close or move", keys: "⌘Z"),
-            ]),
-            Group(title: "On a selected tile", items: [
-                Item(title: "Allow, or type into it", keys: "⏎"),
-                Item(title: "Always allow", keys: "A"),
-                Item(title: "Deny with a message", keys: "N"),
-                Item(title: "Move the selection", keys: "← → ↑ ↓"),
-                Item(title: "Next / previous tile", keys: "⇥ ⇧⇥"),
-                Item(title: "Previous / next band", keys: "⌥↑ ⌥↓"),
-            ]),
-            Group(title: "Walls and windows", items: [
-                Item(title: "Layouts", keys: WallArrangement.shortcutRange),
-                Item(title: "Next layout", keys: "⌥⌘L"),
-                Item(title: "Project sidebar", keys: "⌘0"),
-                Item(title: "Show the wall", keys: "⇧⌘0"),
-                Item(title: "New wall window", keys: "⌥⌘N"),
-                Item(title: "Wall scope", keys: "⌃⌘S"),
-                Item(title: "Desk picker", keys: "⇧⌘D"),
-            ]),
-            Group(title: "New agent", items: [
-                Item(title: "Start", keys: "⌘↩"),
-                Item(title: "Start and write the next one", keys: "⌥↩"),
-                Item(title: "Worktree on / off", keys: "⌥⌘B"),
-                Item(title: "Leave the draft", keys: "esc"),
-            ]),
-        ]
     }
 }
 
