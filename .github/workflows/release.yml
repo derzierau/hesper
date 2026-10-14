@@ -181,8 +181,18 @@ jobs:
             --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_API_ISSUER" --wait --output-format json > "$RUNNER_TEMP/notary-result.json"
           python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); print(r); sys.exit(0 if r["status"] == "Accepted" else 1)' "$RUNNER_TEMP/notary-result.json"
           rm "$RUNNER_TEMP/notary.p8"
-          xcrun stapler staple app/build/Hesper.app
-          xcrun stapler validate app/build/Hesper.app
+          # Stapling and validating look the ticket up at Apple, which can lag
+          # behind "Accepted" or drop the connection: retry before failing.
+          retry() {
+            for wait in 15 30 60 120 0; do
+              "$@" && return 0
+              [ "$wait" -gt 0 ] || return 1
+              echo "$* failed; retrying in ${wait}s"
+              sleep "$wait"
+            done
+          }
+          retry xcrun stapler staple app/build/Hesper.app
+          retry xcrun stapler validate app/build/Hesper.app
           spctl --assess --type execute --verbose app/build/Hesper.app
       - name: Release assets
         if: env.HAVE_SECRETS == 'true'
