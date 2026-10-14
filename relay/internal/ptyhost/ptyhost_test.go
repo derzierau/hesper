@@ -246,11 +246,13 @@ func TestSlowViewerResyncs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A viewer that reads nothing while 6 MB pass.
+	// A viewer that reads nothing while 6 MB pass. One that blocked the
+	// program would hang it for good, so the deadline only catches that:
+	// under -race on a loaded runner the flood alone can take 20 s.
 	r, conn := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRO})
 	select {
 	case <-tm.Done():
-	case <-time.After(20 * time.Second):
+	case <-time.After(2 * time.Minute):
 		t.Fatal("a slow viewer held the program up")
 	}
 	if code := tm.Exit().Code; code == nil || *code != 3 {
