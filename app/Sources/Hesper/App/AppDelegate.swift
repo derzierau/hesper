@@ -128,7 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     /// The Dock menu: New Agent, Needs You…, History, Review, from the
-    /// registry. Each brings the wall in front first, as the status item does.
+    /// registry. Each brings the wall in front first, as the status item
+    /// does, and opens what it names: one already open stays open.
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         for case .command(let id, let title, _) in MenuModel.dockItems(context: commandContext()) {
@@ -146,6 +147,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showWindow()
         switch ref.id {
         case .review: windows.frontModel.openReview(select: nil) // opens, never toggles closed
+        case .history:
+            let m = windows.frontModel
+            if m.mode == .compose { m.leaveComposer() }
+            HistoryPanelHost.open(m, text: nil, select: nil)
+        case .nextAttention:
+            let m = windows.frontModel
+            if m.popover != .attention { m.toggleAttentionQueue() } // ⌘J, open-only
         default: if let cmd = KeyRouter.command(for: ref.id) { windows.frontModel.perform(cmd) } else { run(ref.id) }
         }
     }

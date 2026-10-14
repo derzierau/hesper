@@ -4547,8 +4547,9 @@ are registered with AppKit (`servicesMenu`, `windowsMenu`, `helpMenu`),
 so the window list and Help's search field come from it. The Dock menu
 (`MenuModel.dockItems`, `applicationDockMenu`) is New Agent, Needs You…,
 History (while supported) and Review with the registry's titles; each
-brings the wall in front first, and Review opens the sheet rather than
-toggling it. The status-bar menu's fixed section below the agent groups
+brings the wall in front first and opens what it names rather than
+toggling it: with History, Review or the inbox already open, its Dock
+item leaves it open. The status-bar menu's fixed section below the agent groups
 (`MenuModel.statusItems`) keeps its labels (Open Hesper, New agent…,
 History…, Review…, Quick Launch…, Settings…, Quit Hesper) and shows a key
 equivalent only where the chord is the app-wide one (⇧⌘0, ⌘N, ⌘Y, ⌘R,
