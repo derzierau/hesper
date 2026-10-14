@@ -55,6 +55,22 @@ import Testing
         #expect(!TileClick.claimsSecondClick(clickCount: 2, sinceActivation: -0.1, doubleClickInterval: interval))
     }
 
+    @Test func controlOptionArrowsMoveAndActivate() {
+        let moves: [(Key, WallMove)] = [(.left, .left), (.right, .right), (.up, .up), (.down, .down)]
+        for (key, move) in moves {
+            let k = KeyChord(key, option: true, control: true)
+            // On the wall and from inside the active tile (the agent never
+            // sees ⌃⌥ + arrow); in focus the terminal keeps it.
+            #expect(KeyRouter.route(k, mode: .wall, selectedState: .working) == .activate(move))
+            #expect(KeyRouter.route(k, mode: .wall, selectedState: nil) == .activate(move))
+            #expect(KeyRouter.routeActiveTile(k) == .activate(move))
+            #expect(KeyRouter.route(k, mode: .focus, selectedState: .working) == .passThrough)
+            // Plain arrows: unchanged (select on the wall, the agent's in a tile).
+            #expect(KeyRouter.route(KeyChord(key), mode: .wall, selectedState: .working) == .select(move))
+            #expect(KeyRouter.routeActiveTile(KeyChord(key)) == .passThrough)
+        }
+    }
+
     @Test func heldInputReplaysInOrder() {
         var h = HeldInput<Int>(capacity: 4, maxAge: 1)
         h.hold(1, at: 0)

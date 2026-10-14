@@ -432,6 +432,15 @@ final class SelfTest {
             click(t)
             let activeAgain = await Harness.wait(5) { self.model.activeTileID == x && t.terminal.surfaceIsInteractive }
             check("a click on the selected tile makes it active", activeAgain)
+            // ⌃⌥ + arrow from inside the active tile: its neighbor types
+            // (as AppKit sends it: the key-equivalent pass, then the view).
+            if let r = root.wall.neighbor(x, .right), r != x, let rt = root.wall.tiles[r], model.agent(r)?.isRunning == true,
+               let e = Harness.keyEvent("\u{F703}", keyCode: 124, flags: [.control, .option], window: window) {
+                if !window.performKeyEquivalent(with: e) { window.sendEvent(e) }
+                let moved = await Harness.wait(5) { self.model.activeTileID == r && rt.terminal.surfaceIsInteractive && !t.terminal.surfaceIsInteractive }
+                check("⌃⌥→ in the active tile makes its right neighbor active", moved,
+                      "active=\(model.activeTileID ?? "nil") (want \(r)) rw=\(rt.terminal.surfaceIsInteractive)")
+            }
             Harness.press("\u{1b}", keyCode: 53, flags: .command, window: window)
             _ = await Harness.wait(3) { self.model.activeTileID == nil && !t.terminal.surfaceIsInteractive }
         }

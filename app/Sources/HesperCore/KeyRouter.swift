@@ -67,6 +67,9 @@ public enum AppCommand: Equatable, Sendable {
     /// The wall's selection: ← → ↑ ↓ spatially, Home / End (WallNavigation).
     /// Never attaches read-write or resizes anything.
     case select(WallMove)
+    /// ⌃⌥ + arrow on the wall or in the active tile: the neighbor that way
+    /// becomes the active tile (read-write; typing goes there).
+    case activate(WallMove)
     /// A printable key on the selected tile: it becomes the active tile and
     /// gets the text ("just start typing"); on a selected draft, its editor.
     case typeInto(String)
@@ -135,6 +138,7 @@ public enum KeyRouter {
         case .history: return .history
         case .review: return .review
         case .select(let m): return .select(m)
+        case .activate(let m): return .activate(m)
         case .activateTile: return .activateTile
         case .answer(let d): return .answer(d)
         case .denyWithMessage: return .denyWithMessage

@@ -1695,6 +1695,13 @@ attaches read-write and never resizes: main + stack's main card follows
 clicks, activation and focus (`mainPick`), not the arrows (test: sizes
 and frames identical before and after).
 
+**Moving and typing:** ⌃⌥ ← → ↑ ↓ go to the same neighbor and make it
+the active tile (like a click on it), on the wall and from inside the
+active tile, where plain arrows are the agent's (the agent never sees
+⌃⌥ + arrow; in focus it does). A draft, an ended agent or a shelf card
+there is only selected. Each move starts the read-write attach of the
+tile it lands on and ends the previous one's.
+
 **Single view and agent windows.** Plain ← → (and every other plain key)
 stay the terminal's: Claude and Codex need them. (The chords: the
 registry's `.focus` and `.agentWindow` surfaces, "As built — commands".) ⌥⌘← / ⌥⌘→ = previous /
@@ -1730,7 +1737,8 @@ focus pass through, terminal key bytes). UI (`make -C app test-ui`, 62 +
 (no rw), a click on an approval tile selects, → ← ↓ ↑ Home End move
 by the layout, nothing rw and no size or frame change, typing "zeta" on a
 selected tile activates it and every character arrives, ⌘esc back to
-selected, a click on the selected tile activates, ⏎ on an approval tile
+selected, a click on the selected tile activates, ⌃⌥→ in the active
+tile activates its right neighbor, ⏎ on an approval tile
 allows without activating, plain → in focus reaches the agent (the fake
 TUI shows → as ›) while ⌥⌘→ / ⌥⌘← step. Windows (`test-ui-windows`, 32 +
 7): ⌥⌘→ ⌥⌘← select tabs in a tab group; in an untabbed window ⌥⌘→ shows

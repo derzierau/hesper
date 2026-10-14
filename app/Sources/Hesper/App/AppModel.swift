@@ -561,6 +561,8 @@ final class AppModel {
             openPopover(.move(a.id))
         case .select(let move):
             moveSelection(move)
+        case .activate(let move):
+            activateNeighbor(move)
         case .answer(let d):
             guard let a = current else { return }
             answer(a, d)
@@ -610,26 +612,38 @@ final class AppModel {
     /// Arrows / Home / End on the wall: only the selection moves (no
     /// read-write attach, no resize; main + stack keeps its main card).
     private func moveSelection(_ move: WallMove) {
-        let w = wallItems
-        guard !w.isEmpty else { return }
-        let ids = w.map(\.id)
-        let cur = ids.contains(selectedID ?? "") ? selectedID : nil
-        let next: String
-        if let n = neighbor?(cur, move) {
-            next = n
-        } else {
-            let i = cur.flatMap { ids.firstIndex(of: $0) } ?? 0
-            switch move {
-            case .first: next = ids[0]
-            case .last: next = ids[ids.count - 1]
-            case .left, .up: next = ids[max(0, i - 1)]
-            case .right, .down: next = ids[min(ids.count - 1, i + 1)]
-            }
-        }
+        guard let next = wallTarget(move) else { return }
         if activeTileID != nil && activeTileID != next { activeTileID = nil }
         if editingDraftID != nil && editingDraftID != next { leaveComposer() }
         selectedID = next
         onModeChanged?()
+    }
+
+    /// The card a selection move from the selected one lands on.
+    private func wallTarget(_ move: WallMove) -> String? {
+        let ids = wallItems.map(\.id)
+        guard !ids.isEmpty else { return nil }
+        let cur = ids.contains(selectedID ?? "") ? selectedID : nil
+        if let n = neighbor?(cur, move) { return n }
+        let i = cur.flatMap { ids.firstIndex(of: $0) } ?? 0
+        switch move {
+        case .first: return ids[0]
+        case .last: return ids[ids.count - 1]
+        case .left, .up: return ids[max(0, i - 1)]
+        case .right, .down: return ids[min(ids.count - 1, i + 1)]
+        }
+    }
+
+    /// ⌃⌥ + arrow: the neighbor becomes the active tile, so typing, clicks
+    /// and the wheel go there. A card with nothing to type into (a draft,
+    /// an ended agent, a shelf card) is only selected.
+    private func activateNeighbor(_ move: WallMove) {
+        guard mode == .wall, let next = wallTarget(move) else { return }
+        if agent(next)?.isRunning == true, tileHasTerminal?(next) != false {
+            activate(next)
+        } else {
+            moveSelection(move)
+        }
     }
 
     /// ⌥⌘← ⌥⌘→ (Tab on the wall): the previous / next agent in wall
