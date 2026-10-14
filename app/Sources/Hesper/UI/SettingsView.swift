@@ -337,11 +337,12 @@ struct SettingsView: View {
         }
     }
 
-    /// Stores the binding, or shows the registry's reason under the row.
-    private func rebind(_ id: CommandID, to binding: ShortcutOverrides.Binding) {
+    /// Stores the binding, or shows the registry's reason under the row;
+    /// says whether it was stored.
+    private func rebind(_ id: CommandID, to binding: ShortcutOverrides.Binding) -> Bool {
         switch model.settings.shortcutOverrides.rebinding(id, to: binding) {
-        case .applied(let o): refusals[id] = nil; model.settings.shortcutOverrides = o
-        case .refused(let reason): refusals[id] = reason
+        case .applied(let o): refusals[id] = nil; model.settings.shortcutOverrides = o; return true
+        case .refused(let reason): refusals[id] = reason; return false
         }
     }
 
@@ -502,8 +503,9 @@ private struct SettingsWindowStyle: NSViewRepresentable {
 
 /// Click, then press the new shortcut (esc cancels): the recorder behind
 /// the quick launch hotkey and the per-command shortcuts. `take` sees a
-/// key event while recording and says whether it took it; recording
-/// stops either way. The key monitor exists only while recording and
+/// key event while recording and says whether it took it: recording
+/// stops on a chord it took, and keeps listening after one it refused
+/// (the caller shows why). The key monitor exists only while recording and
 /// lets every event through once it stopped, so ⌘Q and ⌘W reach the
 /// menu bar at every other time.
 struct KeyRecorder: View {
@@ -538,8 +540,7 @@ struct KeyRecorder: View {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
             guard recording else { return e }
             if e.keyCode == 53 { stop(); return nil }
-            _ = take(e)
-            stop()
+            if take(e) { stop() }
             return nil
         }
     }
@@ -552,33 +553,44 @@ struct KeyRecorder: View {
     }
 }
 
-/// The quick launch hotkey (a global hotkey needs ⌘, ⌥ or ⌃).
+/// The quick launch hotkey (a global hotkey needs ⌘, ⌥ or ⌃): a key
+/// without one says so under the recorder, which keeps listening.
 struct HotKeyRecorder: View {
     @Binding var spec: HotKeySpec
+    @State private var refusal: String?
+    static let needsModifier = "A hotkey needs ⌘, ⌥ or ⌃"
 
     var body: some View {
-        KeyRecorder(label: spec.label, accessibilityLabel: "Quick launch hotkey", identifier: "settings.hotkey") { e in
-            guard let s = HotKeySpec(event: e) else { return false }
-            spec = s
-            return true
+        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+            KeyRecorder(label: spec.label, accessibilityLabel: "Quick launch hotkey", identifier: "settings.hotkey") { e in
+                guard let s = HotKeySpec(event: e) else { refusal = Self.needsModifier; return false }
+                refusal = nil
+                spec = s
+                return true
+            }
+            if let refusal {
+                Text(refusal).font(DS.font(.chrome)).foregroundStyle(Theme.color(.error))
+                    .accessibilityIdentifier("settings.hotkey.reason")
+            }
         }
     }
 }
 
 /// A command's shortcut in Settings › Shortcuts: ⌫ unbinds, any other
-/// key is the new chord (the registry says whether it may be).
+/// key is the new chord (the registry says whether it may be; a refused
+/// one keeps the recorder listening).
 struct ShortcutRecorder: View {
     var title: String
     /// The current chord's label; nil: none.
     var chord: String?
     var identifier: String
-    var onRecord: (ShortcutOverrides.Binding) -> Void
+    /// Whether the binding was stored.
+    var onRecord: (ShortcutOverrides.Binding) -> Bool
 
     var body: some View {
         KeyRecorder(label: chord ?? "None", accessibilityLabel: "Shortcut for \(title)", identifier: identifier) { e in
             let k = KeyChord(event: e)
-            onRecord(k.key == .delete && k.plain && !k.shift ? .unbound : .chord(k))
-            return true
+            return onRecord(k.key == .delete && k.plain && !k.shift ? .unbound : .chord(k))
         }
     }
 }

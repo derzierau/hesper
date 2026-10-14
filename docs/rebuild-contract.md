@@ -4640,8 +4640,9 @@ rebindable row (`ShortcutOverrides.rebindable`: everything but the
 standard items and Quick Launch) shows its default chord as a recorder
 (`settings.shortcut.record.<id>`, the Row's own key caps are the
 aliases): click, then press the new chord; esc cancels, ⌫ unbinds, and
-the registry's `rebinding` either stores the override or leaves it and
-puts the reason under the row in the error tone
+the registry's `rebinding` either stores the override and stops
+recording, or leaves it, keeps recording for another chord and puts the
+reason under the row in the error tone
 (`settings.shortcut.reason.<id>`: "macOS reserves ⌘Q", "Conflicts with
 New Agent", "Needs ⌘ here: plain keys belong to the agent"; a command
 live in a surface with a field the user types into, a composer, quick
@@ -4653,7 +4654,8 @@ tooltip "Reset to ⇧⌘W"); "Reset All" above the sections
 (`settings.shortcuts.resetAll`) clears every override. An unbound
 command keeps its row here, with "None", under the surface its default
 lived in. The recorder (`KeyRecorder`, shared with the quick launch
-hotkey) installs its key monitor only while recording and passes every
+hotkey, whose recorder says "A hotkey needs ⌘, ⌥ or ⌃" under it and keeps
+listening after a key without one) installs its key monitor only while recording and passes every
 event through once stopped, so ⌘Q and ⌘W reach the menu bar at every
 other time. A row whose chord is bound to another command within one of
 its surfaces gets a "Conflicts with <title>" status Pill in the error
