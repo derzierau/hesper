@@ -26,6 +26,8 @@
 	<string>14.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Agents you run in Hesper use the microphone for dictation, such as Claude Code's /voice.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>
