@@ -783,6 +783,22 @@ final class SelfTest {
         check("the close strip's Keep button keeps the agent", keptByButton)
         await setState(x.id, "working")
 
+        // Closing another agent (the palette's "Close y") while x is in
+        // focus: y's strip asks, but the keyboard stays on x's terminal.
+        await setState(y.id, "approval", attention: ["kind": "approval", "title": "Bash", "detail": "git push", "options": ["allow", "always", "deny"]])
+        _ = await Harness.wait(3) { self.model.agent(y.id)?.state == .approval }
+        model.focus(x.id)
+        _ = await Harness.wait(3) { self.model.mode == .focus && self.window.firstResponder is GhosttySurfaceView }
+        if let agent = model.agent(y.id) { model.requestClose(agent) }
+        _ = await Harness.wait(3) { self.model.closeConfirm?.id == y.id }
+        await Harness.sleep(0.3)
+        check("closing another agent from the palette while in focus: typing still reaches the terminal",
+              model.closeConfirm?.id == y.id && window.firstResponder is GhosttySurfaceView,
+              "confirm=\(model.closeConfirm?.id ?? "nil") first=\(String(describing: window.firstResponder))")
+        model.cancelClose()
+        model.exitFocus()
+        await setState(y.id, "working")
+
         // A draft's × discards it (empty: nothing asks).
         Harness.press("n", keyCode: 0x2D, flags: .command, window: window)
         let draft = model.editingDraftID

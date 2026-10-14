@@ -17,6 +17,8 @@ extension AttentionBar {
         var actionable: Bool
         var onPrimary: () -> Void
         var onCancel: () -> Void
+        /// The agent moving: see `CloseStrip.agentID`.
+        var agentID: String? = nil
     }
 
     struct MoveLine {
@@ -56,7 +58,7 @@ struct MoveStripRow: View {
             }
             .fixedSize()
         }
-        .stripKeys(tone: .working, focused: $focused, onPrimary: { if strip.primary != nil { strip.onPrimary() } }, onCancel: strip.onCancel)
+        .stripKeys(tone: .working, focused: $focused, agentID: strip.agentID, onPrimary: { if strip.primary != nil { strip.onPrimary() } }, onCancel: strip.onCancel)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("tile.moveStrip")
     }

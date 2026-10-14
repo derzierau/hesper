@@ -254,7 +254,7 @@ final class RootView: NSView {
         if historyPanel?.isOpen == true { return } // shared history: the panel keeps the keyboard (toasts come and go)
         if reviewPanel?.isOpen == true { return } // review: the sheet keeps the keyboard
         if shortcutsPanel?.isOpen == true { return } // keyboard shortcuts: the search field keeps it
-        if window.firstResponder is StripKeyView { return } // a close or move asking keeps ⏎ / esc while a toast comes and goes
+        if let s = window.firstResponder as? StripKeyView, s.ownsKeys { return } // a close or move asking on the current agent keeps ⏎ / esc while a toast comes and goes
         if window.firstResponder is NSText && !(window.firstResponder is ComposerTextView) && model.denyOpen != nil { return }
         switch model.mode {
         case .focus: focus.focusTerminal()

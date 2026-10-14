@@ -260,7 +260,7 @@ final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
         return AttentionBar.CloseStrip(ask: p.ask,
                                        onPrimary: { [weak model] in model?.confirmClose() },
                                        onSecondary: { [weak model] in model?.confirmClose(discardWorktree: true) },
-                                       onCancel: { [weak model] in model?.cancelClose() })
+                                       onCancel: { [weak model] in model?.cancelClose() }, agentID: a.id)
     }
 
     /// A move's question on this agent's strip (moving: AppModel+Move).
@@ -271,7 +271,7 @@ final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
         return AttentionBar.MoveStrip(message: p.ask.message(name: a.name, target: target, project: project),
                                       primary: p.ask.primary(tight: tight)?.title, detail: p.ask.detail, actionable: p.ask.actionable,
                                       onPrimary: { [weak model] in model?.confirmMove() },
-                                      onCancel: { [weak model] in model?.cancelMove() })
+                                      onCancel: { [weak model] in model?.cancelMove() }, agentID: a.id)
     }
 
     /// The quiet progress line while it moves (agents.moving).
@@ -1059,7 +1059,9 @@ final class WallView: NSView {
         guard let model else { return }
         let chord = KeyChord(event: event)
         // An inline question on the selected tile (a close or move asking)
-        // has the keyboard while it shows: its ⏎ and esc never get here.
+        // has the keyboard while its strip shows; its ⏎ and esc get here
+        // only when no strip has it (the band is collapsed, the wall was
+        // clicked), and the wall answers them below.
         // The active tile whose read-write terminal hasn't taken the
         // keyboard yet (it swaps in ≤ 800 ms after "start typing"): its keys
         // still go to the agent, in order.
@@ -1067,6 +1069,16 @@ final class WallView: NSView {
            let bytes = TerminalKeys.bytes(chord, characters: event.characters) {
             model.sendInput(id, bytes)
             return
+        }
+        if model.mode == .wall, chord.plain, !chord.shift, chord.key == .enter || chord.key == .escape, let id = model.selectedID {
+            if model.closeConfirm?.id == id {
+                if chord.key == .enter { model.confirmClose() } else { model.cancelClose() }
+                return
+            }
+            if model.moveConfirm?.id == id {
+                if chord.key == .enter { model.confirmMove() } else { model.cancelMove() }
+                return
+            }
         }
         // End: a scrolled-back tile goes live again.
         if event.keyCode == 119, let id = model.selectedID, let t = tiles[id], t.terminal.scrollInfo.offset > 0 {

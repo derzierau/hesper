@@ -195,6 +195,9 @@ struct AttentionBar: View {
         var onSecondary: () -> Void
         /// Esc: don't close.
         var onCancel: () -> Void
+        /// The agent asked about: the strip takes the keyboard only while
+        /// it is the selected (wall) or shown (focus) agent.
+        var agentID: String? = nil
     }
 
     var body: some View {
@@ -480,7 +483,7 @@ struct CloseStripRow: View {
             }
             .fixedSize()
         }
-        .stripKeys(tone: tone, focused: $focused, onPrimary: strip.onPrimary, onCancel: strip.onCancel)
+        .stripKeys(tone: tone, focused: $focused, agentID: strip.agentID, onPrimary: strip.onPrimary, onCancel: strip.onCancel)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("tile.closeStrip")
     }
@@ -503,15 +506,18 @@ struct CloseStripRow: View {
     }
 }
 
-/// A strip that asks (close, move) has the keyboard while it shows: an
-/// invisible view behind the row becomes first responder when it
-/// appears, answers ⏎ and esc itself and passes every other key up (the
-/// wall's arrows still move), and hands the keyboard back when it goes
-/// (the agent of an active tile or the focus view, else the wall). The
-/// row draws a `DS.focusRing` ring in its tone while it has the keys.
+/// A strip that asks (close, move) has the keyboard while it shows on the
+/// selected (wall) or shown (focus) agent: an invisible view behind the
+/// row becomes first responder when it appears, answers ⏎ and esc itself
+/// and passes every other key up (the wall's arrows still move), and
+/// hands the keyboard back when it goes (the agent of an active tile or
+/// the focus view, else the wall). A strip on another agent (closed from
+/// the palette, hesperctl, a notification) leaves the keyboard where it
+/// is: its buttons answer it. The row draws a `DS.focusRing` ring in its
+/// tone while it has the keys.
 extension View {
-    func stripKeys(tone: StateMarkKind.Tone, focused: Binding<Bool>, onPrimary: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
-        background(StripKeys(focused: focused, onPrimary: onPrimary, onCancel: onCancel))
+    func stripKeys(tone: StateMarkKind.Tone, focused: Binding<Bool>, agentID: String?, onPrimary: @escaping () -> Void, onCancel: @escaping () -> Void) -> some View {
+        background(StripKeys(focused: focused, agentID: agentID, onPrimary: onPrimary, onCancel: onCancel))
             .overlay {
                 if focused.wrappedValue {
                     DS.Radius.shape(DS.Radius.control).strokeBorder(Theme.color(Theme.token(tone)), lineWidth: DS.focusRing)
@@ -523,16 +529,19 @@ extension View {
 
 private struct StripKeys: NSViewRepresentable {
     @Binding var focused: Bool
+    var agentID: String?
     var onPrimary: () -> Void
     var onCancel: () -> Void
 
     func makeNSView(context: Context) -> StripKeyView {
         let v = StripKeyView()
+        v.agentID = agentID
         v.onFocus = { focused = $0 }
         return v
     }
 
     func updateNSView(_ v: StripKeyView, context: Context) {
+        v.agentID = agentID
         v.onPrimary = onPrimary
         v.onCancel = onCancel
     }
@@ -542,17 +551,26 @@ private struct StripKeys: NSViewRepresentable {
 /// to the strip: these keys are its own.
 @MainActor
 final class StripKeyView: NSView {
+    var agentID: String?
     var onPrimary: (() -> Void)?
     var onCancel: (() -> Void)?
     var onFocus: ((Bool) -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
+    /// Whether the strip's agent is the window's current one (selected on
+    /// the wall, shown in focus or an agent window): only then does the
+    /// strip take the keyboard, and only then does it keep it.
+    var ownsKeys: Bool {
+        guard let agentID, let model = (window as? MainWindow)?.model else { return true }
+        return model.current?.id == agentID
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let window else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.window === window else { return }
+            guard let self, self.window === window, self.ownsKeys else { return }
             window.makeFirstResponder(self)
         }
     }

@@ -1762,7 +1762,11 @@ that surface); when the menu closes libghostty still gets the click
 **Strips take the keyboard.** The close strip (needs you, a running
 command, its worktree) and the move strip (it's working, processes stay
 here, the other Mac can't take it) become first responder when they
-appear (`StripKeys` / `StripKeyView` behind the row), draw a
+appear on the window's current agent, the one selected on the wall or
+shown in focus or an agent window (`StripKeys` / `StripKeyView` behind
+the row, `ownsKeys`); a strip on another agent (closed from the
+palette, hesperctl or a notification) leaves the keyboard where it is
+and its buttons answer it. They draw a
 `DS.focusRing` (1 px) ring in their tone (`error` for a close that drops
 something, `working` for keeping the worktree and for moves) and own ⏎
 and esc in their `keyDown`; every other key goes up the responder chain,
@@ -1773,8 +1777,11 @@ anyway / Keep worktree ⏎ (primary), Discard, Keep esc (`close.primary`,
 Cancel esc (`move.primary`, `move.cancel`). When the strip goes
 (answered, or the agent left) the keyboard returns to where it was: the
 agent of an active tile or the focus view, else the wall; clicking the
-terminal takes it back at any time. A strip that is not first responder
-(the wall was clicked) gets nothing: its buttons answer it.
+terminal takes it back at any time, and a toast's keyboard restore
+leaves a strip of the current agent alone. When no strip has the
+keyboard (the wall was clicked, the tile's band is collapsed) the
+wall's own ⏎ and esc answer a close or move asked on the selected
+agent.
 
 **Deny field.** The message field keeps the keyboard; next to it Send ⏎
 (primary, `signal`; `deny.send`) denies with the message and Cancel esc
@@ -1819,7 +1826,8 @@ as VoiceOver would): Allow allows, Deny… opens the field and its Cancel
 folds it, the header's open full size opens focus, ‹ › step and "‹ Wall"
 returns, the close strip is first responder (`StripKeyView`) when it
 appears and esc on it gives the wall the keys back, its Keep button keeps
-the agent, a draft's × discards it.
+the agent, closing another agent while one is in focus leaves the
+keyboard on the focus terminal, a draft's × discards it.
 
 #### As built — drop to attach
 
