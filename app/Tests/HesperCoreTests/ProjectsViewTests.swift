@@ -84,19 +84,54 @@ import Testing
         agents.map { ViewItem(id: $0.id, projectID: c.projectID(for: $0), branch: $0.branch, worktree: $0.worktree) }
     }
 
-    @Test func bandsByGroupInGroupOrderThenOtherScratchNone() {
+    @Test func bandsByGroupInGroupOrderThenUngroupedProjectsScratchNone() {
         let a = [agent("1", "/p/hesper"), agent("2", "/s/trial"), agent("3", "/p/acme-apps"), agent("4", "/p/loose"),
                  agent("5", nil), agent("6", "/p/design-system"), agent("7", "/p/acme-apps/apps/ios-app")]
         let v = ViewResolver.resolve(items(a), level: .group, catalog: c)
-        #expect(v.bands.map(\.key) == ["g:g1", "g:g2", "g:~other", "g:~scratch", "g:~none"])
+        #expect(v.bands.map(\.key) == ["g:g1", "g:g2", "p:loose", "g:~scratch", "g:~none"])
         #expect(v.bands[0].members == ["L/3", "L/6", "L/7"], "wall order inside a band")
         #expect(v.bands[0].title == "acme apps" && v.bands[0].subtitle == "acme-apps, design-system")
         #expect(v.bands[3].title == "Scratch")
+        // A project in no group is its own band, not one "Other projects".
+        let loose = v.bands[2]
+        #expect(loose.title == "loose" && loose.level == .project && loose.projectID == "loose")
+        #expect(loose.wallScope == .project("loose") && v.bands[0].wallScope == .group("g1"))
+        #expect(TilePlace.inOwnProjectBand(projectID: "loose", band: loose, catalog: c), "the band names the project; the tile needn't")
+        #expect(ViewResolver.unit(projectID: "loose", catalog: c) == "p:loose", "Overflow keeps it whole on its own")
         #expect(v.order == ["L/3", "L/6", "L/7", "L/1", "L/4", "L/2", "L/5"])
         #expect(v.showsBands)
         // The wall's own order (header drag) comes first.
         let mine = ViewResolver.resolve(items(a), level: .group, catalog: c, bandOrder: ["g:g2", "g:~scratch"])
-        #expect(mine.bands.map(\.key) == ["g:g2", "g:~scratch", "g:g1", "g:~other", "g:~none"])
+        #expect(mine.bands.map(\.key) == ["g:g2", "g:~scratch", "g:g1", "p:loose", "g:~none"])
+    }
+
+    @Test func automaticGoesDownALevelUntilTheAgentsSplit() {
+        func level(_ a: [Agent], _ g: Grouping = .auto, scope: WallScope = .all, drafts: [ViewItem] = []) -> GroupLevel {
+            ViewGrouping.effective(g, scope: scope, catalog: c, basis: items(a) + drafts)
+        }
+        // Agents in two groups, or a group and a project in none: by group.
+        #expect(level([agent("1", "/p/acme-apps"), agent("2", "/p/hesper")]) == .group)
+        #expect(level([agent("1", "/p/hesper"), agent("2", "/p/loose")]) == .group)
+        // All in one group (two of its projects): by project, not one band.
+        #expect(level([agent("1", "/p/acme-apps"), agent("2", "/p/design-system")]) == .project)
+        // All in one project on two branches: by branch.
+        #expect(level([agent("1", "/p/acme-apps"), agent("2", "/p/acme-apps", branch: "fix/x")]) == .branch)
+        // Nothing to split (one agent, or one project on one branch): the first level, a plain wall.
+        #expect(level([agent("1", "/p/acme-apps")]) == .group)
+        #expect(level([agent("1", "/p/acme-apps"), agent("2", "/p/acme-apps")]) == .group)
+        // Drafts without a project don't count as a band.
+        #expect(level([agent("1", "/p/acme-apps")], drafts: [ViewItem(id: "d", projectID: nil, isNew: true)]) == .group)
+        // A group wall: by project, else by branch; a project wall: by branch only.
+        #expect(level([agent("1", "/p/acme-apps"), agent("2", "/p/acme-apps", branch: "b")], scope: .group("g1")) == .branch)
+        #expect(level([agent("1", "/p/acme-apps"), agent("2", "/p/design-system")], scope: .group("g1")) == .project)
+        #expect(level([agent("1", "/p/acme-apps")], scope: .project("as")) == .branch)
+        // Without groups: by project first.
+        let flat = ViewGrouping.effective(.auto, scope: .all, catalog: ProjectCatalog(projects: c.projects.values.map { $0 }),
+                                          basis: items([agent("1", "/p/acme-apps"), agent("2", "/p/hesper")]))
+        #expect(flat == .project)
+        // A chosen grouping is taken as is.
+        #expect(level([agent("1", "/p/acme-apps"), agent("2", "/p/design-system")], .group) == .group)
+        #expect(level([agent("1", "/p/acme-apps"), agent("2", "/p/hesper")], .none) == .none)
     }
 
     @Test func bandsByProjectFoldPackagesIntoTheirRepo() {
