@@ -130,7 +130,9 @@ func TestSessionsForkLargeOverSlowLink(t *testing.T) {
 	moves := sessionMoves(t, sub, stop)
 	started := time.Now()
 	var forked sessions.ResumeResult
-	if err := L.call(t, "sessions.fork", wire.SessionResumeParams{ID: "L:claude:" + sid, Machine: "M"}, &forked); err != nil {
+	// The whole transfer is bounded by the world, not one call's 60 s:
+	// under -race on a slow runner it takes longer.
+	if err := L.client(t).Call(w.ctx, "sessions.fork", wire.SessionResumeParams{ID: "L:claude:" + sid, Machine: "M"}, &forked); err != nil {
 		t.Fatalf("fork to M over a slow link: %v", err)
 	}
 	took := time.Since(started)
