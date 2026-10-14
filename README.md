@@ -33,17 +33,20 @@ that needs you.
 
 ## Release availability
 
-**The current release is [v0.2.0](https://github.com/derzierau/hesper/releases/tag/v0.2.0),
+**The current release is [v0.3.0](https://github.com/derzierau/hesper/releases/tag/v0.3.0),
 signed and notarized for macOS 14+ and installed with [Homebrew](#homebrew).**
-Every feature this README describes is in it. New since v0.1.4:
+Every feature this README describes is in it. New since v0.2.0:
 
-- Checkpoint-based moves between Macs, with a better preflight
-- Fork a running agent onto another Mac
-- Bring the project folder along when starting on another Mac
-- Scratch projects
-- The native Review inbox, with diffs, evidence and provenance
+- Every action works with the mouse: buttons with key caps on tiles,
+  sheets and popovers, right-click menus, close and back buttons
+- A complete menu bar and a Dock menu, with items that disable when they
+  do not apply
+- Help ▸ Keyboard Shortcuts (⌘/) and rebinding in Settings ▸ Shortcuts
+- VoiceOver and Full Keyboard Access support
+- `hesperctl open review` and `hesperctl open palette`
 
-See the [v0.2.0 release notes](docs/release-notes-v0.2.0.md) for the full list.
+See the [v0.3.0 release notes](docs/release-notes-v0.3.0.md) for the full
+list, including the six shortcuts that moved.
 
 One Mac works without a relay. **Multiple Macs currently require a
 self-hosted relay and device setup**; Hesper does not provide a hosted cloud
@@ -484,7 +487,7 @@ security issues privately as described in [SECURITY.md](SECURITY.md).
 ## Status
 
 Hesper is young and used daily by its author. Signed releases are
-available through Homebrew and GitHub Releases; the current one is v0.2.0.
+available through Homebrew and GitHub Releases; the current one is v0.3.0.
 
 Supported agents are Claude Code, Codex and a plain shell.
 
