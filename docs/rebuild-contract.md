@@ -2467,8 +2467,12 @@ Ghosty".)
   `*.hesperd-backup`.
 - **Signing:** `SIGN_IDENTITY` set → `codesign --options runtime
   --timestamp` for each tool (hesperd with `packaging/hesperd.entitlements`:
-  `com.apple.security.automation.apple-events`, since hesperd is the
-  responsible process of agents' osascript), then the bundle; else ad-hoc.
+  `com.apple.security.automation.apple-events` and
+  `com.apple.security.device.audio-input`, since hesperd is the responsible
+  process of agents' osascript and microphone use), then the bundle; else
+  ad-hoc. Hesper.app's Info.plist carries `NSMicrophoneUsageDescription`:
+  without it TCC kills an agent that opens the microphone (Claude Code's
+  `/voice`) instead of asking.
   `NOTARY_PROFILE` (needs `SIGN_IDENTITY`) → `notarytool submit
   --keychain-profile … --wait` and `stapler staple`.
 - **Firewall:** the old `allow_through_firewall` logic for
