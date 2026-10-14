@@ -13,18 +13,30 @@ public enum OverlayKeyAction: Equatable, Sendable {
 }
 
 public enum OverlayKeys {
-    public static func route(_ k: KeyChord, characters: String? = nil) -> OverlayKeyAction {
-        switch k.key {
-        case .up where !k.command: return .up
-        case .down where !k.command: return .down
-        case .char("p") where k.control && !k.command: return .up
-        case .char("n") where k.control && !k.command: return .down
-        case .enter where k.command: return .alternate
-        case .enter where !k.option && !k.control: return .activate
-        case .tab where !k.command: return k.shift ? .back : .actOn
-        case .escape where !k.command: return .close
-        case .delete where !k.command && !k.option: return .deleteBackward
-        default: break
+    /// The action a registry command is in an overlay (nil: not the
+    /// overlay's, it passes).
+    public static func action(for id: CommandID) -> OverlayKeyAction? {
+        switch id {
+        case .moveUp: return .up
+        case .moveDown: return .down
+        case .overlayActivate, .inboxPrimary: return .activate
+        case .overlayAlternate, .inboxOpen: return .alternate
+        case .overlayActOn: return .actOn
+        case .overlayBack: return .back
+        case .closeOverlay: return .close
+        case .overlayDeleteBackward: return .deleteBackward
+        default: return nil
+        }
+    }
+
+    /// - Parameters:
+    ///   - surface: `.palette`, `.popover` or `.inbox` (the registry's
+    ///     surface the overlay is).
+    ///   - typing: a text field in the overlay has the keyboard (the
+    ///     inbox's filter): a plain letter that would move (J K) types.
+    public static func route(_ k: KeyChord, characters: String? = nil, surface: Surface = .palette, typing: Bool = false) -> OverlayKeyAction {
+        if let id = CommandRegistry.resolve(k, in: surface), let a = action(for: id) {
+            if !(typing && k.plain && k.isLetter && (a == .up || a == .down)) { return a }
         }
         if k.command || k.control { return .pass }
         if let c = characters, !c.isEmpty, c.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && $0.value < 0xF700 }) {
@@ -66,4 +78,21 @@ public struct OverlayList: Equatable, Sendable {
 
     public mutating func type(_ s: String) { query += s; index = 0 }
     public mutating func deleteBackward() { if !query.isEmpty { query.removeLast(); index = 0 } }
+}
+
+/// The palette's scoped list (⇥ on an agent: its actions): a "‹ Back" row
+/// first, so a click leaves the scope the way esc does, then the actions;
+/// the selection opens on the first action.
+public enum PaletteScope {
+    public static let backID = "back"
+    public static let backTitle = "‹ Back"
+    /// The row's key cap.
+    public static let backKey = "esc"
+    /// The selection a freshly entered scope opens on.
+    public static let firstAction = 1
+
+    /// The scoped list's row ids.
+    public static func rows(actions: [String]) -> [String] { [backID] + actions }
+
+    public static func isBack(_ id: String) -> Bool { id == backID }
 }

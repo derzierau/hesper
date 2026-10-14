@@ -9,7 +9,10 @@ import SwiftUI
 // capsule, so the bar is one custom view in the titlebar container, to the
 // right of the traffic lights:
 //
-//   ● ● ●  hesper.  [All · 7 | Needs you | Working]   …   Search agents and history ⌘K  ⊞ ＋  ■ laptop ■ mini  ■ 2 need you
+//   ● ● ●  hesper.  [All · 7 | Needs you | Working]   …   Search agents and history ⌘K  ⊞ ＋  ■ laptop ■ mini  ■ 2 need you  ⋯
+//
+// The ⋯ at the end is the View menu's wall commands (ToolbarOverflow) for
+// people who never open the menu bar; the search field keeps ⌘K.
 //
 // The NSToolbar stays, empty, for the unified titlebar height and the
 // full-screen auto-hide (reveal on hover).
@@ -44,6 +47,8 @@ struct TopBarData {
     var background = BackgroundSummary()
     /// Finished work ready to review (the review pill; hidden at 0).
     var review = 0
+    /// Dense Cards is on (the ⋯ menu's checkmark).
+    var dense = false
 
     /// The wordmark's stop is Signal (approvals and questions).
     var wordmarkSignal: Bool { counts.approval + counts.question > 0 }
@@ -57,6 +62,8 @@ struct TopBarActions {
     var search: @MainActor () -> Void = {}
     var newAgent: @MainActor () -> Void = {}
     var review: @MainActor () -> Void = {}
+    /// The ⋯ menu's choice: a registry command.
+    var command: @MainActor (CommandID) -> Void = { _ in }
 }
 
 /// The window layer's name for a wall's scope (the first segment); the
@@ -84,7 +91,7 @@ enum TopBarSource {
             return TopBarData(counts: m.counts, machines: m.machines, scope: m.scope, popover: m.popover, connected: m.isConnected,
                               connectionMessage: m.connectionMessage, arrangement: m.arrangement,
                               scopeName: s.name, scopeCount: s.count, scopeOf: s.of, compact: compact, background: m.backgroundSummary,
-                              review: m.reviewCount)
+                              review: m.reviewCount, dense: m.minChars < 80)
         }
     }
 
@@ -98,7 +105,12 @@ enum TopBarSource {
             popover: { [weak m] k in m?.openPopover(k) },
             search: { [weak m] in m?.perform(.palette) },
             newAgent: { [weak m] in m?.perform(.newAgent) },
-            review: { [weak m] in m?.perform(.review) })
+            review: { [weak m] in m?.perform(.review) },
+            // As the menu bar runs it: AppKit's selector for a standard item
+            // (Enter Full Screen), the app's run(_:) for the rest.
+            command: { id in
+                if let sel = MenuBuilder.selector(id) { NSApp.sendAction(sel, to: nil, from: nil) } else { (NSApp.delegate as? AppDelegate)?.run(id) }
+            })
     }
 }
 
@@ -268,13 +280,16 @@ struct TopBarTrailingContent: View {
                     .id(layout.current) // a new button (symbol, tooltip) whenever the wall's arrangement changes
                     .barAnchor("layout")
                     .accessibilityIdentifier("toolbar.layout")
-                IconButton("plus", help: "New agent", shortcut: "⌘N") { actions.newAgent() }
+                IconButton("plus", help: "New agent", shortcut: CommandRegistry.cap(.newAgent)) { actions.newAgent() }
                     .accessibilityIdentifier("toolbar.new")
             }
             machines
             ReviewPill(data: data, actions: actions)
             BackgroundPill(data: data, actions: actions)
             AttentionPill(data: data, actions: actions)
+            OverflowMenuButton(data: data, actions: actions)
+                .frame(width: IconButton.side, height: IconButton.side)
+                .accessibilityIdentifier("toolbar.more")
         }
         .font(.ds(.chrome))
         .lineLimit(1)
@@ -284,7 +299,7 @@ struct TopBarTrailingContent: View {
     /// The search field affordance: opens the palette (⌘K); an icon when narrow.
     @ViewBuilder private var search: some View {
         if data.compact {
-            IconButton("magnifyingglass", help: "Search agents and history", shortcut: "⌘K") { actions.search() }
+            IconButton("magnifyingglass", help: "Search agents and history", shortcut: CommandRegistry.cap(.palette)) { actions.search() }
                 .accessibilityIdentifier("toolbar.search")
         } else {
             let shape = DS.Radius.shape(DS.Radius.control)
@@ -301,7 +316,7 @@ struct TopBarTrailingContent: View {
                 .contentShape(shape)
             }
             .buttonStyle(.plain)
-            .help("Agents, projects, machines, actions, history (⌘K)")
+            .help(IconButton.tooltip("Agents, projects, machines, actions, history", CommandRegistry.cap(.palette)))
             .accessibilityLabel("Search")
             .accessibilityIdentifier("toolbar.search")
         }
@@ -365,7 +380,7 @@ struct ReviewPill: View {
             }
             .buttonStyle(.plain)
             .fixedSize()
-            .help("Ready to review (⌘R)")
+            .help(IconButton.tooltip("Ready to review", CommandRegistry.cap(.review)))
             .accessibilityLabel("\(data.review) ready to review")
             .accessibilityIdentifier("topbar.review")
         }
@@ -392,7 +407,7 @@ struct BackgroundPill: View {
             .buttonStyle(.plain)
             .fixedSize()
             .barAnchor("background")
-            .help("Running in the background (⌥⌘W sends the selected agent here)")
+            .help("Running in the background (\(CommandRegistry.cap(.backgroundAgent) ?? "") sends the selected agent here)")
             .accessibilityLabel("\(b.count) in the background")
             .accessibilityIdentifier("topbar.background")
         }
@@ -423,9 +438,71 @@ struct AttentionPill: View {
             .buttonStyle(.plain)
             .fixedSize()
             .barAnchor("attention")
-            .help("What needs you (⌘J)")
+            .help(IconButton.tooltip("What needs you", CommandRegistry.cap(.nextAttention)))
             .accessibilityLabel("\(c.needingYou) need\(c.needingYou == 1 ? "s" : "") you")
             .accessibilityIdentifier("topbar.approvals")
+        }
+    }
+}
+
+/// The ⋯ at the bar's end: an IconButtonView that pops the View menu's
+/// wall commands (`ToolbarOverflow.items`) with their key equivalents, the
+/// current layout and Dense Cards checked, Enter / Exit Full Screen by
+/// the window's state.
+struct OverflowMenuButton: NSViewRepresentable {
+    var data: TopBarData
+    var actions: TopBarActions
+
+    func makeNSView(context: Context) -> IconButtonView {
+        let b = IconButtonView(symbol: "ellipsis", help: "View: sidebar, scope, layouts, full screen", target: context.coordinator,
+                               action: #selector(Coordinator.open(_:)))
+        b.setAccessibilityIdentifier("toolbar.more")
+        return b
+    }
+
+    func updateNSView(_ v: IconButtonView, context: Context) {
+        context.coordinator.data = data
+        context.coordinator.actions = actions
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(data: data, actions: actions) }
+
+    @MainActor final class Coordinator: NSObject {
+        var data: TopBarData
+        var actions: TopBarActions
+        init(data: TopBarData, actions: TopBarActions) { self.data = data; self.actions = actions }
+
+        /// The menu as the View menu shows it (MenuBuilder's key
+        /// equivalents), rebuilt on every open so the checkmarks are current.
+        func menu(fullScreen: Bool) -> NSMenu {
+            let menu = NSMenu()
+            for item in ToolbarOverflow.items() {
+                switch item {
+                case .separator:
+                    menu.addItem(.separator())
+                case .command(let id, let title, let chord):
+                    let act = MenuAction { [actions] in actions.command(id) }
+                    let mi = NSMenuItem(title: id == .enterFullScreen ? MenuModel.fullScreenTitle(inFullScreen: fullScreen) : title,
+
+                                        action: #selector(MenuAction.run), keyEquivalent: "")
+                    mi.target = act
+                    mi.representedObject = act
+                    if let chord, let (key, mods) = MenuBuilder.keyEquivalent(chord) {
+                        mi.keyEquivalent = key
+                        mi.keyEquivalentModifierMask = mods
+                    }
+                    if case .arrangement(let i) = id { mi.state = WallArrangement.allCases[i] == data.arrangement ? .on : .off }
+                    if id == .toggleDense { mi.state = data.dense ? .on : .off }
+                    mi.setAccessibilityIdentifier("toolbar.more.\(id.key)")
+                    menu.addItem(mi)
+                }
+            }
+            return menu
+        }
+
+        @objc func open(_ sender: NSButton) {
+            menu(fullScreen: sender.window?.styleMask.contains(.fullScreen) ?? false)
+                .popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY + DS.Spacing.xxs), in: sender)
         }
     }
 }
@@ -551,6 +628,11 @@ final class TopBar: NSView {
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { true }
 
+    /// The bar's ends in the window's key-view loop (RootView links the
+    /// wall before, the sidebar filter after).
+    var firstKeyView: NSView { leading }
+    var lastKeyView: NSView { trailing }
+
     init(source: TopBarSource) {
         self.source = source
         wordmark = BarHostingView(rootView: TopBarWordmark(source: source))
@@ -561,6 +643,7 @@ final class TopBar: NSView {
         wordmark.sizingOptions = [.intrinsicContentSize]
         leading.sizingOptions = [.intrinsicContentSize]
         trailing.sizingOptions = [.intrinsicContentSize]
+        leading.nextKeyView = trailing // Full Keyboard Access: the bar's controls, leading then trailing
         glass.isHidden = true
         addSubview(glass)
         addSubview(wordmark)

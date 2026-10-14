@@ -7,10 +7,11 @@ import SwiftUI
 /// millisecond per row. A vertical stack: the header (title, "Claude ·
 /// ~/projects/x · mini"), a compact key/value list (you asked / it
 /// answered / changed / open todos / branch; scrolls when long), and the
-/// actions pinned to the bottom: the primary "Resume here ⏎" (or a quiet
-/// note when it can't be resumed), "Fork ⌥⏎", "Continue on <Mac> ⌘⏎",
-/// then quiet text buttons (C A ⌫ ⌘C). "Continue in …" (editing the
-/// brief) is the SwiftUI SessionCardView.
+/// actions pinned to the bottom, one KeyButton each (`SearchPreview.
+/// actions`): the primary "Resume here ⏎" (or a quiet note when it can't
+/// be resumed), then "Fork ⌥⏎", "Continue on <Mac> M", "Continue in
+/// <tool> C", "Archive A", "Delete ⌫", "Copy id ⌘C", "Restore R".
+/// "Continue in …" (editing the brief) is the SwiftUI SessionCardView.
 @MainActor
 final class SessionCardPanel: NSView {
     let model: SessionCardModel
@@ -34,18 +35,13 @@ final class SessionCardPanel: NSView {
     private let actionsLine = NSView()
     private let outsideNote = NSTextField(wrappingLabelWithString: "")
     private let note = NSTextField(wrappingLabelWithString: "")
-    private var buttons: [ActionButton] = []
-    private var quiet: [ActionButton] = []
+    private(set) var buttons: [KeyButtonView] = []
     private var shownActions: [SessionCardText.Action] = []
     private var shown: SessionCardText?
     /// Only while continuing: a hidden hosting view would still re-render
     /// on every card change.
     private var continueHost: NSHostingView<SessionCardView>?
 
-    /// The keys that get a button (the rest are quiet text buttons).
-    static let buttonKeys: Set<String> = ["⏎", "⌥⏎", "⌘⏎"]
-    /// The ⏎ action that is a state, not something to do.
-    static let outsideTitle = "Running outside Hesper"
 
     private static func lineHeight(_ f: NSFont) -> CGFloat { ceil(f.ascender - f.descender + f.leading) }
     private static let fTitle = NSFont.ds(.panelTitle, .semibold)
@@ -159,24 +155,19 @@ final class SessionCardPanel: NSView {
         set(note, t.resumeHereNote ?? "")
         if t.actions != shownActions {
             shownActions = t.actions
-            for b in buttons + quiet { b.removeFromSuperview() }
+            for b in buttons { b.removeFromSuperview() }
             buttons = []
-            quiet = []
-            for a in t.actions {
-                let run = { [weak self] in self?.model.onAction?(SessionCardModel.action(a.key)) ?? () }
-                if a.key == "⏎" && a.title == Self.outsideTitle { continue } // a note, not a button
-                if Self.buttonKeys.contains(a.key) {
-                    let display = a.key == "⏎" && a.title == "Resume" ? "Resume here" : a.title
-                    let b = ActionButton(key: a.key, title: display, style: a.key == "⏎" ? .primary : .secondary, action: run)
-                    actionsBox.addSubview(b)
-                    buttons.append(b)
-                } else {
-                    let b = ActionButton(key: a.key, title: a.title, style: .quiet, action: run)
-                    actionsBox.addSubview(b)
-                    quiet.append(b)
+            for a in SearchPreview.menu(for: t.actions) {
+                let resume = a.act == .history(.resume)
+                let display = resume && a.title == "Resume" ? "Resume here" : a.title
+                let b = KeyButtonView(display, kbd: a.key.isEmpty ? nil : a.key, variant: resume ? .primary(.working) : .quiet) { [weak self] in
+                    self?.model.onAction?(a.act)
                 }
+                b.setAccessibilityIdentifier("history.action.\(a.key)")
+                actionsBox.addSubview(b)
+                buttons.append(b)
             }
-            let outside = t.actions.contains { $0.key == "⏎" && $0.title == Self.outsideTitle }
+            let outside = t.actions.contains { $0.key == "⏎" && $0.title == SessionCardText.outsideTitle }
             set(outsideNote, outside ? "Running outside Hesper: open it where it runs, or fork it here." : "")
         }
         needsLayout = true
@@ -199,7 +190,7 @@ final class SessionCardPanel: NSView {
         let lx = Self.lineHeight(Self.fText), lm = Self.lineHeight(Self.fMono)
         empty.frame = NSRect(x: pad, y: (bounds.midY - lx / 2).rounded(), width: w, height: lx)
 
-        // Actions, from the bottom up: quiet buttons, the note, the buttons, the outside note.
+        // Actions, from the bottom up: the note, the buttons, the outside note.
         let ah = layoutActions(width: bounds.width)
         actionsBox.frame = NSRect(x: 0, y: bounds.height - ah, width: bounds.width, height: ah)
 
@@ -246,32 +237,23 @@ final class SessionCardPanel: NSView {
         } else {
             outsideNote.isHidden = true
         }
+        // The buttons wrap at the width, in the actions' order.
         var x = pad
-        let bh = ActionButton.height
+        let bh = KeyButton.height
         for b in buttons {
-            let bw = min(w, b.fittingWidth)
+            let bw = min(w, b.intrinsicContentSize.width)
             if x > pad && x + bw > pad + w { x = pad; y += bh + DS.Spacing.s }
             b.frame = NSRect(x: x, y: y, width: bw, height: bh)
             x += bw + DS.Spacing.s
         }
-        if !buttons.isEmpty { y += bh + DS.Spacing.m }
-        if !note.stringValue.isEmpty {
+        if !buttons.isEmpty { y += bh }
+        note.isHidden = note.stringValue.isEmpty
+        if !note.isHidden {
             let h = Self.height(note, width: w, lines: 2, font: Self.fMono)
+            y += DS.Spacing.m
             note.frame = NSRect(x: pad, y: y, width: w, height: h)
-            note.isHidden = false
-            y += h + DS.Spacing.m
-        } else {
-            note.isHidden = true
+            y += h
         }
-        x = pad
-        let qh = Pill.height
-        for b in quiet {
-            let bw = b.fittingWidth
-            if x > pad && x + bw > pad + w { x = pad; y += qh + DS.Spacing.xs }
-            b.frame = NSRect(x: x, y: y, width: bw, height: qh)
-            x += bw + DS.Spacing.l
-        }
-        if !quiet.isEmpty { y += qh }
         return y + pad
     }
 }
@@ -367,98 +349,4 @@ final class FileChips: NSView {
             }
         }
     }
-}
-
-/// An action of the preview: its title and Kbd. Primary: a `working`
-/// fill; secondary: a 1 px `line` outline; quiet: dim text, no box.
-@MainActor
-final class ActionButton: NSView {
-    enum Style { case primary, secondary, quiet }
-    static let height: CGFloat = 28
-
-    let key: String
-    private let style: Style
-    private let label = NSTextField(labelWithString: "")
-    private let kbd: KbdView
-    private let action: () -> Void
-    private var hovering = false { didSet { applyTheme() } }
-    private var tracking: NSTrackingArea?
-
-    init(key: String, title: String, style: Style, action: @escaping () -> Void) {
-        self.key = key
-        self.style = style
-        self.action = action
-        kbd = KbdView(key)
-        super.init(frame: .zero)
-        wantsLayer = true
-        DS.Radius.apply(DS.Radius.control, to: layer)
-        label.font = .ds(.chrome, style == .quiet ? .regular : .medium)
-        label.stringValue = title
-        label.lineBreakMode = .byTruncatingTail
-        addSubview(label)
-        addSubview(kbd)
-        applyTheme()
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
-        setAccessibilityLabel("\(title) (\(key))")
-        setAccessibilityIdentifier("history.action.\(key)")
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        applyTheme()
-    }
-
-    private func applyTheme() {
-        switch style {
-        case .primary:
-            layer?.backgroundColor = Theme.ns(.working, alpha: hovering ? 0.88 : 1).cg(in: self)
-            layer?.borderWidth = 0
-            label.textColor = PanelView.sheetColor
-            kbd.tint = PanelView.sheetColor
-        case .secondary:
-            layer?.backgroundColor = (hovering ? Theme.ns(.line, alpha: 0.6) : .clear).cg(in: self)
-            layer?.borderWidth = 1
-            layer?.borderColor = Theme.ns(.line).cg(in: self)
-            label.textColor = Theme.ns(.text)
-        case .quiet:
-            layer?.backgroundColor = NSColor.clear.cgColor
-            layer?.borderWidth = 0
-            label.textColor = Theme.ns(hovering ? .text : .dim)
-        }
-    }
-
-    private var padH: CGFloat { style == .quiet ? 0 : DS.Spacing.m }
-
-    /// The title's width, measured from its text (with the label's 2 pt insets).
-    private var labelWidth: CGFloat { ceil(label.attributedStringValue.size().width) + 2 * DS.Spacing.xxs }
-
-    var fittingWidth: CGFloat { labelWidth + DS.Spacing.s + kbd.intrinsicContentSize.width + 2 * padH }
-
-    override func layout() {
-        super.layout()
-        let s = label.intrinsicContentSize, k = kbd.intrinsicContentSize
-        let kx = bounds.width - padH - k.width
-        label.frame = NSRect(x: padH, y: ((bounds.height - s.height) / 2).rounded(), width: max(0, min(labelWidth, kx - DS.Spacing.s - padH)), height: s.height)
-        kbd.frame = NSRect(x: kx, y: ((bounds.height - k.height) / 2).rounded(), width: k.width, height: k.height)
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let t = tracking { removeTrackingArea(t) }
-        let t = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
-        addTrackingArea(t)
-        tracking = t
-    }
-
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
-    override func mouseDown(with event: NSEvent) {}
-    override func mouseUp(with event: NSEvent) {
-        if bounds.contains(convert(event.locationInWindow, from: nil)) { action() }
-    }
-    override func accessibilityPerformPress() -> Bool { action(); return true }
 }

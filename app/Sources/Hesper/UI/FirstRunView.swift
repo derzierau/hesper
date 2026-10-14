@@ -171,7 +171,7 @@ struct FirstRunView: View {
                 note("It's on the wall.")
             } else {
                 HStack(spacing: DS.Spacing.m) {
-                    Button { FirstRun.newAgent(model) } label: { Pill("New agent", variant: .segment(selected: true), kbd: "⌘N") }
+                    Button { FirstRun.newAgent(model) } label: { Pill("New agent", variant: .segment(selected: true), kbd: CommandRegistry.cap(.newAgent)) }
                         .buttonStyle(.plain)
                         .disabled(!model.isConnected)
                         .accessibilityLabel("New agent")

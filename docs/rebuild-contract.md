@@ -350,7 +350,7 @@ UserDefaults as usual). Automated app runs (`--selftest-out` & co.) and
 | Method | Params | Result |
 |---|---|---|
 | `app.state` | – | `{active, focused: {wall?, agent?, agentWindow?}, currentWall, walls: [{id, title, isMain, isHome, open, visible, scope, scopeName?, arrangement, grouping, minChars, density, collapsed, bandOrder, sidebar, ownWalls, mode: wall\|focus\|compose, focusedAgent?, selectedAgent?, agents: [id], bands: [{key, title, collapsed, agents, pointer}]}] (desk order, home first), agentWindows: [{agent, title, key}], desks: [Desk row], arrangements, groupings, ownWalls, densities, scopes}` |
-| `app.open` | one of: `{agent, mode?: focus\|wall\|window\|tab}` (focus: like a notification click — its window, the frontmost wall showing it, else home; wall: selected there; window: ⇧-click; tab: ⌥⇧-click) · `{mode?: "wall", wall?, scope?, newWall?}` (a wall forward; with `scope`: the named wall takes it, or without `wall` a wall having it comes forward, else a new wall — the sidebar's click / ⌥-click; `newWall`: ⌥⌘N) · `{composer: {project?, task?, kind?, profile?, machine?, worktree?, branch?}, wall?}` (⌘N's draft on that wall, filled in, not started; `project` a folder or a project id / name; `kind` picks its default profile) · `{history: {query?} \| true \| "query"}` (⌘Y searching) · `{inbox: true}` (⌘J) | `{agent, mode}` · the wall (as in `app.state`) · `{draft, wall}` · `{wall, query}` · `{wall, needsYou}`; brings the app to the front |
+| `app.open` | one of: `{agent, mode?: focus\|wall\|window\|tab}` (focus: like a notification click — its window, the frontmost wall showing it, else home; wall: selected there; window: ⇧-click; tab: ⌥⇧-click) · `{mode?: "wall", wall?, scope?, newWall?}` (a wall forward; with `scope`: the named wall takes it, or without `wall` a wall having it comes forward, else a new wall — the sidebar's click / ⌥-click; `newWall`: ⌥⌘N) · `{composer: {project?, task?, kind?, profile?, machine?, worktree?, branch?}, wall?}` (⌘N's draft on that wall, filled in, not started; `project` a folder or a project id / name; `kind` picks its default profile) · `{history: {query?} \| true \| "query"}` (⌘Y searching) · `{inbox: true}` (⌘J) · `{review: {agent?} \| true \| "agent"}` (⌘R; `agent` selects its item when it is in the review inbox; nothing to review: `not_found`) · `{palette: {query?} \| true \| "query"}` (⌘K with `query` typed in) | `{agent, mode}` · the wall (as in `app.state`) · `{draft, wall}` · `{wall, query}` · `{wall, needsYou}` · `{wall, selected}` · `{wall, query}`; brings the app to the front. An app from before `review` / `palette` ignores the key and answers with the frontmost wall; hesperctl tells those answers apart (no `wall` field) and exits 4 |
 | `app.wall.set` | `{wall?, arrangement?: shelf\|columns\|treemap\|mainStack\|grid, grouping?: auto\|none\|group\|project\|branch, density?: dense\|normal\|N (or minChars), collapse?: [band], expand?: [band], bandOrder?: [band], scope?, sidebar?: bool, ownWalls?: collapsed\|full\|hidden, home?: bool}` | the wall; a band is its key (`p:<project>`, `g:<group>`, …), title or project / group id, `all` in collapse / expand: every band; an unknown band changes nothing (`not_found`) |
 | `app.desk` | `{action: list\|save\|switch\|rename\|remove, name?, newName?}` | the desks after it: `[{id, name, current, automatic, thisDisplays, displays, walls, agentWindows}]` (this setup's first); a desk is named by id or name; an automatic desk can't be removed (`invalid`) |
 
@@ -368,7 +368,8 @@ the registry; the parents are aliases: `open ID` = `open agent ID`,
 [--window|--tab|--select]` (also `open ID`), `open wall [--wall W]
 [--scope S] [--new]`, `open new [--project P] [--task T | TASK…] [--kind
 K] [--profile P] [--machine M] [--worktree] [--branch B] [--wall W]`,
-`open history [QUERY…]`, `open inbox`; `wall [show] [--wall W]` (a table
+`open history [QUERY…]`, `open inbox`, `open review [--agent ID]`, `open
+palette [--query TEXT]`; `wall [show] [--wall W]` (a table
 and the bands; `--json`: the whole `app.state`), `wall set [--wall W]
 [--arrangement A] [--grouping G] [--density D] [--collapse BAND]…
 [--expand BAND]… [--band-order B,…] [--scope S] [--sidebar on|off]
@@ -409,14 +410,17 @@ that, `kill -QUIT` the daemon: it writes every goroutine to the log.
   header: state dot, name, machine + kind mark. Tiles in `approval` / `question`
   / `error` get a ring and inline actions (Allow / Always / Deny for approvals).
 - **Focus**: ⌘↩ opens a tile full window as `rw --owner` (resizes the PTY to the
-  view); ⌘↩ again or Esc returns. ⌘[ / ⌘] step through agents in wall order.
+  view); ⌘↩ again or ⌘Esc returns (Esc is the agent's). ⌥⌘← / ⌥⌘→ step through agents in wall order.
 - **Attention**: ⌘J jumps to the next agent needing you (approval, then
   question, then error; oldest first). Menu bar item with counts; a macOS
   notification on entering approval/question/error (not while focused on it).
 - **New agent** ⌘N: a draft tile in the wall (was a sheet; see "As built —
   drafts, overlays, …").
-- **⌘K**: palette over agents, projects, machines, actions. ⌘W stops the
-  focused agent (confirm in-app). ⌘⇧M moves it to another machine.
+- **⌘K**: palette over agents, projects, machines, actions. ⌘W closes the
+  selected agent (asks when that would lose something; History keeps it;
+  in an agent window it closes the window and the agent keeps running).
+  ⇧⌘M moves it to another machine. Every key and menu item is one entry
+  in the command registry: see "As built — commands".
 - Tokyo Night palette; Ghostty's font settings (read the user's Ghostty config
   for font family/size where possible).
 - Performance budget (from the proposal): local keystroke→screen < 5 ms;
@@ -923,12 +927,13 @@ libghostty findings that shaped the code:
 **UI as built:** wall (arrangements below), card header (state dot,
 name, project · branch, elapsed time while working, machine · kind chip;
 remote chips in purple), ring for approval / question / error with a soft
-glow, inline Allow / Always / Deny… (also ⏎ / A / N on the selected tile) in
-the card's own attention band, summary line for done/idle, exited band with
-Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ (⌘[ ⌘]) stepping in wall order.
+glow, inline Allow / Always / Deny… as KeyButtons (also ⏎ / A / N on the
+selected tile; "pointer paths" below) in the card's own attention band,
+summary line for done/idle, exited band with Resume. Focus with the same header and band, ⌥⌘← ⌥⌘→ stepping in wall order.
 ⌘J attention queue. Status (counts, machines with RTT, clickable attention
-chips → ⌘J, working count), the layout switch, New Agent and ⌘K search in
-the window's unified toolbar. Menu bar item (counts, the queue, New Agent). Notifications on
+chips → ⌘J, working count), the layout switch, New Agent, ⌘K search and a
+⋯ overflow with the View menu's wall commands in the window's unified
+toolbar. Menu bar item (counts, the queue, New Agent). Notifications on
 entering approval/question/error unless the app is active and focused on
 that agent (click opens it). ⌘N sheet (multi-line task, name, machine,
 profile with the daemon's project/kind default, recent projects + Choose
@@ -992,7 +997,8 @@ UserDefaults `wallArrangement`):
   when an agent comes, goes or moves to/from the shelf — never on approval
   or question. All quiet: the plain fill grid.
 - **B Columns**: one row of full-height cards, `max(min width, width / n)`
-  wide; scrolls sideways, edge fades show cards off screen, the selection
+  wide; scrolls sideways, edge fades show cards off screen (their chevron
+  pill is a button: a click scrolls one page that way), the selection
   scrolls into view.
 - **C Treemap**: squarified, approval/question/error 4, working 2, quiet 1;
   gaps inside the rects, outer margin exact.
@@ -1042,7 +1048,7 @@ Xcode UI; SwiftPM + Make — XcodeGen would only add a generated project):
 - `make -C app test-ui`: launches the real app against the fake daemon in a
   temp dir and drives it through the user's key paths (28 checks: tiles
   render, terminal area = engine grid (±1 px), ring, ⏎ allow, ⌘J order, ⌘↩
-  focus owning the PTY size, typing, tiles stop rendering in focus, ⌘] step,
+  focus owning the PTY size, typing, tiles stop rendering in focus, ⌥⌘→ step,
   refit after resize, done summary, done → shelf without a terminal, ⌥⌘2 /
   ⌥⌘L / ⌥⌘1 layouts with exact tiles, ⌘⇧M unavailable, ⌘W confirm → exited → resume re-attach, spawn,
   ⌘K). `make -C app test-ui-real` runs the same against the real
@@ -1146,7 +1152,7 @@ Defaults: no project (see "New drafts have no project" below), this Mac,
 the project's last profile once chosen (else Settings › Profiles, else
 hesperd's); worktree off with a
 branch suggested from the first line (`Fix the flaky badge test` →
-`fix/flaky-badge-test`), ⌘⇧W toggles. ⌘↩ starts: the spawn's agent takes
+`fix/flaky-badge-test`), ⌥⌘B toggles (⇧⌘W tidies up, as everywhere). ⌘↩ starts: the spawn's agent takes
 the draft's place (`placements`, remembered in UserDefaults; the agent's
 tile is created in the draft tile's frame — no movement), the first line
 names it, the draft leaves hesperd. ⌥↩ starts and opens the next draft
@@ -1308,9 +1314,9 @@ closes and keeps the text.
 1 + fade), close 80 ms, Reduce Motion: fades. Popovers attach to their
 thing with an arrow (`PopoverPlacement`: below, else above, sideways
 while the arrow still reaches; never over a card that needs the user when
-another spot is free). Keys everywhere (`OverlayKeys`): ↑↓ select, ⏎ do,
-⌘⏎ the alternative, ⇥ act on, esc close, typing filters; each overlay's
-footer lists its keys. State survives close (palette query, deny text,
+another spot is free). Keys everywhere (`OverlayKeys`, resolved through the command registry:
+"As built — commands"): ↑↓ select, ⏎ do, ⌘⏎ the alternative, ⇥ act on,
+esc close, typing filters; each overlay's footer lists its keys. State survives close (palette query, deny text,
 composer). Inventory: ⌘K palette (the only centered one; light scrim with
 holes so attention rings stay visible; agents, drafts, actions — an agent
 named in the query brings its actions — projects, machines, layouts,
@@ -1319,12 +1325,15 @@ popover from the tile (machines with route and round trip, offline
 dimmed, "with conversation + uncommitted work"; the tile says "moving to
 mini…" in place; undo moves it back); rename popover; the toolbar's
 machines pill (online, route, RTT, agents, pairing hint), attention pill
-(the ⌘J queue: ⏎ go, ⌘⏎ allow) and layout button (four layouts + min
-width; ⌥⌘1–4 stay). Deny… expands the band into a one-line message field
-in place. ⌘W stops at once / removes at once (committed after 6 s) with
+(the ⌘J inbox: ⏎ the first answer, ⌘⏎ opens the tile, letters filter) and
+layout button (five layouts + min width; ⌥⌘1–5). Deny… expands the band
+into a one-line message field in place, with Send ⏎ and Cancel esc
+KeyButtons under it. ⌘W stops at once / removes at once (committed after 6 s) with
 an undo toast (⌘Z, its button); stop undoes by resuming; only removing
 an agent whose local worktree has uncommitted changes (`git status
---porcelain`) asks, inline on the tile (⏎ remove anyway, esc keep).
+--porcelain`) asks, inline on the tile (Close anyway ⏎ · Keep esc as
+KeyButtons; the strip takes the keyboard while it shows and gives it
+back after: "pointer paths" below).
 Settings ⌘, is a window (General: layout, tile font, min width; Quick
 Launch; Notifications; Profiles per kind). Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
@@ -1351,8 +1360,9 @@ terminal frame). The shelf/treemap follow the shown (debounced) state.
 ⏎ on it, typing a character on it, or ⌘J landing on it makes it active
 (a plain click only selects: see "As built — keyboard navigation"): cyan ring, "typing · ⌘esc
 leaves"; every key goes to the agent (Esc, ⏎, arrows, ⌃-keys, IME,
-⌘C/⌘V, selection) except the app's ⌘ shortcuts (⌘N ⌘K ⌘J ⌘W ⌘↩ ⌘[ ⌘] ⌥⌘← ⌥⌘→ ⌘,
-⌘⇧M ⌘Z ⌥⌘…). ⌘esc (Claude/Codex never see ⌘esc), a click on the wall or
+⌘C/⌘V, selection) except the app's ⌘ shortcuts (the registry's
+`.activeTile` surface, "As built — commands": ⌘N ⌘K ⌘J ⌘W ⌘↩ ⌥⌘← ⌥⌘→ ⌘,
+⇧⌘M ⌘Z ⌥⌘…). ⌘esc (Claude/Codex never see ⌘esc), a click on the wall or
 another tile leaves (back to selected); one per window; double click still opens focus. On
 a selected but not active tile ⏎/A/N still answer approvals. The active
 tile's surface is a read-write **owner** attach at its own grid in the
@@ -1393,6 +1403,49 @@ offset / rw preamble / alt screen, `internal/attachtty` scroll parser,
 machines|layout|undo|deny|quick|settings|flap|after-focus|active|scroll
 [DAEMON=real]` screenshots each (quick/settings: the panel/window too).
 
+#### As built — pointer paths in the overlays (UI control, phase 3c)
+
+Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
+`docs/design-system.md`); the keys themselves did not move.
+
+- **Inbox ⌘J.** A filter field under the title (agent name, project,
+  question: `AttentionInbox.matches`). Each item is a `Row` (state mark,
+  agent, "machine · other wall · age", the question as its subtitle) with
+  KeyButtons under it: approvals Allow ⏎ · Always · Deny, numbered
+  questions one button per option (the first ⏎), free text Open ⏎,
+  "Continue on mini" when it can move, and Open ⌘⏎ (an icon). ↑↓ ⌃N ⌃P
+  move; every letter and digit goes to the filter, and the field then has
+  the keyboard (↑↓ ⌃N ⌃P ⏎ ⌘⏎ esc still route), so the first keystroke
+  never answers: typing "api" filters, it does not send Always Allow.
+  The other answers and Continue are their buttons only; ⌫ deletes; esc and
+  the × in the title close. "Nothing matches" under a filter, "Nothing
+  needs you." (and the panel closes itself) with an empty queue; the
+  filter clears when the inbox opens.
+- **Popovers.** "Type to filter" is a text field that has the keyboard
+  while a filterable popover is open (↑↓ ⏎ ⇥ esc route through the
+  window; ⌫ deletes in the field). The layout popover (titled "Layout")
+  and the scope popover carry a pin in their title row (apply the
+  highlighted row and keep the popover open: ⌘⏎) and a × (esc).
+- **Palette ⌘K.** An agent's action list (⇥) starts with a "‹ Back" row
+  (esc) that leaves the scope the way esc does, and opens on the first
+  action. Action rows show their chord from the command table as a key
+  cap. The footer's buttons act on the selected row: Run ⏎, Open full
+  size ⌘⏎ (an agent), Actions ⇥ on an agent / History ⇥ elsewhere,
+  Close esc (Back esc inside a scope).
+- **Undo toast.** Undo ⌘Z and Reopen ⇧⌘T are KeyButtons (chords from the
+  command table); "Show ↗" on a start toast stays a button
+  (`toast.action`).
+- **Rename, desk name.** Save ⏎ and Cancel esc under the field; a click
+  outside keeps the popover (Save, Cancel or esc leave it, a stray click
+  no longer discards). The background tray's rows carry a Bring back
+  button (⏎ on the selected row) and keep their context menu (Bring Back,
+  Close).
+- **Quick launch.** A × (esc) in the panel's top right; File › Quick
+  Launch… toggles the panel, as the status item and the hotkey do.
+- **Completion lists** (the composer's popover, quick launch): rows are
+  `Row`s with a button role (`completion.row.<id>`); the keys are
+  unchanged.
+
 #### As built — windows (multi-window iteration 1)
 
 Code: the window
@@ -1421,7 +1474,7 @@ Move to… (the move popover on the tile), Stop / Resume / Remove (the
 undoable ones), Rename… (the rename popover)) do the same. ⌥⇧-click opens
 it as a tab of the frontmost agent window. An agent that already has a
 window gets that window brought forward, never a second one. ⌥⌘N opens a
-wall window (⌘N stays "new agent"); ⌃⌘S (Window menu) opens the wall's
+wall window (⌘N stays "new agent"); ⌃⌘S (View menu) opens the wall's
 scope popover.
 
 **Agent window.** The content is the app's RootView held in focus mode on
@@ -1431,8 +1484,10 @@ and undo toasts as ⌘↩. Title = the agent's name (also the tab title),
 subtitle `machine · kind` plus "needs approval" / "asks a question" /
 "error" / "exited"; the title bar is tinted rose / amber / red while the
 agent needs you. Keys as in focus, except ⌘W closes the window (the
-agent keeps running; Agents ▸ Stop Agent… still stops it), ⌥⌘← ⌥⌘→
-(⌘[ ⌘]) step to the previous / next agent within the window (tabs, or
+agent keeps running, shown on its wall; Agents ▸ Kill still stops it)
+and ⌥⌘W sends the agent to the background and closes the window with
+it, ⌥⌘← ⌥⌘→
+step to the previous / next agent within the window (tabs, or
 retargeting: "As built — keyboard navigation"), ⌘↩ / ⌘Esc show the agent in the frontmost
 wall that shows it, ⌘N starts a new agent on the frontmost wall, ⌘K
 picking another agent opens that agent's window. `tabbingIdentifier
@@ -1440,7 +1495,8 @@ picking another agent opens that agent's window. `tabbingIdentifier
 Move Tab to New Window and dragging tabs out are AppKit's; full screen
 (`.fullScreenPrimary`), the Window menu lists agent windows by name, ⌘`
 cycles. Wall windows don't tab. The tile of an agent with a window shows a
-↗ badge on its top-right corner. Removing the agent closes its window.
+↗ badge on its top-right corner (a click shows the window). Removing the
+agent closes its window.
 
 **Size rule with several windows** (`SizeOwnership`, pure rule
 `HesperCore/SizeOwner.swift`): among the read-write candidates for an
@@ -1497,7 +1553,11 @@ showing it (⌘J activates its tile there; a notification opens its focus
 view), else the main wall (focus view). Rings show on every tile of the
 agent in every wall; agent windows tint their title bar. The Dock badge
 (number needing you) and the menu bar counts are app-wide. Menus act on
-the key window's model (layouts on the frontmost wall).
+the key window's model (layouts on the frontmost wall); when the key
+window is neither a wall nor an agent window (Settings, First Run, the
+Design Gallery) the Agents menu's Close, Send to Background, Kill, Tidy
+Up and Move are disabled, the chords do nothing, and ⌘W (File ▸
+Close) closes that window.
 
 **Restoration** (`WindowRestorer`, explicit file, not NSWindowRestoration):
 `--window-state PATH`, else, only when talking to the live daemon (no
@@ -1618,8 +1678,10 @@ clicks, activation and focus (`mainPick`), not the arrows (test: sizes
 and frames identical before and after).
 
 **Single view and agent windows.** Plain ← → (and every other plain key)
-stay the terminal's: Claude and Codex need them. ⌥⌘← / ⌥⌘→ = previous /
-next agent (like a browser's tabs), ⌘[ ⌘] kept as aliases; in the wall's
+stay the terminal's: Claude and Codex need them. (The chords: the
+registry's `.focus` and `.agentWindow` surfaces, "As built — commands".) ⌥⌘← / ⌥⌘→ = previous /
+next agent (like a browser's tabs; ⌘[ ⌘] were dropped: on a German
+layout ⌘[ is ⌥⌘5, the Grid layout); in the wall's
 focus view in wall order (wrapping); on the wall they move the selection
 in wall order (and keep typing when a tile was active: the next one
 becomes active). In an **agent window** they stay within that window:
@@ -1632,10 +1694,10 @@ a window). Retargeting was chosen over "do nothing" for an untabbed window
 because the request is to move to the next agent in the single view; the
 skip keeps ⌥⌘→ from ever closing or duplicating another window.
 
-**Discoverability.** Tile footer hints (above), focus / agent window
-header `⌥⌘← →  next agent · ⌘↩ wall`, View ▸ Previous Agent ⌥⌘← / Next
-Agent ⌥⌘→ (⌘[ ⌘] as hidden aliases; moved from the Agents menu; in an
-agent window they act on its tabs / agent).
+**Discoverability.** Tile footer hints (above), the focus / agent window
+header's "‹ Wall ⌘⏎" KeyButton and ‹ › IconButtons (⌥⌘← ⌥⌘→; "pointer
+paths" below), View ▸ Previous Agent ⌥⌘← / Next Agent ⌥⌘→ (moved from
+the Agents menu; in an agent window they act on its tabs / agent).
 
 **Tests.** HesperCore (`WallNavigationTests`, `CoreTests`): grid rows
 wrap like text, partial row, shelf ↔ grid, main + stack, unplaced cards,
@@ -1660,6 +1722,112 @@ SHOW=selected|selected-approval FAKE_ARGS=--demo-states SHOT=…`.
 `make perf` after (16 flood tiles, 60 Hz external display this run):
 0 dropped, keystroke → frame p50 3.5 ms (focus) / 2.1 ms (active tile),
 state → ring p50 6.5 ms, 323 MB — unchanged.
+
+#### As built — pointer paths on tiles, strips and the composer
+
+Every verb a tile, a strip, the focus header, a draft or a ghost card
+shows is a control that carries its key (`KeyButton`, `IconButton`,
+`docs/design-system.md`); a key hint that is not an action is gone.
+
+**Action strip** (`UI/TileParts.swift`, pure `HesperCore/TileActions`):
+state-driven exactly as before. An approval shows Allow ⏎ (primary,
+tinted `signal`), Always A, Deny N and Open ⌘⏎ (the registry's caps); a question hesperd answers
+itself its numbered answers (the first one ⏎); a question with typed
+options its numbered options (each sends its number) and Open; a free
+text question Open; an error Resume (when it exited) and Open; an ended
+agent Resume ⏎ (killed: Resume ⏎ · Close ⌘W); a working agent only the
+activity line. `TileActions.actions(agent, inFocus:canChoose:killed:)`
+lists them with their accessibility identifiers (`approve.allow`,
+`answer.option.2`, `tile.resume`, …); `TileActions.split(_, width:)`
+keeps the primary and the verbs that don't fold on a tight tile (narrower
+than 420 pt) and moves Always and Open behind a ⋯ `IconButton`
+(`tile.more`) whose menu shows the same key caps, instead of dropping
+them. Key caps show only where the keys work (the selected, not active
+wall tile); a tight tile shows none. Tests: `TileActionsTests`.
+
+**Tile header.** After machine · tool, two IconButtons at half opacity
+(full while the pointer is over the tile): "Open full size (⌘⏎)"
+(`tile.openFull`, the focus view) and ⋯ (`tile.menu`), which pops up the
+same menu as a right-click / ⌃-click, now starting with "Open Full Size
+⌘↩" (not in focus) and "Open in New Window ⌥⌘↩". The ↗ badge of an agent
+with its own window is a button (`tile.windowMarker`): a click shows that
+window, as ⇧-click does, through the menu's "Show Window" item
+(`AppModel+Pointer.swift`: `openAgentWindow`, `showTileMenu`). A
+right-click in an **active terminal** (an active tile, the focus view, an
+agent window: `GhosttySurfaceView.rightMouseDown`, `TerminalMenuHost`)
+shows the tile's menu with a Terminal submenu (Copy, Paste, Select All on
+that surface); when the menu closes libghostty still gets the click
+(press and release), so a TUI that reports the mouse sees it.
+
+**Strips take the keyboard.** The close strip (needs you, a running
+command, its worktree) and the move strip (it's working, processes stay
+here, the other Mac can't take it) become first responder when they
+appear on the window's current agent, the one selected on the wall or
+shown in focus or an agent window (`StripKeys` / `StripKeyView` behind
+the row, `ownsKeys`); a strip on another agent (closed from the
+palette, hesperctl or a notification) leaves the keyboard where it is
+and its buttons answer it. They draw a
+`DS.focusRing` (1 px) ring in their tone (`error` for a close that drops
+something, `working` for keeping the worktree and for moves) and own ⏎
+and esc in their `keyDown`; every other key goes up the responder chain,
+so the wall's arrows still move the selection. `MainWindow.sendEvent`
+routes nothing to a strip any more. Their buttons are KeyButtons: Close
+anyway / Keep worktree ⏎ (primary), Discard, Keep esc (`close.primary`,
+`close.secondary`, `close.cancel`); Interrupt and move / Move anyway ⏎,
+Cancel esc (`move.primary`, `move.cancel`). When the strip goes
+(answered, or the agent left) the keyboard returns to where it was: the
+agent of an active tile or the focus view, else the wall; clicking the
+terminal takes it back at any time, and a toast's keyboard restore
+leaves a strip of the current agent alone. When no strip has the
+keyboard (the wall was clicked, the tile's band is collapsed) the
+wall's own ⏎ and esc answer a close or move asked on the selected
+agent.
+
+**Deny field.** The message field keeps the keyboard; next to it Send ⏎
+(primary, `signal`; `deny.send`) denies with the message and Cancel esc
+(`deny.cancel`) folds the field back, the same as the field's own ⏎ and
+esc.
+
+**Draft tile** (`UI/Composer.swift`, pure `DraftStartControl`). The
+header ends in × "Discard draft (⌘W)" (`draft.discard`; gone at once,
+undo brings a non-empty one back, nothing asks). The footer keeps the
+"@ machine · # folder · / tool" hint and otherwise holds controls only:
+Keep esc (`draft.leave`, parks the draft; the quick launch panel says
+Close esc and hides) and the Start control, a split button: Start ⌘⏎
+(primary, `working`; `draft.start`; "Starting…" / "Bringing…" while it
+works, disabled without a folder) and a ▾ (`draft.startMenu`) whose menu
+offers "Start and open another ⌥⏎" (`draft.startNext`); the quick launch
+panel closes after starting and has no ▾ (`DraftStartControl.menu(quick:)`).
+The worktree chip is a toggle on click (`toggleWorktree`, its key cap
+⌥⌘B); a ~branch token in the task still picks the branch, and the branch
+popover keeps its rows. Tests: `DraftStartControlTests`.
+
+**Ghost card.** Resume ⏎ and Forget ⌫ are KeyButtons; right-click gives
+Resume, Fork and Forget ("As built — shared history (app)").
+
+**Focus header** (`FocusHeader`, the focus view and every agent window).
+Left: "‹ Wall ⌘⏎" (`focus.back`, `toggleFocus`: the wall; in an agent
+window the agent on its wall) and ‹ › IconButtons (`focus.previous`,
+`focus.next`: the wall's previous / next agent; an agent window steps
+within itself through `FocusView.onStep`, tabs or retargeting as ⌥⌘← →
+do), then "n of m" on a wall. Centre: StateMark, name, project · branch,
+state · elapsed, machine · tool. Right: the "typing ⌘esc" chip
+(`focus.typing`; ⌘esc has no pointer equivalent other than the wall), a
+"need you" Pill with the count of agents on the wall that need the user
+(`focus.needsYou`, ⌘J; none: no Pill) and ⋯ (`focus.menu`) with the
+agent's menu (the tile menu without "Open Full Size").
+
+**Tests.** HesperCore: `TileActionsTests` (verbs per state, what folds at
+a width, identifiers), `DraftStartControlTests` (the split button's
+menu, titles), `DesignTokensTests` (`focusRing`). UI (`make -C app
+test-ui`, section 8f, not run by agents): the controls pressed by
+accessibility identifier (`SelfTest.press`, `accessibilityPerformPress`
+as VoiceOver would): Allow allows, Deny… opens the field and its Cancel
+folds it, the header's open full size opens focus, ‹ › step and "‹ Wall"
+returns, the close strip is first responder (`StripKeyView`) when it
+appears and esc on it gives the wall the keys back, its Keep button keeps
+the agent, closing another agent while one is in focus leaves the
+keyboard on the focus terminal, a draft's × discards it.
 
 #### As built — drop to attach
 
@@ -1878,7 +2046,13 @@ for other/scratch). A **click collapses** the band to one header line
 **⌥-click** collapses every other band. A collapsed header carries the
 attention ring (rose border + glow) and a "N needs you" badge. **Header
 drag reorders** the bands: the header follows the mouse, the band under
-it lights up, the drop sets the wall's band order. Chosen: **per wall in
+it lights up, the drop sets the wall's band order. A **⋯ button and a
+right-click** on the header open the same menu (`BandMenu`, pure): Collapse
+/ Expand, Collapse Others, New Agent Here (⌘N), Open as Wall (left out
+without a scope), Move Up / Move Down (disabled at the ends); a pointer
+line offers Show Its Wall and the moves. VoiceOver gets the enabled
+items as custom actions on the header. **⌥⌘↑ / ⌥⌘↓** (View ▸ Previous
+/ Next Band, everywhere) and ⌥↑ / ⌥↓ on the wall both jump bands. Chosen: **per wall in
 windows.json** (not `groups.save`): grouping by project or branch has no
 group to store an order in, two walls may want different orders, and a
 group's `order` is shared with the other Mac. Selecting / activating a
@@ -1895,7 +2069,7 @@ goes to the head. Without project data every agent is its own unit (the
 old behaviour). Capacity is still counted in minimum cards (band headers
 not counted).
 
-**Project sidebar** (⌘0 per wall, View/Window ▸ Project Sidebar; Show
+**Project sidebar** (⌘0 per wall, View ▸ Project Sidebar; Show
 Wall moved to ⇧⌘0): All, Groups (group → its projects, packages with
 agents under their repo), Other projects, scratch; counts of agents
 everywhere and a rose dot where something needs you; the current scope
@@ -1911,6 +2085,11 @@ New Wall, Rename… (`projects.update {id, name}`), Color ▸
 (from Selection)… (`groups.save {group}`, empty id), Remove from <group>,
 Remove Project (`projects.remove`); groups: Rename, Color, Remove
 (`groups.remove`). Synthesized projects (no daemon data) only scope.
+Rows and machine chips are accessibility buttons: `accessibilityPerformPress`
+is a plain click (the row's scope on this wall) and the context menu's
+enabled items are their custom actions (a submenu's as "Color: Red"), so
+VoiceOver and Full Keyboard Access reach every sidebar action; ⌥-click,
+⌘-click and the drag are unchanged.
 
 **Home wall** (the first wall): a "needs you elsewhere" strip at the top
 with a compact card (state, name, project, the attention's title/detail,
@@ -2061,7 +2240,7 @@ stay; clamping falls back to overlap). windows.json is left in place.
 setup), plus named desks (Window ▸ Save Desk As…, the picker's "Save
 Desk As…": a name field popover; the same name replaces). Each setup
 has a *current* desk; changes go into it. Window ▸ Desks ▸ <name> and
-the **⌃⌘D picker** (overlay system `PopoverKind.desks`, under the
+the **⇧⌘D picker** (overlay system `PopoverKind.desks`, under the
 toolbar of the frontmost wall: this setup's desks checked, desks of
 other displays (picking one copies it into this setup), Save Desk As…,
 Rename) switch between them. Removing a named desk (Settings) falls
@@ -2162,7 +2341,7 @@ the Studio Display made home, agent window, collapsed band, sidebar);
 unplug → laptop desk exactly; replug (displays listed in reverse) →
 office desk exactly (frames, scopes, view, home, agent windows); same
 displays in another order: no switch; no switch while busy, then the
-switch; ⌃⌘D picker, Save Desk As "Deep work", picking desks, Window ▸
+switch; ⇧⌘D picker, Save Desk As "Deep work", picking desks, Window ▸
 Desks; switching off keeps the windows; desks.json has 2 setups, 3
 desks; relaunch on the office displays restores Deep work with the
 group wall as home, all windows on attached displays. `make test`
@@ -3084,10 +3263,11 @@ over synthetic transcripts), and the regression suites the shared files
 touch: `make -C app test-ui test-ui-windows test-ui-projects
 test-ui-desks` (or all of them: `make -C app test`).
 
-**History is a panel over the wall, not a wall mode.** ⌘Y (Agents ▸
+**History is a panel over the wall, not a wall mode.** ⌘Y (View ▸
 History, the project sidebar's "Show History (⌘Y)" per project, ⇥ on a
 ⌘K History row) opens it on the window's content area: the overlay
-family's look (#1f2335, #3b4261 border, 14 pt radius, shadow, scrim 38 %,
+family's look (its keys: the registry's `.history` surface, "As built —
+commands") (#1f2335, #3b4261 border, 14 pt radius, shadow, scrim 38 %,
 open 120 ms scale 0.98 → 1 + fade, close 80 ms, Reduce Motion: none) and
 keys. Chosen over a dedicated wall mode because it is calmer: nothing on
 the wall changes — no mode switch, no tile hidden or re-attached, no
@@ -3097,32 +3277,40 @@ tile's rendering both ways). The tiles keep rendering underneath (wall
 numbers below); toasts and undo stay above the panel; a click on the
 scrim closes; state (query, filters, list, selection) survives closing.
 
-Layout: left the project sidebar (the same `SidebarRowContent` rows as
-⌘0) with session counts: All sessions, groups → projects (a package's
-sessions count for its repository), other projects, and "Scratch" /
-"Elsewhere (folder gone)" rows when the daemon counts them; top the
-search field (live FTS as you type, 60 ms debounce) and chips (this
-project — the selected card's or the wall's —, all projects, Claude,
-Codex, one per Mac, time any/24 h/7 days/30 days, live in Hesper,
-external, archived, moved to another Mac); the list (kind badge, title,
-Mac · branch · turns · tokens, the FTS snippet with its `[matches]`
-highlighted or the last exchange, when and state: ended / ● live in
-Hesper / ● running outside / external / moved to M / mirrored on N
-Macs); right the "where you left off" card; the footer: count, the first
-index's progress (`sessions.indexing`, also from `stats.indexing`) and
-the keys.
+Layout, in the `SheetChrome` frame (`docs/design-system.md`): the title
+row (History, the session count as a Pill, the `esc` key cap and a close
+×; a click on the scrim closes too); the toolbar (the scope segments All
+· History with ⇥, the filter Pills: this project — the selected card's
+or the wall's —, all projects, Claude, Codex, one per Mac, time any/24
+h/7 days/30 days, live in Hesper, external, archived, moved to another
+Mac; on the right "more below" while another page waits, or the first
+index's progress from `sessions.indexing` / `stats.indexing`); the
+search field (live FTS as you type, 60 ms debounce); the list (kind
+badge, title, Mac · branch · turns · tokens, the FTS snippet with its
+`[matches]` highlighted or the last exchange, when and state: ended / ●
+live in Hesper / ● running outside / external / moved to M / mirrored on
+N Macs; a right-click on a row shows the preview's verbs as a menu with
+their key caps, double-click resumes); right the "where you left off"
+card; the footer: KeyButtons acting on the selection.
 
 **The card** renders at once from the row's fields (title, Kind on Mac ·
 folder, you asked, it answered, open todos, branch) and fills the git
 line from `sessions.show` 120 ms after the selection settles (changed
 files +/−, uncommitted, ahead/behind, folder on M / folder gone) into a
-slot reserved for it: nothing moves. Actions with keys: **⏎** Resume (on
+slot reserved for it: nothing moves. Actions, one KeyButton each with
+its key cap (`SearchPreview.actions`; the row menu and the footer are
+cut from the same list, `SearchPreview.menu` / `footer`, so the three
+never disagree; each action names its verb and runs it, and its cap is
+read from the command table in force, so a rebound History verb shows
+its new chord, `SearchPreview.key`; the tile header's open full size
+reads Open's chord the same way): **⏎** Resume (on
 its Mac; "Open (live)" when hesperd runs it → that agent's tile or
 window; "Open on M" for a moved entry, which hesperd resumes on the new
-home; running outside Hesper → a toast), **⌥⏎** Resume here ("continues
-on laptop, moves ownership; uncommitted work comes along if mini is
-reachable"; `sessions.resume {id, machine: this Mac}`), **F** Fork,
-**C** Continue in Claude/Codex (the card turns into the brief from
+home; running outside Hesper → a note instead of a button), **⌥⏎** Fork,
+**M** Continue on the other Mac ("continues on laptop, moves ownership;
+uncommitted work comes along if mini is reachable"; `sessions.resume
+{id, machine: this Mac}`; a live agent moves with its work), **C**
+Continue in Claude/Codex (the card turns into the brief from
 `sessions.brief`, editable, the other kind preselected; ⌘⏎ starts:
 unedited → `sessions.continueAs {id, kind}`; edited → `agents.spawn`
 of that kind in the session's folder on its Mac with the edited text,
@@ -3137,10 +3325,19 @@ two lines (at least 0.8 s, at most 12 s, typing into it hides it).
 
 **Keys** (`HistoryKeys`, the overlay family's): ↑↓ select (also from the
 search field), ⌘↑ ⌘↓ / Home End first / last, page up/down, ⏎ resume,
-⌥⏎ here, ⇥ the list takes the keys (then F C A ⌫ act; typing any other
-character goes back to the search with it), ⇧⇥ / ⌘F the search, ⌘C copy
-id (the field's own copy when text is selected), esc / ⌘Y close; ⌘Z, ⌘K,
-⌘W… stay the window's. A toast never takes the keyboard from the panel.
+⌘⏎ resume and open the agent full size (focus), ⌥⏎ fork, ⇥ the All
+scope with the query (⇧⇥ field ↔ list, where J K move
+and F C A M R ⌫ act; typing
+any other character goes back to the search with it), ⌘F the search, ⌘C
+copy id (the field's own copy when text is selected), esc / ⌘Y close;
+⌘K ⌘R ⌘J close the panel for the palette, Review and the inbox
+(`SearchKeys.passesThrough`, the registry's everywhere bindings); ⌘Z
+stays the window's and ⌘W is nobody's under the panel (File ▸ Close is
+off). A popover opened over the panel (⇧⌘M, Rename…) has the keys
+until it closes. A toast never takes the keyboard from the panel.
+Every key sits on a control: the preview's buttons, the row's
+right-click menu, the footer (Resume ⏎, Fork ⌥⏎, Open full size ⌘⏎,
+disabled with nothing selected) and the title row's close ×.
 
 **Ghost cards.** A removed agent (⌘W on an ended one) becomes a dashed
 card in its place on its band's shelf at once (its undo window: ⏎ =
@@ -3148,7 +3345,10 @@ undo the removal), then the daemon's entry with `removedAt` keeps it
 there for 24 h; newest 3 per project; Grid + Shelf only (the other
 layouts stay strictly agents); scoped like its project. ⏎ / double-click
 Resume (`sessions.resume`), ⌫ / Forget hides it (remembered per Mac);
-Settings › General › "Ghost cards for removed agents" turns them off.
+its buttons are KeyButtons (`ghost.resume`, `ghost.forget`) and a
+right-click offers Resume, Fork (History's ⌥⏎, `sessions.fork`) and
+Forget. Settings › General › "Ghost cards for removed agents" turns them
+off.
 The ghost swaps with the agent in the same slot, so removing one moves
 nothing else. Sources: `sessions.search {since: −24 h}` pages filtered by
 `removedAt`, then `sessions.changed`.
@@ -4218,10 +4418,17 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
 
 - **⌘R** (Agents › Review) opens the review sheet over the wall like
   History: a Night scrim and one opaque Panel, min(1440, 94%) ×
-  min(940, 88%) of the window. Left the inbox (every Mac, ranked: fresh
+  min(940, 88%) of the window, in the `SheetChrome` frame: the title row
+  (Review, the count Pill, the `esc` key cap and a close ×), the toolbar
+  (‹ › file ⇧N N, Bulk accept ⇧A, Provenance ⌥⏎, the Macs and what the
+  sheet is busy with; on the right Send back ⇧⏎ with the note count and
+  the primary Accept and commit ⌘⏎; every verb a KeyButton whose cap
+  comes from the registry, disabled with no item selected); the footer
+  (Fold ⏎, Next hunk J, Previous hunk K, disabled without hunks). Left
+  the inbox (every Mac, ranked: fresh
   evidence first, then stale, missing; lower risk first; then the one
-  waiting longest), middle the selected item's header (Send back ⇧↩,
-  Accept & commit ⌘↩) and its diff, right the evidence (fresh ✓ /
+  waiting longest), middle the selected item's header (name, where,
+  churn, the status line) and its diff, right the evidence (fresh ✓ /
   stale ! / missing ?, the commands with exit codes, attachments), the
   risk and its notes, the attention strip (one cell per hunk: seen,
   rejected, noted, unseen) and whether ⇧A would take it. Below 1120 pt
@@ -4231,22 +4438,33 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
   one `CTLine` each, changed words as tinted rects behind the text),
   notes and the line under each hunk. Only notes and that line are
   measured; code geometry never is. The file being read keeps its
-  header at the top. `review.diff` is fetched and turned into rows off
+  header at the top. A hunk header shows Seen V · Reject X · Note C as
+  KeyButtons at its right while the pointer is over the hunk or it is
+  the focused one; a foldable file's header carries a fold caret (⏎,
+  ▾ open / ▸ folded); a right-click on any row offers the same verbs as
+  a menu. The bar takes its clicks itself (`ReviewCellBar`), since a
+  mouseDown that reaches the table starts its tracking loop and eats
+  the mouseUp the buttons press on. `review.diff` is fetched and turned
+  into rows off
   the main thread. Files come in reading order (hesperd's `order`, else
   the same rules here: risky and schema first, a test right after its
   code, formatting-only and generated last and folded; never
   alphabetical).
-- **Keys** (`ReviewKeys`): ↑↓ items, J/K hunk, N/⇧N file, V seen
+- **Keys** (`ReviewKeys`, the registry's `.review` surface: "As built —
+  commands"): ↑↓ items, J/K hunk, N/⇧N file, V seen
   (toggle), X reject the hunk (`review.reject`, one at a time against
   the diff as it is then; hunk ids are positions), C a note on the
   clicked line (else the hunk's first change; the editor under the
-  stream: ⌘↩ or ⇧↩ saves, esc cancels), ⏎ open/fold a folded file,
+  stream, with Save ⌘⏎ and Cancel esc KeyButtons: ⌘↩ or ⇧↩ saves, esc
+  cancels), ⏎ open/fold a folded file,
   ⇧↩ send every note back as one instruction (`review.sendBack`),
   ⌘↩ accept and commit (`review.accept`; with hunks not marked seen,
-  the first ⌘↩ says how many and the second commits), ⌥↩ History at
+  the first ⌘↩ asks in the status line, with Confirm ⌘⏎ and Cancel esc
+  KeyButtons, and the second commits), ⌥↩ History at
   the conversation that last wrote the hunk, ⇧A accept in bulk (only
   low risk, fresh evidence, no schema/auth/migration path; the first ⇧A
-  lists them, the second commits each), esc closes (or cancels a
+  lists them in the status line with Confirm ⇧A and Cancel esc, the
+  second commits each), esc closes (or cancels a
   confirm or a note). After V or X the cursor goes to the next
   undecided hunk.
 - **Marks survive reloads**: seen and rejected hang on a hunk's key (its
@@ -4279,6 +4497,282 @@ cursor, attention, notes, `ReviewKeys`, line text); the app in
 
 **Status: built and unit-tested headless only.** Not run against a
 real hesperd with `review.*` yet, and no UI suite covers the sheet.
+
+### As built — commands (app: HesperCore/Commands.swift)
+
+**One table for every user action.** `CommandRegistry.all` lists each
+command once: `CommandID` (named after the `AppCommand` it runs where one
+exists, surface verbs otherwise: `historyFork`, `reviewAccept`,
+`inboxAnswer(n)`), title, `MenuPath` (menu, section, order), default
+`KeyChord`, the `Set<Surface>` the chord is live in, aliases (a second
+chord with its own surfaces: ⇥ steps agents on the wall, ⌥↑ ⌥↓ jump bands
+there, J K move in History), an availability predicate over
+`CommandContext` (selected agent state and whether it runs, mode, key
+window kind, a draft, the review count, undo, History support, open
+panels) returning `.enabled`, `.disabled(reason)` or `.hidden`, and a
+palette flag. Chords are matched normalised (a letter lowercase with ⇧ as
+a flag); a shifted plain letter falls back to the unshifted command (⇧A on
+an approval is Always; Review's N and ⇧N are both bound), ⌘ chords match
+exactly. A key event's letter is always lowercase and ⇧ comes from its
+modifier flags only, so Caps Lock never turns ⌘W into ⇧⌘W.
+
+**Surfaces.** `.everywhere` (app-wide ⌘ chords, also every menu key
+equivalent), `.wall` (a selected tile), `.focus`, `.activeTile`,
+`.composer`, `.quickLaunch`, `.palette`, `.popover`, `.inbox`, `.history`,
+`.review`, `.agentWindow`, `.settings`. A chord bound everywhere means the
+same thing in every surface; a surface binds a chord of its own only
+where the role differs (⌘⏎ is Open / Back to Wall on the wall, Start in a
+composer, Accept and commit in Review, Open the agent in the inbox; ⌘W is
+Close everywhere but the background tray, where it closes the selected
+agent). Surface routers return "not mine" for an app-wide chord and the
+window or the menu runs it (⌘K in History closes the sheet and opens the
+palette).
+
+**Generated from it.** `KeyRouter.route` / `routeActiveTile` / `compose`,
+`OverlayKeys`, `InboxKeys`, `HistoryKeys`, `SearchKeys.history` and
+`ReviewKeys` resolve a chord in their surface and map the id to the action
+value they always returned (`KeyRouter.command(for:)`, each router's
+`action(for:)`), so `AppModel.perform` and the panel handlers are
+unchanged. `MenuModel.build` is the menu bar as a pure tree (Hesper, File,
+Edit, Agents, View, Window, Help, standard items included); `MenuBuilder`
+turns it into NSMenus, AppKit selectors for the standard items and
+`AppDelegate.run(CommandID)` for the rest, and `validateMenuItem` is the
+registry's availability (disabled items carry the reason as a tooltip;
+Routines is a hidden placeholder for its branch). The dynamic parts keep
+their owners: layout checkmarks, Dense Cards and the Undo title (Edit ▸
+Undo names the action from the app's undo stack, `UndoKind`: "Undo Close
+Agent", "Undo Tidy Up", "Undo Move", "Undo Discard Draft", "Undo Delete
+Session", plain "Undo" with nothing to undo and while a text view has
+the keyboard, whose own undo then runs up the responder chain; "Undo
+Close or Move" is gone), the Desks submenu, History hidden while hesperd
+has no sessions.*, the window list. The Services, Window and Help menus
+are registered with AppKit (`servicesMenu`, `windowsMenu`, `helpMenu`),
+so the window list and Help's search field come from it. The Dock menu
+(`MenuModel.dockItems`, `applicationDockMenu`) is New Agent, Needs You…,
+History (while supported) and Review with the registry's titles; each
+brings the wall in front first and opens what it names rather than
+toggling it: with History, Review or the inbox already open, its Dock
+item leaves it open. The status-bar menu's fixed section below the agent groups
+(`MenuModel.statusItems`) keeps its labels (Open Hesper, New agent…,
+History…, Review…, Quick Launch…, Settings…, Quit Hesper) and shows a key
+equivalent only where the chord is the app-wide one (⇧⌘0, ⌘N, ⌘Y, ⌘R,
+⌘, and ⌘Q); Quick Launch… carries the hotkey in its label and toggles
+the panel; History… leaves while hesperd has no sessions.*. The ⌘K
+palette's "Actions" rows and Settings › Shortcuts (`ShortcutsSheet.sections`,
+by surface) read the table. `KeyChord.label` / `KeyChord(label:)` are the
+one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
+
+**The menu bar** (`MenuModel.build`, pinned item by item in
+`MenuModelTests.menuBarMatchesTheSpecTable`; a line is a section):
+
+| Menu | Items |
+|---|---|
+| Hesper | About Hesper · Settings… ⌘, · Services ▸ · Hide Hesper ⌘H, Hide Others ⌥⌘H, Show All · Quit Hesper ⌘Q |
+| File | New Agent ⌘N, Quick Launch… (the hotkey in Settings), New Wall Window ⌥⌘N · Open in New Window ⌥⌘⏎, Open in New Tab · Close ⌘W |
+| Edit | Undo ⌘Z (names the action), Redo ⇧⌘Z · Cut ⌘X, Copy ⌘C, Paste ⌘V, Select All ⌘A, Delete · Find ⌘F (History's search while the sheet is open) |
+| Agents | Open / Back to Wall ⌘⏎, Leave Focus ⌘esc · Needs You… ⌘J · Allow, Always Allow (A on the tile), Deny… (N) · Send to Background ⌥⌘W, Kill ⌃⌘W, Tidy Up Finished Agents ⇧⌘W, Reopen Closed Agent ⇧⌘T · Move to Another Mac… ⇧⌘M, Rename…, Resume |
+| View | Command Palette ⌘K, History ⌘Y, Review ⌘R, Routines ⇧⌘R (hidden placeholder) · Project Sidebar ⌘0, Wall Scope… ⌃⌘S · Grid + Shelf ⌥⌘1, Columns ⌥⌘2, Treemap ⌥⌘3, Main + Stack ⌥⌘4, Grid ⌥⌘5, Next Layout ⌥⌘L, Dense Cards · Previous Agent ⌥⌘←, Next Agent ⌥⌘→, Previous Band ⌥⌘↑, Next Band ⌥⌘↓ · Enter / Exit Full Screen ⌃⌘F |
+| Window | Minimize ⌘M, Zoom · Show Wall ⇧⌘0, Make Home Wall · Desks ▸, Desk Picker… ⇧⌘D, Save Desk As… · Bring All to Front · the window list (AppKit) |
+| Help | Hesper Help, Keyboard Shortcuts… ⌘/, hesperctl Reference, Report a Problem (the GitHub issues page) |
+
+Only ⌘ chords become key equivalents: Always Allow's A and Deny's N
+live on the selected tile (the inbox has no letter keys: they filter),
+Quick Launch's hotkey is the system's.
+
+**Help ▸ Keyboard Shortcuts (⌘/).** A modal sheet over the front wall
+like History and Review (`ShortcutsPanel`, hosted by
+`ShortcutsSheetHost` on the window's RootView: a Night scrim that takes
+every click, one opaque Panel in the SheetChrome frame, title "Keyboard
+Shortcuts" with the row count, close × esc). The toolbar row is a search
+field that has the keyboard as the sheet opens; the content is one
+section per surface (`ShortcutsSheet.sections`, HesperCore): a header
+row with the surface's title and count that folds and unfolds on click,
+then a Row per command with its title and key caps. Each command appears
+once: app-wide chords under Everywhere, the rest under the surface the
+user was in when its chord is live there (the sheet opens on the front
+sheet or overlay, else the agent window, Settings, focus, the composer,
+the active tile or the wall), else under the first surface in the
+display order that binds it. That section comes first and open, the
+others folded; a query matches title and key caps and unfolds every
+section that still has rows. The footer is one KeyButton, "Open Settings
+› Shortcuts ⌘,". esc and a scrim click close; ⌘/ (the Help menu item)
+toggles; ⌘K ⌘Y ⌘R ⌘J close it and go on to their owner. Accessibility:
+`shortcuts`, `shortcuts.search`, `shortcuts.section.<surface>`,
+`shortcuts.row.<command id>`, `shortcuts.settings`, `shortcuts.close`.
+
+**Key caps come from the table.** An IconButton tooltip or KeyButton cap
+that names a registry command reads its chord through
+`CommandRegistry.cap(id, in:)` (the toolbar's + and search, the review,
+background and needs-you pills, the focus header's ‹ › and typing hint,
+the composer's Start, Keep / Close, worktree chip and discard ×, the
+palette's and the popovers' footers, the inbox's Open and Continue, the
+quick launch Close, the band +); only hints for keys that are not
+commands (the close and move strips' ⏎ esc, the deny field, ghost cards,
+End) spell their key.
+
+**Overrides (phase 5).** The table in force is `CommandRegistry.active`:
+the shipped `all` with the user's `ShortcutOverrides` applied
+(`CommandRegistry.resolved(with:)`, installed by `install`). An override
+is command id → a chord or `unbound`, and replaces the command's default
+chord in the surfaces it is live in (a menu command that never had one
+gets it app-wide); aliases (⇥ on the wall, J K in lists) stay. The
+routers, `MenuModel.build`, the Dock and status-bar items, the palette's
+key caps and both shortcut lists read the active table, so a change
+rebuilds the menu bar (AppDelegate) and nothing else: keys are looked up
+at key time. AppSettings stores them as one JSON object
+(`shortcutOverrides`: `CommandID.key` → the chord's label, null for
+unbound); an entry naming a command this version doesn't have is kept
+and ignored. `ShortcutOverrides.rebinding(id, to:)` is the one way in and
+refuses, with the reason Settings shows inline: macOS's own chords ⌘Q ⌘H
+⌘M ⌘, (`reserved`); the standard items and Quick Launch (`fixed`: About,
+Settings…, Hide, Quit, the Edit menu, Minimize, Zoom, Full Screen, Bring
+All to Front; Quick Launch's hotkey is Settings › General's); a chord
+without ⌘ for a command live where the agent types (everywhere, focus,
+the active tile, an agent window: principle 4); and a chord another
+command has in a surface both are live in (`ShortcutConflicts.check`:
+the conflicts of a table per surface, a chord bound everywhere clashing
+in every surface the other is live in). Binding the default chord is a
+reset. A conflict can still exist in a stored table when a later version
+binds the chord: the first command in table order wins at key time and
+both rows show the "Conflicts with …" pill.
+
+**Settings › Shortcuts.** The same sections, every one open, as
+SettingsSections of Rows (`settings.shortcut.<command id>`); the Quick
+Launch row shows the configured hotkey while quick launch is on. A
+rebindable row (`ShortcutOverrides.rebindable`: everything but the
+standard items and Quick Launch) shows its default chord as a recorder
+(`settings.shortcut.record.<id>`, the Row's own key caps are the
+aliases): click, then press the new chord; esc cancels, ⌫ unbinds, and
+the registry's `rebinding` either stores the override and stops
+recording, or leaves it, keeps recording for another chord and puts the
+reason under the row in the error tone
+(`settings.shortcut.reason.<id>`: "macOS reserves ⌘Q", "Conflicts with
+New Agent", "Needs ⌘ here: plain keys belong to the agent"; a command
+live in a surface with a field the user types into, a composer, quick
+launch, the palette, a popover, the inbox or History, takes no chord
+without ⌘ either: "Needs ⌘ here: plain keys type in its field", though
+re-recording its own default resets it). An
+overridden row gets a Reset IconButton (`settings.shortcut.reset.<id>`,
+tooltip "Reset to ⇧⌘W"); "Reset All" above the sections
+(`settings.shortcuts.resetAll`) clears every override. An unbound
+command keeps its row here, with "None", under the surface its default
+lived in. The recorder (`KeyRecorder`, shared with the quick launch
+hotkey, whose recorder says "A hotkey needs ⌘, ⌥ or ⌃" under it and keeps
+listening after a key without one) installs its key monitor only while recording and passes every
+event through once stopped, so ⌘Q and ⌘W reach the menu bar at every
+other time. A row whose chord is bound to another command within one of
+its surfaces gets a "Conflicts with <title>" status Pill in the error
+tone after its key cap (`settings.shortcut.conflict.<id>`); the shipped
+table has none (the registry test forbids it), and a stored override
+never creates one, so the pill shows only a clash a later version
+introduced. The Quick Launch
+row gets the same pill when macOS's input source switching uses the
+hotkey, and General › Hotkey shows the warning text under the recorder
+(`settings.hotkey.warning`): `InputSourceHotKeys` (HesperCore) decodes
+`AppleSymbolicHotKeys` entries 60 and 61 from the
+`com.apple.symbolichotkeys` defaults suite (enabled flag, key code and
+NSEvent modifier flags mapped to Carbon's) and compares them to the
+`HotKeySpec`; when the suite has neither entry (macOS writes them only
+once changed) or cannot be read, a hotkey equal to macOS's defaults
+⌃Space or ⌃⌥Space gets the static "may use" warning instead.
+
+**Invariants** (`CommandsTests`): no chord is bound twice within one
+surface (a chord bound everywhere conflicts with the same chord in any
+surface); every command with a chord has a menu path or sits in an
+exemption list with its reason (the wall's selection keys, the composer's,
+the overlay family's and the inbox, History and Review verbs: their key
+caps sit on the surface's controls); every surface's router resolves every
+registered chord to the registered command (the test walks the table);
+plus: every shortcut in the README's "Using it" table is registered,
+Close / Kill / Move are disabled with nothing selected and Routines is
+hidden. `MenuModelTests` holds the menus: the bar's full tree with its
+key equivalents in the spec's order, every command with a menu path
+placed exactly once and nothing else on the bar, no empty section, the
+Dock and status-bar items, the Undo and full-screen titles, and the
+validation outcomes below.
+
+
+**Validation** (`MenuModelTests`): every generated item asks the
+registry with the key window's `CommandContext`. Allow, Always Allow and
+Deny… are enabled only while the selected agent waits on an approval;
+Close, Background, Move and Rename… need a selected agent (Close also
+takes a draft, closes the window off a wall, and is off while a sheet,
+the palette, a popover or the ⌘/ sheet is over a wall: ⌘W is bound in
+none of their surfaces, so the window sends it to the menu, never to
+the agent beneath); Kill needs one that is
+running, Resume one that has ended; Open in New Window / Tab need a
+selected agent on a wall (not in an agent window); Make Home Wall is
+enabled on a wall that is not the desk's first (`isHomeWall`); View ▸
+Enter Full Screen reads Exit Full Screen while the key window is in it
+(`inFullScreen`, also the toolbar's ⋯ menu). File ▸ Close acts by the
+key window's kind (`CommandContext.closeTarget`): the selected agent or
+draft on a wall; the window in an agent window, where the agent keeps
+running on its wall, and in Settings, First Run and the gallery. The
+standard AppKit items (About, Hide, Cut, Copy, Paste, Minimize, Zoom, …)
+validate up the responder chain as in any Mac app.
+
+**Bindings that changed with the registry.** ⌥⌘↑ ⌥⌘↓ step bands
+everywhere (View ▸ Previous / Next Band; ⌥↑ ⌥↓ stay wall-only aliases);
+J K move in History; ⇧⏎ in History no longer resumes;
+⌘⏎ in History resumes and opens the agent full size (the overlay
+family's "open full size") and M continues on the other Mac, a list
+verb like F C A R; ⌘W in Settings, First Run and the gallery closes
+that window (File ▸ Close). The two primitives phase 3 builds the pointer paths with,
+`KeyButton` and `SheetChrome`, are in `docs/design-system.md`.
+
+**Pointer paths (phase 3: bands, sidebar, toolbar, empty wall).** The
+empty wall's three rows are KeyButtons (New agent ⌘N, History ⌘Y while
+hesperd has sessions, Search ⌘K; key caps from the registry) instead of
+one button and two labels. The Columns edge fades' chevron pills are
+buttons that scroll one page (`WallView.page`), with a button role and
+press action for VoiceOver. The top bar ends in a ⋯ IconButton
+(`toolbar.more`) whose menu is the View menu's wall sections, item for
+item with the same key equivalents (`ToolbarOverflow.items`, tested
+against `MenuModel`): Project Sidebar, Wall Scope…, the layouts and Next
+Layout with the current one checked, Dense Cards checked when on, Enter
+/ Exit Full Screen; the sheets and the stepping chords stay out (they
+have the search field, the pills and the tiles). The scope segments,
+layout, machines, review, background and attention controls are
+unchanged and keep their accessibility identifiers.
+Sidebar rows and machine chips press like a click and expose their
+context menus as accessibility custom actions (above, "Project
+sidebar").
+
+**Accessible by construction (phase 5).** Every row and card a click
+acts on is a button to VoiceOver and Full Keyboard Access: a button
+role (SwiftUI `.isButton`, AppKit `accessibilityPerformPress`), a
+label and an identifier. The palette's rows (`palette.row.<item id>`;
+an action row's id is `a:<command id>`), the popovers' rows
+(`popover.row.<item id>`), the background tray's rows
+(`background.row.<agent id>`, Close as a custom action), the inbox's
+items (`attention.item.<agent id>`: press selects, Open is a custom
+action), the home wall's needs-you cards (`home.card.<agent id>`, Allow
+as a custom action on an approval), Review's attention strip cells
+(`review.strip.<n>`, "Hunk n, seen") and History's All scope pill
+(`PillView.onPress`) press like a click; completion rows and the ghost
+cards' Resume / Forget were buttons already. A tile exposes its context
+menu's enabled items as accessibility custom actions, like a band
+heading. The self-test (`runAccessibility`, `runRebinding`) checks the
+tile's actions, a palette row's role and press, the History pill, and
+the Settings recorder.
+
+**Key-view loop (phase 5).** Each wall window links its views for Full
+Keyboard Access (`RootView.joinKeyViewLoop`, the window's
+`autorecalculatesKeyViewLoop` off): the wall is the initial first
+responder, its next key view is the top bar's leading controls, then
+the trailing ones (`TopBar.firstKeyView` / `lastKeyView`), then the
+sidebar filter (`ProjectSidebar.filterField`), then the wall; hidden
+views are skipped. ⇥ and ⇧⇥ on the wall step tiles only while
+`WallView` is first responder (`KeyRouter`'s wall aliases, as before)
+and the wall has tiles; with none they walk the loop. In a text field
+or a SwiftUI control ⇥ moves focus as in any Mac app. History links
+its search field and list, Review its inbox, stream and note field
+(while it shows); the shortcuts sheet is one hosting view. Focus rings
+turned off for looks (the sidebar filter, History's field and list,
+Review's note field and stream) are `DS.focusRingType`: off as usual,
+on while Full Keyboard Access is enabled, read when the view is made
+(a change takes effect on the next open or launch;
+`docs/design-system.md` rule 12).
 
 ## Wire names kept from Ghosty
 

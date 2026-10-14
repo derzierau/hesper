@@ -9,11 +9,11 @@ import SwiftUI
 /// in the terminal background), the attention band below. Stepping to the
 /// previous / next agent slides the card in from that side.
 @MainActor
-final class FocusView: NSView, TerminalDropTarget {
+final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
     private weak var model: AppModel?
     private(set) var terminal: AgentTerminal?
     private let card = FlippedView()
-    private let header = NSHostingView(rootView: FocusHeader(agent: nil, local: true, index: 0, count: 0))
+    private let header = NSHostingView(rootView: FocusHeader(agent: nil, local: true, index: 0, count: 0, needsYou: 0))
     private let divider = NSView()
     private let bar = NSHostingView(rootView: AttentionBar(agent: Agent(id: "-"), inFocus: true, onAnswer: { _ in }, onDenyMessage: {}, onOpen: {}, onResume: {}))
     /// The tile header at window scale, within the chrome limit.
@@ -84,6 +84,15 @@ final class FocusView: NSView, TerminalDropTarget {
 
     var agentID: String? { terminal?.agent.id }
 
+    /// A right-click in the terminal: the agent's menu with the terminal's
+    /// own Copy / Paste / Select All.
+    func terminalMenu(for surface: GhosttySurfaceView) -> NSMenu? {
+        guard let id = agentID, let menu = model?.tileMenu?(id) else { return nil }
+        menu.addItem(.separator())
+        menu.addItem(surface.terminalMenuItem())
+        return menu
+    }
+
     /// Window layer: whether a new terminal starts as the PTY's size owner
     /// (SizeOwnership adjusts it as windows become key).
     var ownsSizeDefault = true
@@ -92,6 +101,9 @@ final class FocusView: NSView, TerminalDropTarget {
     /// right, -1 from the left): set by an agent window's step; otherwise
     /// inferred from the wall's order.
     var nextSlide: Int?
+    /// The header's ‹ › (⌥⌘← ⌥⌘→): the wall's previous / next agent; an
+    /// agent window steps within itself (AgentWindow.step).
+    var onStep: ((Int) -> Void)?
 
     /// Shows `agent`, replacing the current terminal if it's another agent.
     func show(_ agent: Agent, fontSize: Double) {
@@ -147,8 +159,17 @@ final class FocusView: NSView, TerminalDropTarget {
         let w = model.wall
         let barChanged = AttentionBar.height(a, width: cardWidth, inFocus: true) != AttentionBar.height(t.agent, width: cardWidth, inFocus: true)
         t.update(a, connected: connected)
+        let project = model.projectLabel(a)?.name ?? a.project.map { ($0 as NSString).lastPathComponent }
         header.rootView = FocusHeader(agent: a, local: a.machine == model.localMachine,
-                                      index: (w.firstIndex(where: { $0.id == a.id }) ?? 0) + 1, count: w.count, killed: model.isKilled(a))
+                                      index: (w.firstIndex(where: { $0.id == a.id }) ?? 0) + 1, count: w.count,
+                                      needsYou: w.filter { $0.state.needsAttention }.count, killed: model.isKilled(a),
+                                      place: TilePlace.label(project: project, branch: a.branch, ownBand: false),
+                                      onBack: { [weak model] in model?.perform(.toggleFocus) },
+                                      onStep: { [weak self, weak model] d in
+                                          if let step = self?.onStep { step(d) } else { model?.perform(d < 0 ? .stepPrevious : .stepNext) }
+                                      },
+                                      onNeedsYou: { [weak model] in model?.perform(.nextAttention) },
+                                      onMenu: { [weak model] in model?.showTileMenu(a.id) })
         bar.rootView = AttentionBar(agent: a, inFocus: true, wide: AttentionBar.isWide(a, width: cardWidth, inFocus: true), keyHints: false,
                                     onAnswer: { [weak model] d in model?.answer(a, d) },
                                     onDenyMessage: { [weak model] in model?.denyOpen = a.id },
@@ -217,20 +238,42 @@ final class FocusView: NSView, TerminalDropTarget {
     }
 }
 
-/// The tile header at window scale: the state square, the name in Geist
-/// 600, how long it has been in that state, machine · tool in Geist Mono
-/// on the right (Horizon for another Mac), then the agent's place in the
-/// wall's order and the keys that step and leave.
+/// The tile header at window scale: on the left a back KeyButton "‹ Wall
+/// ⌘⏎" and ‹ › IconButtons for the previous / next agent (⌥⌘← ⌥⌘→); in
+/// the centre the state square, the name in Geist 600, project · branch,
+/// how long it has been in that state and machine · tool (Horizon for
+/// another Mac); on the right the "typing ⌘esc" chip (⌘esc has no
+/// pointer equivalent but the wall itself), the needs-you count as a
+/// Pill (⌘J) and ⋯ with the agent's menu.
 struct FocusHeader: View {
     var agent: Agent?
     var local: Bool
     var index: Int
     var count: Int
+    /// Agents on the wall that need the user (the Pill; none: no Pill).
+    var needsYou: Int
     /// Ended by ⌃⌘W: "Killed".
     var killed = false
+    /// "project · branch" (TilePlace).
+    var place: String? = nil
+    var onBack: () -> Void = {}
+    var onStep: (Int) -> Void = { _ in }
+    var onNeedsYou: () -> Void = {}
+    var onMenu: () -> Void = {}
 
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
+            KeyButton("‹ Wall", kbd: TileActions.focusKeys, action: onBack)
+                .accessibilityIdentifier("focus.back")
+            HStack(spacing: 0) {
+                IconButton("chevron.left", help: "Previous agent", shortcut: CommandRegistry.cap(.stepPrevious)) { onStep(-1) }
+                    .accessibilityIdentifier("focus.previous")
+                IconButton("chevron.right", help: "Next agent", shortcut: CommandRegistry.cap(.stepNext)) { onStep(1) }
+                    .accessibilityIdentifier("focus.next")
+            }
+            .fixedSize()
+            if count > 0 { Text("\(index) of \(count)").font(DS.font(.meta)).foregroundStyle(Theme.dim).fixedSize() } // window layer: agent windows have no wall order
+            Spacer(minLength: DS.Spacing.m)
             if let agent {
                 StateMark(state: agent.state)
                 Text(agent.name)
@@ -238,37 +281,43 @@ struct FocusHeader: View {
                     .foregroundStyle(Theme.fg)
                     .lineLimit(1).truncationMode(.tail)
                     .layoutPriority(2)
+                if let place {
+                    Text(place).font(DS.font(.chrome)).foregroundStyle(Theme.dim).lineLimit(1).truncationMode(.middle)
+                        .help(agent.project ?? place)
+                }
                 if let since = Theme.elapsed(since: agent.stateSince) {
                     Text("\(killed ? CloseText.killed : agent.state.label) · \(since)")
                         .font(DS.font(.chrome)).foregroundStyle(Theme.dim)
                         .lineLimit(1).truncationMode(.tail)
                 }
-                Spacer(minLength: DS.Spacing.m)
                 Text("\(agent.machine) · \(Theme.kindLabel(agent.kind))")
                     .font(DS.font(.meta))
                     .foregroundStyle(local ? Theme.fg2 : Theme.color(.horizon))
                     .lineLimit(1).fixedSize()
                     .accessibilityIdentifier("tile.mark")
-            } else {
-                Spacer()
             }
-            Rectangle().fill(Theme.stroke).frame(width: 1, height: DS.Spacing.l)
-            if count > 0 { Text("\(index) of \(count)").font(DS.font(.meta)).foregroundStyle(Theme.dim).fixedSize() } // window layer: agent windows have no wall order
-            // Plain ← → belong to the agent; ⌥⌘← ⌥⌘→ (⌘[ ⌘]) step.
-            hint("⌥⌘← →", "agents").accessibilityIdentifier("focus.stepHint")
-            hint("⌘↩", "wall")
+            Spacer(minLength: DS.Spacing.m)
+            HStack(spacing: DS.Spacing.xs) {
+                Text("typing").font(DS.font(.chrome, .medium)).foregroundStyle(Theme.color(.working))
+                Kbd(CommandRegistry.cap(.exitFocus) ?? "⌘esc")
+            }
+            .fixedSize()
+            .help("Typing goes to the agent; \(CommandRegistry.cap(.exitFocus) ?? "") returns to the wall")
+            .accessibilityIdentifier("focus.typing")
+            if needsYou > 0 {
+                Button(action: onNeedsYou) {
+                    Pill(needsYou == 1 ? "needs you" : "need you", mark: .needsYou, count: needsYou)
+                }
+                .buttonStyle(.plain)
+                .help(IconButton.tooltip("Next agent that needs you", CommandRegistry.cap(.nextAttention)))
+                .accessibilityIdentifier("focus.needsYou")
+            }
+            IconButton("ellipsis", help: "More", action: onMenu)
+                .accessibilityIdentifier("focus.menu")
         }
         .padding(.horizontal, DS.Spacing.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(agent.map { "\($0.name), \($0.machine), \($0.state.label)" } ?? "")
-    }
-
-    private func hint(_ keys: String, _ what: String) -> some View {
-        HStack(spacing: DS.Spacing.xs) {
-            Kbd(keys)
-            Text(what).font(DS.font(.chrome)).foregroundStyle(Theme.dim)
-        }
-        .fixedSize()
     }
 }

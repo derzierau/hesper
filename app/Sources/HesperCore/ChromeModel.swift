@@ -66,3 +66,17 @@ public enum SidebarMachines {
         }
     }
 }
+
+/// The top bar's ⋯ overflow: the View menu's wall commands (Project
+/// Sidebar, Wall Scope, the layouts, Next Layout, Dense Cards, Enter Full
+/// Screen) with their key caps, for people who never open the menu bar.
+/// The sheets (palette, History, Review) have their own bar controls and
+/// the stepping chords have the tiles, so those sections stay out.
+public enum ToolbarOverflow {
+    /// The View menu sections it shows (MenuPath order).
+    static let sections: Set<Int> = [1, 2, 4]
+
+    public static func items(registry: [Command] = CommandRegistry.active.commands) -> [MenuModel.Item] {
+        MenuModel.build(from: registry.filter { c in c.menu.map { $0.menu == .view && sections.contains($0.section) } ?? false })[.view]
+    }
+}

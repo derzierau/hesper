@@ -22,9 +22,9 @@ struct ClosingTests {
         }
         #expect(KeyRouter.routeActiveTile(KeyChord(.char("w"), command: true, control: true)) == .killAgent)
         #expect(KeyRouter.routeActiveTile(KeyChord(.char("w"), command: true, option: true)) == .backgroundAgent)
-        // Composing: ⌘W discards the draft, ⇧⌘W stays the worktree toggle.
+        // Composing: ⌘W discards the draft, ⇧⌘W tidies up as everywhere.
         #expect(KeyRouter.route(KeyChord(.char("w"), command: true), mode: .compose, selectedState: nil) == .closeAgent)
-        #expect(KeyRouter.route(KeyChord(.char("W"), command: true, shift: true), mode: .compose, selectedState: nil) == .toggleWorktree)
+        #expect(KeyRouter.route(KeyChord(.char("W"), command: true, shift: true), mode: .compose, selectedState: nil) == .tidyUp)
         // Plain ⌃W in focus is the terminal's.
         #expect(KeyRouter.route(KeyChord(.char("w"), control: true), mode: .focus, selectedState: .working) == .passThrough)
     }

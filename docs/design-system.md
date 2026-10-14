@@ -43,6 +43,18 @@ comes from `DS`.
     line · text · text2 · dim · dim2 · signal · working · question · done ·
     error · horizon`. Layers resolve them with `.cg(in: view)` and
     re-apply them in `viewDidChangeEffectiveAppearance`.
+11. **Key caps come from the command table.** A `Kbd`, `KeyButton` cap or
+    `IconButton` tooltip that names a registry command reads its chord with
+    `CommandRegistry.cap(id, in:)`, never a literal; Help ▸ Keyboard
+    Shortcuts (⌘/) and Settings › Shortcuts render the same table. Only
+    keys that are not commands (a strip's ⏎ esc, End) are spelled out.
+12. **Focus rings follow Full Keyboard Access.** A field or list that
+    turns its focus ring off for looks sets `focusRingType =
+    DS.focusRingType`, never `.none`: the ring is off as usual and comes
+    back when Full Keyboard Access is on (read when the view is made; a
+    change shows on the next open or launch), so ⇥ always has a visible
+    target. Views that take part in ⇥ are linked with `nextKeyView`
+    (`RootView.joinKeyViewLoop`, the sheets' fields and lists).
 
 ## DS API
 
@@ -81,6 +93,7 @@ DS.Elevation.flat / .raised / .floating
 // Chrome and density
 DS.chromeMaxHeight            // 28
 DS.bandGap                    // 16
+DS.focusRing                  // 1: the ring a strip draws in its mark's tone while it has the keyboard (⏎ / esc)
 DS.density: DS.Density        // @MainActor; AppSettings.density keeps it in sync (persisted)
 DS.densityDidChange           // Notification posted when it changes
 DS.tileHeader                 // 26 Comfortable / 22 Compact
@@ -148,6 +161,7 @@ Pill("Search", variant: .segment(selected: false), kbd: "⌘K")
 
 let p = PillView("Working", variant: .status, mark: .working)   // AppKit
 p.count = 3
+p.onPress = { switchScope() }   // a clickable pill: VoiceOver presses it through this
 ```
 
 ### Kbd
@@ -155,8 +169,8 @@ p.count = 3
 Geist Mono 10.5 medium, a 1 px `line` border, radius `kbd`, dim text.
 
 ```swift
-Kbd("⌘K")
-let k = KbdView("⌘J")   // AppKit, intrinsic size
+Kbd(CommandRegistry.cap(.palette) ?? "")
+let k = KbdView(CommandRegistry.cap(.nextAttention) ?? "")   // AppKit, intrinsic size
 ```
 
 ### IconButton
@@ -201,6 +215,51 @@ Row(title: "api", meta: "3", swatch: Theme.color(hex), trailingMark: .needsYou, 
 
 let r = RowView(title: "api", meta: "3", mark: .working)   // AppKit
 r.isSelected = true
+```
+
+### KeyButton
+
+A Pill-sized button with a label and a trailing Kbd: the control every
+footer hint, strip hint and header label becomes. Radius `control`,
+height 22. Variants: `.primary(tone)` (tinted with the mark's tone at 14%,
+24% on hover: the surface's default verb), `.quiet` (a 1 px `line`
+hairline, `line` fill on hover) and `.icon(symbol)` (an IconButton whose
+tooltip carries the key). Disabled draws at 40%.
+
+```swift
+KeyButton("Allow", kbd: CommandRegistry.cap(.activateTile, in: .wall), variant: .primary(.signal)) { model.answer(a, .allow) }
+KeyButton("Always", kbd: CommandRegistry.cap(.answer(.always), in: .wall)) { model.answer(a, .always) }
+KeyButton("Open full size", kbd: CommandRegistry.cap(.toggleFocus), variant: .icon("arrow.up.left.and.arrow.down.right")) { model.focus(a.id) }
+
+let b = KeyButtonView("Close", kbd: "⏎", variant: .primary(.signal)) { model.confirmClose() }   // AppKit
+b.isEnabled = false
+```
+
+### SheetChrome
+
+The frame History, Review and Keyboard Shortcuts share inside their Panel: a title
+row (StateMark or SF Symbol, title in `panelTitle` semibold, a count
+Pill, the `esc` key cap and a close × IconButton), a toolbar row of
+KeyButtons for the sheet's verbs, the content, and a footer row of
+KeyButtons for the row-level keys. 1 px `line` hairlines between the rows;
+toolbar and footer are left out when empty. Closing is the host's
+(`onClose`); esc and the scrim click stay with its key routing;
+`closeIdentifier` names the × for accessibility and the self-tests.
+
+```swift
+SheetChrome(title: "Review", symbol: "checkmark.seal", count: 3, toolbar: {
+    KeyButton("Next file", kbd: CommandRegistry.cap(.reviewNextFile, in: .review)) { session.nextFile() }
+    Spacer()
+    KeyButton("Accept & commit", kbd: CommandRegistry.cap(.reviewAccept, in: .review), variant: .primary(.done)) { session.accept() }
+}, footer: {
+    KeyButton("Seen", kbd: CommandRegistry.cap(.reviewSeen, in: .review)) { session.toggleSeen() }
+}, onClose: { close() }) {
+    list
+}
+
+let chrome = SheetChromeView(title: "History", mark: .working, count: 128) { [weak self] in self?.close() }   // AppKit
+chrome.toolbar.addArrangedSubview(KeyButtonView("All", kbd: CommandRegistry.cap(.historySwitchScope, in: .history)) { … })
+chrome.contentView.addSubview(table)
 ```
 
 ## Terminals edge to edge

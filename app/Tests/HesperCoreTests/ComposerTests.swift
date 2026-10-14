@@ -262,7 +262,9 @@ private let ctx = ComposerContext(
     @Test func composerKeysAreTheComposers() {
         #expect(KeyRouter.route(KeyChord(.enter, command: true), mode: .compose, selectedState: nil) == .startDraft)
         #expect(KeyRouter.route(KeyChord(.enter, option: true), mode: .compose, selectedState: nil) == .startDraftAndNew)
-        #expect(KeyRouter.route(KeyChord(.char("w"), command: true, shift: true), mode: .compose, selectedState: nil) == .toggleWorktree)
+        #expect(KeyRouter.route(KeyChord(.char("b"), command: true, option: true), mode: .compose, selectedState: nil) == .toggleWorktree)
+        #expect(KeyRouter.route(KeyChord(keyCode: 11, characters: "b", command: true, option: true), mode: .compose, selectedState: nil) == .toggleWorktree)
+        #expect(KeyRouter.route(KeyChord(.char("w"), command: true, shift: true), mode: .compose, selectedState: nil) == .tidyUp)
         #expect(KeyRouter.route(KeyChord(.escape), mode: .compose, selectedState: nil) == .leaveDraft)
         #expect(KeyRouter.route(KeyChord(.char("a"), command: true), mode: .compose, selectedState: nil) == .passThrough)
         #expect(KeyRouter.route(KeyChord(.char("z"), command: true), mode: .wall, selectedState: nil) == .undo)
@@ -301,5 +303,23 @@ private let ctx = ComposerContext(
         // The anchor's own card is never in the way.
         let own = PopoverPlacement.place(anchor: anchor, width: 200, height: 200, container: container, avoid: [Rect(x: 90, y: 90, width: 300, height: 300)])
         #expect(own.below)
+    }
+}
+
+@Suite struct DraftStartControlTests {
+    @Test func splitButtonOffersStartAndOpenAnotherOnTheWall() {
+        let items = DraftStartControl.menu(quick: false)
+        #expect(items.map(\.title) == ["Start and open another"])
+        #expect(items.map(\.keys) == ["⌥⏎"])
+        #expect(items.allSatisfy { $0.openNext })
+        #expect(DraftStartControl.menu(quick: true).isEmpty, "quick launch closes after starting")
+    }
+
+    @Test func titlesFollowTheDraft() {
+        #expect(DraftStartControl.title(busy: false, bringing: false) == "Start")
+        #expect(DraftStartControl.title(busy: true, bringing: false) == "Starting…")
+        #expect(DraftStartControl.title(busy: true, bringing: true) == "Bringing…")
+        #expect(DraftStartControl.leaveTitle(quick: false) == "Keep")
+        #expect(DraftStartControl.leaveTitle(quick: true) == "Close")
     }
 }

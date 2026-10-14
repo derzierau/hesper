@@ -275,13 +275,17 @@ final class HistoryHub {
 /// the ghost card setting refreshes the walls.
 @MainActor
 enum HistoryMenu {
-    static func track(_ item: NSMenuItem, model: AppModel) {
+    /// Returns the hub observation, for `unobserve` when the bar is
+    /// rebuilt (a rebound shortcut).
+    @discardableResult
+    static func track(_ item: NSMenuItem, model: AppModel) -> UUID {
         let hub = HistoryHub.shared(for: model)
         item.isHidden = hub.supported != true
-        hub.observe { [weak item] c in
+        let token = hub.observe { [weak item] c in
             if case .support = c { item?.isHidden = hub.supported != true }
         }
         model.settings.onGhostCardsChanged = { hub.updateGhosts(); HistoryPanelHost.wallsChanged() }
+        return token
     }
 }
 

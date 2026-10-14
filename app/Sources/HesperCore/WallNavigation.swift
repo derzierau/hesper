@@ -1,7 +1,7 @@
 import Foundation
 
 /// A keyboard move of the wall's selection: ← → ↑ ↓, Home, End.
-public enum WallMove: Equatable, Sendable {
+public enum WallMove: Hashable, Sendable {
     case left, right, up, down, first, last
 }
 

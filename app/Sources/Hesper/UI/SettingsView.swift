@@ -4,7 +4,7 @@ import SwiftUI
 
 /// ⌘,: one sidebar window. General (the wall, quick launch,
 /// notifications), Machines & pairing, Agents & profiles, Appearance
-/// (Dusk / Daylight / System, density), Shortcuts (read only) and Advanced
+/// (Dusk / Daylight / System, density), Shortcuts (rebinding) and Advanced
 /// (desks, the first run, hesperd). The sidebar is Rows, choices are
 /// segmented Pills; ⌘1…⌘6 switch panes.
 struct SettingsView: View {
@@ -16,6 +16,10 @@ struct SettingsView: View {
     /// width are that wall's own (nil: `model`'s).
     var front: FrontWall? = nil
     @State private var pane = Pane.general
+    @State private var symbolicHotKeys: [String: Any]?
+    /// Shortcuts: why a recorded chord was refused, per row, until the
+    /// next recording or reset.
+    @State private var refusals: [CommandID: String] = [:]
 
     /// The wall whose layout the Wall section edits.
     private var wall: AppModel { front?.model ?? model }
@@ -37,6 +41,8 @@ struct SettingsView: View {
     }
 
     static let size = NSSize(width: 720, height: 540)
+    /// Posted to open a pane (userInfo "pane"): the shortcuts sheet's footer.
+    static let showPane = Notification.Name("hesper.settings.showPane")
     static let sidebarWidth: CGFloat = 196
     static let labelWidth: CGFloat = 168
     static let sliderWidth: CGFloat = 180
@@ -63,6 +69,10 @@ struct SettingsView: View {
         .foregroundStyle(Theme.fg)
         .background(SettingsWindowStyle())
         .ignoresSafeArea()
+        .onAppear { symbolicHotKeys = Self.readSymbolicHotKeys() }
+        .onReceive(NotificationCenter.default.publisher(for: Self.showPane)) { n in
+            if let p = n.userInfo?["pane"] as? Pane { pane = p }
+        }
     }
 
     private var sidebar: some View {
@@ -121,12 +131,22 @@ struct SettingsView: View {
                                                                           set: { model.settings.quickLaunchEnabled = $0; onHotKeyChanged() }))
             }
             SettingsLine("Hotkey") {
-                HStack(spacing: DS.Spacing.m) {
-                    HotKeyRecorder(spec: Binding(get: { model.settings.hotKey }, set: { model.settings.hotKey = $0; onHotKeyChanged() }))
-                    Button("Reset to ⌃⌥Space") { model.settings.hotKey = .default; onHotKeyChanged() }
-                        .disabled(model.settings.hotKey == .default)
+                VStack(alignment: .leading, spacing: DS.Spacing.s) {
+                    HStack(spacing: DS.Spacing.m) {
+                        HotKeyRecorder(spec: Binding(get: { model.settings.hotKey }, set: { model.settings.hotKey = $0; onHotKeyChanged() }))
+                        Button("Reset to ⌃⌥Space") { model.settings.hotKey = .default; onHotKeyChanged() }
+                            .disabled(model.settings.hotKey == .default)
+                    }
+                    .disabled(!model.settings.quickLaunchEnabled)
+                    if model.settings.quickLaunchEnabled, let warning = hotKeyVerdict.warning {
+                        HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
+                            StateMark(.error)
+                            Text(warning).font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityIdentifier("settings.hotkey.warning")
+                    }
                 }
-                .disabled(!model.settings.quickLaunchEnabled)
             }
         }
         SettingsSection("Notifications", footer: "Approvals, questions and errors, unless you are looking at that agent: \"<agent> on <machine> needs you\" with the exact question, grouped per machine. Approvals can be allowed or denied from the notification. Starting from quick launch always confirms with a notification you can click.") {
@@ -252,14 +272,82 @@ struct SettingsView: View {
 
     // MARK: Shortcuts
 
+    /// What macOS does with the quick launch hotkey (Decision 4: the
+    /// input source chords from com.apple.symbolichotkeys; unreadable:
+    /// the static warning on macOS's defaults).
+    private var hotKeyVerdict: InputSourceHotKeys.Verdict {
+        let k = model.settings.hotKey
+        return InputSourceHotKeys.check(SystemHotKey(keyCode: k.keyCode, carbonModifiers: k.carbonModifiers), in: symbolicHotKeys)
+    }
+
+    /// The system's AppleSymbolicHotKeys, read once when the window shows.
+    static func readSymbolicHotKeys() -> [String: Any]? {
+        UserDefaults(suiteName: "com.apple.symbolichotkeys")?.dictionary(forKey: "AppleSymbolicHotKeys")
+    }
+
+    /// The sheet's sections (HesperCore `ShortcutsSheet`, every section
+    /// open, the stored overrides in); the quick launch row shows the
+    /// configured hotkey and, like any row whose chord is bound twice in
+    /// one surface, a "Conflicts with …" pill. A rebindable row's chord
+    /// is a recorder (click, press the new chord; esc cancels, ⌫
+    /// unbinds), with Reset once it is overridden; a refused chord says
+    /// why under the row. Reset All sits above the sections.
     @ViewBuilder private var shortcuts: some View {
-        ForEach(ShortcutList.groups(hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil), id: \.title) { g in
+        let overrides = model.settings.shortcutOverrides
+        let sections = ShortcutsSheet.sections(current: .everywhere, hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil,
+                                               hotKeyConflict: hotKeyVerdict.conflict, overrides: overrides, scanConflicts: !overrides.isEmpty)
+        HStack(spacing: DS.Spacing.m) {
+            Text("Click a shortcut to record a new one; esc cancels, ⌫ removes it.").font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+            Spacer(minLength: DS.Spacing.m)
+            Button("Reset All") { refusals = [:]; model.settings.shortcutOverrides.resetAll() }
+                .disabled(overrides.isEmpty)
+                .accessibilityIdentifier("settings.shortcuts.resetAll")
+        }
+        ForEach(sections, id: \.surface) { g in
             SettingsSection(g.title) {
                 VStack(spacing: 0) {
-                    ForEach(g.items, id: \.title) { s in Row(title: s.title, kbd: s.keys) }
+                    ForEach(g.rows, id: \.id) { r in
+                        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                            HStack(spacing: DS.Spacing.s) {
+                                Row(title: r.title, kbd: r.rebindable ? (r.aliases.isEmpty ? nil : r.aliases.joined(separator: " ")) : r.chord)
+                                if r.rebindable {
+                                    ShortcutRecorder(title: r.title, chord: r.primary, identifier: "settings.shortcut.record.\(r.id.key)") { binding in
+                                        rebind(r.id, to: binding)
+                                    }
+                                    if r.overridden {
+                                        IconButton("arrow.uturn.backward", help: Self.resetHelp(r.id)) { refusals[r.id] = nil; model.settings.shortcutOverrides.reset(r.id) }
+                                            .accessibilityIdentifier("settings.shortcut.reset.\(r.id.key)")
+                                    }
+                                }
+                                if !r.conflicts.isEmpty {
+                                    Pill("Conflicts with \(r.conflicts.joined(separator: ", "))", mark: .error)
+                                        .accessibilityIdentifier("settings.shortcut.conflict.\(r.id.key)")
+                                }
+                            }
+                            if let reason = refusals[r.id] {
+                                Text(reason).font(DS.font(.chrome)).foregroundStyle(Theme.color(.error))
+                                    .padding(.leading, DS.Spacing.m)
+                                    .accessibilityIdentifier("settings.shortcut.reason.\(r.id.key)")
+                            }
+                        }
+                        .accessibilityIdentifier("settings.shortcut.\(r.id.key)")
+                    }
                 }
             }
         }
+    }
+
+    /// Stores the binding, or shows the registry's reason under the row;
+    /// says whether it was stored.
+    private func rebind(_ id: CommandID, to binding: ShortcutOverrides.Binding) -> Bool {
+        switch model.settings.shortcutOverrides.rebinding(id, to: binding) {
+        case .applied(let o): refusals[id] = nil; model.settings.shortcutOverrides = o; return true
+        case .refused(let reason): refusals[id] = reason; return false
+        }
+    }
+
+    static func resetHelp(_ id: CommandID) -> String {
+        CommandRegistry.defaults.command(id)?.chord.map { "Reset to \($0.label)" } ?? "Reset (no shortcut)"
     }
 
     // MARK: Advanced
@@ -413,90 +501,96 @@ private struct SettingsWindowStyle: NSViewRepresentable {
     }
 }
 
-/// Settings › Shortcuts: the app's keys, read only (they mirror KeyRouter
-/// and the menus).
-enum ShortcutList {
-    struct Item { var title: String; var keys: String }
-    struct Group { var title: String; var items: [Item] }
-
-    static func groups(hotKey: String?) -> [Group] {
-        var general = [Item(title: "New agent", keys: "⌘N"), Item(title: "Next agent needing you", keys: "⌘J"),
-                       Item(title: "Search and commands", keys: "⌘K"), Item(title: "History", keys: "⌘Y"),
-                       Item(title: "Settings", keys: "⌘,")]
-        if let hotKey { general.append(Item(title: "Quick launch, from any app", keys: hotKey)) }
-        return [
-            Group(title: "General", items: general),
-            Group(title: "Agents", items: [
-                Item(title: "Open full size / back to the wall", keys: "⌘↩"),
-                Item(title: "Back to the wall", keys: "⌘esc"),
-                Item(title: "Previous / next agent", keys: "⌥⌘← →"),
-                Item(title: "Previous / next agent (also)", keys: "⌘[ ⌘]"),
-                Item(title: "Open in a new window", keys: "⌥⌘↩"),
-                Item(title: "Close (resumable from History)", keys: "⌘W"),
-                Item(title: "Send to the background", keys: "⌥⌘W"),
-                Item(title: "Kill now (the pane stays)", keys: "⌃⌘W"),
-                Item(title: "Tidy up finished agents", keys: "⇧⌘W"),
-                Item(title: "Reopen the last closed agent", keys: "⇧⌘T"),
-                Item(title: "Move to another Mac", keys: "⇧⌘M"),
-                Item(title: "Undo close or move", keys: "⌘Z"),
-            ]),
-            Group(title: "On a selected tile", items: [
-                Item(title: "Allow, or type into it", keys: "⏎"),
-                Item(title: "Always allow", keys: "A"),
-                Item(title: "Deny with a message", keys: "N"),
-                Item(title: "Move the selection", keys: "← → ↑ ↓"),
-                Item(title: "Next / previous tile", keys: "⇥ ⇧⇥"),
-                Item(title: "Previous / next band", keys: "⌥↑ ⌥↓"),
-            ]),
-            Group(title: "Walls and windows", items: [
-                Item(title: "Layouts", keys: WallArrangement.shortcutRange),
-                Item(title: "Next layout", keys: "⌥⌘L"),
-                Item(title: "Project sidebar", keys: "⌘0"),
-                Item(title: "Show the wall", keys: "⇧⌘0"),
-                Item(title: "New wall window", keys: "⌥⌘N"),
-                Item(title: "Wall scope", keys: "⌃⌘S"),
-            ]),
-            Group(title: "New agent", items: [
-                Item(title: "Start", keys: "⌘↩"),
-                Item(title: "Start and write the next one", keys: "⌥↩"),
-                Item(title: "Worktree on / off", keys: "⇧⌘W"),
-                Item(title: "Leave the draft", keys: "esc"),
-            ]),
-        ]
-    }
-}
-
-/// Click, then press the new shortcut (esc cancels).
-struct HotKeyRecorder: View {
-    @Binding var spec: HotKeySpec
+/// Click, then press the new shortcut (esc cancels): the recorder behind
+/// the quick launch hotkey and the per-command shortcuts. `take` sees a
+/// key event while recording and says whether it took it: recording
+/// stops on a chord it took, and keeps listening after one it refused
+/// (the caller shows why). The key monitor exists only while recording and
+/// lets every event through once it stopped, so ⌘Q and ⌘W reach the
+/// menu bar at every other time.
+struct KeyRecorder: View {
+    var label: String
+    var accessibilityLabel: String
+    var identifier: String
+    var take: (NSEvent) -> Bool
     @State private var recording = false
     @State private var monitor: Any?
     static let minWidth: CGFloat = 140
+    /// Stops the recorder that is recording: one at a time, or two
+    /// monitors would race for the next key.
+    @MainActor private static var stopActive: (() -> Void)?
 
     var body: some View {
         Button {
             recording ? stop() : start()
         } label: {
-            Text(recording ? "Press a shortcut…" : spec.label)
+            Text(recording ? "Press a shortcut…" : label)
                 .font(DS.monoFont(.chrome, .medium))
                 .frame(minWidth: Self.minWidth)
         }
-        .accessibilityIdentifier("settings.hotkey")
+        .accessibilityLabel(recording ? "Press a shortcut" : "\(accessibilityLabel): \(label)")
+        .accessibilityIdentifier(identifier)
         .onDisappear { stop() }
     }
 
     private func start() {
+        Self.stopActive?()
+        Self.stopActive = { stop() }
         recording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            guard recording else { return e }
             if e.keyCode == 53 { stop(); return nil }
-            if let s = HotKeySpec(event: e) { spec = s; stop(); return nil }
+            if take(e) { stop() }
             return nil
         }
     }
 
     private func stop() {
+        Self.stopActive = nil
         recording = false
         if let m = monitor { NSEvent.removeMonitor(m) }
         monitor = nil
+    }
+}
+
+/// The quick launch hotkey (a global hotkey needs ⌘, ⌥ or ⌃): a key
+/// without one says so under the recorder, which keeps listening.
+struct HotKeyRecorder: View {
+    @Binding var spec: HotKeySpec
+    @State private var refusal: String?
+    static let needsModifier = "A hotkey needs ⌘, ⌥ or ⌃"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+            KeyRecorder(label: spec.label, accessibilityLabel: "Quick launch hotkey", identifier: "settings.hotkey") { e in
+                guard let s = HotKeySpec(event: e) else { refusal = Self.needsModifier; return false }
+                refusal = nil
+                spec = s
+                return true
+            }
+            if let refusal {
+                Text(refusal).font(DS.font(.chrome)).foregroundStyle(Theme.color(.error))
+                    .accessibilityIdentifier("settings.hotkey.reason")
+            }
+        }
+    }
+}
+
+/// A command's shortcut in Settings › Shortcuts: ⌫ unbinds, any other
+/// key is the new chord (the registry says whether it may be; a refused
+/// one keeps the recorder listening).
+struct ShortcutRecorder: View {
+    var title: String
+    /// The current chord's label; nil: none.
+    var chord: String?
+    var identifier: String
+    /// Whether the binding was stored.
+    var onRecord: (ShortcutOverrides.Binding) -> Bool
+
+    var body: some View {
+        KeyRecorder(label: chord ?? "None", accessibilityLabel: "Shortcut for \(title)", identifier: identifier) { e in
+            let k = KeyChord(event: e)
+            return onRecord(k.key == .delete && k.plain && !k.shift ? .unbound : .chord(k))
+        }
     }
 }

@@ -21,7 +21,7 @@ final class FlippedView: NSView {
 /// question, error for an error, with a static soft glow (a layer shadow);
 /// `working` when selected or active. Hover shows the focus Kbd.
 @MainActor
-final class TileView: NSView, TerminalDropTarget {
+final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
     let terminal: AgentTerminal
     private let body = FlippedView()
     /// The whole terminal area (under the header, above the band) in the
@@ -91,6 +91,7 @@ final class TileView: NSView, TerminalDropTarget {
         pill.isHidden = true
         terminal.onScrollChanged = { [weak self] in self?.scrollChanged() }
         addSubview(windowMarker) // window layer: ↗ marker
+        windowMarker.onClick = { [weak model, weak self] in if let id = self?.agent.id { model?.openAgentWindow(id) } }
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
         setAccessibilityIdentifier("tile.\(agent.id)")
@@ -202,10 +203,12 @@ final class TileView: NSView, TerminalDropTarget {
         let w = width ?? (bounds.width > 0 ? bounds.width : 600)
         let moving = model.moving[agent.id].map { model.machine($0)?.displayName ?? $0 }
         let project = model.projectLabel(agent)
+        let id = agent.id
         header.rootView = TileHeader(agent: agent, local: agent.machine == model.localMachine, compact: w < Self.compactHeaderWidth, movingTo: moving,
                                      typing: isActive, projectName: project?.name, projectColor: project?.colorHex, hovering: hovering,
                                      inOwnBand: inOwnBand, bandBranch: bandBranch, machineLabel: model.machine(agent.machine)?.displayName,
-                                     killed: model.isKilled(agent))
+                                     killed: model.isKilled(agent),
+                                     onOpenFull: { [weak model] in model?.focus(id) }, onMenu: { [weak model] in model?.showTileMenu(id) })
     }
 
     /// Below this card width the header keeps the name, status and machine.
@@ -257,7 +260,7 @@ final class TileView: NSView, TerminalDropTarget {
         return AttentionBar.CloseStrip(ask: p.ask,
                                        onPrimary: { [weak model] in model?.confirmClose() },
                                        onSecondary: { [weak model] in model?.confirmClose(discardWorktree: true) },
-                                       onCancel: { [weak model] in model?.cancelClose() })
+                                       onCancel: { [weak model] in model?.cancelClose() }, agentID: a.id)
     }
 
     /// A move's question on this agent's strip (moving: AppModel+Move).
@@ -268,7 +271,7 @@ final class TileView: NSView, TerminalDropTarget {
         return AttentionBar.MoveStrip(message: p.ask.message(name: a.name, target: target, project: project),
                                       primary: p.ask.primary(tight: tight)?.title, detail: p.ask.detail, actionable: p.ask.actionable,
                                       onPrimary: { [weak model] in model?.confirmMove() },
-                                      onCancel: { [weak model] in model?.cancelMove() })
+                                      onCancel: { [weak model] in model?.cancelMove() }, agentID: a.id)
     }
 
     /// The quiet progress line while it moves (agents.moving).
@@ -472,6 +475,27 @@ final class TileView: NSView, TerminalDropTarget {
         model?.tileMenu?(agent.id) ?? super.menu(for: event)
     }
 
+    /// VoiceOver: the context menu's enabled items as custom actions on
+    /// the tile (like a band heading's).
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        guard let menu = model?.tileMenu?(agent.id) else { return nil }
+        return menu.items.filter { $0.isEnabled && !$0.isSeparatorItem && $0.action != nil }.map { mi in
+            NSAccessibilityCustomAction(name: mi.title) {
+                guard let action = mi.action else { return false }
+                return NSApp.sendAction(action, to: mi.target, from: mi)
+            }
+        }
+    }
+
+    /// A right-click in the active tile's terminal: the same menu, with
+    /// the terminal's own Copy / Paste / Select All.
+    func terminalMenu(for surface: GhosttySurfaceView) -> NSMenu? {
+        guard let menu = model?.tileMenu?(agent.id) else { return nil }
+        menu.addItem(.separator())
+        menu.addItem(surface.terminalMenuItem())
+        return menu
+    }
+
     /// A click selects the tile (the wall keeps the keys); a click on the
     /// selected tile makes it active (typing goes to the agent); a double
     /// click opens it full size.
@@ -493,6 +517,12 @@ final class TileView: NSView, TerminalDropTarget {
         var v = superview
         while let s = v, !(s is WallView) { v = s.superview }
         return v
+    }
+
+    /// A strip that had the keyboard went away: the keys go back to where
+    /// they were, the agent (an active tile) or the wall.
+    func handBackFocus() {
+        if isActive { terminal.focusInput() } else { window?.makeFirstResponder(enclosingWall) }
     }
 }
 
@@ -558,6 +588,8 @@ final class WallView: NSView {
         scrollView.verticalScrollElasticity = .automatic
         scrollView.horizontalScrollElasticity = .automatic
         scrollView.contentView.postsBoundsChangedNotifications = true
+        leftFade.onPage = { [weak self] in self?.page(-1) }
+        rightFade.onPage = { [weak self] in self?.page(1) }
         scrollView.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scrollView, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.needsLayout = true }
@@ -684,8 +716,10 @@ final class WallView: NSView {
         }
         order = ids
         syncStrip(model)
-        empty.rootView = EmptyWall(message: items.isEmpty ? model.connectionMessage : nil,
-                                   onNew: { [weak model] in model?.perform(.newAgent) })
+        empty.rootView = EmptyWall(message: items.isEmpty ? model.connectionMessage : nil, historyAvailable: model.historyAvailable,
+                                   onNew: { [weak model] in model?.perform(.newAgent) },
+                                   onHistory: { [weak model] in model?.perform(.history) },
+                                   onSearch: { [weak model] in model?.perform(.palette) })
         empty.isHidden = !items.isEmpty
         if relayout { animateNext = animateNext || animate; needsLayout = true }
     }
@@ -863,7 +897,7 @@ final class WallView: NSView {
             bandHeaders.removeValue(forKey: k)?.removeFromSuperview()
             backdrops.removeValue(forKey: k)?.removeFromSuperview()
         }
-        for b in view.bands {
+        for (i, b) in view.bands.enumerated() {
             let h: BandHeaderView
             if let x = bandHeaders[b.key] {
                 h = x
@@ -884,6 +918,22 @@ final class WallView: NSView {
                     model.sidebarAction?(.newWall(s))
                 }
                 h.onDrag = { [weak self] phase, p in self?.bandDrag(key, phase, p) }
+                // The ⋯ / right-click menu: the header's gestures by name.
+                h.onMenu = { [weak self, weak model, weak h] action in
+                    guard let self, let model, let h else { return }
+                    switch action {
+                    case .toggleCollapse: h.onToggle?(false)
+                    case .collapseOthers: h.onToggle?(true)
+                    case .newAgent: h.onNew?()
+                    case .openAsWall:
+                        if let p = model.resolvedView.band(key: key)?.pointer { model.openPointer?(p.wall) } else { h.onOpenWall?() }
+                    case .moveUp, .moveDown:
+                        guard let i = model.resolvedView.bands.firstIndex(where: { $0.key == key }) else { return }
+                        model.moveBand(key, to: i + (action == .moveUp ? -1 : 1))
+                        self.animateNext = true
+                        self.needsLayout = true
+                    }
+                }
                 bandHeaders[b.key] = h
                 addSubview(h)
                 let bd = BandBackdropView()
@@ -891,7 +941,7 @@ final class WallView: NSView {
                 addSubview(bd, positioned: .below, relativeTo: subviews.first)
             }
             h.apply(b, counts: model.bandCounts(b), collapsed: model.isCollapsed(b), canOpenWall: model.sidebarAction != nil,
-                    focused: model.focusedBandKey == b.key)
+                    focused: model.focusedBandKey == b.key, index: i, count: view.bands.count)
             backdrops[b.key]?.colorHex = b.colorHex
         }
     }
@@ -962,6 +1012,15 @@ final class WallView: NSView {
         strip.isHidden = true
     }
 
+    /// A fade's chevron pill: the wall scrolls one page (the viewport's
+    /// width) that way, clamped to the content.
+    func page(_ direction: Int) {
+        let clip = scrollView.contentView
+        var o = clip.bounds.origin
+        o.x = max(0, min(frame.width - clip.bounds.width, o.x + CGFloat(direction) * viewport.width))
+        DS.animate(.settle) { clip.animator().setBoundsOrigin(o) } completion: { [weak self] in self?.scrollView.reflectScrolledClipView(clip) }
+    }
+
     /// Shows a soft fade on a side with cards scrolled off it.
     func updateFades() {
         let b = scrollView.contentView.bounds
@@ -999,15 +1058,10 @@ final class WallView: NSView {
     override func keyDown(with event: NSEvent) {
         guard let model else { return }
         let chord = KeyChord(event: event)
-        // An inline question on the selected tile takes ⏎ and esc.
-        if let p = model.closeConfirm, p.id == model.selectedID {
-            if chord.key == .enter && chord.plain { model.confirmClose(); return }
-            if chord.key == .escape && chord.plain { model.cancelClose(); return }
-        }
-        if let p = model.moveConfirm, p.id == model.selectedID {
-            if chord.key == .enter && chord.plain { model.confirmMove(); return }
-            if chord.key == .escape && chord.plain { model.cancelMove(); return }
-        }
+        // An inline question on the selected tile (a close or move asking)
+        // has the keyboard while its strip shows; its ⏎ and esc get here
+        // only when no strip has it (the band is collapsed, the wall was
+        // clicked), and the wall answers them below.
         // The active tile whose read-write terminal hasn't taken the
         // keyboard yet (it swaps in ≤ 800 ms after "start typing"): its keys
         // still go to the agent, in order.
@@ -1015,6 +1069,16 @@ final class WallView: NSView {
            let bytes = TerminalKeys.bytes(chord, characters: event.characters) {
             model.sendInput(id, bytes)
             return
+        }
+        if model.mode == .wall, chord.plain, !chord.shift, chord.key == .enter || chord.key == .escape, let id = model.selectedID {
+            if model.closeConfirm?.id == id {
+                if chord.key == .enter { model.confirmClose() } else { model.cancelClose() }
+                return
+            }
+            if model.moveConfirm?.id == id {
+                if chord.key == .enter { model.confirmMove() } else { model.cancelMove() }
+                return
+            }
         }
         // End: a scrolled-back tile goes live again.
         if event.keyCode == 119, let id = model.selectedID, let t = tiles[id], t.terminal.scrollInfo.offset > 0 {
@@ -1025,6 +1089,13 @@ final class WallView: NSView {
         let cmd = KeyRouter.route(chord, mode: .wall, selectedState: model.current?.state, selectedIsDraft: model.selectedDraft != nil,
                                    selectedAnswers: model.current?.attention?.answers ?? [], typed: event.characters,
                                    selectedReviewable: model.reviewItem(model.current?.id) != nil)
+        // ⇥ steps tiles while the wall (first responder here) has any;
+        // with none it walks the window's key-view loop (Full Keyboard
+        // Access: the bar, the sidebar filter).
+        if chord.key == .tab, chord.plain, order.isEmpty, cmd == .stepNext || cmd == .stepPrevious {
+            if chord.shift { window?.selectPreviousKeyView(nil) } else { window?.selectNextKeyView(nil) }
+            return
+        }
         if cmd == .none { super.keyDown(with: event) } else { model.perform(cmd) }
     }
 
@@ -1037,17 +1108,30 @@ final class WallView: NSView {
 }
 
 /// A soft gradient at the wall's left or right edge: more cards that way.
+/// Its chevron pill is a button: a click scrolls the wall one page that way.
 final class EdgeFade: NSView {
     private let leading: Bool
+    /// The pill was clicked (the wall pages that way).
+    var onPage: (() -> Void)?
     init(leading: Bool) {
         self.leading = leading
         super.init(frame: .zero)
         isHidden = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(leading ? "Earlier cards" : "More cards")
+        setAccessibilityIdentifier(leading ? "wall.fade.left" : "wall.fade.right")
     }
 
     /// The chevron pill: a Pill-high, twice as tall capsule.
     static let pillWidth = Pill.height
     static let pillHeight = 2 * Pill.height
+
+    /// The pill's rect (the only part that takes clicks).
+    private var pillRect: NSRect {
+        let w = Self.pillWidth, h = Self.pillHeight
+        return NSRect(x: leading ? DS.Spacing.m : bounds.width - w - DS.Spacing.m, y: bounds.midY - h / 2, width: w, height: h)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let bg = Theme.windowBG
@@ -1055,8 +1139,7 @@ final class EdgeFade: NSView {
                            atLocations: [0, 0.35, 1], colorSpace: .sRGB)
         g?.draw(in: bounds, angle: leading ? 0 : 180)
         // A small chevron pill: more cards that way.
-        let w = Self.pillWidth, h = Self.pillHeight, r = w / 2
-        let pill = NSRect(x: leading ? DS.Spacing.m : bounds.width - w - DS.Spacing.m, y: bounds.midY - h / 2, width: w, height: h)
+        let pill = pillRect, r = pill.width / 2
         Theme.ns(.surface).setFill()
         NSBezierPath(roundedRect: pill, xRadius: r, yRadius: r).fill()
         Theme.tileBorder.setStroke()
@@ -1076,15 +1159,25 @@ final class EdgeFade: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    /// Only the pill is a target; the gradient lets clicks reach the cards.
+    override func hitTest(_ point: NSPoint) -> NSView? { pillRect.contains(convert(point, from: superview)) ? self : nil }
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {
+        if pillRect.contains(convert(event.locationInWindow, from: nil)) { onPage?() }
+    }
+    override func accessibilityPerformPress() -> Bool { onPage?(); return true }
+    override func resetCursorRects() { addCursorRect(pillRect, cursor: .pointingHand) }
 }
 
-/// No agents yet (or no daemon): "Nothing running." in Geist 28 and the
-/// three keys that start something: ⌘N new agent (clickable), ⌘Y history,
-/// ⌘K search.
+/// No agents yet (or no daemon): "Nothing running." in Geist 28 and three
+/// KeyButtons that start something: New agent ⌘N, History ⌘Y (when hesperd
+/// has sessions), Search ⌘K; the key caps come from the command registry.
 struct EmptyWall: View {
     var message: String?
+    var historyAvailable = true
     var onNew: () -> Void
+    var onHistory: () -> Void = {}
+    var onSearch: () -> Void = {}
 
     var body: some View {
         VStack(spacing: DS.Spacing.l) {
@@ -1101,11 +1194,14 @@ struct EmptyWall: View {
                 .accessibilityIdentifier("wall.empty")
             } else {
                 VStack(alignment: .leading, spacing: DS.Spacing.s) {
-                    Button(action: onNew) { key("⌘N", "new agent") }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("New agent, Command N")
-                    key("⌘Y", "history")
-                    key("⌘K", "search")
+                    KeyButton("New agent", kbd: Self.key(.newAgent), variant: .primary(.working), action: onNew)
+                        .accessibilityIdentifier("wall.empty.new")
+                    if historyAvailable {
+                        KeyButton("History", kbd: Self.key(.history), action: onHistory)
+                            .accessibilityIdentifier("wall.empty.history")
+                    }
+                    KeyButton("Search", kbd: Self.key(.palette), action: onSearch)
+                        .accessibilityIdentifier("wall.empty.search")
                 }
                 .accessibilityIdentifier("wall.empty")
             }
@@ -1113,33 +1209,13 @@ struct EmptyWall: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func key(_ keys: String, _ what: String) -> some View {
-        HStack(spacing: DS.Spacing.m) {
-            Kbd(keys)
-            Text(what).font(DS.font(.body)).foregroundStyle(Theme.fg2)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-    }
+    private static func key(_ id: CommandID) -> String? { CommandRegistry.labels(id).first }
 }
 
 extension KeyChord {
     init(event: NSEvent) {
         let f = event.modifierFlags
-        let key: Key
-        switch event.keyCode {
-        case 36, 76: key = .enter
-        case 53: key = .escape
-        case 123: key = .left
-        case 124: key = .right
-        case 125: key = .down
-        case 126: key = .up
-        case 48: key = .tab
-        case 115: key = .home
-        case 119: key = .end
-        default:
-            if let c = event.charactersIgnoringModifiers?.first { key = .char(c) } else { key = .other }
-        }
-        self.init(key, command: f.contains(.command), shift: f.contains(.shift), option: f.contains(.option), control: f.contains(.control))
+        self.init(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers,
+                  command: f.contains(.command), shift: f.contains(.shift), option: f.contains(.option), control: f.contains(.control))
     }
 }

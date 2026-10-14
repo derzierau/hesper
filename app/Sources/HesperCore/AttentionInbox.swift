@@ -18,7 +18,7 @@ public struct InboxAnswer: Equatable, Sendable {
 
     public var title: String
     public var action: Action
-    /// Its number key (1–9) in the inbox; nil: ⏎ / ⌘O only.
+    /// Its number key (1–9) in the inbox; nil: ⏎ / ⌘⏎ only.
     public var key: Int?
 
     public init(title: String, action: Action, key: Int?) {
@@ -84,6 +84,22 @@ public enum AttentionInbox {
         }
     }
 
+    /// The key cap an answer's button shows: the first answer carries ⏎;
+    /// the others have no key (letters and digits type into the filter).
+    public static func keyCap(_ a: InboxAnswer, primary: Bool) -> String? {
+        primary ? CommandRegistry.cap(.inboxPrimary, in: .inbox) : nil
+    }
+
+    /// The inbox's filter: every word of the query (case-insensitive) is in
+    /// the agent's name, its project or its question; an empty query keeps
+    /// every item.
+    public static func matches(_ query: String, name: String, project: String, question: String) -> Bool {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return true }
+        let fields = [name, project, question].map { $0.lowercased() }
+        return words.allSatisfy { w in fields.contains { $0.contains(w) } }
+    }
+
     /// Where an item is when that isn't here: "other wall" (not on this
     /// wall), "other Mac" (runs on another machine).
     public static func whereabouts(machine: String, local: String, onThisWall: Bool) -> [String] {
@@ -135,18 +151,26 @@ public enum AttentionInbox {
 }
 
 /// The inbox's keys: J/K or ↑/↓ move, 1–9 answer the selected item, ⏎ its
-/// primary answer, ⌘⏎ (and ⌘O, routed by the window) open its tile, esc
-/// closes.
+/// primary answer, ⌘⏎ opens its tile, esc closes.
 public enum InboxKeyAction: Equatable, Sendable {
     case move(Int)
-    /// 0-based: the answer with number key `n + 1`.
-    case answer(Int)
     case primary, open, close, none
-    /// M: continue the selected agent on the other Mac (agents.move).
-    case moveElsewhere
 }
 
 public enum InboxKeys {
+    /// The inbox's own verbs (the letters; ↑↓ ⏎ ⌘⏎ esc arrive resolved
+    /// by OverlayKeys).
+    public static func action(for id: CommandID) -> InboxKeyAction? {
+        switch id {
+        case .moveDown: return .move(1)
+        case .moveUp: return .move(-1)
+        case .inboxPrimary: return .primary
+        case .inboxOpen: return .open
+        case .closeOverlay: return .close
+        default: return nil
+        }
+    }
+
     public static func route(_ action: OverlayKeyAction) -> InboxKeyAction {
         switch action {
         case .up: return .move(-1)
@@ -154,23 +178,10 @@ public enum InboxKeys {
         case .activate: return .primary
         case .alternate: return .open
         case .close: return .close
-        case .type(let s):
-            switch s {
-            case "j", "J": return .move(1)
-            case "k", "K": return .move(-1)
-            case "m", "M": return .moveElsewhere
-            default:
-                if s.count == 1, let n = Int(s), (1...9).contains(n) { return .answer(n - 1) }
-                return .none
-            }
-        case .actOn, .back, .deleteBackward, .pass:
+        case .type, .actOn, .back, .deleteBackward, .pass:
+            // Typing is the filter's, never an answer.
             return .none
         }
-    }
-
-    /// The answer a number key picks (`InboxAnswer.key`), if any.
-    public static func answer(_ index: Int, in answers: [InboxAnswer]) -> InboxAnswer? {
-        answers.first { $0.key == index + 1 }
     }
 
     /// ⏎: the first answer.

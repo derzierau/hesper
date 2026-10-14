@@ -4,8 +4,9 @@ import HesperCore
 /// Projects (views) UI test (`make -C app test-ui-projects`,
 /// Tools/run-projects.sh): the real app against the fake daemon seeded with
 /// `--projects demo` (two groups, a repository with a package, a scratch
-/// folder, 10 agents). Drives bands, collapse, ＋ in a band, the sidebar
-/// (click, ⌥-click), the home wall's needs-you strip, band navigation,
+/// folder, 10 agents). Drives bands, collapse, the band ⋯ menu, ＋ in a
+/// band, the sidebar (click, ⌥-click, accessibility press and actions),
+/// the home wall's needs-you strip, band navigation,
 /// layouts per arrangement, agent window titles, persistence; screenshots
 /// with `--projects-shots DIR`.
 @MainActor
@@ -158,6 +159,30 @@ final class ProjectsSelfTest {
             model.collapsedBands = []
             await Harness.sleep(0.6)
         }
+        // 4b. The header's ⋯ / right-click menu names the same gestures.
+        if let h = wall.bandHeaders[tools.key] {
+            func run(_ title: String) -> Bool {
+                guard let i = h.contextMenu().items.first(where: { $0.title == title }), let a = i.action else { return false }
+                return NSApp.sendAction(a, to: i.target, from: i)
+            }
+            let titles = h.contextMenu().items.filter { !$0.isSeparatorItem }.map(\.title)
+            check("band ⋯ menu: Collapse, Collapse Others, New Agent Here, Open as Wall, Move Up / Down",
+                  titles == ["Collapse", "Collapse Others", "New Agent Here", "Open as Wall", "Move Up", "Move Down"], titles.joined(separator: ", "))
+            check("menu Collapse collapses the band", run("Collapse") && model.collapsedBands == [tools.key], "\(model.collapsedBands)")
+            await Harness.sleep(0.4)
+            check("the menu then says Expand; Expand opens it", h.contextMenu().items.first?.title == "Expand" && run("Expand") && model.collapsedBands.isEmpty)
+            await Harness.sleep(0.4)
+            let order = wall.view.bands.map(\.key)
+            check("menu Move Up puts the band before the previous one", run("Move Up") && wall.view.bands.map(\.key) == [tools.key, acme.key, "g:~scratch"],
+                  wall.view.bands.map(\.key).joined(separator: ", "))
+            await Harness.sleep(0.6)
+            check("Move Up on the first band is disabled; Move Down brings it back",
+                  h.contextMenu().items.first { $0.title == "Move Up" }?.isEnabled == false && run("Move Down") && wall.view.bands.map(\.key) == order,
+                  wall.view.bands.map(\.key).joined(separator: ", "))
+            await Harness.sleep(0.6)
+            check("VoiceOver gets the enabled items as custom actions",
+                  (h.accessibilityCustomActions() ?? []).map(\.name) == ["Collapse", "Collapse Others", "New Agent Here", "Open as Wall", "Move Up", "Move Down"])
+        }
 
         // 5. ＋ in a band: a draft there with the band's project.
         if let h = wall.bandHeaders[tools.key] {
@@ -207,6 +232,34 @@ final class ProjectsSelfTest {
             check("a click on a project scopes this wall; bands by branch/package", scoped && model.wall.count == 4
                   && keys.contains("b:main") && keys.contains("b:pkg:p-ios-app") && keys.contains("b:br:feature/push-provider-fcm"),
                   "\(main.scope) \(model.wall.count) \(keys)")
+        }
+        // 6b. Accessibility: a press is a click; the context menu is the row's custom actions.
+        if let all = sidebar.rows.first(where: { $0.row?.kind == .all }), let row = sidebar.rows.first(where: { $0.row?.id == "g:g-tools/p:p-hesper" }) {
+            let pressedAll = all.accessibilityPerformPress()
+            let backToAll = await Harness.wait(2) { self.main.scope == .all }
+            check("accessibility press on All agents scopes the wall back to All", pressedAll && backToAll)
+            let names = (row.accessibilityCustomActions() ?? []).map(\.name)
+            check("a project row's custom actions are its menu (New Agent in…, Show on This Wall, Open as New Wall, Rename…, Color: …)",
+                  names.first == "New Agent in hesper" && names.contains("Show on This Wall") && names.contains("Open as New Wall")
+                  && names.contains("Rename…") && names.contains { $0.hasPrefix("Color: ") }, names.joined(separator: ", "))
+            if let show = row.accessibilityCustomActions()?.first(where: { $0.name == "Show on This Wall" }) {
+                let ran = show.handler?() == true
+                let scoped = await Harness.wait(2) { self.main.scope == .project("p-hesper") }
+                check("a custom action runs its menu item", ran && scoped)
+            }
+            _ = all.accessibilityPerformPress()
+            _ = await Harness.wait(2) { self.main.scope == .all }
+            let pressedRow = row.accessibilityPerformPress()
+            let scopedRow = await Harness.wait(2) { self.main.scope == .project("p-hesper") }
+            check("accessibility press on a project row scopes the wall to it", pressedRow && scopedRow)
+            if let chip = sidebar.machineViews.first {
+                let pressedChip = chip.accessibilityPerformPress()
+                let scopedChip = await Harness.wait(2) { self.main.scope == chip.item.scope }
+                check("a machine chip presses and offers Show on This Wall / Open as New Wall", pressedChip && scopedChip
+                      && (chip.accessibilityCustomActions() ?? []).map(\.name) == ["Show on This Wall", "Open as New Wall"])
+            }
+            _ = all.accessibilityPerformPress()
+            _ = await Harness.wait(2) { self.main.scope == .all }
         }
         // 7. Home wall: a scoped-out agent needing you shows as a card.
         let ghost = model.unscopedWall.first { model.catalog.projectID(for: $0) == "p-hesper" }!.id

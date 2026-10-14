@@ -502,14 +502,21 @@ final class WindowManager: NSObject {
 
     // MARK: Routing
 
-    /// The model of the key window (menus act on it), else the main one.
-    var activeModel: AppModel {
+    /// The model of the key window (menus act on it); nil when the key
+    /// window is neither a wall nor an agent window (Settings, First Run,
+    /// the Design Gallery): an agent chord there does nothing, ⌘W closes
+    /// that window.
+    var activeModel: AppModel? {
         if let k = NSApp.keyWindow ?? NSApp.mainWindow {
             if let w = walls.first(where: { $0.window === k }) { return w.model }
             if let c = (k as? AgentWindow)?.controller { return c.model }
         }
-        return primary
+        return nil
     }
+
+    /// Where a toast or a review opened from outside a window goes: the
+    /// key window's model, else the frontmost wall's.
+    var frontModel: AppModel { activeModel ?? activeWall.model }
 
     var activeWall: WallEntry {
         if let k = NSApp.keyWindow ?? NSApp.mainWindow, let w = walls.first(where: { $0.window === k }) { return w }
@@ -656,15 +663,22 @@ final class WindowManager: NSObject {
     private func tileMenu(_ id: String, model: AppModel) -> NSMenu? {
         guard let a = model.agent(id) else { return nil }
         let menu = NSMenu()
-        func add(_ title: String, _ key: String = "", _ mods: NSEvent.ModifierFlags = [], _ action: @escaping @MainActor () -> Void) {
+        func add(_ title: String, _ key: String = "", _ mods: NSEvent.ModifierFlags = [], id: NSUserInterfaceItemIdentifier? = nil,
+                 _ action: @escaping @MainActor () -> Void) {
             let i = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: key)
             i.keyEquivalentModifierMask = mods
+            i.identifier = id
             let act = MenuAction(action)
             i.target = act
             i.representedObject = act
             menu.addItem(i)
         }
-        add(book.handle(for: id) == nil ? "Open in New Window" : "Show Window", "\r", [.command, .option]) { [weak self] in self?.openAgentWindow(id) }
+        // The header's ⋯ and the terminal's right-click open this menu too:
+        // the pointer's way to the focus view.
+        if model.mode != .focus { add("Open Full Size", "\r", [.command]) { [weak model] in model?.focus(id) } }
+        add(book.handle(for: id) == nil ? "Open in New Window" : "Show Window", "\r", [.command, .option], id: TileMenuItem.openWindow) { [weak self] in
+            self?.openAgentWindow(id)
+        }
         add("Open in New Tab") { [weak self] in self?.openAgentWindow(id, asTab: true) }
         menu.addItem(.separator())
         // Moving work across Macs: one item per Mac it can go to (none
@@ -776,49 +790,26 @@ final class WindowManager: NSObject {
 
     // MARK: Menus
 
-    /// Adds the window commands to the app's menus (built by AppDelegate).
-    func installMenus() {
-        guard let main = NSApp.mainMenu else { return }
-        func item(_ title: String, _ key: String, _ mods: NSEvent.ModifierFlags, _ action: @escaping @MainActor () -> Void) -> NSMenuItem {
-            let i = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: key)
-            i.keyEquivalentModifierMask = mods
-            let act = MenuAction(action)
-            i.target = act
-            i.representedObject = act
-            return i
+    /// The window layer's menu commands (MenuBuilder → AppDelegate.run);
+    /// false when `id` is not one of them.
+    func run(_ id: CommandID) -> Bool {
+        switch id {
+        case .newWallWindow: newWall()
+        case .openInNewWindow:
+            guard let id = activeWall.model.selectedID else { return true }
+            openAgentWindow(id)
+        case .openInNewTab:
+            guard let id = activeWall.model.selectedID else { return true }
+            openAgentWindow(id, asTab: true)
+        case .wallScope:
+            let w = activeWall
+            bringForward(w.window)
+            showScopePopover(for: w.model)
+        case .makeHomeWall: makeHome(activeWall)
+        case .deskPicker, .saveDeskAs: return desks.run(id)
+        default: return false
         }
-        if let agents = main.items.first(where: { $0.submenu?.title == "Agents" })?.submenu {
-            let at = (agents.items.firstIndex { $0.title == "Open / Back to Wall" } ?? agents.items.count - 1) + 1
-            agents.insertItem(item("Open in New Window", "\r", [.command, .option]) { [weak self] in
-                guard let self, let id = self.activeWall.model.selectedID else { return }
-                self.openAgentWindow(id)
-            }, at: at)
-            agents.insertItem(item("Open in New Tab", "", []) { [weak self] in
-                guard let self, let id = self.activeWall.model.selectedID else { return }
-                self.openAgentWindow(id, asTab: true)
-            }, at: at + 1)
-        }
-        if let wm = NSApp.windowsMenu {
-            wm.insertItem(item("New Wall Window", "n", [.command, .option]) { [weak self] in self?.newWall() }, at: 0)
-            wm.insertItem(item("Project Sidebar", "0", [.command]) { [weak self] in
-                guard let self else { return }
-                self.activeWall.model.sidebarVisible.toggle()
-            }, at: 0)
-            wm.insertItem(item("Wall Scope…", "s", [.command, .control]) { [weak self] in
-                guard let self else { return }
-                let w = self.activeWall
-                self.bringForward(w.window)
-                self.showScopePopover(for: w.model)
-            }, at: 1)
-            wm.insertItem(item("Make Home Wall", "", []) { [weak self] in
-                guard let self else { return }
-                self.makeHome(self.activeWall)
-            }, at: 2)
-            wm.insertItem(.separator(), at: 3)
-            desks.installMenus(in: wm, at: 4)
-            wm.addItem(.separator())
-            wm.addItem(withTitle: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
-        }
+        return true
     }
 }
 

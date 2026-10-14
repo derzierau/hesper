@@ -17,6 +17,8 @@ extension AttentionBar {
         var actionable: Bool
         var onPrimary: () -> Void
         var onCancel: () -> Void
+        /// The agent moving: see `CloseStrip.agentID`.
+        var agentID: String? = nil
     }
 
     struct MoveLine {
@@ -32,13 +34,13 @@ extension AttentionBar {
     }
 }
 
-/// "migrations is working · Interrupt and move ⏎ · esc"; "npm run dev is
-/// still running here · Move anyway (leave them running) ⏎ · esc"; "Codex
-/// isn't installed on mini · esc". Its keys work wherever the keyboard is
-/// (MainWindow), like the close strip's.
+/// "migrations is working · Interrupt and move ⏎ · Cancel esc"; "npm run
+/// dev is still running here · Move anyway (leave them running) ⏎ ·
+/// Cancel esc"; "Codex isn't installed on mini · Cancel esc". Like the
+/// close strip it has the keyboard while it shows (StripKeys).
 struct MoveStripRow: View {
     var strip: AttentionBar.MoveStrip
-    var tight = false
+    @State private var focused = false
 
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
@@ -48,14 +50,15 @@ struct MoveStripRow: View {
             Spacer(minLength: DS.Spacing.m)
             HStack(spacing: DS.Spacing.s) {
                 if let p = strip.primary {
-                    StripButton(title: p, key: "⏎", primary: true, tint: .working, tight: tight, run: strip.onPrimary)
+                    KeyButton(p, kbd: "⏎", variant: .primary(.working), action: strip.onPrimary)
                         .accessibilityIdentifier("move.primary")
                 }
-                StripButton(title: nil, key: "esc", primary: false, tint: .working, tight: tight, run: strip.onCancel)
+                KeyButton("Cancel", kbd: "esc", action: strip.onCancel)
                     .accessibilityIdentifier("move.cancel")
             }
             .fixedSize()
         }
+        .stripKeys(tone: .working, focused: $focused, agentID: strip.agentID, onPrimary: { if strip.primary != nil { strip.onPrimary() } }, onCancel: strip.onCancel)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("tile.moveStrip")
     }

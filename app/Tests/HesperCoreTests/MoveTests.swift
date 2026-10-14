@@ -136,11 +136,11 @@ private let machines = [
     }
 
     @Test func inboxAndHistoryKeys() {
-        #expect(InboxKeys.route(.type("m")) == .moveElsewhere)
-        #expect(InboxKeys.route(.type("M")) == .moveElsewhere)
+        #expect(InboxKeys.route(.type("m")) == .none, "the inbox's M types into its filter")
         #expect(SearchKeys.history(KeyChord(.char("r")), characters: "r", focus: .list) == .restoreCheckpoint)
         #expect(SearchKeys.history(KeyChord(.char("r")), characters: "r", focus: .search) != .restoreCheckpoint)
-        #expect(SearchKeys.history(KeyChord(.enter, command: true), characters: nil, focus: .list) == .continueOnOtherMac)
+        #expect(SearchKeys.history(KeyChord(.char("m")), characters: "m", focus: .list) == .continueOnOtherMac)
+        #expect(SearchKeys.history(KeyChord(.char("m")), characters: "m", focus: .search) != .continueOnOtherMac)
     }
 
     @Test func historyPreviewMovesLiveAgents() {
@@ -151,12 +151,12 @@ private let machines = [
         #expect(SearchPreview.moveTarget(live, agent: nil, machines: machines, supported: nil) == nil)
         let card = SessionCardText(live, changes: nil, loadingChanges: true, local: "laptop", machines: [:])
         let acts = SearchPreview.actions(live, card: card, local: "laptop", online: ["laptop", "mini"], machines: [:], moveTo: "mini")
-        #expect(acts.contains { $0.key == "⌘⏎" && $0.title == "Continue on mini" })
+        #expect(acts.contains { $0.key == "M" && $0.title == "Continue on mini" })
         #expect(SearchPreview.continueNote(live, local: "laptop", online: ["laptop", "mini"], machines: [:], moveTo: "mini")?.contains("moves it to mini") == true)
         // Not live: today's continue-on-other-Mac resume, unchanged.
         let past = Session(id: "laptop:claude:s2", sessionId: "s2", machine: "laptop", title: "old")
         let pc = SessionCardText(past, changes: nil, loadingChanges: true, local: "laptop", machines: [:])
-        #expect(SearchPreview.actions(past, card: pc, local: "laptop", online: ["laptop", "mini"], machines: [:]).contains { $0.key == "⌘⏎" && $0.title == "Continue on mini" })
+        #expect(SearchPreview.actions(past, card: pc, local: "laptop", online: ["laptop", "mini"], machines: [:]).contains { $0.key == "M" && $0.title == "Continue on mini" })
     }
 
     @Test func historyRestoreCheckpoint() {

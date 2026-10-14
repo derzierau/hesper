@@ -44,8 +44,6 @@ enum SearchLook {
     static let highlightAlpha: CGFloat = 0.25
     /// Rows: title (Geist 600 13) and snippet (Geist 12) with `m` above and below.
     @MainActor static var rowHeight: CGFloat { HistoryCell.height }
-    /// The footer (Hints).
-    static let footerHeight: CGFloat = 28
     /// The preview's label column ("you asked").
     static let previewLabelWidth: CGFloat = 84
 

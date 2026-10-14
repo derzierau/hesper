@@ -437,7 +437,7 @@ final class ComposerModel {
         updateCompletion(text: d.text)
     }
 
-    /// ⌘⇧W: worktree on (with the suggested branch) or off.
+    /// ⌥⌘B: worktree on (with the suggested branch) or off.
     func toggleWorktree() {
         var d = draft
         let r = resolution

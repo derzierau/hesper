@@ -3,11 +3,12 @@ import HesperCore
 import SwiftUI
 
 // The review sheet's chrome (SwiftUI: small, observes the session): the
-// sheet's header, the selected item's header with its actions, the
+// toolbar's meta text, the selected item's header with its actions, the
 // evidence panel; and the inbox's rows (AppKit, drawn directly).
 
-/// "Review  3 ready · on laptop, mini" … "⌘R".
-struct ReviewSheetHeader: View {
+/// The toolbar's meta: "on laptop, mini", the Macs that can't review,
+/// what the sheet is busy with.
+struct ReviewSheetMeta: View {
     var session: ReviewSession
     var machineNames: [String: String]
 
@@ -15,30 +16,23 @@ struct ReviewSheetHeader: View {
         let items = session.items
         let macs = Array(Set(items.map(\.machine))).sorted().map { machineNames[$0] ?? $0 }
         HStack(spacing: DS.Spacing.m) {
-            Image(systemName: "checklist").font(.ds(.panelTitle)).foregroundStyle(Theme.dim)
-            Text("Review").font(.ds(.panelTitle, .semibold)).foregroundStyle(Theme.fg)
-            Text(items.isEmpty ? "nothing ready" : "\(items.count) ready" + (macs.isEmpty ? "" : " · " + macs.joined(separator: ", ")))
+            Text(items.isEmpty ? "nothing ready" : macs.isEmpty ? "" : "on " + macs.joined(separator: ", "))
                 .font(.ds(.chrome)).foregroundStyle(Theme.dim).lineLimit(1)
             if !session.hub.support.unsupportedMachines.isEmpty {
                 let off = session.hub.support.unsupportedMachines.sorted().map { machineNames[$0] ?? $0 }.joined(separator: ", ")
                 Text("· \(off): update hesperd to review there").font(.ds(.chrome)).foregroundStyle(Theme.dim).lineLimit(1)
                     .accessibilityIdentifier("review.unsupported")
             }
-            Spacer(minLength: DS.Spacing.m)
             if let busy = session.busy {
                 ProgressView().controlSize(.small)
                 Text(busy).font(.ds(.chrome)).foregroundStyle(Theme.fg2).lineLimit(1)
             }
-            Kbd("⌘R")
         }
-        .padding(.horizontal, DS.Spacing.xl)
-        .frame(height: ReviewLook.headerHeight)
-        .overlay(alignment: .bottom) { Rectangle().fill(Theme.stroke).frame(height: 1) }
     }
 }
 
-/// The selected item: name, where, churn; Send back ⇧↩ and Accept ⌘↩; the
-/// status line (a confirm, an error).
+/// The selected item: name, where, churn; the status line (an error, a
+/// confirm with its Confirm and Cancel KeyButtons).
 struct ReviewItemHeader: View {
     var session: ReviewSession
     var machineNames: [String: String]
@@ -51,11 +45,6 @@ struct ReviewItemHeader: View {
                     Text(item.name).font(.ds(.panelTitle, .semibold)).foregroundStyle(Theme.fg).lineLimit(1)
                     Text(meta(item)).font(.ds(.meta)).foregroundStyle(Theme.dim).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: DS.Spacing.m)
-                    let n = session.currentNotes.count
-                    ReviewButton(title: n == 0 ? "Send back" : "Send back · \(n)", key: "⇧↩", primary: false) { session.sendBack() }
-                        .accessibilityIdentifier("review.sendBack")
-                    ReviewButton(title: "Accept & commit", key: "⌘↩", primary: true) { session.accept() }
-                        .accessibilityIdentifier("review.accept")
                 }
                 statusLine
             } else if !session.items.isEmpty {
@@ -78,10 +67,12 @@ struct ReviewItemHeader: View {
     @ViewBuilder private var statusLine: some View {
         switch session.confirm {
         case .accept(_, let unseen):
-            line("\(unseen) hunk\(unseen == 1 ? "" : "s") not marked seen (V). ⌘↩ again accepts anyway · esc", tone: .question)
+            confirm("\(unseen) hunk\(unseen == 1 ? "" : "s") not marked seen (V). Accept anyway?", key: ReviewPanel.cap(.reviewAccept)) { session.accept() }
         case .bulk(let ids):
             let names = ids.compactMap { session.hub.item($0)?.name }.joined(separator: ", ")
-            line("Accept \(ids.count) low-risk item\(ids.count == 1 ? "" : "s") with fresh tests: \(names). ⇧A again · esc", tone: .question)
+            confirm("Accept \(ids.count) low-risk item\(ids.count == 1 ? "" : "s") with fresh tests: \(names)?", key: ReviewPanel.cap(.reviewBulkAccept)) {
+                session.bulkAccept()
+            }
         case nil:
             if let s = session.status { line(s.text, tone: s.error ? .error : .dim) }
             else if let f = session.selectedID.flatMap({ session.failures[$0] }) { line("Couldn't load the diff: \(f)", tone: .error) }
@@ -93,31 +84,14 @@ struct ReviewItemHeader: View {
         Text(text).font(.ds(.chrome)).foregroundStyle(Theme.color(tone)).lineLimit(1).truncationMode(.tail)
             .accessibilityIdentifier("review.status")
     }
-}
 
-/// An action pill: a key as Kbd; primary is `working`-tinted (never Signal).
-struct ReviewButton: View {
-    var title: String
-    var key: String
-    var primary: Bool
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: DS.Spacing.s) {
-                Text(title).font(.ds(.chrome, .medium)).lineLimit(1)
-                Kbd(key)
-            }
-            .padding(.horizontal, DS.Spacing.m)
-            .frame(height: Pill.height)
-            .background(DS.Radius.shape(DS.Radius.control).fill(primary ? Theme.color(.working).opacity(AttentionBar.primaryFill) : Theme.chipBG))
-            .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(primary ? Theme.color(.working).opacity(AttentionBar.primaryStroke) : Theme.stroke, lineWidth: 1))
-            .foregroundStyle(Theme.fg)
-            .contentShape(Rectangle())
+    /// A confirm: the question, Confirm on the same key that asked, Cancel esc.
+    private func confirm(_ text: String, key: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: DS.Spacing.m) {
+            line(text, tone: .question)
+            KeyButton("Confirm", kbd: key, variant: .primary(.working), action: action).accessibilityIdentifier("review.confirm")
+            KeyButton("Cancel", kbd: SheetChromeView.closeKey) { _ = session.cancelConfirm() }.accessibilityIdentifier("review.cancel")
         }
-        .buttonStyle(.plain)
-        .fixedSize()
-        .help("\(title) (\(key))")
     }
 }
 
@@ -261,10 +235,24 @@ struct ReviewAttentionStrip: View {
                 Rectangle().fill(color(m)).frame(width: Self.cell, height: Self.cell)
                     .overlay(Rectangle().strokeBorder(i == focused ? Theme.color(.working) : .clear, lineWidth: 1.5))
                     .onTapGesture { onPick(i) }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Hunk \(i + 1), \(Self.name(m))")
+                    .accessibilityAddTraits(i == focused ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityAction { onPick(i) }
+                    .accessibilityIdentifier("review.strip.\(i)")
             }
         }
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Hunks seen: \(marks.filter { $0 == .seen }.count) of \(marks.count)")
+    }
+
+    static func name(_ m: ReviewAttention.Mark) -> String {
+        switch m {
+        case .seen: return "seen"
+        case .rejected: return "rejected"
+        case .noted: return "noted"
+        case .unseen: return "unseen"
+        }
     }
 
     private func color(_ m: ReviewAttention.Mark) -> Color {
@@ -376,7 +364,7 @@ struct ReviewReadyRow: View {
             }
             .buttonStyle(.plain)
             .fixedSize()
-            .help("Review (⌘R)")
+            .help(IconButton.tooltip("Review", CommandRegistry.cap(.review)))
             .accessibilityIdentifier("tile.review")
         }
         .accessibilityElement(children: .combine)

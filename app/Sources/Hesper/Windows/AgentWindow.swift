@@ -8,8 +8,9 @@ import SwiftUI
 /// key), attention band, overlays (⌘K palette, move / rename popovers,
 /// deny, undo toasts) and keys as the wall's ⌘↩ view. Title = agent name,
 /// subtitle = project · machine · kind; a square stop in the title bar
-/// mirrors the agent's state. Closing the window (⌥⌘W, the close button)
-/// never stops the agent; ⌘W closes the agent with it.
+/// mirrors the agent's state. Closing the window (⌘W, the close button)
+/// never stops the agent; ⌥⌘W sends the agent to the background and the
+/// window closes with it.
 @MainActor
 final class AgentWindowController: NSWindowController, NSWindowDelegate {
     /// The agent shown; changes only by `retarget` (⌥⌘← ⌥⌘→ untabbed).
@@ -64,6 +65,7 @@ final class AgentWindowController: NSWindowController, NSWindowDelegate {
         // ⌘W: once the agent is closed, so is its window.
         model.closeInFocus = { [weak self] _ in self?.window?.close() }
         root.focus.ownsSizeDefault = ownsSize
+        root.focus.onStep = { [weak w] d in w?.step(d) } // the header's ‹ ›: within this window
         rootModeChanged?()
         apply(agent)
     }
@@ -119,7 +121,7 @@ final class AgentWindowController: NSWindowController, NSWindowDelegate {
     let stop = TitleStopAccessory()
 
     /// The model left focus on this agent: ⌘↩ / ⌘Esc show it in a wall;
-    /// the palette, ⌘[ ⌘] or ⌘J picked another agent (its own window).
+    /// the palette, ⌥⌘← ⌥⌘→ or ⌘J picked another agent (its own window).
     private func modeChanged() {
         let target = model.mode == .focus ? model.focusedID : nil
         if model.mode == .focus && target == agentID { rootModeChanged?(); return }
@@ -162,22 +164,22 @@ final class AgentWindowController: NSWindowController, NSWindowDelegate {
 }
 
 /// The wall window's key routing, with the agent window's own meanings:
-/// ⌘W closes the agent and the window (the same rules as on the wall),
-/// ⌥⌘W closes only the window (the agent stays on its wall), ⌥⌘← ⌥⌘→ (⌘[ ⌘]) step
-/// to the previous / next agent within this window, ⌘N starts a new agent
-/// on the frontmost wall.
+/// ⌘W closes only the window (the agent keeps running, shown on its
+/// wall), ⌥⌘W sends the agent to the background and the window closes
+/// with it, ⌥⌘← ⌥⌘→ step to the previous / next agent within this
+/// window, ⌘N starts a new agent on the frontmost wall.
 final class AgentWindow: MainWindow {
     weak var controller: AgentWindowController?
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let c = controller, event.type == .keyDown, let model,
-              !model.showPalette, model.popover == nil, attachedSheet == nil else { return super.performKeyEquivalent(with: event) }
+              !model.showPalette, attachedSheet == nil else { return super.performKeyEquivalent(with: event) }
         let cmd = KeyRouter.route(KeyChord(event: event), mode: .focus, selectedState: model.current?.state)
         switch cmd {
-        case .closeAgent:
-            model.perform(.closeAgent) // closes the agent (same rules), then this window (closeInFocus)
-        case .backgroundAgent:
+        case .closeAgent where model.popover != .background: // the tray's ⌘W closes its agent (MainWindow)
             closeKeepingAgent()
+        case .backgroundAgent:
+            model.perform(.backgroundAgent) // to the background (same rules); the window follows (closeInFocus)
         case .stepPrevious:
             step(-1)
         case .stepNext:
@@ -190,7 +192,7 @@ final class AgentWindow: MainWindow {
         return true
     }
 
-    /// ⌥⌘W: the window closes, the agent stays, shown on its wall.
+    /// ⌘W: the window closes, the agent stays, shown on its wall.
     func closeKeepingAgent() {
         let id = controller?.agentID
         let manager = controller?.manager

@@ -68,25 +68,37 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             menu.addItem(none)
             menu.addItem(.separator())
         }
-        add(menu, "Open Hesper", "0", #selector(show))
-        add(menu, "New agent…", "n", #selector(newAgent))
-        add(menu, "History…", "y", #selector(history))
-        add(menu, "Review…", "r", #selector(review))
-        menu.addItem(.separator())
-        let quick = add(menu, "Quick Launch…  \(model.settings.hotKey.label)", "", #selector(quickLaunch))
-        quick.setAccessibilityIdentifier("statusitem.quicklaunch")
-        add(menu, "Settings…", ",", #selector(settings))
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Hesper", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        // The ways in, from the command registry: the key equivalent only
+        // where the chord is app-wide (Quick Launch shows the hotkey).
+        for item in MenuModel.statusItems(hotKey: model.settings.hotKey.label, context: CommandContext(historySupported: HistoryHub.shared(for: model).supported == true)) {
+            switch item {
+            case .separator: menu.addItem(.separator())
+            case .command(let id, let title, let chord): add(menu, id, title, chord)
+            }
+        }
     }
 
-    @discardableResult
-    private func add(_ menu: NSMenu, _ title: String, _ key: String, _ action: Selector) -> NSMenuItem {
-        let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        i.target = self
+    private func add(_ menu: NSMenu, _ id: CommandID, _ title: String, _ chord: KeyChord?) {
+        let action: Selector
+        switch id {
+        case .showWall: action = #selector(show)
+        case .newAgent: action = #selector(newAgent)
+        case .history: action = #selector(history)
+        case .review: action = #selector(review)
+        case .quickLaunch: action = #selector(quickLaunch)
+        case .settings: action = #selector(settings)
+        default: action = #selector(NSApplication.terminate(_:))
+        }
+        let i = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        if id != .quit { i.target = self }
+        if let chord, let (key, mods) = MenuBuilder.keyEquivalent(chord) {
+            i.keyEquivalent = key
+            i.keyEquivalentModifierMask = mods
+        }
+        if id == .quickLaunch { i.setAccessibilityIdentifier("statusitem.quicklaunch") }
         menu.addItem(i)
-        return i
     }
+
 
     /// An agent row: its state square, its name, the machine trailing (and
     /// for one that needs you, what it asks, as the subtitle).

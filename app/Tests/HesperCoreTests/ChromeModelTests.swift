@@ -40,4 +40,15 @@ import Testing
         #expect(rows.map(\.online) == [true, false])
         #expect(rows[1].scope == .filter(WallFilter(machines: ["M"])))
     }
+
+    /// The ⋯ overflow is the View menu's wall sections, item for item and
+    /// chord for chord: sidebar and scope, the layouts, full screen.
+    @Test func overflowIsTheViewMenusWallCommands() {
+        let items = ToolbarOverflow.items()
+        let titles = items.map { if case .command(_, let t, _) = $0 { return t }; return "—" }
+        #expect(titles == ["Project Sidebar", "Wall Scope…", "—"] + WallArrangement.allCases.map(\.title) + ["Next Layout", "Dense Cards", "—", "Enter Full Screen"])
+        let view = MenuModel.build()[.view]
+        for item in items where item != .separator { #expect(view.contains(item), "\(item) is not in the View menu as is") }
+        #expect(!titles.contains("Command Palette") && !titles.contains("History") && !titles.contains("Next Band"))
+    }
 }

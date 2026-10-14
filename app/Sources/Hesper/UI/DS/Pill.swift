@@ -78,6 +78,9 @@ final class PillView: NSView {
     private let markView = StateMarkView()
     private let label = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
+    /// A clickable pill (a gesture recognizer does the click): VoiceOver
+    /// and Full Keyboard Access press it through this.
+    var onPress: (() -> Void)?
 
     init(_ title: String, variant: Pill.Variant = .status, mark: StateMarkKind? = nil, count: Int? = nil) {
         self.title = title; self.variant = variant; self.mark = mark; self.count = count
@@ -98,6 +101,12 @@ final class PillView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     private var parts: [NSView] { [markView, label, countLabel].filter { !$0.isHidden } }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard let onPress else { return false }
+        onPress()
+        return true
+    }
 
     /// A part's width: labels by their text (an NSTextField's cached
     /// intrinsic size could be from before its font was set).

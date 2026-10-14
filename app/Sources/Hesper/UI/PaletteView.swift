@@ -4,7 +4,10 @@ import SwiftUI
 /// ⌘K: the search surface in its "All" scope: agents (with their
 /// actions), drafts, actions, projects, history, machines, layouts,
 /// settings. ⇥ (or the History pill) switches to the History scope (⌘Y)
-/// with the query; ⇥ on an agent shows its actions instead. The query and
+/// with the query; ⇥ on an agent shows its actions instead, under a
+/// "‹ Back" row that leaves them. Action rows carry their chord as a key
+/// cap; the footer's buttons act on the selected row (Run ⏎, Open full
+/// size ⌘⏎, Actions / History ⇥, Close / Back esc). The query and
 /// selection live on the model, so the palette comes back as it was left;
 /// ↑↓ ⏎ ⌘⏎ ⇥ esc reach it through the window (OverlayKeys), typing goes to
 /// the field.
@@ -34,6 +37,11 @@ struct PaletteView: View {
                             row(item, selected: i == sel, history: history[item.id])
                                 .id(i)
                                 .onTapGesture { if item.enabled { item.run() } }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel(item.title)
+                                .accessibilityAddTraits(i == sel ? [.isButton, .isSelected] : .isButton)
+                                .accessibilityAction { if item.enabled { item.run() } }
+                                .accessibilityIdentifier("palette.row.\(item.id)")
                         }
                         if list.isEmpty {
                             Text(model.paletteScope == nil ? "Nothing matches. ⇥ searches History." : "Nothing matches")
@@ -45,7 +53,7 @@ struct PaletteView: View {
                 .frame(maxHeight: SearchLook.paletteListMaxHeight)
                 .onChange(of: sel) { if let sel { proxy.scrollTo(sel) } }
             }
-            Hints(items: hints(list, sel), leading: "\(list.count) results")
+            footer(list, sel)
         }
         .dsSheet() // opaque, over the scrim
         .onAppear {
@@ -106,7 +114,8 @@ struct PaletteView: View {
         if let history {
             SearchResultRow(row: history, selected: selected)
         } else {
-            let kbd = SearchKeys.isShortcut(item.detail) ? item.detail : nil
+            // A chord label ("⌘W", "⏎", "esc") is a key cap; anything else is meta.
+            let kbd = !item.detail.isEmpty && KeyChord(label: item.detail) != nil ? item.detail : nil
             let meta = item.checked ? (kbd == nil && !item.detail.isEmpty ? "current · " + item.detail : "current") : (kbd == nil && !item.detail.isEmpty ? item.detail : nil)
             Row(title: item.title, meta: meta, mark: mark(item), kbd: kbd, selected: selected)
                 .opacity(item.enabled ? 1 : SearchLook.disabledOpacity)
@@ -135,13 +144,30 @@ struct PaletteView: View {
         return out
     }
 
-    private func hints(_ list: [OverlayItem], _ sel: Int?) -> [(String, String)] {
-        var h = [("↑↓", "select"), ("⏎", "go / do"), ("⌘⏎", "open full size")]
-        if model.paletteScope == nil {
-            let agent = sel.map { list.indices.contains($0) && list[$0].id.hasPrefix("agent:") } ?? false
-            h.append(("⇥", agent ? "actions" : "history"))
+    /// The footer: the count, then KeyButtons that act on the selected row.
+    private func footer(_ list: [OverlayItem], _ sel: Int?) -> some View {
+        let item = sel.flatMap { list.indices.contains($0) ? list[$0] : nil }
+        let agent = item?.id.hasPrefix("agent:") ?? false
+        let scoped = model.paletteScope != nil
+        return HStack(spacing: DS.Spacing.s) {
+            Text("\(list.count) results").font(.ds(.meta, .medium)).foregroundStyle(Theme.dim)
+            Spacer(minLength: 0)
+            KeyButton("Run", kbd: CommandRegistry.cap(.overlayActivate)) { _ = model.paletteKey(.activate) }
+                .disabled(item == nil)
+                .accessibilityIdentifier("palette.run")
+            KeyButton("Open full size", kbd: CommandRegistry.cap(.overlayAlternate)) { _ = model.paletteKey(.alternate) }
+                .disabled(item?.alternate == nil)
+                .accessibilityIdentifier("palette.alternate")
+            if !scoped {
+                KeyButton(agent ? "Actions" : "History", kbd: CommandRegistry.cap(.overlayActOn)) { _ = model.paletteKey(.actOn) }
+                    .disabled(!agent && !model.historyAvailable)
+                    .accessibilityIdentifier("palette.actOn")
+            }
+            KeyButton(scoped ? "Back" : "Close", kbd: CommandRegistry.cap(.closeOverlay)) { _ = model.paletteKey(.close) }
+                .accessibilityIdentifier("palette.close")
         }
-        h.append(("esc", model.paletteScope == nil ? "close" : "back"))
-        return h
+        .padding(.horizontal, DS.Spacing.m)
+        .frame(height: Hints.height)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.stroke).frame(height: 1) }
     }
 }

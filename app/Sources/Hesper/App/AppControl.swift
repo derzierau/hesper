@@ -211,6 +211,28 @@ final class AppControl {
             let n = primary.counts.needingYou
             if w.model.popover != .attention { w.model.toggleAttentionQueue() } // ⌘J
             return ["wall": .string(w.id), "needsYou": .number(Double(n))]
+
+        case .review(let ref):
+            let w = manager.activeWall
+            let hub = w.model.reviewHub
+            guard hub.available || !hub.items.isEmpty else { // the sheet would only toast
+                throw AppControlError.notFound(hub.support.local == false ? "Review needs a newer hesperd on this Mac" : "nothing to review yet")
+            }
+            // An agent the inbox knows, named as the CLI names agents; one
+            // gone from the registry may still be in the inbox by id.
+            let id = ref.map { (try? AgentRef.resolve($0, agents: Array(primary.registry.agents.values))) ?? $0 }
+            let selected = hub.item(id) != nil
+            manager.bringForward(w.window)
+            w.model.openReview(select: selected ? id : nil) // ⌘R, the menu bar's item
+            return ["wall": .string(w.id), "selected": .bool(selected)]
+
+        case .palette(let query):
+            let w = manager.activeWall
+            let m = w.model
+            manager.bringForward(w.window)
+            if let query { m.paletteList.query = query; m.paletteList.index = 0 } // as typed into it
+            if !m.showPalette { m.togglePalette() } // ⌘K
+            return ["wall": .string(w.id), "query": query.map { .string($0) } ?? .null]
         }
     }
 
@@ -269,7 +291,7 @@ final class AppControl {
         case .save:
             desks.saveAs(r.name!) // Save Desk As…
         case .switch:
-            desks.select(try find().id) // ⌃⌘D picker
+            desks.select(try find().id) // ⇧⌘D picker
         case .rename:
             desks.rename(try find().id, to: r.newName!)
         case .remove:

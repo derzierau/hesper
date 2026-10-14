@@ -17,56 +17,46 @@ func observeChanges(_ body: @escaping @MainActor () -> Void) {
 /// the terminal see it, so the wall, the composer and the focus view
 /// behave the same; open overlays get ↑↓ ⏎ ⌘⏎ ⇥ esc and typing first
 /// (OverlayKeys).
-class MainWindow: NSWindow { // not final: the window layer's AgentWindow refines ⌘W, ⌘[ ⌘]
+class MainWindow: NSWindow { // not final: the window layer's AgentWindow refines ⌘W, ⌥⌘← ⌥⌘→
     weak var model: AppModel?
 
     private var textHasFocus: Bool { firstResponder is NSText }
     private var composerHasFocus: Bool { firstResponder is ComposerTextView }
 
-    /// A close asking on the agent's strip (needs you, a running command,
-    /// its worktree) takes ⏎ and esc first, wherever the keyboard is
-    /// (the wall, an active tile, the focus view's terminal).
-    private func closeStripKey(_ event: NSEvent) -> Bool {
-        if moveStripKey(event) { return true }
-        guard event.type == .keyDown, let model, let p = model.closeConfirm, !model.showPalette, model.popover == nil,
-              model.current?.id == p.id || model.selectedID == p.id else { return false }
-        let chord = KeyChord(event: event)
-        guard chord.plain && !chord.shift else { return false }
-        if chord.key == .enter { model.confirmClose(); return true }
-        if chord.key == .escape { model.cancelClose(); return true }
-        return false
-    }
-
-    /// A move asking on the agent's strip (it's working, processes stay
-    /// here, the other Mac can't take it): ⏎ goes on, esc dismisses.
-    private func moveStripKey(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown, let model, let p = model.moveConfirm, !model.showPalette, model.popover == nil,
-              model.current?.id == p.id || model.selectedID == p.id else { return false }
-        let chord = KeyChord(event: event)
-        guard chord.plain && !chord.shift else { return false }
-        if chord.key == .enter { model.confirmMove(); return true }
-        if chord.key == .escape { model.cancelMove(); return true }
-        return false
-    }
+    // A close or move asking on the agent's strip owns its ⏎ and esc
+    // itself: the strip is first responder while it shows (StripKeys in
+    // TileParts), and the window routes nothing to it.
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let model, event.type == .keyDown else { return super.performKeyEquivalent(with: event) }
-        if HistoryPanelHost.handleKeyEquivalent(event, window: self) { return true } // shared history: the panel's ⌘ keys
-        if ReviewPanelHost.handleKeyEquivalent(event, window: self) { return true } // review: the sheet's ⌘ keys
+        if ShortcutsSheetHost.handleKeyEquivalent(event, window: self) { return true } // keyboard shortcuts: the sheet's ⌘ keys
+        if model.popover == nil, HistoryPanelHost.handleKeyEquivalent(event, window: self) { return true } // shared history: the panel's ⌘ keys (a popover over it has the keys)
+        if model.popover == nil, ReviewPanelHost.handleKeyEquivalent(event, window: self) { return true } // review: the sheet's ⌘ keys
         let chord = KeyChord(event: event)
+        // An open overlay's ⌘ chords come from the registry's surface, so a
+        // rebound palette or tray chord (ShortcutOverrides) holds here too.
         if model.showPalette {
-            if chord.command && chord.key == .char("k") { model.showPalette = false; return true }
-            if chord.command && chord.key == .enter { return model.paletteKey(.alternate) }
+            let id = CommandRegistry.resolve(chord, in: .palette)
+            if id == .palette { model.showPalette = false; return true }
+            if id.flatMap(OverlayKeys.action(for:)) == .alternate { return model.paletteKey(.alternate) }
             return super.performKeyEquivalent(with: event)
         }
         if model.popover != nil {
-            if chord.command && chord.key == .enter { return model.popoverKey(.alternate) }
-            if chord.command && chord.key == .char("k") { model.closePopover(); model.perform(.palette); return true }
-            if chord.command && chord.key == .char("o"), model.popover == .attention { return model.attentionOpenSelected() } // ⌘J inbox: open the tile
-            if chord.command && !chord.option && !chord.control && !chord.shift && chord.key == .char("w"), model.popover == .background {
+            let id = CommandRegistry.resolve(chord, in: model.popover == .attention ? .inbox : .popover)
+            if id.flatMap(OverlayKeys.action(for:)) == .alternate { _ = model.popoverKey(.alternate); return true } // a name field's: nothing else runs
+            if id == .palette { model.closePopover(); model.perform(.palette); return true }
+            if id == .closeTrayItem, model.popover == .background {
                 return model.closeFromTray() // the background tray: ⌘W closes the selected agent
             }
+            // A chord the popover's surface doesn't bind (⌘W off the tray,
+            // ⌘⏎ in a name field's popover): the menu's, never the wall's beneath.
+            if id == nil || id == .closeTrayItem { return super.performKeyEquivalent(with: event) }
         }
+        // The same under a sheet: what its surface doesn't bind goes to the
+        // menu (File ▸ Close is off there), not to the wall under it.
+        if ShortcutsSheetHost.isOpen(model) { return super.performKeyEquivalent(with: event) }
+        if HistoryPanelHost.isOpen(model), CommandRegistry.resolve(chord, in: .history) == nil { return super.performKeyEquivalent(with: event) }
+        if ReviewPanelHost.isOpen(model), CommandRegistry.resolve(chord, in: .review) == nil { return super.performKeyEquivalent(with: event) }
         if model.activeTileID != nil, firstResponder is GhosttySurfaceView, model.mode != .focus {
             // The active tile: like focus, only the app's ⌘ shortcuts.
             let cmd = KeyRouter.routeActiveTile(chord)
@@ -79,6 +69,8 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
             let cmd = KeyRouter.route(chord, mode: .compose, selectedState: nil)
             switch cmd {
             case .passThrough, .none: return super.performKeyEquivalent(with: event)
+            case .leaveDraft, .startDraftAndNew: // plain esc, ⌥⏎: ComposerTextView.keyDown, after its completion list
+                return super.performKeyEquivalent(with: event)
             default: model.perform(cmd); return true
             }
         }
@@ -99,20 +91,32 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     }
 
     override func sendEvent(_ event: NSEvent) {
-        if closeStripKey(event) { return } // closing agents: the strip's ⏎ / esc
-        if event.type == .keyDown, !(model?.showPalette ?? false), HistoryPanelHost.handleKey(event, window: self) { return } // shared history
+        if event.type == .keyDown, ShortcutsSheetHost.handleKey(event, window: self) { return } // keyboard shortcuts: esc
+        if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, HistoryPanelHost.handleKey(event, window: self) { return } // shared history
         if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, ReviewPanelHost.handleKey(event, window: self) { return } // review
         if event.type == .keyDown, let model {
             let chord = KeyChord(event: event)
-            let action = OverlayKeys.route(chord, characters: event.characters)
+            let surface: Surface = model.showPalette ? .palette : model.popover == .attention ? .inbox : .popover
+            let action = OverlayKeys.route(chord, characters: event.characters, surface: surface, typing: model.popover != nil && textHasFocus)
             if model.showPalette {
                 switch action {
                 case .up, .down, .activate, .actOn, .back, .close:
                     if model.paletteKey(action) { return }
                 default: break
                 }
-            } else if model.popover != nil, !textHasFocus || action == .close {
-                if model.popoverKey(action) { return }
+            } else if model.popover != nil {
+                // A field in the popover (a filter, a name) keeps what is
+                // typed; ↑↓ ⏎ ⇥ esc still route (rename and desk name take
+                // only esc: popoverKey leaves the rest to the field).
+                let fieldsOwn: Bool
+                switch action {
+                case .type, .deleteBackward, .pass: fieldsOwn = textHasFocus
+                default: fieldsOwn = false
+                }
+                if !fieldsOwn, model.popoverKey(action) { return }
+                // Nothing plain falls through to the wall beneath (⇥ Home
+                // End ⌥↑ would step or select under the popover).
+                if !chord.command, !chord.control, !textHasFocus { return }
             }
         }
         super.sendEvent(event)
@@ -192,12 +196,26 @@ final class RootView: NSView {
         observeChanges { [weak self] in self?.overlayStateChanged() }
         HistoryPanelHost.attach(self) // shared history (⌘Y panel, ghost cards)
         ReviewPanelHost.attach(self) // review (⌘R sheet)
+        ShortcutsSheetHost.attach(self) // keyboard shortcuts (⌘/ sheet)
         observeChanges { [weak self] in
             guard let self else { return }
             _ = (self.model.sidebarVisible, self.model.scope, self.model.machines)
             self.needsLayout = true
             if self.showsSidebar { self.sidebar.reload() }
         }
+    }
+
+    /// Full Keyboard Access: ⇥ from the wall (once it has no tiles to
+    /// step) reaches the bar's controls, then the sidebar filter, then
+    /// the wall again; hidden views are skipped. The wall is where the
+    /// window starts.
+    func joinKeyViewLoop(bar: TopBar) {
+        guard let window else { return }
+        window.autorecalculatesKeyViewLoop = false
+        window.initialFirstResponder = wall
+        wall.nextKeyView = bar.firstKeyView
+        bar.lastKeyView.nextKeyView = sidebar.filterField
+        sidebar.filterField.nextKeyView = wall
     }
 
     /// The sidebar shows on walls (not agent windows), not in focus.
@@ -235,6 +253,8 @@ final class RootView: NSView {
         guard let window else { return }
         if historyPanel?.isOpen == true { return } // shared history: the panel keeps the keyboard (toasts come and go)
         if reviewPanel?.isOpen == true { return } // review: the sheet keeps the keyboard
+        if shortcutsPanel?.isOpen == true { return } // keyboard shortcuts: the search field keeps it
+        if let s = window.firstResponder as? StripKeyView, s.ownsKeys { return } // a close or move asking on the current agent keeps ⏎ / esc while a toast comes and goes
         if window.firstResponder is NSText && !(window.firstResponder is ComposerTextView) && model.denyOpen != nil { return }
         switch model.mode {
         case .focus: focus.focusTerminal()
@@ -322,6 +342,17 @@ final class RootView: NSView {
 
     func reviewClosed() { restoreKeyboard() }
 
+    // MARK: Keyboard shortcuts (the ⌘/ sheet sits over the wall, under the overlays)
+
+    private(set) weak var shortcutsPanel: ShortcutsPanel?
+
+    func addShortcutsPanel(_ p: ShortcutsPanel) {
+        shortcutsPanel = p
+        addSubview(p, positioned: .below, relativeTo: overlay)
+    }
+
+    func shortcutsClosed() { restoreKeyboard() }
+
     private func anchor(for kind: PopoverKind) -> CGRect? {
         switch kind {
         case .move(let id), .rename(let id):
@@ -356,6 +387,11 @@ final class RootView: NSView {
 
     private func agentsChanged() {
         wall.sync()
+        // The deny field went (Send ⏎ or Cancel esc): the keyboard goes back
+        // to the terminal or the wall, as a strip's does.
+        let denyOpen = model.denyOpen != nil
+        if shownDeny && !denyOpen { restoreKeyboard() }
+        shownDeny = denyOpen
         if showsSidebar { sidebar.reload() }
         if model.mode == .focus, let id = focus.agentID {
             if let a = model.agent(id) { focus.apply(a, connected: model.isConnected) } else { model.exitFocus() }
@@ -363,6 +399,7 @@ final class RootView: NSView {
     }
 
     private var shownMode: AppMode = .wall
+    private var shownDeny = false
 
     private func modeChanged() {
         wall.updateSelection()
@@ -488,6 +525,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: w)
         w.delegate = self
         toolbar.install(in: w)
+        root.joinKeyViewLoop(bar: toolbar.bar)
         root.toolbarAnchor = { [weak self] k in self?.toolbar.anchor(for: k) }
     }
 

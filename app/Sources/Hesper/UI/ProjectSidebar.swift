@@ -18,7 +18,9 @@ import SwiftUI
 /// scope) or out onto a display (a new wall there). ⌘-click selects
 /// several projects (New Group from Selection). The context menu edits the
 /// data (projects.update, groups.save, projects.promote, projects.remove,
-/// groups.remove). ↑ ↓ ⏎ in the filter walk the rows; esc clears it.
+/// groups.remove). ↑ ↓ ⏎ in the filter walk the rows; esc clears it. Rows
+/// and machine chips are accessibility buttons: a press is a plain click,
+/// the context menu's items are their custom actions.
 @MainActor
 final class ProjectSidebar: NSView, NSTextFieldDelegate {
     static let width = CGFloat(ProjectNav.Metrics.width)
@@ -39,8 +41,10 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
     let scroll = NSScrollView()
     private let stack = FlippedView()
     private(set) var rows: [SidebarRowView] = []
-    private var machineViews: [SidebarRowView] = []
+    private(set) var machineViews: [SidebarRowView] = []
     private let filter = SidebarFilterField()
+    /// The filter's text field (the window's key-view loop).
+    var filterField: NSTextField { filter.field }
     private let footer = FlippedView()
     private let footerLine = NSView()
     private let edge = NSView()
@@ -763,6 +767,31 @@ final class SidebarRowView: NSView, NSDraggingSource {
         sidebar?.menu(for: item)
     }
 
+    /// VoiceOver / Full Keyboard Access: a press is a plain click (this
+    /// wall shows the row's scope; a group's caret is its menu's Expand).
+    override func accessibilityPerformPress() -> Bool {
+        guard !isHeader, hitTest(frame.origin) != nil else { return false }
+        sidebar?.clicked(item, [])
+        return true
+    }
+
+    /// The context menu's enabled items as custom actions, a submenu's as
+    /// "Color: Red".
+    override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
+        guard !isHeader, let menu = sidebar?.menu(for: item) else { return nil }
+        var out: [NSAccessibilityCustomAction] = []
+        func add(_ mi: NSMenuItem, prefix: String?) {
+            guard !mi.isSeparatorItem else { return }
+            if let sub = mi.submenu { for x in sub.items { add(x, prefix: mi.title) }; return }
+            guard mi.isEnabled, let action = mi.action else { return }
+            out.append(NSAccessibilityCustomAction(name: prefix.map { "\($0): \(mi.title)" } ?? mi.title) {
+                NSApp.sendAction(action, to: mi.target, from: mi)
+            })
+        }
+        for mi in menu.items { add(mi, prefix: nil) }
+        return out
+    }
+
     nonisolated func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         .generic
     }
@@ -809,7 +838,7 @@ final class SidebarFilterField: NSView {
             .withSymbolConfiguration(.init(pointSize: DS.Spacing.m - DS.Spacing.xxs, weight: .medium))
         field.isBordered = false
         field.drawsBackground = false
-        field.focusRingType = .none
+        field.focusRingType = DS.focusRingType
         field.font = DS.nsFont(.chrome)
         field.lineBreakMode = .byTruncatingTail
         field.cell?.isScrollable = true

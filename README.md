@@ -366,19 +366,27 @@ pick a profile per agent, per project or per kind:
 
 | Key | |
 |---|---|
-| ⌘N | New agent: task, machine, profile (Claude, Codex or a shell), project, worktree and branch. ⌘↩ starts it. |
-| ⌘↩ | Focus the selected tile and type into it. Again, or ⌘Esc, returns to the wall. |
-| ⌘[ ⌘] | Previous / next agent |
-| ⌘J | Next agent that needs you (approvals, then questions, then errors) |
-| ⏎ / A / N | Allow / always allow / deny the selected tile's approval |
+| ⌘N | New agent: task, machine, profile (Claude, Codex or a shell), project, worktree and branch. ⌘⏎ starts it, ⌥⏎ starts it and opens another draft (the Start button's ▾), ⌥⌘B toggles the worktree (or click its chip), ⌘W or × discards the draft. |
+| ⌘⏎ | Focus the selected tile and type into it. Again, or ⌘esc, returns to the wall. ⌥⌘⏎ opens it in its own window. |
+| ⌥⌘← ⌥⌘→ | Previous / next agent. ⌥⌘↑ ⌥⌘↓: previous / next band. |
+| ⌘J | The inbox: what needs you (approvals, then questions, then errors). Every letter and digit filters it; ⏎ gives the first answer, ⌘⏎ opens the agent, the other answers are its buttons |
+| ⏎ / A / N | Allow / always allow / deny the selected tile's approval on the wall |
 | ⌘K | Palette: agents, projects, machines, actions |
 | ⌘Y | History: every session on every Mac |
 | ⌘R | Review: finished work from every Mac, its diff, tests and where each change came from |
-| ⌘W | Stop the agent (asks first); for an ended one, remove it |
-| ⌘⇧M | Move the agent to another Mac |
+| ⌘W | Close the agent: it leaves the wall and stays in History (⌘Z brings it back); asks first when closing would lose something. In an agent window, closes the window and the agent keeps running. |
+| ⌥⌘W / ⌃⌘W / ⇧⌘W | Send the agent to the background / kill it / tidy up finished agents. ⇧⌘T reopens the last closed one. |
+| ⇧⌘M | Move the agent to another Mac |
+| ⌥⌘1–5 / ⌥⌘L | Layouts / next layout. ⌘0 project sidebar, ⌃⌘S wall scope, ⌥⌘N new wall window, ⇧⌘0 show the wall, ⇧⌘D desk picker. |
+| ⌘/ | Every shortcut, by surface and searchable (Help ▸ Keyboard Shortcuts); Settings › Shortcuts lists the same table and rebinds the app's own (the standard macOS items and the hotkey stay) |
 
-Esc always goes to the agent, since Claude and Codex use it. The menu bar item
-shows the counts and the queue, and a notification arrives when an agent
+Esc always goes to the agent, since Claude and Codex use it. Every key and
+menu item comes from one table in the app (⌘/ and Settings › Shortcuts list
+it by surface). The defaults above can be changed in Settings › Shortcuts:
+click a shortcut, press the new one (⌫ removes it, Reset brings the default
+back); a chord macOS keeps or another command already has is refused with
+the reason. Every row, card and tile is a button to VoiceOver and Full
+Keyboard Access, and ⇥ walks the window. The menu bar item shows the counts and the queue, and a notification arrives when an agent
 starts waiting for you, or when its finished work is ready to review.
 
 `hesperctl` does the same from a terminal:
@@ -390,6 +398,7 @@ hesperctl new --machine mini --worktree --project ~/projects/app "Add the export
 hesperctl attach fix-the-login-redirect       # Ctrl-] detaches
 hesperctl send ID "yes, go ahead" ; hesperctl approve ID ; hesperctl deny ID
 hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl move ID --to mini
+hesperctl open review --agent ID ; hesperctl open palette --query TEXT   # the app's sheets
 ```
 
 Agents are addressed by id (`L/a7f3k2`), local id or unique name.

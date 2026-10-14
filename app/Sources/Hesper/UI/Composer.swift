@@ -521,14 +521,17 @@ struct DraftChips: View {
     /// whose buttons wrap once.
     static var maxHeight: CGFloat { 4 * Pill.height + 4 * DS.Spacing.xs + 2 * DS.chromeMaxHeight }
 
+    /// The worktree chip is a toggle (⌥⌘B); a ~branch token in the task
+    /// still picks the branch (its popover keeps its rows).
     private func chip(_ kind: TokenKind, on: Bool, title: String, mono: Bool, detail: String?, warn: Bool) -> some View {
         let tint: Theme.Token = warn ? .question : TokenStyle.token(kind)
-        return Button { onChip(kind) } label: {
+        let toggles = kind == .branch
+        return Button { if toggles { composer.toggleWorktree() } else { onChip(kind) } } label: {
             HStack(spacing: DS.Spacing.s) {
                 Text(title).font(mono ? DS.monoFont(.chrome, .medium) : .ds(.chrome, .medium)).lineLimit(1)
                     .foregroundStyle(warn ? Theme.color(.question) : on ? Theme.fg : Theme.dim)
                 if let detail, !compact { Text(detail).font(.ds(.meta)).foregroundStyle(Theme.dim).lineLimit(1) }
-                if !compact { Kbd(String(kind.sigil)) }
+                if !compact { Kbd(toggles ? Self.worktreeKeys : String(kind.sigil)) }
             }
             .padding(.horizontal, DS.Spacing.m).frame(height: Pill.height)
             .background(DS.Radius.shape(DS.Radius.control).fill(on || warn ? Color(nsColor: Theme.ns(tint, alpha: 0.14)) : Theme.chipBG))
@@ -536,18 +539,28 @@ struct DraftChips: View {
         }
         .buttonStyle(.plain)
         .background(GeometryReader { g in Color.clear.preference(key: ChipFramesKey.self, value: [kind: g.frame(in: .named("chips"))]) })
-        .help("\(kind.title): click, or type \(String(kind.sigil)) in the task")
+        .help(toggles ? "Worktree on / off: click or \(Self.worktreeKeys); type ~ in the task for a branch"
+                      : "\(kind.title): click, or type \(String(kind.sigil)) in the task")
         .accessibilityLabel("\(kind.title): \(title)")
         .accessibilityIdentifier("draft.chip.\(kind.rawValue)")
     }
+
+    /// The worktree toggle's chord (the composer's `toggleWorktree`).
+    static var worktreeKeys: String { CommandRegistry.cap(.toggleWorktree) ?? "" }
 }
 
-/// The footer: the token keys, the start keys and the Start button.
+/// The footer: the token keys, Keep / Close esc, and the Start control:
+/// a split button, Start ⌘⏎ and a ▾ with "Start and open another ⌥⏎"
+/// (DraftStartControl).
 struct DraftFooter: View {
     var composer: ComposerModel
     var quick = false
     var narrow = false
     var onStart: () -> Void
+    /// ⌥⏎: start and open another draft.
+    var onStartNext: () -> Void = {}
+    /// esc: keep the draft (the wall) or close the panel (quick launch).
+    var onLeave: () -> Void = {}
 
     static let height = Pill.height + DS.Spacing.xs
 
@@ -559,50 +572,57 @@ struct DraftFooter: View {
             } else if let e = composer.error {
                 Label(e, systemImage: "exclamationmark.triangle.fill").font(.ds(.chrome)).foregroundStyle(Theme.color(.question))
                     .lineLimit(1).accessibilityIdentifier("draft.error")
-            } else {
-                if !narrow {
-                    Text("@ machine · # folder · / tool").font(.ds(.chrome)).foregroundStyle(Theme.dim).lineLimit(1)
-                        .accessibilityIdentifier("draft.tokenHint")
-                }
-                hint("⌘⏎", "start")
-                if !narrow && !quick { hint("⌥⏎", "+ new") }
-                if !narrow { hint("esc", quick ? "close" : "keep") }
+            } else if !narrow {
+                Text("@ machine · # folder · / tool").font(.ds(.chrome)).foregroundStyle(Theme.dim).lineLimit(1)
+                    .accessibilityIdentifier("draft.tokenHint")
             }
             Spacer(minLength: DS.Spacing.s)
-            Button(action: onStart) {
-                HStack(spacing: DS.Spacing.s) {
-                    if composer.busy { ProgressView().controlSize(.mini) }
-                    Text(bringing != nil ? "Bringing…" : composer.busy ? "Starting…" : "Start").font(.ds(.chrome, .semibold))
-                }
-                .padding(.horizontal, DS.Spacing.l).frame(height: Self.height)
-                .background(DS.Radius.shape(DS.Radius.control).fill(Theme.accent))
-                .foregroundStyle(Theme.color(.background))
-                .contentShape(Rectangle())
+            if !narrow {
+                KeyButton(DraftStartControl.leaveTitle(quick: quick), kbd: CommandRegistry.cap(.leaveDraft), action: onLeave)
+                    .accessibilityIdentifier("draft.leave")
             }
-            .buttonStyle(.plain)
+            if composer.busy { ProgressView().controlSize(.mini) }
+            HStack(spacing: DS.Spacing.xxs) {
+                KeyButton(DraftStartControl.title(busy: composer.busy, bringing: bringing != nil), kbd: CommandRegistry.cap(.startDraft), variant: .primary(.working), action: onStart)
+                    .help(composer.needsFolder ? "Choose a folder first (\(DraftStartControl.startKeys) opens the list)" : composer.startsScratch ? "Start in a new scratch (\(DraftStartControl.startKeys))" : "Start (\(DraftStartControl.startKeys))")
+                    .accessibilityIdentifier("draft.start")
+                let more = DraftStartControl.menu(quick: quick)
+                if !more.isEmpty {
+                    IconButton("chevron.down", help: "Other ways to start") { popUpMenu(startMenu(more)) }
+                        .accessibilityIdentifier("draft.startMenu")
+                }
+            }
             .disabled(composer.busy || composer.needsFolder)
-            .opacity(composer.needsFolder ? OverlayLook.disabledOpacity : 1)
-            .help(composer.needsFolder ? "Choose a folder first (⌘⏎ opens the list)" : composer.startsScratch ? "Start in a new scratch (⌘⏎)" : "Start (⌘⏎)")
-            .accessibilityIdentifier("draft.start")
         }
     }
 
-    private func hint(_ k: String, _ what: String) -> some View {
-        HStack(spacing: DS.Spacing.xs) {
-            Kbd(k)
-            Text(what).font(.ds(.chrome)).foregroundStyle(Theme.dim)
+    /// The ▾ menu: each item with its key as the equivalent.
+    private func startMenu(_ items: [DraftStartControl.Item]) -> NSMenu {
+        let menu = NSMenu()
+        for it in items {
+            let i = NSMenuItem(title: it.title, action: #selector(MenuAction.run), keyEquivalent: "")
+            if let chord = KeyChord(label: it.keys), let (key, mods) = MenuBuilder.keyEquivalent(chord) {
+                i.keyEquivalent = key
+                i.keyEquivalentModifierMask = mods
+            }
+            let act = MenuAction { if it.openNext { onStartNext() } else { onStart() } }
+            i.target = act
+            i.representedObject = act
+            i.setAccessibilityIdentifier("draft.startNext")
+            menu.addItem(i)
         }
-        .fixedSize()
-        .accessibilityElement(children: .combine)
+        return menu
     }
 }
 
-/// The draft tile's header: its starting mark, "New agent", the save state.
+/// The draft tile's header: its starting mark, "New agent", the save
+/// state, and × to discard it (⌘W; undo brings a non-empty one back).
 struct DraftHeader: View {
     var title: String
     var status: String
     var editing: Bool
     var compact = false
+    var onDiscard: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
@@ -613,6 +633,10 @@ struct DraftHeader: View {
                 Text(status).font(.ds(.meta)).foregroundStyle(Theme.dim).lineLimit(1)
                     .fixedSize()
                     .accessibilityIdentifier("draft.status")
+            }
+            if let onDiscard {
+                IconButton("xmark", help: "Discard draft", shortcut: CommandRegistry.cap(.closeAgent, in: .composer), action: onDiscard)
+                    .accessibilityIdentifier("draft.discard")
             }
         }
         .padding(.horizontal, DS.Spacing.l)
@@ -747,11 +771,14 @@ final class DraftTileView: NSView {
         let w = bounds.width > 0 ? bounds.width : Fold.assumed
         let first = ComposerResolution.firstLine(draft.text)
         let title = onShelf || (!editing && draft.parked) ? (first.isEmpty ? "Empty draft" : first) : "New agent"
-        header.rootView = DraftHeader(title: title, status: model.saveLabel(draft.id), editing: editing, compact: w < Fold.header)
         let id = draft.id
+        header.rootView = DraftHeader(title: title, status: model.saveLabel(draft.id), editing: editing, compact: w < Fold.header,
+                                      onDiscard: onShelf ? nil : { [weak model] in model?.discardDraft(id) })
         chips.rootView = AnyView(DraftChips(composer: composer, onChip: { [weak model] k in model?.openPopover(.chip(id, k)) }, compact: w < Fold.chips)
             .onPreferenceChange(ChipFramesKey.self) { [weak self] f in MainActor.assumeIsolated { self?.chipFrames = f } })
-        footer.rootView = DraftFooter(composer: composer, narrow: w < Fold.footer, onStart: { [weak model] in model?.startDraft(id) })
+        footer.rootView = DraftFooter(composer: composer, narrow: w < Fold.footer, onStart: { [weak model] in model?.startDraft(id) },
+                                      onStartNext: { [weak model] in model?.startDraft(id, openNext: true) },
+                                      onLeave: { [weak model] in model?.parkDraft(id) })
         chipsMeasured = nil // the chip row may wrap differently
         needsLayout = true
         preview.stringValue = first.isEmpty ? "Empty draft · ⏎ to edit" : "Draft · ⏎ to edit"

@@ -38,6 +38,8 @@ struct DesignGalleryView: View {
                 section("Pill") { pills }
                 section("Kbd · IconButton") { kbdAndButtons }
                 section("Row") { rows }
+                section("KeyButton") { keyButtons }
+                section("SheetChrome") { sheetChrome }
                 section("Panel") { panels }
                 section("Density") { densities }
                 section("Motion") { motion }
@@ -177,6 +179,62 @@ struct DesignGalleryView: View {
                 AppKitBox { RowView(title: "api", meta: "3", mark: .working) }.frame(height: Row.height(subtitle: false))
             }
             .frame(width: 360)
+        }
+    }
+
+    private var keyButtons: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.m) {
+            HStack(spacing: DS.Spacing.s) {
+                KeyButton("Allow", kbd: "⏎", variant: .primary(.signal)) {}
+                KeyButton("Always", kbd: "A") {}
+                KeyButton("Deny…", kbd: "N") {}
+                KeyButton("Accept & commit", kbd: "⌘⏎", variant: .primary(.done)) {}
+                KeyButton("Send back", kbd: "⇧⏎") {}
+                KeyButton("Open full size", kbd: "⌘⏎", variant: .icon("arrow.up.left.and.arrow.down.right")) {}
+                KeyButton("Keep", kbd: "esc") {}.disabled(true)
+            }
+            HStack(spacing: DS.Spacing.s) {
+                AppKitBox { KeyButtonView("Allow", kbd: "⏎", variant: .primary(.signal)) }.frame(width: 84, height: KeyButton.height)
+                AppKitBox { KeyButtonView("Always", kbd: "A") }.frame(width: 84, height: KeyButton.height)
+                AppKitBox { KeyButtonView("Close", kbd: "⌘W", variant: .icon("xmark")) }.frame(width: IconButton.side, height: IconButton.side)
+            }
+            caption("primary(tone) · quiet · icon(symbol) · disabled; AppKit below")
+        }
+    }
+
+    private var sheetChrome: some View {
+        HStack(alignment: .top, spacing: DS.Spacing.xl) {
+            SheetChrome(title: "Review", symbol: "checkmark.seal", count: 3, toolbar: {
+                KeyButton("Next file", kbd: "N") {}
+                KeyButton("Bulk accept", kbd: "⇧A") {}
+                Spacer()
+                KeyButton("Send back", kbd: "⇧⏎") {}
+                KeyButton("Accept & commit", kbd: "⌘⏎", variant: .primary(.done)) {}
+            }, footer: {
+                KeyButton("Seen", kbd: "V") {}
+                KeyButton("Reject", kbd: "X") {}
+                KeyButton("Note", kbd: "C") {}
+            }, onClose: {}) {
+                VStack(spacing: DS.Spacing.xxs) {
+                    Row(title: "api · migrations", meta: "mini · 2m", mark: .done, selected: true)
+                    Row(title: "docs · tone", meta: "laptop · 1h", mark: .done)
+                }
+                .padding(DS.Spacing.m)
+            }
+            .frame(width: 460, height: 220)
+            .dsSheet()
+            AppKitBox {
+                let v = SheetChromeView(title: "History", mark: .working, count: 128)
+                v.toolbar.addArrangedSubview(KeyButtonView("All", kbd: "⇥"))
+                v.toolbar.addArrangedSubview(KeyButtonView("Continue on…", kbd: "⌘⏎"))
+                v.footer.addArrangedSubview(KeyButtonView("Resume", kbd: "⏎", variant: .primary(.working)))
+                v.footer.addArrangedSubview(KeyButtonView("Fork", kbd: "⌥⏎"))
+                let r = RowView(title: "edition picker", meta: "mini · 2h", mark: .done)
+                r.frame = NSRect(x: DS.Spacing.m, y: 60, width: 460 - 2 * DS.Spacing.m, height: Row.height(subtitle: false))
+                v.contentView.addSubview(r)
+                return v
+            }
+            .frame(width: 460, height: 220)
         }
     }
 

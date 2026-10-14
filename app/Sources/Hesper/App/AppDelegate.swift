@@ -13,6 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var harness: AnyObject?
     var quickLaunch: QuickLaunchController?
     var appControl: AppControl?
+    var menus: MenuBuilder!
+    /// The History item's hub observation (HistoryMenu.track), dropped
+    /// when the bar is rebuilt.
+    private var historyMenuObserver: UUID?
     let hotKey = GlobalHotKey()
     private var automated = false
 
@@ -25,8 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WindowManager.prepare() // window layer: before the main toolbar exists
         windowController = MainWindowController(model: model, userFontSize: user.fontSize ?? 13)
         windows = WindowManager(primary: model, main: windowController, env: env, userFontSize: user.fontSize ?? 13)
+        CommandRegistry.install(model.settings.shortcutOverrides)
         buildMenu()
-        windows.installMenus()
+        // A rebound shortcut: the routers read the new table at key time,
+        // only the menu bar's key equivalents are built once.
+        model.settings.onShortcutsChanged = { [weak self] in
+            guard let self else { return }
+            CommandRegistry.install(self.model.settings.shortcutOverrides)
+            self.buildMenu()
+        }
 
         automated = env.values["perf-out"] != nil || env.values["selftest-out"] != nil || env.values["layout-out"] != nil || env.values["windows-test-out"] != nil || env.values["walls-perf-out"] != nil || env.values["projects-test-out"] != nil || env.values["desks-test-out"] != nil || env.values["history-test-out"] != nil || env.values["history-perf-out"] != nil
         let ql = QuickLaunchController(model: model)
@@ -38,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let s = StatusItemController(model: model)
             s.showWindow = { [weak self] in self?.showWindow() }
             s.openAgent = { [weak self] id in self?.windows.open(id, focus: true) }
-            s.openReview = { [weak self] id in self?.windows.activeModel.openReview(select: id) }
+            s.openReview = { [weak self] id in self?.windows.frontModel.openReview(select: id) }
             statusItem = s
         }
         let n = Notifier(model: model, enabled: !automated && !env.options.contains("no-notifications"))
@@ -51,13 +62,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notifier = n
         model.onTransitions = { [weak n] t in n?.post(t) }
         // Review: an agent on any Mac became ready to review.
-        n.openReview = { [weak self] id in self?.windows.activeModel.openReview(select: id) }
+        n.openReview = { [weak self] id in self?.windows.frontModel.openReview(select: id) }
         model.reviewHub.onArrivals = { [weak n] items in n?.postReadyToReview(items) }
         // Closing agents: a background agent finished (and was closed).
         model.onFinishedInBackground = { [weak n, weak self] name in
             n?.postFinished(name)
             if NSApp.isActive, let text = CloseText.notification(.finishedInBackground, name: name) {
-                self?.windows.activeModel.showToast(text)
+                self?.windows.frontModel.showToast(text)
             }
         }
         model.settings.onAutoTidyChanged = { [weak self] in self?.model.scheduleAutoTidy() }
@@ -116,6 +127,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// The Dock menu: New Agent, Needs You…, History, Review, from the
+    /// registry. Each brings the wall in front first, as the status item
+    /// does, and opens what it names: one already open stays open.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        for case .command(let id, let title, _) in MenuModel.dockItems(context: commandContext()) {
+            let i = NSMenuItem(title: title, action: #selector(runDockItem(_:)), keyEquivalent: "")
+            i.target = self
+            i.representedObject = CommandRef(id)
+            i.setAccessibilityIdentifier("dock.\(id.key)")
+            menu.addItem(i)
+        }
+        return menu
+    }
+
+    @objc private func runDockItem(_ sender: NSMenuItem) {
+        guard let ref = sender.representedObject as? CommandRef else { return }
+        showWindow()
+        switch ref.id {
+        case .review: windows.frontModel.openReview(select: nil) // opens, never toggles closed
+        case .history:
+            let m = windows.frontModel
+            if m.mode == .compose { m.leaveComposer() }
+            HistoryPanelHost.open(m, text: nil, select: nil)
+        case .nextAttention:
+            let m = windows.frontModel
+            if m.popover != .attention { m.toggleAttentionQueue() } // ⌘J, open-only
+        default: if let cmd = KeyRouter.command(for: ref.id) { windows.frontModel.perform(cmd) } else { run(ref.id) }
+        }
+    }
+
+
     func applicationWillTerminate(_ notification: Notification) {
         windows?.restorer.saveNow() // window layer: state restoration
     }
@@ -145,141 +188,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey.register(model.settings.hotKey) { [weak self] in self?.quickLaunch?.toggle() }
     }
 
-    // MARK: Menu (mirrors KeyRouter; the window routes the keys first)
+    // MARK: Menu (the command registry; the window routes the keys first)
 
     private func buildMenu() {
-        let main = NSMenu()
-        let appItem = NSMenuItem()
-        let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About Hesper", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
-        appMenu.addItem(.separator())
-        let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
-        settings.target = self
-        appMenu.addItem(settings)
-        appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide Hesper", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "Quit Hesper", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        appItem.submenu = appMenu
-        main.addItem(appItem)
-
-        let edit = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
-        redo.keyEquivalentModifierMask = [.command, .shift]
-        editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        edit.submenu = editMenu
-        main.addItem(edit)
-
-        let agents = NSMenuItem()
-        let m = NSMenu(title: "Agents")
-        func add(_ title: String, _ key: String, _ mods: NSEvent.ModifierFlags = .command, _ cmd: AppCommand) {
-            let i = NSMenuItem(title: title, action: #selector(menuCommand(_:)), keyEquivalent: key)
-            i.keyEquivalentModifierMask = mods
-            i.target = self
-            i.representedObject = MenuCommand(cmd)
-            m.addItem(i)
+        // A rebuild (a rebound shortcut): the old bar gives the Desks
+        // submenu back (one supermenu per NSMenu) and its History item
+        // stops watching the hub.
+        menus?.items[.desks]?.submenu = nil
+        HistoryHub.shared(for: model).unobserve(historyMenuObserver)
+        menus = MenuBuilder(run: { [weak self] id in self?.run(id) }, context: { [weak self] in self?.commandContext() ?? .none })
+        menus.arrangement = { [weak self] in
+            guard let self else { return 0 }
+            return WallArrangement.allCases.firstIndex(of: self.windows.activeWall.model.arrangement) ?? 0
         }
-        add("New Agent", "n", .command, .newAgent)
-        let ql = NSMenuItem(title: "Quick Launch…", action: #selector(showQuickLaunch), keyEquivalent: "")
-        ql.target = self
-        m.addItem(ql)
-        add("Needs You…", "j", .command, .nextAttention)
-        add("Command Palette", "k", .command, .palette)
-        add("History", "y", .command, .history) // shared history (hidden while hesperd has no sessions.*)
-        HistoryMenu.track(m.items.last!, model: model)
-        add("Review", "r", .command, .review) // review: finished work on every Mac
-        m.addItem(.separator())
-        add("Open / Back to Wall", "\r", .command, .toggleFocus)
-        m.addItem(.separator())
-        add("Close", "w", .command, .closeAgent)
-        add("Send to Background", "w", [.command, .option], .backgroundAgent)
-        add("Kill", "w", [.command, .control], .killAgent)
-        add("Tidy Up Finished Agents", "w", [.command, .shift], .tidyUp)
-        add("Reopen Closed Agent", "t", [.command, .shift], .reopenClosed)
-        m.addItem(.separator())
-        add("Move to Another Mac…", "m", [.command, .shift], .moveAgent)
-        add("Undo Close or Move", "", .command, .undo)
-        agents.submenu = m
-        main.addItem(agents)
+        menus.dense = { [weak self] in (self?.windows.activeWall.model.minChars ?? 80) < 80 }
+        menus.undoKind = { [weak self] in NSApp.keyWindow?.firstResponder is NSText ? nil : self?.windows.activeModel?.undoToast?.action.kind }
 
-        let view = NSMenuItem()
-        let vm = NSMenu(title: "View")
-        vm.delegate = self
-        for (i, a) in WallArrangement.allCases.enumerated() {
-            let item = NSMenuItem(title: a.title, action: #selector(menuCommand(_:)), keyEquivalent: "\(i + 1)")
-            item.keyEquivalentModifierMask = [.command, .option]
-            item.target = self
-            item.representedObject = MenuCommand(.arrangement(i))
-            item.tag = 100 + i
-            vm.addItem(item)
-        }
-        let cycle = NSMenuItem(title: "Next Layout", action: #selector(menuCommand(_:)), keyEquivalent: "l")
-        cycle.keyEquivalentModifierMask = [.command, .option]
-        cycle.target = self
-        cycle.representedObject = MenuCommand(.cycleArrangement)
-        vm.addItem(cycle)
-        vm.addItem(.separator())
-        // Previous / Next Agent: ⌥⌘← ⌥⌘→ (plain ← → stay the terminal's in
-        // focus; on the wall they move the selection), ⌘[ ⌘] as hidden
-        // aliases. The window routes the keys first; these show them.
-        func step(_ title: String, _ key: Int, _ alias: String, _ cmd: AppCommand) {
-            let i = NSMenuItem(title: title, action: #selector(menuCommand(_:)), keyEquivalent: String(Character(UnicodeScalar(key)!)))
-            i.keyEquivalentModifierMask = [.command, .option]
-            i.target = self
-            i.representedObject = MenuCommand(cmd)
-            vm.addItem(i)
-            let a = NSMenuItem(title: title, action: #selector(menuCommand(_:)), keyEquivalent: alias)
-            a.keyEquivalentModifierMask = .command
-            a.target = self
-            a.representedObject = MenuCommand(cmd)
-            a.isHidden = true
-            a.allowsKeyEquivalentWhenHidden = true
-            vm.addItem(a)
-        }
-        step("Previous Agent", NSLeftArrowFunctionKey, "[", .stepPrevious)
-        step("Next Agent", NSRightArrowFunctionKey, "]", .stepNext)
-        vm.addItem(.separator())
-        let dense = NSMenuItem(title: "Dense Cards (60 Characters)", action: #selector(toggleDense), keyEquivalent: "")
-        dense.target = self
-        dense.tag = 200
-        vm.addItem(dense)
-        view.submenu = vm
-        main.addItem(view)
-
-        let window = NSMenuItem()
-        let wm = NSMenu(title: "Window")
-        wm.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        // ⌘0 is the project sidebar (window layer); Show Wall moved to ⇧⌘0.
-        let showWall = wm.addItem(withTitle: "Show Wall", action: #selector(showWallMenu), keyEquivalent: "0")
-        showWall.keyEquivalentModifierMask = [.command, .shift]
-        window.submenu = wm
-        main.addItem(window)
+        menus.desksMenu = windows.desks.desksMenu
+        menus.install()
+        if let history = menus.items[.history] { historyMenuObserver = HistoryMenu.track(history, model: model) } // hidden while hesperd has no sessions.*
         #if DEBUG
         // Debug builds only: the design system gallery (screenshot review).
         let debug = NSMenuItem()
         let dm = NSMenu(title: "Debug")
         dm.addItem(withTitle: "Design System Gallery", action: #selector(showDesignGallery), keyEquivalent: "")
         debug.submenu = dm
-        main.addItem(debug)
+        NSApp.mainMenu?.addItem(debug)
         #endif
-        NSApp.mainMenu = main
-        NSApp.windowsMenu = wm
     }
 
-    @objc private func showWallMenu() { showWindow() }
+    /// What the menus validate against: the key window's model.
+    func commandContext() -> CommandContext {
+        let kind: KeyWindowKind = NSApp.keyWindow is AgentWindow ? .agentWindow : windows.activeModel == nil ? .other : .wall
+        let fullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) ?? false
+        guard let m = windows.activeModel else {
+            return CommandContext(keyWindow: .other, reviewCount: model.reviewHub.items.count,
+                                  canUndo: NSApp.keyWindow?.firstResponder is NSText, historySupported: HistoryHub.shared(for: model).supported == true,
+                                  inFullScreen: fullScreen)
+        }
+        return m.commandContext(keyWindow: kind, textHasFocus: NSApp.keyWindow?.firstResponder is NSText,
+                                isHomeWall: windows.walls.first?.model === m, inFullScreen: fullScreen)
+    }
+
+
+    /// Runs a menu (or palette) command. AppCommands go to the key
+    /// window's model as the keys would; the rest are the app's and the
+    /// window layer's.
+    func run(_ id: CommandID) {
+        switch id {
+        case .settings: showSettings()
+        case .quickLaunch: quickLaunch?.toggle() // like the status item and the hotkey
+        case .showWall: showWindow()
+        case .toggleDense: let m = windows.activeWall.model; m.minChars = m.minChars < 80 ? 80 : 60
+        case .showShortcuts: showShortcuts()
+        case .help: open("https://github.com/derzierau/hesper#readme")
+        case .hesperctlReference: open("https://github.com/derzierau/hesper/tree/main/relay/docs")
+        case .reportProblem: open("https://github.com/derzierau/hesper/issues")
+        case .find: // Edit ▸ Find: the History search while the sheet is open
+            if let m = windows.activeModel { HistoryPanelHost.panel(for: m)?.perform(HistoryKeyAction.focusSearch(nil)) }
+        case .undo: // a text field's own undo first, else the newest undo toast
+            if NSApp.keyWindow?.firstResponder is NSText { NSApp.sendAction(Selector(("undo:")), to: nil, from: nil) } else { windows.activeModel?.perform(.undo) }
+        case .renameAgent:
+            guard let m = windows.activeModel, let a = m.current else { return }
+            m.renameText[a.id] = a.name
+            m.openPopover(.rename(a.id))
+        case .resumeAgent:
+            guard let m = windows.activeModel, let a = m.current else { return }
+            m.resume(a)
+        case .routines: break // the routines branch fills this in
+        default:
+            if let cmd = KeyRouter.command(for: id) { menuCommand(cmd) } else { _ = windows.run(id) }
+        }
+    }
+
+    private func open(_ url: String) { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
+
+    /// Help ▸ Keyboard Shortcuts (⌘/): the sheet over the front wall (or
+    /// agent window), opened on the surface the user is in; again closes it.
+    func showShortcuts() {
+        let key = NSApp.keyWindow
+        let model = windows.frontModel
+        if windows.activeModel == nil { showWindow() }
+        ShortcutsSheetHost.toggle(model, keyWindow: key) { [weak self] in
+            self?.showSettings()
+            NotificationCenter.default.post(name: SettingsView.showPane, object: nil, userInfo: ["pane": SettingsView.Pane.shortcuts])
+        }
+    }
 
     #if DEBUG
     @objc private func showDesignGallery() { DesignGallery.show() }
     #endif
-
-    @objc private func toggleDense() { let m = windows.activeWall.model; m.minChars = m.minChars < 80 ? 80 : 60 }
-
-    @objc private func showQuickLaunch() { quickLaunch?.show() }
 
     private(set) var settingsWindow: NSWindow?
     @objc func showSettings() {
@@ -295,34 +293,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func menuCommand(_ sender: NSMenuItem) {
-        guard let c = sender.representedObject as? MenuCommand else { return }
+    private func menuCommand(_ command: AppCommand) {
         // Window layer: menus act on the key window's model; layouts on the
         // frontmost wall.
-        switch c.command {
-        case .arrangement, .cycleArrangement: windows.activeWall.model.perform(c.command)
+        switch command {
+        case .arrangement, .cycleArrangement: windows.activeWall.model.perform(command)
         case .stepPrevious where NSApp.keyWindow is AgentWindow, .stepNext where NSApp.keyWindow is AgentWindow:
-            (NSApp.keyWindow as? AgentWindow)?.step(c.command == .stepNext ? 1 : -1)
-        case .backgroundAgent where NSApp.keyWindow is AgentWindow:
-            (NSApp.keyWindow as? AgentWindow)?.closeKeepingAgent() // the window only; the agent stays on its wall
-        default: windows.activeModel.perform(c.command)
+            (NSApp.keyWindow as? AgentWindow)?.step(command == .stepNext ? 1 : -1)
+        case .closeAgent where commandContext().closeTarget == .window:
+            if let w = NSApp.keyWindow as? AgentWindow { w.closeKeepingAgent() } // the window only; the agent stays on its wall
+            else { NSApp.keyWindow?.performClose(nil) } // Settings, First Run, the gallery
+
+        default: windows.activeModel?.perform(command)
         }
     }
-}
-
-extension AppDelegate: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        for item in menu.items {
-            if item.tag >= 100 && item.tag < 100 + WallArrangement.allCases.count {
-                item.state = WallArrangement.allCases[item.tag - 100] == windows.activeWall.model.arrangement ? .on : .off
-            } else if item.tag == 200 {
-                item.state = windows.activeWall.model.minChars < 80 ? .on : .off
-            }
-        }
-    }
-}
-
-final class MenuCommand: NSObject {
-    let command: AppCommand
-    init(_ c: AppCommand) { command = c }
 }

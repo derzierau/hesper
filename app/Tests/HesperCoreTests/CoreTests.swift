@@ -42,14 +42,42 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
         #expect(KeyRouter.route(KeyChord(.char("1"), command: true), mode: .wall, selectedState: nil) == .none)
     }
 
+    /// Chords come from the key code, not the layout's characters: on a
+    /// German keyboard ⌥5 types `[`, so ⌥⌘5 must still be the Grid
+    /// layout and ⌘ on the US `[` key still steps; ⌫ is `.delete`.
+    @Test func chordsFromKeyCodes() {
+        let grid = KeyChord(keyCode: 23, characters: "[", command: true, option: true)
+        #expect(grid.key == .char("5"))
+        #expect(KeyRouter.route(grid, mode: .wall, selectedState: nil) == .arrangement(4))
+        #expect(KeyChord(keyCode: 29, characters: "0", command: true).key == .char("0"))
+        #expect(KeyChord(keyCode: 33, characters: "ü", command: true).key == .char("["))
+        #expect(KeyChord(keyCode: 30, characters: "+", command: true, shift: true).key == .char("}"))
+        #expect(KeyChord(keyCode: 44, characters: "-", command: true).key == .char("/"))
+        #expect(KeyChord(keyCode: 51, characters: "\u{7f}").key == .delete)
+        #expect(OverlayKeys.route(KeyChord(keyCode: 51, characters: "\u{7f}")) == .deleteBackward)
+        #expect(KeyChord(keyCode: 36, characters: "\r").key == .enter)
+        #expect(KeyChord(keyCode: 0, characters: "a", command: true).key == .char("a"))
+        #expect(KeyChord(keyCode: 0, characters: nil).key == .other)
+    }
+
+    /// Caps Lock: `charactersIgnoringModifiers` is "W" without ⇧. The
+    /// event's flags say whether ⇧ is down, so ⌘W stays Close, not Tidy Up.
+    @Test func capsLockLetterKeepsTheShiftFlag() {
+        let w = KeyChord(keyCode: 13, characters: "W", command: true)
+        #expect(w == KeyChord(.char("w"), command: true))
+        #expect(CommandRegistry.resolve(w, in: .wall) == .closeAgent)
+        #expect(CommandRegistry.resolve(KeyChord(keyCode: 45, characters: "N", command: true), in: .everywhere) == .newAgent)
+        let shifted = KeyChord(keyCode: 13, characters: "W", command: true, shift: true)
+        #expect(CommandRegistry.resolve(shifted, in: .wall) == .tidyUp)
+        #expect(KeyChord(keyCode: 0, characters: "A").shift == false)
+    }
+
     @Test func commandShortcutsAgreeInBothModes() {
         for mode in [AppMode.wall, .focus] {
             #expect(KeyRouter.route(KeyChord(.char("n"), command: true), mode: mode, selectedState: nil) == .newAgent)
             #expect(KeyRouter.route(KeyChord(.char("j"), command: true), mode: mode, selectedState: nil) == .nextAttention)
             #expect(KeyRouter.route(KeyChord(.char("k"), command: true), mode: mode, selectedState: nil) == .palette)
             #expect(KeyRouter.route(KeyChord(.enter, command: true), mode: mode, selectedState: .working) == .toggleFocus)
-            #expect(KeyRouter.route(KeyChord(.char("["), command: true), mode: mode, selectedState: nil) == .stepPrevious)
-            #expect(KeyRouter.route(KeyChord(.char("]"), command: true), mode: mode, selectedState: nil) == .stepNext)
             #expect(KeyRouter.route(KeyChord(.char("w"), command: true), mode: mode, selectedState: .working) == .closeAgent)
             #expect(KeyRouter.route(KeyChord(.char("M"), command: true, shift: true), mode: mode, selectedState: nil) == .moveAgent)
             #expect(KeyRouter.route(KeyChord(.char("m"), command: true, shift: true), mode: mode, selectedState: nil) == .moveAgent)
@@ -94,13 +122,17 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
         #expect(KeyRouter.route(KeyChord(.char("c"), control: true), mode: .wall, selectedState: .working, typed: "\u{3}") == .none)
     }
 
-    /// ⌥⌘← ⌥⌘→ step agents everywhere (⌘[ ⌘] too); plain ← → in focus
-    /// stay the terminal's.
+    /// ⌥⌘← ⌥⌘→ step agents everywhere; ⌘[ ⌘] no longer do (on a German
+    /// layout ⌘[ is ⌥⌘5, the Grid layout); plain ← → in focus stay the
+    /// terminal's.
     @Test func stepKeys() {
         for mode in [AppMode.wall, .focus] {
             #expect(KeyRouter.route(KeyChord(.left, command: true, option: true), mode: mode, selectedState: .working) == .stepPrevious)
             #expect(KeyRouter.route(KeyChord(.right, command: true, option: true), mode: mode, selectedState: .working) == .stepNext)
         }
+        #expect(KeyRouter.route(KeyChord(.char("["), command: true), mode: .wall, selectedState: nil) == .none)
+        #expect(KeyRouter.route(KeyChord(.char("]"), command: true), mode: .focus, selectedState: nil) == .passThrough)
+        #expect(KeyRouter.route(KeyChord(.char("{"), command: true, shift: true), mode: .wall, selectedState: nil) == .none)
         #expect(KeyRouter.routeActiveTile(KeyChord(.right, command: true, option: true)) == .stepNext)
         #expect(KeyRouter.route(KeyChord(.right), mode: .focus, selectedState: .working) == .passThrough)
         #expect(KeyRouter.route(KeyChord(.left), mode: .focus, selectedState: .working) == .passThrough)

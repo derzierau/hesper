@@ -211,10 +211,22 @@ public struct HistoryRowText: Equatable, Sendable {
 /// The "where you left off" card: what it says, line by line.
 public struct SessionCardText: Equatable, Sendable {
     public struct Action: Equatable, Sendable {
+        /// What it does: the preview's button, the row menu and the footer
+        /// run this, never the cap.
+        public var act: SearchKeyAction
+        /// Its key cap from the command table in force when it was made
+        /// (`SearchPreview.key`; "" when the verb has no key).
         public var key: String
         public var title: String
         public var primary: Bool
+
+        public init(_ act: SearchKeyAction, title: String, primary: Bool) {
+            self.act = act; self.key = SearchPreview.key(act); self.title = title; self.primary = primary
+        }
     }
+
+    /// The ⏎ "action" that is a state, not something to do.
+    public static let outsideTitle = "Running outside Hesper"
 
     public var title: String
     /// "Codex on mini · ~/projects/hesper (worktree fix/flaky-badge)"
@@ -228,7 +240,8 @@ public struct SessionCardText: Equatable, Sendable {
     public var todos: [String]
     public var branch: String
     public var actions: [Action]
-    /// ⌥⏎'s consequence (shown under the actions).
+    /// ⌘⏎'s consequence (shown under the actions; the History panel
+    /// fills it: `SearchPreview.continueNote`).
     public var resumeHereNote: String?
 
     /// - Parameters:
@@ -236,7 +249,6 @@ public struct SessionCardText: Equatable, Sendable {
     public init(_ s: Session, changes: SessionChanges?, loadingChanges: Bool, local: String, machines: [String: String],
                 home: String = NSHomeDirectory()) {
         let mac = SessionFormat.machineName(s.machine, machines)
-        let here = SessionFormat.machineName(local, machines)
         title = s.title.isEmpty ? "(untitled)" : SessionFormat.oneLine(s.title, max: 160)
         var sub = "\(SessionFormat.kindLabel(s.kind)) on \(mac)"
         if let o = SessionFormat.originLabel(s.origin) { sub += " (\(o))" }
@@ -274,25 +286,20 @@ public struct SessionCardText: Equatable, Sendable {
         branch = b
         var acts: [Action] = []
         if let _ = s.liveAgentID {
-            acts.append(Action(key: "⏎", title: "Open (live)", primary: true))
+            acts.append(Action(.history(.resume), title: "Open (live)", primary: true))
         } else if let m = s.movedTo {
-            acts.append(Action(key: "⏎", title: "Open on \(SessionFormat.machineName(m, machines))", primary: true))
+            acts.append(Action(.history(.resume), title: "Open on \(SessionFormat.machineName(m, machines))", primary: true))
         } else if s.live?.external == true {
-            acts.append(Action(key: "⏎", title: "Running outside Hesper", primary: true))
+            acts.append(Action(.history(.resume), title: Self.outsideTitle, primary: true))
         } else {
-            acts.append(Action(key: "⏎", title: s.machine == local || s.machine.isEmpty ? "Resume" : "Resume on \(mac)", primary: true))
+            acts.append(Action(.history(.resume), title: s.machine == local || s.machine.isEmpty ? "Resume" : "Resume on \(mac)", primary: true))
         }
-        if s.machine != local && !s.machine.isEmpty && !s.isLive && s.movedTo == nil {
-            acts.append(Action(key: "⌥⏎", title: "Resume here (\(here))", primary: false))
-            resumeHereNote = "continues on \(here), moves ownership; uncommitted work comes along if \(mac) is reachable"
-        } else {
-            resumeHereNote = nil
-        }
-        acts.append(Action(key: "F", title: "Fork", primary: false))
-        acts.append(Action(key: "C", title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
-        acts.append(Action(key: "A", title: s.archived ? "Unarchive" : "Archive", primary: false))
-        acts.append(Action(key: "⌫", title: "Delete", primary: false))
-        acts.append(Action(key: "⌘C", title: "Copy id", primary: false))
+        resumeHereNote = nil
+        acts.append(Action(.history(.fork), title: "Fork", primary: false))
+        acts.append(Action(.history(.continueOther), title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
+        acts.append(Action(.history(.archive), title: s.archived ? "Unarchive" : "Archive", primary: false))
+        acts.append(Action(.history(.delete), title: "Delete", primary: false))
+        acts.append(Action(.history(.copyID), title: "Copy id", primary: false))
         actions = acts
     }
 }
@@ -305,8 +312,8 @@ public enum HistoryFocus: Equatable, Sendable { case search, list }
 
 public enum HistoryKeyAction: Equatable, Sendable {
     case up, down, pageUp, pageDown, first, last
-    /// ⏎ resume where it ran (live: open the agent); ⌥⏎ resume on this Mac.
-    case resume, resumeHere
+    /// ⏎ resume where it ran (live: open the agent).
+    case resume
     case fork, continueOther, archive, delete, copyID
     /// ⌘F / typing in the list: back to the search field (with the text).
     case focusSearch(String?)
@@ -320,43 +327,51 @@ public enum HistoryKeyAction: Equatable, Sendable {
 /// The History panel's key table (consistent with the overlay family: ↑↓
 /// select, ⏎ do, ⌥⏎ the alternative, ⇥ act on, esc close, typing filters).
 public enum HistoryKeys {
+    /// The panel's action for a registry command (nil: not the panel's).
+    /// Edit ▸ Copy copies the session id when no text is selected; ⌘Y
+    /// toggles the panel closed.
+    public static func action(for id: CommandID) -> HistoryKeyAction? {
+        switch id {
+        case .moveUp: return .up
+        case .moveDown: return .down
+        case .historyFirst: return .first
+        case .historyLast: return .last
+        case .historyResume: return .resume
+        case .historyFork: return .fork
+        // On its own (without SearchKeys' scopes) ⇥ moves field ↔ list.
+        case .historySwitchScope: return .focusList
+        case .historyToggleFocus: return .focusSearch(nil)
+        case .historyContinueOther: return .continueOther
+        case .historyArchive: return .archive
+        case .historyDelete: return .delete
+        case .copy: return .copyID
+        case .find: return .focusSearch(nil)
+        case .closeOverlay, .history: return .close
+        default: return nil
+        }
+    }
+
     /// - Parameters:
-    ///   - keyCode: 51 = ⌫ (delete), 117 = ⌦, 116/121 page up/down.
+    ///   - keyCode: 51 = ⌫, 117 = ⌦ (delete), 116/121 page up/down (the
+    ///     latter have no `Key` of their own).
     ///   - fieldHasSelection: ⌘C copies the field's selected text then.
     public static func route(_ k: KeyChord, keyCode: UInt16 = 0, characters: String?, focus: HistoryFocus, fieldHasSelection: Bool = false) -> HistoryKeyAction {
-        if k.command && !k.option && !k.control {
-            switch k.key {
-            case .char("f"), .char("F"): return .focusSearch(nil)
-            case .char("c"), .char("C"): return focus == .list || !fieldHasSelection ? .copyID : .pass
-            case .char("y"), .char("Y"): return .close // ⌘Y toggles
-            case .up: return .first
-            case .down: return .last
-            default: return .pass
+        if k.control { return .pass }
+        if k.key == .enter && k.option { return .pass } // ⌥⏎: SearchKeys' fork
+        if let id = CommandRegistry.resolve(k, in: .history), let a = action(for: id) {
+            // Plain letters, Home, End and ⌫ are verbs only in the list; in
+            // the search field they edit the text.
+            let listOnly = !k.command && (k.isLetter || k.key == .home || k.key == .end || k.key == .delete)
+            if !listOnly || focus == .list {
+                if a == .copyID { return focus == .list || !fieldHasSelection ? .copyID : .pass }
+                return a
             }
         }
-        if k.control { return .pass }
-        switch k.key {
-        case .up: return .up
-        case .down: return .down
-        case .home where focus == .list: return .first
-        case .end where focus == .list: return .last
-        case .enter: return k.option ? .resumeHere : .resume
-        case .escape: return .close
-        case .tab: return k.shift ? .focusSearch(nil) : .focusList
-        default: break
-        }
+        if k.command { return .pass }
         if keyCode == 116 { return .pageUp }
         if keyCode == 121 { return .pageDown }
         guard focus == .list else { return .pass }
         if keyCode == 51 || keyCode == 117 { return .delete }
-        if !k.option, case .char(let c) = k.key {
-            switch c {
-            case "f", "F": return .fork
-            case "c", "C": return .continueOther
-            case "a", "A": return .archive
-            default: break
-            }
-        }
         if let c = characters, !c.isEmpty, c.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && $0.value < 0xF700 }) {
             return .focusSearch(c)
         }

@@ -43,6 +43,17 @@ final class AppSettings {
     var appearance: AppearanceChoice { didSet { save("appearance", appearance.rawValue); if persist { appearance.apply() } } }
     /// The first run (pair, add a Mac, first agent) was shown or skipped.
     var firstRunDone: Bool { didSet { save("firstRunDone", firstRunDone) } }
+    /// Settings › Shortcuts: the per-command overrides, one JSON object
+    /// (HesperCore `ShortcutOverrides`). AppDelegate installs them into
+    /// the command registry and rebuilds the menu bar on change; the
+    /// routers look the table up at key time.
+    var shortcutOverrides: ShortcutOverrides {
+        didSet {
+            if let data = try? shortcutOverrides.json() { save("shortcutOverrides", data) }
+            if oldValue != shortcutOverrides { onShortcutsChanged?() }
+        }
+    }
+    @ObservationIgnored var onShortcutsChanged: (() -> Void)?
 
     init(persist: Bool, defaultTileFont: Double = 12) {
         self.persist = persist
@@ -65,6 +76,7 @@ final class AppSettings {
         density = persist ? (d.string(forKey: "density").flatMap(DS.Density.init(rawValue:)) ?? .default) : .default
         appearance = persist ? (d.string(forKey: "appearance").flatMap(AppearanceChoice.init(rawValue:)) ?? .system) : .system
         firstRunDone = persist ? d.bool(forKey: "firstRunDone") : true
+        shortcutOverrides = persist ? (d.data(forKey: "shortcutOverrides").flatMap { try? ShortcutOverrides(json: $0) } ?? ShortcutOverrides()) : ShortcutOverrides()
         DS.density = density
         if persist { appearance.apply() }
     }

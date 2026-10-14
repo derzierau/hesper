@@ -75,6 +75,11 @@ enum DS {
     static var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     /// Reduce Transparency: floating layers fall back to solid `surface`.
     static var reduceTransparency: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency }
+    /// Full Keyboard Access (System Settings › Keyboard): a field or list
+    /// whose focus ring is off for looks (the sidebar filter, History's
+    /// field and list, Review's note) shows it again, so Tab has a
+    /// visible target. Read when the view is made.
+    @MainActor static var focusRingType: NSFocusRingType { NSApp?.isFullKeyboardAccessEnabled == true ? .default : .none }
 
     /// A SwiftUI animation for a motion step, or nil (no animation) under
     /// Reduce Motion. `reduceMotion` is injectable (tests, SwiftUI's
@@ -151,6 +156,8 @@ enum DS {
     /// No chrome element is taller than this.
     static let chromeMaxHeight = CGFloat(DesignTokens.Chrome.maxHeight)
     static let bandGap = CGFloat(DesignTokens.Chrome.bandGap)
+    /// The focus ring of a strip that has the keyboard.
+    static let focusRing = CGFloat(DesignTokens.Chrome.focusRing)
 
     /// The wall's density (Settings; AppSettings keeps it in sync).
     @MainActor static var density: Density = .default {

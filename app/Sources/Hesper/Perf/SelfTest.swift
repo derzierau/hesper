@@ -129,8 +129,8 @@ final class SelfTest {
               (model.agent(a.id)?.state.rawValue ?? "?") + " active=\(model.activeTileID ?? "nil")")
 
         // 3. ⌘J: the inbox. Approval before question, oldest first; the
-        // approval answers inline (1 Allow · 2 Always · 3 Deny), free text
-        // opens; J moves, ⌘O opens the tile, ⏎ the first answer, esc closes.
+        // approval answers inline (Allow · Always · Deny), free text opens;
+        // ↓ moves, ⌘⏎ opens the tile, ⏎ the first answer, esc closes.
         await setState(b.id, "question", attention: ["kind": "question", "title": "Question", "detail": "Home or settings?"])
         await Harness.sleep(0.05)
         await setState(c.id, "approval", attention: ["kind": "approval", "title": "Edit", "detail": "x.go", "options": ["allow", "always", "deny"]])
@@ -144,13 +144,13 @@ final class SelfTest {
         check("the approval answers inline, the free-text question opens",
               inbox.first?.answers.map(\.title) == ["Allow", "Always", "Deny"] && inbox.last?.answers.map(\.title) == ["Open"],
               inbox.map { $0.answers.map(\.title).joined(separator: ",") }.joined(separator: " | "))
-        Harness.press("o", keyCode: 0x1F, flags: .command, window: window)
-        check("⌘O opens the selected item's tile", model.popover == nil && model.selectedID == c.id, model.selectedID ?? "nil")
+        Harness.press("\r", keyCode: 36, flags: .command, window: window)
+        check("⌘⏎ opens the selected item's tile", model.popover == nil && model.selectedID == c.id, model.selectedID ?? "nil")
         window.makeFirstResponder(root.wall)
         Harness.press("j", keyCode: 0x26, flags: .command, window: window)
-        _ = Harness.press("j", keyCode: 0x26, window: window)
-        Harness.press("o", keyCode: 0x1F, flags: .command, window: window)
-        check("J moves down: ⌘O then opens the question", model.popover == nil && model.selectedID == b.id, model.selectedID ?? "nil")
+        _ = Harness.press("\u{F701}", keyCode: 125, window: window)
+        Harness.press("\r", keyCode: 36, flags: .command, window: window)
+        check("↓ moves down: ⌘⏎ then opens the question", model.popover == nil && model.selectedID == b.id, model.selectedID ?? "nil")
         window.makeFirstResponder(root.wall)
         Harness.press("j", keyCode: 0x26, flags: .command, window: window)
         _ = Harness.press("\r", keyCode: 36, window: window)
@@ -159,6 +159,37 @@ final class SelfTest {
               (model.agent(c.id)?.state.rawValue ?? "?") + " \(model.popover?.key ?? "nil")")
         _ = Harness.press("\u{1b}", keyCode: 53, window: window)
         check("esc closes the inbox", model.popover == nil)
+
+        // 3b. The inbox filters: every letter goes to the filter field
+        // (which then has the keyboard); only the items whose name,
+        // project or question match stay. "a" first: it is no answer
+        // (Always Allow is its button), the approval stays unanswered.
+        await setState(a.id, "question", attention: ["kind": "question", "title": "Question", "detail": "Pick a tone"])
+        await setState(c.id, "approval", attention: ["kind": "approval", "title": "Edit", "detail": "x.go", "options": ["allow", "always", "deny"]])
+        _ = await Harness.wait(2) { self.model.agent(a.id)?.state == .question && self.model.agent(c.id)?.state == .approval }
+        window.makeFirstResponder(root.wall)
+        Harness.press("j", keyCode: 0x26, flags: .command, window: window)
+        _ = Harness.press("a", keyCode: 0, window: window)
+        let typedA = await Harness.wait(2) { self.model.popoverList.query == "a" }
+        check("a typed in the inbox filters, it never sends Always Allow", typedA && model.agent(c.id)?.state == .approval,
+              "\(model.popoverList.query) \(model.agent(c.id)?.state.rawValue ?? "?")")
+        _ = Harness.press("\u{7f}", keyCode: 51, window: window)
+        for ch in "to" { _ = Harness.press(String(ch), keyCode: 0, window: window) }
+        let filtered = await Harness.wait(2) { self.model.popoverList.query == "to" && self.model.inboxEntries().map(\.id) == [a.id] }
+        check("typing in the inbox filters it (\"to\" keeps the tone question, drops the other)", filtered,
+              "\(model.popoverList.query) \(model.inboxEntries().map(\.id)) of \(model.attentionEntries().map(\.id))")
+        _ = Harness.press("\u{1b}", keyCode: 53, window: window)
+        await setState(a.id, "working")
+
+        // 3c. Rename: the popover's Save button (⏎'s pointer path) renames.
+        model.select(a.id)
+        model.renameText[a.id] = "renamed-by-selftest"
+        model.openPopover(.rename(a.id))
+        _ = await Harness.wait(1) { self.model.popover == .rename(a.id) }
+        let savePressed = await Harness.wait(2) { self.press(accessibilityID: "rename.save", in: self.window) }
+        let renamed = await Harness.wait(3) { self.model.agent(a.id)?.name == "renamed-by-selftest" }
+        check("the rename popover's Save button renames the agent", savePressed && renamed && model.popover == nil,
+              "pressed=\(savePressed) \(model.agent(a.id)?.name ?? "nil") \(model.popover?.key ?? "nil")")
         await setState(b.id, "done", summary: "Opened PR #482 (draft)")
         await setState(c.id, "working")
 
@@ -193,8 +224,6 @@ final class SelfTest {
         check("⌥⌘→ in focus steps to the next agent", model.focusedID == b.id, model.focusedID ?? "nil")
         Harness.press("\u{F702}", keyCode: 123, flags: [.command, .option], window: window)
         check("⌥⌘← steps back", model.focusedID == a.id, model.focusedID ?? "nil")
-        Harness.press("]", keyCode: 0x1E, flags: .command, window: window)
-        check("⌘] steps to the next agent", model.focusedID == b.id, model.focusedID ?? "nil")
         Harness.press("\r", keyCode: 36, flags: .command, window: window)
         check("⌘↩ returns to the wall", model.mode == .wall)
         let back = root.wall.tiles.values.allSatisfy { $0.terminal.visible }
@@ -469,6 +498,10 @@ final class SelfTest {
         }
 
         await runDrops()
+        await runPointerPaths()
+        await runShortcuts()
+        await runAccessibility()
+        await runRebinding()
 
         // 9. Drafts: ⌘N puts a draft tile right of the selected tile.
         guard let anchor = model.wall.first(where: { $0.isRunning && !$0.state.showsSummary }) else { return finish(reattach) }
@@ -546,6 +579,25 @@ final class SelfTest {
         check("esc keeps the draft as a quiet tile on the shelf", parked && model.editingDraftID == nil)
         let parkedSaved = await Harness.waitAsync(5) { await self.daemonDraft(kept)?.parked == true }
         check("the kept draft is saved (parked)", parkedSaved)
+        // Plain esc with the completion list open closes the list and keeps
+        // editing the draft. Sent through NSApp.sendEvent, the real path:
+        // AppKit offers every key down, plain ones too, to the window's
+        // performKeyEquivalent before keyDown, so the window must pass esc
+        // on to the text view, which asks the list first.
+        Harness.press("n", keyCode: 0x2D, flags: .command, window: window)
+        if let cid = model.editingDraftID, let tv = root.wall.draftTiles[cid]?.editor.textView {
+            _ = await Harness.wait(2) { self.window.firstResponder === tv }
+            typeIntoDraft(cid, "@")
+            let listed = await Harness.wait(2) { tv.composer?.completion != nil }
+            check("@ in a draft shows the completion list", listed)
+            if let e = Harness.keyEvent("\u{1b}", keyCode: 53, window: window) { NSApp.sendEvent(e) }
+            let closed = await Harness.wait(2) { tv.composer?.completion == nil }
+            check("esc through NSApp.sendEvent closes the completion list and keeps editing the draft",
+                  closed && model.editingDraftID == cid, "closed \(closed) editing \(model.editingDraftID ?? "nil")")
+            tv.deleteBackward(nil) // empty again: esc discards it
+            Harness.press("\u{1b}", keyCode: 53, window: window)
+            _ = await Harness.wait(2) { self.model.draft(cid) == nil }
+        }
         Harness.press("n", keyCode: 0x2D, flags: .command, window: window)
         let empty = model.editingDraftID
         _ = await Harness.wait(2) { empty.map { self.window.firstResponder === self.root.wall.draftTiles[$0]?.editor.textView } ?? false }
@@ -666,6 +718,241 @@ final class SelfTest {
 
     static let parkedText = "selftest draft kept for the restart"
 
+    /// 8f. Pointer paths (phase 3): every verb a tile, a strip, the focus
+    /// header or a draft shows is a control, pressed here by its
+    /// accessibility identifier: the strip's Allow, Deny… and its Cancel,
+    /// the header's open full size, the focus header's ‹ › and back, the
+    /// close strip taking the keyboard and giving it back, a draft's ×.
+    private func runPointerPaths() async {
+        model.deactivateTile()
+        if model.mode == .focus { model.exitFocus() }
+        await Harness.sleep(0.3)
+        let live = model.wall.filter { $0.isRunning && !(self.root.wall.tiles[$0.id]?.onShelf ?? true) }
+        guard live.count >= 2 else { return check("pointer paths: two live tiles", false, "\(live.count)") }
+        let x = live[0], y = live[1]
+        await setState(x.id, "approval", attention: ["kind": "approval", "title": "Bash", "detail": "git push", "options": ["allow", "always", "deny"]])
+        model.select(x.id)
+        window.makeFirstResponder(root.wall)
+        let strip = await Harness.wait(3) { self.press("approve.allow", check: false) }
+        check("the approval strip's Allow is a button", strip)
+        let allowed = await Harness.wait(3) { self.model.agent(x.id)?.state == .working }
+        check("clicking Allow allows (the agent works on)", allowed, model.agent(x.id)?.state.rawValue ?? "?")
+        await setState(x.id, "approval", attention: ["kind": "approval", "title": "Bash", "detail": "git push", "options": ["allow", "always", "deny"]])
+        _ = await Harness.wait(3) { self.press("approve.deny", check: false) }
+        let denyOpen = await Harness.wait(3) { self.model.denyOpen == x.id }
+        check("clicking Deny… opens the message field", denyOpen)
+        _ = await Harness.wait(3) { self.press("deny.cancel", check: false) }
+        let denyClosed = await Harness.wait(3) { self.model.denyOpen == nil && self.model.agent(x.id)?.state == .approval }
+        check("the deny field's Cancel folds it back", denyClosed)
+        await setState(x.id, "working")
+
+        // The header's open full size, then the focus header's ‹ ›, and back.
+        model.select(x.id)
+        window.makeFirstResponder(root.wall)
+        _ = await Harness.wait(3) { self.press("tile.openFull", check: false) }
+        let focused = await Harness.wait(3) { self.model.mode == .focus && self.model.focusedID == x.id }
+        check("the header's open full size button opens focus", focused, "\(model.mode) \(model.focusedID ?? "nil")")
+        _ = await Harness.wait(3) { self.press("focus.next", check: false) }
+        let stepped = await Harness.wait(3) { self.model.focusedID == y.id }
+        check("the focus header's › steps to the next agent", stepped, model.focusedID ?? "nil")
+        _ = await Harness.wait(3) { self.press("focus.previous", check: false) }
+        let steppedBack = await Harness.wait(3) { self.model.focusedID == x.id }
+        check("‹ steps back", steppedBack, model.focusedID ?? "nil")
+        _ = await Harness.wait(3) { self.press("focus.back", check: false) }
+        let onWall = await Harness.wait(3) { self.model.mode == .wall }
+        check("the focus header's ‹ Wall returns to the wall", onWall)
+
+        // The close strip takes the keyboard when it appears, esc is its
+        // own, and the wall has the keys again once it is gone; its
+        // Keep button does the same.
+        await setState(x.id, "approval", attention: ["kind": "approval", "title": "Bash", "detail": "git push", "options": ["allow", "always", "deny"]])
+        _ = await Harness.wait(3) { self.model.agent(x.id)?.state == .approval }
+        model.select(x.id)
+        window.makeFirstResponder(root.wall)
+        if let agent = model.agent(x.id) { model.requestClose(agent) }
+        let stripFocused = await Harness.wait(3) { self.model.closeConfirm?.id == x.id && self.window.firstResponder is StripKeyView }
+        check("the close strip takes the keyboard when it appears", stripFocused,
+              "confirm=\(model.closeConfirm?.id ?? "nil") first=\(String(describing: window.firstResponder))")
+        Harness.press("\u{1b}", keyCode: 53, window: window)
+        let kept = await Harness.wait(3) { self.model.closeConfirm == nil && self.window.firstResponder === self.root.wall }
+        check("esc on the strip keeps the agent and gives the wall the keys back", kept,
+              "confirm=\(model.closeConfirm?.id ?? "nil") first=\(String(describing: window.firstResponder))")
+        if let agent = model.agent(x.id) { model.requestClose(agent) }
+        _ = await Harness.wait(3) { self.press("close.cancel", check: false) }
+        let keptByButton = await Harness.wait(3) { self.model.closeConfirm == nil && self.model.agent(x.id) != nil }
+        check("the close strip's Keep button keeps the agent", keptByButton)
+        await setState(x.id, "working")
+
+        // Closing another agent (the palette's "Close y") while x is in
+        // focus: y's strip asks, but the keyboard stays on x's terminal.
+        await setState(y.id, "approval", attention: ["kind": "approval", "title": "Bash", "detail": "git push", "options": ["allow", "always", "deny"]])
+        _ = await Harness.wait(3) { self.model.agent(y.id)?.state == .approval }
+        model.focus(x.id)
+        _ = await Harness.wait(3) { self.model.mode == .focus && self.window.firstResponder is GhosttySurfaceView }
+        if let agent = model.agent(y.id) { model.requestClose(agent) }
+        _ = await Harness.wait(3) { self.model.closeConfirm?.id == y.id }
+        await Harness.sleep(0.3)
+        check("closing another agent from the palette while in focus: typing still reaches the terminal",
+              model.closeConfirm?.id == y.id && window.firstResponder is GhosttySurfaceView,
+              "confirm=\(model.closeConfirm?.id ?? "nil") first=\(String(describing: window.firstResponder))")
+        model.cancelClose()
+        model.exitFocus()
+        await setState(y.id, "working")
+
+        // A draft's × discards it (empty: nothing asks).
+        Harness.press("n", keyCode: 0x2D, flags: .command, window: window)
+        let draft = model.editingDraftID
+        _ = await Harness.wait(3) { draft.map { self.root.wall.draftTiles[$0] != nil } ?? false }
+        _ = await Harness.wait(3) { self.press("draft.discard", check: false) }
+        let discarded = await Harness.wait(3) { draft.map { self.model.draft($0) == nil } ?? false }
+        check("a draft's × discards it", discarded, draft ?? "no draft")
+        if let draft, model.draft(draft) != nil { removeTestDraft(draft) }
+    }
+
+    /// Help ▸ Keyboard Shortcuts: ⌘/ opens the sheet over the wall with
+    /// the search field on the keyboard, typing filters the rows, esc and
+    /// ⌘/ close it, the close × and the footer's Settings button work.
+    private func runShortcuts() async {
+        model.deactivateTile()
+        if model.mode == .focus { model.exitFocus() }
+        window.makeFirstResponder(root.wall)
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        let opened = await Harness.wait(3) { ShortcutsSheetHost.isOpen(self.model) && self.control("shortcuts.row.newAgent") != nil }
+        check("⌘/ opens the shortcuts sheet with the registry's rows", opened)
+        let fieldFocused = await Harness.wait(3) { self.window.firstResponder is NSTextView }
+        check("the sheet's search field has the keyboard", fieldFocused, String(describing: window.firstResponder))
+        for c in "close" { Harness.press(String(c), keyCode: 0, window: window) }
+        let filtered = await Harness.wait(3) { self.control("shortcuts.row.closeAgent") != nil && self.control("shortcuts.row.newAgent") == nil }
+        check("typing filters the rows (close keeps Close, drops New Agent)", filtered)
+        Harness.press("\u{1b}", keyCode: 53, window: window)
+        let closed = await Harness.wait(3) { !ShortcutsSheetHost.isOpen(self.model) && self.window.firstResponder === self.root.wall }
+        check("esc closes the sheet and gives the wall the keys back", closed, String(describing: window.firstResponder))
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        _ = await Harness.wait(3) { ShortcutsSheetHost.isOpen(self.model) }
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        let toggled = await Harness.wait(3) { !ShortcutsSheetHost.isOpen(self.model) }
+        check("⌘/ again closes it", toggled)
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        _ = await Harness.wait(3) { self.press("shortcuts.close", check: false) }
+        let closedByButton = await Harness.wait(3) { !ShortcutsSheetHost.isOpen(self.model) }
+        check("the sheet's close × closes it", closedByButton)
+        Harness.press("/", keyCode: 44, flags: .command, window: window)
+        _ = await Harness.wait(3) { self.press("shortcuts.settings", check: false) }
+        let settings = await Harness.wait(3) {
+            !ShortcutsSheetHost.isOpen(self.model) && NSApp.windows.contains { $0.title == "Settings" && $0.isVisible }
+        }
+        check("the footer's Open Settings › Shortcuts opens Settings", settings)
+        NSApp.windows.first { $0.title == "Settings" }?.close()
+        window.makeKeyAndOrderFront(nil)
+        _ = await Harness.wait(3) { self.window.isKeyWindow }
+    }
+
+    /// Accessibility by construction (phase 5): a tile's context menu is
+    /// its custom actions, the palette's rows are buttons VoiceOver can
+    /// press, the History scope pill presses.
+    private func runAccessibility() async {
+        model.deactivateTile()
+        if model.mode == .focus { model.exitFocus() }
+        window.makeFirstResponder(root.wall)
+        if let t = root.wall.tiles.values.first(where: { !$0.isHidden }) {
+            let names = (t.accessibilityCustomActions() ?? []).map(\.name)
+            check("a tile exposes its context menu as custom actions", !names.isEmpty, names.joined(separator: ", "))
+        }
+        Harness.press("k", keyCode: 0x28, flags: .command, window: window)
+        let row = await Harness.wait(3) { self.control("palette.row.a:toggleSidebar")?.accessibilityRole() == .button }
+        check("a palette row is a button", row)
+        let wasOpen = model.sidebarVisible
+        _ = press("palette.row.a:toggleSidebar", check: false)
+        let pressed = await Harness.wait(3) { !self.model.showPalette && self.model.sidebarVisible != wasOpen }
+        check("pressing a palette row runs it and closes the palette", pressed)
+        if pressed { model.perform(.toggleSidebar) }
+        if model.showPalette { Harness.press("\u{1b}", keyCode: 53, window: window) }
+        Harness.press("y", keyCode: 0x10, flags: .command, window: window)
+        let history = await Harness.wait(3) { HistoryPanelHost.isOpen(self.model) && self.control("history.scope.all") != nil }
+        check("History's All pill is reachable", history)
+        _ = press("history.scope.all", check: false)
+        let switched = await Harness.wait(3) { self.model.showPalette && !HistoryPanelHost.isOpen(self.model) }
+        check("pressing the All pill switches the scope to the palette", switched)
+        if model.showPalette { Harness.press("\u{1b}", keyCode: 53, window: window) }
+        if HistoryPanelHost.isOpen(model) { Harness.press("\u{1b}", keyCode: 53, window: window) }
+        _ = await Harness.wait(3) { !self.model.showPalette && !HistoryPanelHost.isOpen(self.model) }
+    }
+
+    /// Settings › Shortcuts rebinding (phase 5): the recorder refuses a
+    /// taken chord with its reason, takes a free one (the menu bar
+    /// follows), Reset restores the default.
+    private func runRebinding() async {
+        guard let delegate = NSApp.delegate as? AppDelegate else { return }
+        model.settings.shortcutOverrides.resetAll()
+        delegate.showSettings()
+        NotificationCenter.default.post(name: SettingsView.showPane, object: nil, userInfo: ["pane": SettingsView.Pane.shortcuts])
+        guard let settings = await Harness.wait(3, { NSApp.windows.first { $0.title == "Settings" && $0.isVisible } != nil })
+            ? NSApp.windows.first(where: { $0.title == "Settings" }) : nil else { return check("Settings opens on Shortcuts", false) }
+        func post(_ chars: String, keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+            // Through the queue, so the recorder's local monitor sees it.
+            if let e = Harness.keyEvent(chars, keyCode: keyCode, flags: flags, window: settings) { NSApp.postEvent(e, atStart: false) }
+        }
+        let recorder = await Harness.wait(3) { self.press(accessibilityID: "settings.shortcut.record.tidyUp", in: settings) }
+        check("Settings › Shortcuts has a recorder on Tidy Up", recorder)
+        post("n", keyCode: 0x2D, flags: .command)
+        let refused = await Harness.wait(3) { self.control("settings.shortcut.reason.tidyUp", in: settings) != nil }
+        check("recording ⌘N on Tidy Up is refused (New Agent has it)", refused && model.settings.shortcutOverrides.isEmpty)
+        _ = await Harness.wait(3) { self.press(accessibilityID: "settings.shortcut.record.tidyUp", in: settings) }
+        post("U", keyCode: 0x20, flags: [.command, .shift])
+        let moved = await Harness.wait(3) {
+            self.model.settings.shortcutOverrides[.tidyUp] == .chord(KeyChord(.char("u"), command: true, shift: true))
+                && delegate.menus.items[.tidyUp]?.keyEquivalent == "u" && delegate.menus.items[.tidyUp]?.keyEquivalentModifierMask == [.command, .shift]
+        }
+        check("recording ⇧⌘U moves Tidy Up there and the menu bar follows", moved,
+              "override=\(String(describing: model.settings.shortcutOverrides[.tidyUp])) menu=\(delegate.menus.items[.tidyUp]?.keyEquivalent ?? "")")
+        let routed = KeyRouter.route(KeyChord(.char("u"), command: true, shift: true), mode: .wall, selectedState: nil) == .tidyUp
+            && KeyRouter.route(KeyChord(.char("w"), command: true, shift: true), mode: .wall, selectedState: nil) == .none
+        check("the router looks the new chord up at key time", routed)
+        _ = await Harness.wait(3) { self.press(accessibilityID: "settings.shortcut.reset.tidyUp", in: settings) }
+        let reset = await Harness.wait(3) { self.model.settings.shortcutOverrides.isEmpty && delegate.menus.items[.tidyUp]?.keyEquivalent == "w" }
+        check("Reset restores ⇧⌘W", reset)
+        model.settings.shortcutOverrides.resetAll()
+        settings.close()
+        window.makeKeyAndOrderFront(nil)
+        _ = await Harness.wait(3) { self.window.isKeyWindow }
+    }
+
+    /// The control with accessibility identifier `id` in `window`.
+    private func control(_ id: String, in window: NSWindow) -> NSAccessibilityProtocol? {
+        func find(_ el: Any) -> NSAccessibilityProtocol? {
+            guard let a = el as? NSAccessibilityProtocol else { return nil }
+            if a.accessibilityIdentifier() == id { return a }
+            for c in a.accessibilityChildren() ?? [] { if let f = find(c) { return f } }
+            return nil
+        }
+        return find(window)
+    }
+
+    /// The control with accessibility identifier `id` in the window (an
+    /// AppKit view, or a SwiftUI control inside a hosting view).
+    private func control(_ id: String) -> NSAccessibilityProtocol? {
+        func find(_ e: NSAccessibilityProtocol) -> NSAccessibilityProtocol? {
+            if e.accessibilityIdentifier() == id { return e }
+            for c in e.accessibilityChildren() ?? [] {
+                if let p = c as? NSAccessibilityProtocol, let f = find(p) { return f }
+            }
+            return nil
+        }
+        return window.contentView.flatMap(find)
+    }
+
+    /// Presses the control with accessibility identifier `id` in the
+    /// window, as VoiceOver would. `check`: false: a miss is just false
+    /// (polling).
+    @discardableResult
+    private func press(_ id: String, check: Bool = true) -> Bool {
+        guard let e = control(id) else {
+            if check { self.check("control \(id) exists", false) }
+            return false
+        }
+        return e.accessibilityPerformPress()
+    }
+
     /// 8e. Drop to attach: a file dropped on a read-only tile makes it
     /// active and arrives as one bracketed paste (the fake TUI shows a
     /// paste as ⟦…⟧); PNG bytes dropped on the focus view are saved and
@@ -746,6 +1033,19 @@ final class SelfTest {
         }
         model.deactivateTile()
         await Harness.sleep(0.3)
+    }
+
+    /// Presses a SwiftUI control by its accessibility identifier (the
+    /// overlays' buttons are accessibility elements, not NSViews).
+    private func press(accessibilityID id: String, in window: NSWindow) -> Bool {
+        func find(_ el: Any) -> NSAccessibilityProtocol? {
+            guard let a = el as? NSAccessibilityProtocol else { return nil }
+            if a.accessibilityIdentifier() == id { return a }
+            for c in a.accessibilityChildren() ?? [] { if let f = find(c) { return f } }
+            return nil
+        }
+        guard let el = find(window) else { return false }
+        return el.accessibilityPerformPress()
     }
 
     /// A plain click on a tile (as AppKit delivers it).

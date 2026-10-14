@@ -9,7 +9,18 @@ enum UndoAction: Sendable, Equatable {
     case restoreDraft(Draft)
     /// Shared history: a deleted session (hesperd keeps it 30 s).
     case restoreSession(String)
+
+    /// What Edit ▸ Undo calls it.
+    var kind: UndoKind {
+        switch self {
+        case .reopen(let agents): return agents.count == 1 ? .closeAgent : .tidyUp
+        case .moveBack: return .move
+        case .restoreDraft: return .discardDraft
+        case .restoreSession: return .deleteSession
+        }
+    }
 }
+
 
 /// An agent answered from the ⌘J inbox: the state it answered (a new
 /// question from it is a new item) and when (keys right after an answer
@@ -29,7 +40,7 @@ enum PopoverKind: Equatable {
     case attention, machines, layout, background
     /// The wall's scope pill (window layer: content from AppModel.scopeContent).
     case scope
-    /// ⌃⌘D: the desk picker (desks: content from AppModel.deskContent).
+    /// ⇧⌘D: the desk picker (desks: content from AppModel.deskContent).
     case desks
     /// Save Desk As… ("") / Rename (the desk id): a name field.
     case deskName(String)
@@ -56,6 +67,17 @@ enum PopoverKind: Equatable {
         switch self {
         case .move(let id), .rename(let id): return id
         default: return nil
+        }
+    }
+    /// ⌘⏎ applies the highlighted row and keeps the popover open (the
+    /// title row's pin button does the same).
+    var keepsOpen: Bool { self == .layout || self == .scope }
+    /// A name field (rename, desk name): a click outside keeps it open;
+    /// Save and Cancel are its buttons.
+    var hasField: Bool {
+        switch self {
+        case .rename, .deskName: return true
+        default: return false
         }
     }
     /// Typing filters the list.
@@ -149,7 +171,7 @@ extension AppModel {
         case .attention:
             // Drawn by AttentionPanel (Overlays.swift) from attentionEntries();
             // these rows serve the generic list code (selection, tests).
-            let items = attentionEntries().map { e -> OverlayItem in
+            let items = inboxEntries().map { e -> OverlayItem in
                 OverlayItem(id: e.id, title: e.agent.name, detail: ([e.agent.machine] + e.whereabouts).joined(separator: " · "),
                             stateMark: StateMarkKind(e.agent.state),
                             run: { [weak self] in self?.openFromQueue(e.agent) },
@@ -191,7 +213,7 @@ extension AppModel {
                                              checked: ownWallMode == m, run: { [weak self] in self?.ownWallMode = m }))
                 }
             }
-            return PopoverContent(title: nil, items: items, note: nil, hints: [("⏎", "choose"), ("⌘⏎", "keep open"), ("esc", "close")])
+            return PopoverContent(title: "Layout", items: items, note: nil, hints: [("⏎", "choose"), ("⌘⏎", "keep open"), ("esc", "close")])
         case .background:
             // Drawn by BackgroundPanel (Overlays.swift); these rows serve the
             // generic list code (↑↓ ⏎, tests).
@@ -282,7 +304,7 @@ extension AppModel {
                                          if r.worktree { c.toggleWorktree() } else { d.worktree = false; self?.editDraftContent(d) }
                                          self?.closePopover()
                                      }))
-            return PopoverContent(title: "Worktree", items: items, note: nil, hints: [("⏎", "choose"), ("type", "branch name"), ("⌘⇧W", "toggle")])
+            return PopoverContent(title: "Worktree", items: items, note: nil, hints: [("⏎", "choose"), ("type", "branch name"), ("⌥⌘B", "toggle")])
         }
     }
 
@@ -391,6 +413,15 @@ extension AppModel {
         }
     }
 
+    /// The inbox's items: the queue through its filter (the field at the
+    /// top: agent name, project, question).
+    func inboxEntries() -> [AttentionEntry] {
+        let q = popoverLists[PopoverKind.attention.key]?.query ?? ""
+        let all = attentionEntries()
+        guard !q.isEmpty else { return all }
+        return all.filter { AttentionInbox.matches(q, name: $0.agent.name, project: $0.agent.project ?? "", question: $0.question) }
+    }
+
     /// ⌘J: opens the inbox under the toolbar's attention pill (again:
     /// closes it). Nothing in the queue: says so. No pill to hang it on
     /// (an agent window): goes to the next agent, as before.
@@ -420,40 +451,45 @@ extension AppModel {
         if mode == .focus { focus(next.id) } else { activate(next.id) }
     }
 
-    /// The inbox's keys: J/K ↑↓ move, 1–9 answer, ⏎ primary, ⌘⏎ open, esc.
-    /// Typing never falls through to the wall while it is open.
+    /// The inbox's keys: ↑↓ ⌃P ⌃N move, ⏎ the first answer, ⌘⏎ open, esc.
+    /// Every letter and digit goes to the filter (and the field takes the
+    /// keyboard), so the first keystroke never answers; the other answers
+    /// and Continue are their buttons. ⌫ deletes. Typing never falls
+    /// through to the wall while it is open.
     func attentionKey(_ action: OverlayKeyAction) -> Bool {
-        let entries = attentionEntries()
+        let entries = inboxEntries()
         var list = popoverList
         let enabled = entries.map { _ in true }
         let sel = list.selection(enabled: enabled)
+        if action == .deleteBackward {
+            list.deleteBackward()
+            popoverList = list
+            return true
+        }
         switch InboxKeys.route(action) {
         case .move(let d):
             list.move(d, enabled: enabled)
             popoverList = list
-        case .answer(let n):
-            if let sel, let a = InboxKeys.answer(n, in: entries[sel].answers) { answerFromQueue(entries[sel], a) }
         case .primary:
             if let sel, let a = InboxKeys.primary(entries[sel].answers) { answerFromQueue(entries[sel], a) }
         case .open:
             if let sel { openFromQueue(entries[sel].agent) }
         case .close:
             closePopover()
-        case .moveElsewhere:
-            if let sel, let t = entries[sel].moveTo { moveFromQueue(entries[sel].agent, to: t.short) }
         case .none:
-            if case .type = action { return true }
+            if case .type(let s) = action {
+                list.type(s)
+                popoverList = list
+                return true
+            }
             return false
         }
         return true
     }
 
-    /// ⌘O: the selected item's tile.
-    func attentionOpenSelected() -> Bool { attentionKey(.alternate) }
-
     /// Selects an item (a click on it).
     func selectAttention(_ id: String) {
-        guard let i = attentionEntries().firstIndex(where: { $0.id == id }) else { return }
+        guard let i = inboxEntries().firstIndex(where: { $0.id == id }) else { return }
         var l = popoverList
         l.index = i
         popoverList = l
@@ -520,6 +556,18 @@ extension AppModel {
 
     // MARK: Palette
 
+    /// The registry's picture of this model (menus, palette rows).
+    func commandContext(keyWindow: KeyWindowKind = .wall, textHasFocus: Bool = false, isHomeWall: Bool = false, inFullScreen: Bool = false) -> CommandContext {
+        CommandContext(selectedState: current?.state, selectedRunning: current?.isRunning ?? false, mode: mode, keyWindow: keyWindow,
+                       hasDraft: editingDraftID != nil || selectedDraft != nil, reviewCount: reviewHub.items.count, wallEmpty: wall.isEmpty,
+                       canReopen: closeBook.reopen.top != nil, canUndo: undoToast != nil || textHasFocus,
+                       historySupported: HistoryHub.shared(for: self).supported == true, historyOpen: HistoryPanelHost.isOpen(self),
+                       reviewOpen: ReviewPanelHost.isOpen(self), paletteOpen: showPalette, popoverOpen: popover != nil,
+                       shortcutsOpen: ShortcutsSheetHost.isOpen(self),
+                       isHomeWall: isHomeWall, inFullScreen: inFullScreen)
+    }
+
+
     func togglePalette() {
         closePopover()
         if showPalette { showPalette = false; return }
@@ -548,14 +596,15 @@ extension AppModel {
                                    detail: "draft", dot: Theme.Token.working.hex, stateMark: .starting,
                                    run: { [weak self] in self?.showPalette = false; self?.editDraft(d.id) }))
         }
-        var actions: [OverlayItem] = [
-            OverlayItem(id: "a:new", title: "New agent", detail: "⌘N", run: { [weak self] in self?.showPalette = false; self?.newDraft() }),
-            OverlayItem(id: "a:next", title: "Next needing attention", detail: "⌘J", run: { [weak self] in self?.showPalette = false; self?.perform(.nextAttention) }),
-            OverlayItem(id: "a:quick", title: "Quick launch", detail: settings.hotKey.label, run: { [weak self] in self?.showPalette = false; self?.onQuickLaunch?() }),
-            OverlayItem(id: "a:tidy", title: "Tidy up: close finished agents", detail: "⇧⌘W", run: { [weak self] in self?.showPalette = false; self?.tidyUp() }),
-        ]
-        if let top = closeBook.reopen.top {
-            actions.append(OverlayItem(id: "a:reopen", title: "Reopen \(top.name)", detail: "⇧⌘T", run: { [weak self] in self?.showPalette = false; self?.reopenLast() }))
+        // The registry's palette commands: title, Kbd and availability from
+        // the table; what each runs is here.
+        var actions: [OverlayItem] = []
+        let ctx = commandContext()
+        for c in CommandRegistry.active.commands where c.palette {
+            guard c.availability(ctx) == .enabled, let run = paletteRun(c.id) else { continue }
+            let title = c.id == .reopenClosed ? closeBook.reopen.top.map { "Reopen \($0.name)" } ?? c.title : c.title
+            let detail = c.id == .quickLaunch ? settings.hotKey.label : c.chord?.label ?? ""
+            actions.append(OverlayItem(id: "a:\(c.id.key)", title: title, detail: detail, run: { [weak self] in self?.showPalette = false; run() }))
         }
         // The selected agent's actions, and those of agents the query names.
         let q = paletteList.query.trimmingCharacters(in: .whitespaces)
@@ -577,11 +626,11 @@ extension AppModel {
                                    run: { [weak self] in self?.showPalette = false; self?.newDraft(machine: m.short) }))
         }
         for (i, a) in WallArrangement.allCases.enumerated() {
-            out.append(OverlayItem(id: "layout:\(a.rawValue)", section: "Layouts", title: "Layout: \(a.title)", detail: "⌥⌘\(i + 1)", checked: a == arrangement,
+            out.append(OverlayItem(id: "layout:\(a.rawValue)", section: "Layouts", title: "Layout: \(a.title)", detail: CommandRegistry.labels(.arrangement(i)).first ?? "", checked: a == arrangement,
                                    run: { [weak self] in self?.showPalette = false; self?.arrangement = a }))
         }
         out += historyPaletteItems() // shared history: "History" (async FTS results)
-        out.append(OverlayItem(id: "s:settings", section: "Settings", title: "Settings…", detail: "⌘,", run: { [weak self] in self?.showPalette = false; self?.onShowSettings?() }))
+        out.append(OverlayItem(id: "s:settings", section: "Settings", title: "Settings…", detail: CommandRegistry.labels(.settings).first ?? "", run: { [weak self] in self?.showPalette = false; self?.onShowSettings?() }))
         for n in [60, 80, 100] {
             out.append(OverlayItem(id: "s:min\(n)", section: "Settings", title: "Minimum card width: \(n) characters", checked: minChars == n,
                                    run: { [weak self] in self?.showPalette = false; self?.minChars = n }))
@@ -591,23 +640,39 @@ extension AppModel {
         return out
     }
 
+    /// What a palette action row runs (nil: the model can't run it here).
+    private func paletteRun(_ id: CommandID) -> (@MainActor () -> Void)? {
+        switch id {
+        case .newAgent: return { [weak self] in self?.newDraft() }
+        case .quickLaunch: return { [weak self] in self?.onQuickLaunch?() }
+        case .tidyUp: return { [weak self] in self?.tidyUp() }
+        case .reopenClosed: return { [weak self] in self?.reopenLast() }
+        default:
+            guard let cmd = KeyRouter.command(for: id) else { return nil }
+            return { [weak self] in self?.perform(cmd) }
+        }
+    }
+
     func agentActions(_ a: Agent) -> [OverlayItem] {
         var out: [OverlayItem] = [
-            OverlayItem(id: "open:\(a.id)", title: "Open \(a.name)", detail: "⌘↩", run: { [weak self] in self?.showPalette = false; self?.focus(a.id) }),
+            OverlayItem(id: "open:\(a.id)", title: "Open \(a.name)", detail: CommandRegistry.labels(.toggleFocus).first ?? "",
+                        run: { [weak self] in self?.showPalette = false; self?.focus(a.id) }),
         ]
         if a.state == .approval {
             out.append(OverlayItem(id: "allow:\(a.id)", title: "Allow \(a.attention?.title ?? "") for \(a.name)", detail: "⏎ on the tile",
                                    run: { [weak self] in self?.showPalette = false; self?.answer(a, .allow) }))
         }
-        out.append(OverlayItem(id: "close:\(a.id)", title: "Close \(a.name)", detail: "⌘W", run: { [weak self] in self?.showPalette = false; self?.requestClose(a) }))
+        out.append(OverlayItem(id: "close:\(a.id)", title: "Close \(a.name)", detail: CommandRegistry.labels(.closeAgent).first ?? "",
+                               run: { [weak self] in self?.showPalette = false; self?.requestClose(a) }))
         if a.isRunning {
             if isBackground(a) {
                 out.append(OverlayItem(id: "back:\(a.id)", title: "Bring \(a.name) back", run: { [weak self] in self?.showPalette = false; self?.bringBackFromTray(a) }))
             } else {
-                out.append(OverlayItem(id: "background:\(a.id)", title: "Send \(a.name) to the background", detail: "⌥⌘W",
+                out.append(OverlayItem(id: "background:\(a.id)", title: "Send \(a.name) to the background", detail: CommandRegistry.labels(.backgroundAgent).first ?? "",
                                        run: { [weak self] in self?.showPalette = false; self?.sendToBackground(a) }))
             }
-            out.append(OverlayItem(id: "kill:\(a.id)", title: "Kill \(a.name)", detail: "⌃⌘W", run: { [weak self] in self?.showPalette = false; self?.kill(a) }))
+            out.append(OverlayItem(id: "kill:\(a.id)", title: "Kill \(a.name)", detail: CommandRegistry.labels(.killAgent).first ?? "",
+                                   run: { [weak self] in self?.showPalette = false; self?.kill(a) }))
         } else {
             out.append(OverlayItem(id: "resume:\(a.id)", title: "Resume \(a.name)", detail: "⏎", run: { [weak self] in self?.showPalette = false; self?.resume(a) }))
         }
@@ -622,9 +687,18 @@ extension AppModel {
         return out
     }
 
+    /// The rows the palette shows: an agent's actions start with "‹ Back"
+    /// (a click leaves the scope, as esc does); the rest is the query's.
     func filteredPalette() -> [OverlayItem] {
+        let rows = filtered(paletteItems())
+        guard let scope = paletteScope, let a = agent(scope) else { return rows }
+        let back = OverlayItem(id: PaletteScope.backID, section: "Actions for \(a.name)", title: PaletteScope.backTitle, detail: PaletteScope.backKey,
+                               run: { [weak self] in _ = self?.paletteKey(.back) })
+        return [back] + rows
+    }
+
+    private func filtered(_ all: [OverlayItem]) -> [OverlayItem] {
         let q = paletteList.query.trimmingCharacters(in: .whitespaces).lowercased()
-        let all = paletteItems()
         guard !q.isEmpty else { return all }
         // History rows matched the full text already (hesperd's FTS).
         return all.filter { $0.section == "History" || ComposerCompletion.score(q, "\($0.title) \($0.detail) \($0.section ?? "")") != nil }
@@ -669,7 +743,7 @@ extension AppModel {
             if paletteTab(selectedID: list.selection(enabled: enabled).map { items[$0].id }) { return true } // search surface: ⇥ → History scope (not on an agent)
             if let i = list.selection(enabled: enabled), case let id = items[i].id, id.hasPrefix("agent:") {
                 paletteScope = String(id.dropFirst(6))
-                list = OverlayList()
+                list = OverlayList(index: PaletteScope.firstAction) // the first action, under "‹ Back"
             }
         case .back:
             if paletteScope != nil { paletteScope = nil; list = OverlayList(query: list.query) }

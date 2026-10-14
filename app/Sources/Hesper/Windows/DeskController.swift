@@ -5,7 +5,7 @@ import HesperCore
 /// arrangement of windows saved per display setup in desks.json, switched
 /// automatically when displays are plugged in or out (debounced 1 s, never
 /// during a drag or live resize, windows animated), named desks per setup
-/// (Window ▸ Save Desk As…, Window ▸ Desks ▸ …, the ⌃⌘D picker), fold to
+/// (Window ▸ Save Desk As…, Window ▸ Desks ▸ …, the ⇧⌘D picker), fold to
 /// defaults for a setup without a desk. Pure rules: HesperCore/Desks.swift.
 @MainActor
 final class DeskController: NSObject, NSMenuDelegate {
@@ -253,7 +253,7 @@ final class DeskController: NSObject, NSMenuDelegate {
     func content(_ kind: PopoverKind, model: AppModel) -> PopoverContent {
         if case .deskName(let id) = kind {
             let title = id.isEmpty ? "Save desk as" : "Rename “\(book.desk(id)?.name ?? "")”"
-            return PopoverContent(title: title, items: [], note: id.isEmpty ? "For \(active.defaultName); switch with ⌃⌘D" : nil,
+            return PopoverContent(title: title, items: [], note: id.isEmpty ? "For \(active.defaultName); switch with ⇧⌘D" : nil,
                                   hints: [("⏎", id.isEmpty ? "save" : "rename"), ("esc", "close")], field: "Desk name")
         }
         let cur = currentDesk?.id
@@ -302,30 +302,25 @@ final class DeskController: NSObject, NSMenuDelegate {
         m.deskNameSubmit = { [weak self] id, name in self?.nameSubmitted(id, name) }
     }
 
-    private let desksMenu = NSMenu(title: "Desks")
+    /// Window ▸ Desks (MenuBuilder hangs it in; filled when it opens).
+    lazy var desksMenu: NSMenu = {
+        let m = NSMenu(title: "Desks")
+        m.delegate = self
+        return m
+    }()
 
-    func installMenus(in wm: NSMenu, at index: Int) {
-        func item(_ title: String, _ key: String, _ mods: NSEvent.ModifierFlags, _ action: @escaping @MainActor () -> Void) -> NSMenuItem {
-            let i = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: key)
-            i.keyEquivalentModifierMask = mods
-            let act = MenuAction(action)
-            i.target = act
-            i.representedObject = act
-            return i
-        }
-        desksMenu.delegate = self
-        let sub = NSMenuItem(title: "Desks", action: nil, keyEquivalent: "")
-        sub.submenu = desksMenu
-        wm.insertItem(sub, at: index)
-        wm.insertItem(item("Desk Picker…", "d", [.command, .control]) { [weak self] in self?.showPicker() }, at: index + 1)
-        wm.insertItem(item("Save Desk As…", "", []) { [weak self] in
-            guard let self else { return }
-            let m = self.manager.activeWall.model
-            self.manager.activeWall.window.makeKeyAndOrderFront(nil)
+    /// The Window menu's desk commands; false when `id` is not one.
+    func run(_ id: CommandID) -> Bool {
+        switch id {
+        case .deskPicker: showPicker()
+        case .saveDeskAs:
+            let m = manager.activeWall.model
+            manager.activeWall.window.makeKeyAndOrderFront(nil)
             m.deskNameText = ""
             m.openPopover(.deskName(""))
-        }, at: index + 2)
-        wm.insertItem(.separator(), at: index + 3)
+        default: return false
+        }
+        return true
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

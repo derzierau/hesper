@@ -190,9 +190,9 @@ import Testing
         let loading = SessionCardText(s, changes: nil, loadingChanges: true, local: "L", machines: names, home: "/Users/mini")
         #expect(loading.changed == nil && loading.subtitle == "Codex on mini · ~/projects/hesper")
         #expect(loading.asked == "make it pass 20 times" && loading.answered == "20 runs, all green." && loading.todos == ["open a PR", "plain todo"])
-        #expect(loading.actions.map(\.key) == ["⏎", "⌥⏎", "F", "C", "A", "⌫", "⌘C"])
-        #expect(loading.actions[0].title == "Resume on mini" && loading.actions[1].title == "Resume here (laptop)" && loading.actions[3].title == "Continue in Claude")
-        #expect(loading.resumeHereNote == "continues on laptop, moves ownership; uncommitted work comes along if mini is reachable")
+        #expect(loading.actions.map(\.key) == ["⏎", "⌥⏎", "C", "A", "⌫", "⌘C"])
+        #expect(loading.actions[0].title == "Resume on mini" && loading.actions[1].title == "Fork" && loading.actions[2].title == "Continue in Claude")
+        #expect(loading.resumeHereNote == nil)
         let c = SessionChanges(files: [.init(path: "src/rail.py", added: 14, removed: 6), .init(path: "tests/test_rail.py", added: 31, removed: 0)],
                                uncommitted: true, ahead: 2, behind: 0, base: "main", worktreeExists: true)
         let full = SessionCardText(s, changes: c, loadingChanges: false, local: "L", machines: names)
@@ -205,13 +205,13 @@ import Testing
         var here = s
         here.machine = "L"
         let h = SessionCardText(here, changes: nil, loadingChanges: false, local: "L", machines: names)
-        #expect(h.actions[0].title == "Resume" && !h.actions.contains { $0.key == "⌥⏎" } && h.resumeHereNote == nil && h.changed == "—")
+        #expect(h.actions[0].title == "Resume" && h.actions[1] == .init(.history(.fork), title: "Fork", primary: false) && h.changed == "—")
         here.live = SessionLive(agentId: "L/x")
         #expect(SessionCardText(here, changes: nil, loadingChanges: false, local: "L", machines: names).actions[0].title == "Open (live)")
         var moved = s
         moved.movedTo = "L"
         let m = SessionCardText(moved, changes: nil, loadingChanges: false, local: "L", machines: names)
-        #expect(m.actions[0].title == "Open on laptop" && !m.actions.contains { $0.key == "⌥⏎" } && SessionFormat.stateLabel(moved) == "moved to L")
+        #expect(m.actions[0].title == "Open on laptop" && SessionFormat.stateLabel(moved) == "moved to L")
         var mq = HistoryQuery()
         mq.moved = true
         #expect(!HistoryQuery().matches(moved) && mq.matches(moved) && mq.params()["moved"]?.boolValue == true)
@@ -241,7 +241,7 @@ import Testing
             HistoryKeys.route(k, keyCode: code, characters: chars, focus: f, fieldHasSelection: sel)
         }
         #expect(r(KeyChord(.down), f: .search) == .down && r(KeyChord(.up)) == .up)
-        #expect(r(KeyChord(.enter), f: .search) == .resume && r(KeyChord(.enter, option: true)) == .resumeHere)
+        #expect(r(KeyChord(.enter), f: .search) == .resume && r(KeyChord(.enter, option: true)) == .pass) // ⌥⏎: SearchKeys' fork
         #expect(r(KeyChord(.escape), f: .search) == .close && r(KeyChord(.char("y"), command: true)) == .close)
         #expect(r(KeyChord(.tab), f: .search) == .focusList && r(KeyChord(.tab, shift: true)) == .focusSearch(nil))
         #expect(r(KeyChord(.char("f")), 3, "f") == .fork && r(KeyChord(.char("c")), 8, "c") == .continueOther && r(KeyChord(.char("a")), 0, "a") == .archive)
