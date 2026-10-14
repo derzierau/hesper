@@ -11,6 +11,8 @@ func TestScreen(t *testing.T) {
 	h := newHarness(t)
 	a := h.spawn(wire.SpawnParams{Task: "approve this"})
 	h.waitState(a.ID, wire.StateApproval)
+	// The approval hook fires before the prompt is drawn, as in Claude Code.
+	h.waitScreen(a.ID, "git push")
 	var res wire.ScreenResult
 	if err := h.call("agents.screen", wire.ScreenParams{ID: a.ID}, &res); err != nil {
 		t.Fatal(err)
