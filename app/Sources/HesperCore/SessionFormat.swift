@@ -211,11 +211,18 @@ public struct HistoryRowText: Equatable, Sendable {
 /// The "where you left off" card: what it says, line by line.
 public struct SessionCardText: Equatable, Sendable {
     public struct Action: Equatable, Sendable {
+        /// What it does: the preview's button, the row menu and the footer
+        /// run this, never the cap.
+        public var act: SearchKeyAction
+        /// Its key cap from the command table in force when it was made
+        /// (`SearchPreview.key`; "" when the verb has no key).
         public var key: String
         public var title: String
         public var primary: Bool
 
-        public init(key: String, title: String, primary: Bool) { self.key = key; self.title = title; self.primary = primary }
+        public init(_ act: SearchKeyAction, title: String, primary: Bool) {
+            self.act = act; self.key = SearchPreview.key(act); self.title = title; self.primary = primary
+        }
     }
 
     /// The ⏎ "action" that is a state, not something to do.
@@ -279,20 +286,20 @@ public struct SessionCardText: Equatable, Sendable {
         branch = b
         var acts: [Action] = []
         if let _ = s.liveAgentID {
-            acts.append(Action(key: "⏎", title: "Open (live)", primary: true))
+            acts.append(Action(.history(.resume), title: "Open (live)", primary: true))
         } else if let m = s.movedTo {
-            acts.append(Action(key: "⏎", title: "Open on \(SessionFormat.machineName(m, machines))", primary: true))
+            acts.append(Action(.history(.resume), title: "Open on \(SessionFormat.machineName(m, machines))", primary: true))
         } else if s.live?.external == true {
-            acts.append(Action(key: "⏎", title: Self.outsideTitle, primary: true))
+            acts.append(Action(.history(.resume), title: Self.outsideTitle, primary: true))
         } else {
-            acts.append(Action(key: "⏎", title: s.machine == local || s.machine.isEmpty ? "Resume" : "Resume on \(mac)", primary: true))
+            acts.append(Action(.history(.resume), title: s.machine == local || s.machine.isEmpty ? "Resume" : "Resume on \(mac)", primary: true))
         }
         resumeHereNote = nil
-        acts.append(Action(key: "⌥⏎", title: "Fork", primary: false))
-        acts.append(Action(key: "C", title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
-        acts.append(Action(key: "A", title: s.archived ? "Unarchive" : "Archive", primary: false))
-        acts.append(Action(key: "⌫", title: "Delete", primary: false))
-        acts.append(Action(key: "⌘C", title: "Copy id", primary: false))
+        acts.append(Action(.history(.fork), title: "Fork", primary: false))
+        acts.append(Action(.history(.continueOther), title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
+        acts.append(Action(.history(.archive), title: s.archived ? "Unarchive" : "Archive", primary: false))
+        acts.append(Action(.history(.delete), title: "Delete", primary: false))
+        acts.append(Action(.history(.copyID), title: "Copy id", primary: false))
         actions = acts
     }
 }

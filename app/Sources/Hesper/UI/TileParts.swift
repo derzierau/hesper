@@ -34,8 +34,9 @@ struct TileHeader: View {
     var onOpenFull: (() -> Void)? = nil
     var onMenu: (() -> Void)? = nil
 
-    /// The focus (open full size) shortcut.
-    static let focusKeys = TileActions.focusKeys
+    /// The focus (open full size) shortcut, read from the table in force
+    /// at each render (a rebound Open shows its new chord).
+    static var focusKeys: String { TileActions.focusKeys }
     /// The buttons' opacity until the pointer is over the tile.
     static let quietOpacity = 0.5
     /// The project square: the same 6 pt square as the band heading.

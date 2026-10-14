@@ -214,6 +214,32 @@ public enum SearchPreview {
         s.checkpoint != nil && !s.isLive && supported != false
     }
 
+    /// The command a preview verb is, whose chord its cap shows (nil:
+    /// restore scratch, which has none).
+    static func command(_ act: SearchKeyAction) -> CommandID? {
+        switch act {
+        case .history(.resume): return .historyResume
+        case .history(.fork): return .historyFork
+        case .openFullSize: return .historyOpenFullSize
+        case .continueOnOtherMac: return .historyContinueOnOtherMac
+        case .restoreCheckpoint: return .historyRestoreCheckpoint
+        case .history(.continueOther): return .historyContinueOther
+        case .history(.archive): return .historyArchive
+        case .history(.delete): return .historyDelete
+        case .history(.copyID): return .copy
+        default: return nil
+        }
+    }
+
+    /// A preview verb's key cap from `table` (default: the one in force,
+    /// overrides included): its chord in History, else its default
+    /// chord; "" when it has none (unbound).
+    public static func key(_ act: SearchKeyAction, in table: CommandTable = CommandRegistry.active) -> String {
+        guard let id = command(act) else { return act == .restoreScratch ? restoreScratchKey : "" }
+        guard let c = table.command(id) else { return "" }
+        return (c.chords(in: .history).first ?? c.chord)?.label ?? ""
+    }
+
     /// The preview's actions with their keys, each a KeyButton: ⏎ resume
     /// (as the card says it), ⌥⏎ fork, M continue on the other Mac (a
     /// live agent: moves it, `moveTo`), then R restore checkpoint, C
@@ -223,51 +249,54 @@ public enum SearchPreview {
                                moveTo: String? = nil, restore: Bool = false, restoreScratch: Bool = false) -> [SessionCardText.Action] {
         var out: [SessionCardText.Action] = []
         if let first = card.actions.first { out.append(first) }
-        out.append(.init(key: "⌥⏎", title: "Fork", primary: false))
+        out.append(.init(.history(.fork), title: "Fork", primary: false))
         if let t = moveTo ?? continueTarget(s, local: local, online: online) {
-            out.append(.init(key: "M", title: "Continue on \(SessionFormat.machineName(t, machines))", primary: false))
+            out.append(.init(.continueOnOtherMac, title: "Continue on \(SessionFormat.machineName(t, machines))", primary: false))
         }
-        if restore { out.append(.init(key: "R", title: "Restore checkpoint", primary: false)) }
-        if restoreScratch { out.append(.init(key: SearchPreview.restoreScratchKey, title: "Restore scratch", primary: false)) }
-        out.append(.init(key: "C", title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
-        out.append(.init(key: "A", title: s.archived ? "Unarchive" : "Archive", primary: false))
-        out.append(.init(key: "⌫", title: "Delete", primary: false))
-        out.append(.init(key: "⌘C", title: "Copy id", primary: false))
+        if restore { out.append(.init(.restoreCheckpoint, title: "Restore checkpoint", primary: false)) }
+        if restoreScratch { out.append(.init(.restoreScratch, title: "Restore scratch", primary: false)) }
+        out.append(.init(.history(.continueOther), title: "Continue in \(SessionFormat.kindLabel(s.otherKind))", primary: false))
+        out.append(.init(.history(.archive), title: s.archived ? "Unarchive" : "Archive", primary: false))
+        out.append(.init(.history(.delete), title: "Delete", primary: false))
+        out.append(.init(.history(.copyID), title: "Copy id", primary: false))
         return out
     }
 
-    /// M's consequence, under the actions.
+    /// M's consequence, under the actions (its cap as the table has it).
     public static func continueNote(_ s: Session, local: String, online: [String], machines: [String: String], moveTo: String? = nil) -> String? {
+        let m = key(.continueOnOtherMac)
+        let verb = m.isEmpty ? "Continuing" : m
         if let moveTo {
             let to = SessionFormat.machineName(moveTo, machines)
-            return "M moves it to \(to) with its worktree, uncommitted changes and conversation; it closes here"
+            return "\(verb) moves it to \(to) with its worktree, uncommitted changes and conversation; it closes here"
         }
         guard let t = continueTarget(s, local: local, online: online) else { return nil }
         let from = SessionFormat.machineName(s.machine.isEmpty ? local : s.machine, machines)
         let to = SessionFormat.machineName(t, machines)
-        return "M continues on \(to), moves ownership; uncommitted work comes along if \(from) is reachable"
+        return m.isEmpty ? "Continuing on \(to) moves ownership; uncommitted work comes along if \(from) is reachable"
+            : "\(m) continues on \(to), moves ownership; uncommitted work comes along if \(from) is reachable"
     }
 
     /// The row's right-click menu: the preview's verbs (the ⏎ entry that
     /// only says the session runs outside Hesper is not one).
     public static func menu(for actions: [SessionCardText.Action]) -> [SessionCardText.Action] {
-        actions.filter { !($0.key == "⏎" && $0.title == SessionCardText.outsideTitle) }
+        actions.filter { !($0.act == .history(.resume) && $0.title == SessionCardText.outsideTitle) }
     }
 
     /// The sheet's footer, acting on the selection: the preview's ⏎ and
     /// ⌥⏎ verbs as it names them, then ⌘⏎ "Open full size" (resume, then
     /// focus) when ⏎ resumes. With nothing selected: the same, disabled.
-    public static let footerDefault: [SessionCardText.Action] = [
-        .init(key: "⏎", title: "Resume", primary: true), .init(key: "⌥⏎", title: "Fork", primary: false),
-        .init(key: "⌘⏎", title: "Open full size", primary: false),
-    ]
+    public static var footerDefault: [SessionCardText.Action] {
+        [.init(.history(.resume), title: "Resume", primary: true), .init(.history(.fork), title: "Fork", primary: false),
+         .init(.openFullSize, title: "Open full size", primary: false)]
+    }
 
     public static func footer(for actions: [SessionCardText.Action]) -> [SessionCardText.Action] {
         let verbs = menu(for: actions)
         var out: [SessionCardText.Action] = []
-        if let a = verbs.first(where: { $0.key == "⏎" }) { out.append(a) }
-        if let a = verbs.first(where: { $0.key == "⌥⏎" }) { out.append(a) }
-        if !out.isEmpty, out[0].key == "⏎" { out.append(footerDefault[2]) }
+        if let a = verbs.first(where: { $0.act == .history(.resume) }) { out.append(a) }
+        if let a = verbs.first(where: { $0.act == .history(.fork) }) { out.append(a) }
+        if !out.isEmpty, out[0].act == .history(.resume) { out.append(footerDefault[2]) }
         return out
     }
 }

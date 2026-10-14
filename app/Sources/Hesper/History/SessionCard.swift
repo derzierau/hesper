@@ -21,23 +21,6 @@ final class SessionCardModel {
     @ObservationIgnored var onAction: ((SearchKeyAction) -> Void)?
     @ObservationIgnored var onStartContinue: (() -> Void)?
     @ObservationIgnored var onCancelContinue: (() -> Void)?
-
-    /// An action's key → what it does (the preview's buttons, the row
-    /// menu, the footer).
-    static func action(_ key: String) -> SearchKeyAction {
-        switch key {
-        case "⏎": return .history(.resume)
-        case "⌘⏎": return .openFullSize
-        case "⌥⏎": return .history(.fork)
-        case "M": return .continueOnOtherMac
-        case "R": return .restoreCheckpoint
-        case SearchPreview.restoreScratchKey: return .restoreScratch
-        case "C": return .history(.continueOther)
-        case "A": return .history(.archive)
-        case "⌫": return .history(.delete)
-        default: return .history(.copyID)
-        }
-    }
 }
 
 /// The card in SwiftUI: the tile's first screen after a resume (compact:

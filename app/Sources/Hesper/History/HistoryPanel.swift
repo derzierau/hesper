@@ -282,8 +282,8 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         card.onCancelContinue = { [weak self] in self?.cancelContinue() }
 
         for a in SearchPreview.footerDefault {
-            let b = KeyButtonView(a.title, kbd: a.key, variant: a.primary ? .primary(.working) : .quiet) { [weak self] in
-                self?.perform(SessionCardModel.action(a.key))
+            let b = KeyButtonView(a.title, kbd: a.key.isEmpty ? nil : a.key, variant: a.primary ? .primary(.working) : .quiet) { [weak self] in
+                self?.perform(a.act)
             }
             b.setAccessibilityIdentifier("history.footer.\(a.key)")
             b.isEnabled = false
@@ -811,9 +811,11 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     private func updateFooter() {
         let verbs = card.text.map { SearchPreview.footer(for: $0.actions) } ?? []
         for (b, a) in zip(footerButtons, SearchPreview.footerDefault) {
-            let v = verbs.first { $0.key == a.key }
+            let v = verbs.first { $0.act == a.act }
             let title = v?.title ?? a.title
             if b.label != title { b.label = title }
+            let kbd = a.key.isEmpty ? nil : a.key // a rebound verb's cap (the table in force)
+            if b.kbd != kbd { b.kbd = kbd }
             if b.isEnabled != (v != nil) { b.isEnabled = v != nil }
         }
     }
@@ -1028,7 +1030,7 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
         for a in SearchPreview.menu(for: actions) {
             let item = NSMenuItem(title: a.title, action: #selector(menuChose(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = a.key
+            item.representedObject = a.act
             // The key cap, as a plain character where the menu can show one.
             if let k = KeyChord(label: a.key), let (key, mods) = MenuBuilder.keyEquivalent(k) {
                 item.keyEquivalent = key
@@ -1040,8 +1042,8 @@ final class HistoryPanel: NSView, NSTableViewDataSource, NSTableViewDelegate, NS
     }
 
     @objc private func menuChose(_ item: NSMenuItem) {
-        guard let key = item.representedObject as? String else { return }
-        perform(SessionCardModel.action(key))
+        guard let act = item.representedObject as? SearchKeyAction else { return }
+        perform(act)
     }
 
     deinit {

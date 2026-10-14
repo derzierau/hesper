@@ -113,6 +113,27 @@ import Testing
         #expect(SearchPreview.footer(for: oa).map(\.key) == ["⌥⏎"])
     }
 
+    /// An action names what it does; its cap is read from the command
+    /// table, so a rebound verb shows its new key and still runs.
+    @Test func actionCapsComeFromTheCommandTable() {
+        var o = ShortcutOverrides()
+        o.set(.historyArchive, to: .chord(.plain("x")))
+        let rebound = CommandTable(CommandRegistry.resolved(with: o))
+        #expect(SearchPreview.key(.history(.archive), in: rebound) == "X")
+        #expect(SearchPreview.key(.history(.archive)) == "A")
+        #expect(SearchPreview.key(.openFullSize) == "⌘⏎")
+        #expect(SearchPreview.key(.history(.copyID)) == "⌘C")
+        #expect(SearchPreview.key(.restoreScratch) == SearchPreview.restoreScratchKey)
+        o.set(.historyArchive, to: .unbound)
+        #expect(SearchPreview.key(.history(.archive), in: CommandTable(CommandRegistry.resolved(with: o))) == "")
+        let s = Session(id: "a", kind: "claude", machine: "M")
+        let card = SessionCardText(s, changes: nil, loadingChanges: true, local: "L", machines: Self.names)
+        let a = SearchPreview.actions(s, card: card, local: "L", online: ["M"], machines: Self.names, restore: true)
+        #expect(a.map(\.act) == [.history(.resume), .history(.fork), .continueOnOtherMac, .restoreCheckpoint, .history(.continueOther),
+                                .history(.archive), .history(.delete), .history(.copyID)])
+        #expect(SearchPreview.footer(for: a).map(\.act) == [.history(.resume), .history(.fork), .openFullSize])
+    }
+
     static func row(_ id: String, _ title: String, project: String?, depth: Int = 0, count: Int = 1) -> SidebarRow {
         SidebarRow(id: id, kind: id == "all" ? .all : .project, title: title, colorHex: "#7aa2f7", count: count, needsYou: false, depth: depth,
                    groupID: nil, projectID: project, scratch: false, scope: project.map(WallScope.project) ?? .all)

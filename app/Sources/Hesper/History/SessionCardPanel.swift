@@ -158,9 +158,10 @@ final class SessionCardPanel: NSView {
             for b in buttons { b.removeFromSuperview() }
             buttons = []
             for a in SearchPreview.menu(for: t.actions) {
-                let display = a.key == "⏎" && a.title == "Resume" ? "Resume here" : a.title
-                let b = KeyButtonView(display, kbd: a.key, variant: a.key == "⏎" ? .primary(.working) : .quiet) { [weak self] in
-                    self?.model.onAction?(SessionCardModel.action(a.key))
+                let resume = a.act == .history(.resume)
+                let display = resume && a.title == "Resume" ? "Resume here" : a.title
+                let b = KeyButtonView(display, kbd: a.key.isEmpty ? nil : a.key, variant: resume ? .primary(.working) : .quiet) { [weak self] in
+                    self?.model.onAction?(a.act)
                 }
                 b.setAccessibilityIdentifier("history.action.\(a.key)")
                 actionsBox.addSubview(b)

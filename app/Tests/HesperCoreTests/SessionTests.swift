@@ -205,7 +205,7 @@ import Testing
         var here = s
         here.machine = "L"
         let h = SessionCardText(here, changes: nil, loadingChanges: false, local: "L", machines: names)
-        #expect(h.actions[0].title == "Resume" && h.actions[1] == .init(key: "⌥⏎", title: "Fork", primary: false) && h.changed == "—")
+        #expect(h.actions[0].title == "Resume" && h.actions[1] == .init(.history(.fork), title: "Fork", primary: false) && h.changed == "—")
         here.live = SessionLive(agentId: "L/x")
         #expect(SessionCardText(here, changes: nil, loadingChanges: false, local: "L", machines: names).actions[0].title == "Open (live)")
         var moved = s

@@ -3300,7 +3300,10 @@ files +/−, uncommitted, ahead/behind, folder on M / folder gone) into a
 slot reserved for it: nothing moves. Actions, one KeyButton each with
 its key cap (`SearchPreview.actions`; the row menu and the footer are
 cut from the same list, `SearchPreview.menu` / `footer`, so the three
-never disagree): **⏎** Resume (on
+never disagree; each action names its verb and runs it, and its cap is
+read from the command table in force, so a rebound History verb shows
+its new chord, `SearchPreview.key`; the tile header's open full size
+reads Open's chord the same way): **⏎** Resume (on
 its Mac; "Open (live)" when hesperd runs it → that agent's tile or
 window; "Open on M" for a moved entry, which hesperd resumes on the new
 home; running outside Hesper → a note instead of a button), **⌥⏎** Fork,
