@@ -61,6 +61,13 @@ The Linux failures of relay run [37921267092](https://github.com/derzierau/hespe
 (2026-10-09) were flaky tests, fixed before v0.2.0: `TestHasTool` by #15
 (hesperd stopped serving after an early close) and
 `TestSessionsForkLargeOverSlowLink` by #14 (it now checks lines, not bytes).
+The v0.3.1 release runs hit four more timing flakes, fixed before it
+shipped: the fork test's call outlived its 60 s deadline on an Intel
+runner (it now runs under the test world's 2 minutes),
+`TestSlowViewerResyncs` timed the PTY flood rather than a hang,
+`TestScreen` read the screen before the prompt was drawn, and
+`TestReviewAcceptReject` exposed a real race: a scan running during an
+accept stored what it read before it.
 
 The release workflow runs tests again, publishes both notarized zip files and
 SHA256SUMS, then commits `Casks/hesper.rb` with exact archive hashes to the
