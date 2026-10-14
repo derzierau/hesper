@@ -170,7 +170,7 @@ public enum CommandID: Hashable, Sendable {
     case showWall, makeHomeWall, desks, deskPicker, saveDeskAs
     case help, showShortcuts, hesperctlReference, reportProblem
     // The wall's selection and the tile's ⏎.
-    case select(WallMove), activateTile
+    case select(WallMove), activate(WallMove), activateTile
     // Composer.
     case startDraft, startDraftAndNew, toggleWorktree, leaveDraft
     // The overlay family (palette, popovers, inbox, History, Review).
@@ -572,6 +572,12 @@ public enum CommandRegistry {
         Command(.select(.down), "Select the tile below", chord: .plain(.down), surfaces: [.wall]),
         Command(.select(.first), "Select the first tile", chord: .plain(.home), surfaces: [.wall]),
         Command(.select(.last), "Select the last tile", chord: .plain(.end), surfaces: [.wall]),
+        // ⌃⌥ + arrow: move and type there, also from inside the active
+        // tile (plain arrows are the agent's there).
+        Command(.activate(.left), "Type into the tile to the left", chord: KeyChord(.left, option: true, control: true), surfaces: [.wall, .activeTile]),
+        Command(.activate(.right), "Type into the tile to the right", chord: KeyChord(.right, option: true, control: true), surfaces: [.wall, .activeTile]),
+        Command(.activate(.up), "Type into the tile above", chord: KeyChord(.up, option: true, control: true), surfaces: [.wall, .activeTile]),
+        Command(.activate(.down), "Type into the tile below", chord: KeyChord(.down, option: true, control: true), surfaces: [.wall, .activeTile]),
         // ⏎: the tile's default action (edit a draft, the first answer,
         // allow, open the review, resume, or type into it).
         Command(.activateTile, "Allow, answer, resume or type into the tile", chord: .plain(.enter), surfaces: [.wall]),

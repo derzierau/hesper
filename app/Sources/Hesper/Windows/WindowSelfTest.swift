@@ -77,7 +77,7 @@ final class WindowSelfTest {
 
         // Plain click, ⌘↩ and double-click stay in this window.
         click(a)
-        check("plain click selects, opens no window", model.selectedID == a && agentWindowCount == 0 && appWindowCount == before)
+        check("plain click selects (and types), opens no window", model.selectedID == a && agentWindowCount == 0 && appWindowCount == before)
         Harness.press("\r", keyCode: 36, flags: .command, window: main.window)
         check("⌘↩ opens the focus view in the same window", model.mode == .focus && model.focusedID == a && agentWindowCount == 0 && appWindowCount == before)
         Harness.press("\r", keyCode: 36, flags: .command, window: main.window)
@@ -169,7 +169,7 @@ final class WindowSelfTest {
         // active tile of a wall that isn't key; the active tile owns again
         // once its wall is key.
         model.select(a)
-        click(a) // a click on the selected tile makes it active
+        click(a) // a click makes it active
         _ = await Harness.wait(3) { self.main.root.wall.tiles[a]?.terminal.surfaceIsInteractive ?? false }
         await makeKey(ca?.window)
         await Harness.sleep(1.5)

@@ -119,8 +119,13 @@ final class SelfTest {
             return t.agent.state == .approval && col == Theme.stateNS(.approval).cg(in: t)
         }
         check("approval shows a ring", ringed)
-        model.select(a.id)
+        // A click on a tile that needs an answer selects it (the wall keeps
+        // ⏎ / A / N); it doesn't start typing.
+        if let other = model.wall.first(where: { $0.id != a.id }) { model.select(other.id) }
+        if let t = root.wall.tiles[a.id] { click(t) }
         window.makeFirstResponder(root.wall)
+        check("a click on an approval tile selects it (not typing)", model.selectedID == a.id && model.activeTileID == nil,
+              "selected=\(model.selectedID ?? "nil") active=\(model.activeTileID ?? "nil")")
         Harness.press("\r", keyCode: 36, window: window)
         let allowed = await Harness.wait(3) { self.model.agent(a.id)?.state == .working }
         await setState(a.id, "working")
@@ -361,11 +366,12 @@ final class SelfTest {
             check("⏎ on a trust question trusts the folder", trusted, model.agent(a.id)?.state.rawValue ?? "?")
         }
 
-        // 8c0. Two levels on the wall: a click selects (no typing, no
-        // read-write attach), arrows / Home / End move the selection without
-        // resizing anything, typing a character makes the tile active and
-        // delivers it, ⌘esc goes back to selected, a click on the selected
-        // tile makes it active.
+        // 8c0. Two levels on the wall: one click on a live tile makes it
+        // active (typing, clicks and the wheel go to its terminal), ⌘esc
+        // goes back to selected, arrows / Home / End move the selection
+        // without resizing anything, typing a character makes the tile
+        // active and delivers it, a click on the selected tile makes it
+        // active.
         let liveIDs = model.wall.filter { $0.isRunning && !$0.state.needsAttention && !(self.root.wall.tiles[$0.id]?.onShelf ?? true) }.map(\.id)
         if liveIDs.count >= 2, let t = root.wall.tiles[liveIDs[0]] {
             let x = liveIDs[0]
@@ -373,9 +379,16 @@ final class SelfTest {
             model.select(liveIDs[1])
             window.makeFirstResponder(root.wall)
             click(t)
-            await Harness.sleep(0.6)
-            let noRW = root.wall.tiles.values.allSatisfy { !$0.terminal.surfaceIsInteractive && $0.terminal.prewarm == nil }
-            check("a click selects the tile: no typing, no read-write attach", model.selectedID == x && model.activeTileID == nil
+            let oneClick = await Harness.wait(5) {
+                self.model.activeTileID == x && t.terminal.surfaceIsInteractive && self.window.firstResponder === t.terminal.surface?.view
+            }
+            check("one click makes a live tile active: its terminal has the keys", oneClick && model.selectedID == x,
+                  "selected=\(model.selectedID ?? "nil") active=\(model.activeTileID ?? "nil") rw=\(t.terminal.surfaceIsInteractive)")
+            Harness.press("\u{1b}", keyCode: 53, flags: .command, window: window)
+            let noRW = await Harness.wait(3) {
+                self.root.wall.tiles.values.allSatisfy { !$0.terminal.surfaceIsInteractive && $0.terminal.prewarm == nil }
+            }
+            check("⌘esc: selected, no read-write attach, the wall has the keys", model.selectedID == x && model.activeTileID == nil
                   && window.firstResponder === root.wall && noRW, "selected=\(model.selectedID ?? "nil") active=\(model.activeTileID ?? "nil") rw=\(!noRW)")
             let sizes0 = model.wall.map { "\($0.id)=\(String(describing: $0.size))" }
             let frames0 = root.wall.tiles.mapValues(\.frame)
@@ -419,6 +432,15 @@ final class SelfTest {
             click(t)
             let activeAgain = await Harness.wait(5) { self.model.activeTileID == x && t.terminal.surfaceIsInteractive }
             check("a click on the selected tile makes it active", activeAgain)
+            // ⌃⌥ + arrow from inside the active tile: its neighbor types
+            // (as AppKit sends it: the key-equivalent pass, then the view).
+            if let r = root.wall.neighbor(x, .right), r != x, let rt = root.wall.tiles[r], model.agent(r)?.isRunning == true,
+               let e = Harness.keyEvent("\u{F703}", keyCode: 124, flags: [.control, .option], window: window) {
+                if !window.performKeyEquivalent(with: e) { window.sendEvent(e) }
+                let moved = await Harness.wait(5) { self.model.activeTileID == r && rt.terminal.surfaceIsInteractive && !t.terminal.surfaceIsInteractive }
+                check("⌃⌥→ in the active tile makes its right neighbor active", moved,
+                      "active=\(model.activeTileID ?? "nil") (want \(r)) rw=\(rt.terminal.surfaceIsInteractive)")
+            }
             Harness.press("\u{1b}", keyCode: 53, flags: .command, window: window)
             _ = await Harness.wait(3) { self.model.activeTileID == nil && !t.terminal.surfaceIsInteractive }
         }

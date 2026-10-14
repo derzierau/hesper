@@ -309,8 +309,10 @@ final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
     /// The wheel or trackpad over a read-only tile moves its window into
     /// the agent's scrollback (fractional lines add up, momentum included);
     /// at the live bottom, or sideways, the wall scrolls instead. The
-    /// active tile's own terminal scrolls natively.
+    /// active tile's own terminal scrolls natively, also while it swaps in
+    /// (held, then replayed).
     override func scrollWheel(with event: NSEvent) {
+        if isActive && !terminal.surfaceIsInteractive && terminal.deliver(event) { return }
         guard !onShelf, !terminal.surfaceIsInteractive, abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX) else {
             super.scrollWheel(with: event)
             return
@@ -496,22 +498,65 @@ final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
         return menu
     }
 
-    /// A click selects the tile (the wall keeps the keys); a click on the
-    /// selected tile makes it active (typing goes to the agent); a double
-    /// click opens it full size.
+    /// A click on a live tile makes it active (typing, clicks and the
+    /// wheel go to the agent); a tile with an approval or a question to
+    /// answer by key, a shelf card or an ended agent is selected first
+    /// (TileClick). A double click opens it full size.
     override func mouseDown(with event: NSEvent) {
         guard let model else { return }
+        forwardingMouse = false
         if model.tileClick?(agent.id, event, self) == true { return } // window layer
-        if event.clickCount == 2 { model.focus(agent.id); return }
-        if model.activeTileID == agent.id {
-            terminal.focusInput()
-        } else if model.selectedID == agent.id && model.editingDraftID == nil {
+        let click = TileClick.resolve(clickCount: event.clickCount, active: model.activeTileID == agent.id,
+                                      selected: model.selectedID == agent.id, running: agent.isRunning, onShelf: onShelf,
+                                      state: agent.state, answers: agent.attention?.answers ?? [])
+        switch click {
+        case .focus:
+            activatedAt = nil
+            model.focus(agent.id)
+            return
+        case .input:
+            // A click in the terminal area only gets here while the
+            // read-write terminal swaps in (once shown it takes its own
+            // clicks): held for it. The header's keep the keys there.
+            let p = terminal.host.convert(event.locationInWindow, from: nil)
+            if terminal.host.bounds.contains(p) && terminal.deliver(event) { forwardingMouse = true } else { terminal.focusInput() }
+        case .activate:
+            activatedAt = event.timestamp
             model.activate(agent.id)
-        } else {
+        case .select:
             model.select(agent.id)
         }
         if !terminal.interactive { window?.makeFirstResponder(enclosingWall) }
     }
+
+    override func mouseDragged(with event: NSEvent) {
+        if forwardingMouse { terminal.deliver(event) } else { super.mouseDragged(with: event) }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if forwardingMouse { forwardingMouse = false; terminal.deliver(event) } else { super.mouseUp(with: event) }
+    }
+
+    /// A click from another app's window acts at once (no extra click to
+    /// bring Hesper forward first).
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// The second click of the click that made this tile active comes here
+    /// even once the read-write terminal shows (it would select a word):
+    /// a double click opens focus either way (TileClick.claimsSecondClick).
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        guard let e = NSApp.currentEvent, e.type == .leftMouseDown, hit.isDescendant(of: terminal.host),
+              TileClick.claimsSecondClick(clickCount: e.clickCount, sinceActivation: activatedAt.map { e.timestamp - $0 },
+                                          doubleClickInterval: NSEvent.doubleClickInterval) else { return hit }
+        return self
+    }
+
+    /// The mouse-down went to the terminal (held while it swaps in): its
+    /// drags and mouse-up follow it.
+    private var forwardingMouse = false
+    /// When a click last made this tile active (event time).
+    private var activatedAt: TimeInterval?
 
     private var enclosingWall: NSView? {
         var v = superview

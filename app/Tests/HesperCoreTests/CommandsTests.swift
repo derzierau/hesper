@@ -29,6 +29,7 @@ import Testing
     static let menuExemptions: [CommandID: String] = {
         var e: [CommandID: String] = [:]
         for m in [WallMove.left, .right, .up, .down, .first, .last] { e[.select(m)] = "wall selection: the tile ring shows it" }
+        for m in [WallMove.left, .right, .up, .down] { e[.activate(m)] = "move and type: a click on the tile does the same" }
         e[.activateTile] = "the tile's primary button carries ⏎"
         for id in [CommandID.startDraft, .startDraftAndNew, .toggleWorktree, .leaveDraft] { e[id] = "the composer's Start button and chips carry the keys" }
         for id in [CommandID.moveUp, .moveDown, .closeOverlay, .overlayActivate, .overlayAlternate, .overlayActOn, .overlayBack, .overlayDeleteBackward] {

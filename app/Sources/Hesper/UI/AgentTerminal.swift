@@ -84,8 +84,15 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// view. The switch is seamless: the new surface starts underneath the
     /// shown one, and replaces it once it has drawn the same screen.
     var interactive = false {
-        didSet { if oldValue != interactive && role == .tile { swapMode() } }
+        didSet {
+            guard oldValue != interactive, role == .tile else { return }
+            if !interactive { heldInput.clear() }
+            swapMode()
+        }
     }
+    /// Clicks and the wheel for the active tile before its read-write
+    /// surface swapped in (`deliver`), replayed into it once it has.
+    private var heldInput = HeldInput<NSEvent>(capacity: 128, maxAge: 1.5)
     /// A surface prewarming underneath the shown one (the mode switch).
     private(set) var prewarm: (any TerminalSurface)?
     private var swapGeneration = 0
@@ -150,6 +157,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     }
 
     func close() {
+        heldInput.clear()
         prewarm?.close()
         prewarm = nil
         surface?.close()
@@ -203,6 +211,35 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         let takeFocus = surfaceIsInteractive || (role == .focus && p.acceptsInput && (hadFocus || host.window?.isKeyWindow == true))
         if takeFocus, let w = host.window { w.makeFirstResponder(p.view) }
         surfaceMetricsDidChange(p)
+        if surfaceIsInteractive {
+            for e in heldInput.drain(now: ProcessInfo.processInfo.systemUptime) { send(e, to: p.view) }
+        } else {
+            heldInput.clear()
+        }
+    }
+
+    /// A click or wheel event for the active tile's terminal: at once when
+    /// its read-write surface is shown, held while that surface swaps in
+    /// (the shown view takes no input), so nothing done right after the
+    /// activating click is lost. False: neither (no read-write surface is
+    /// coming, e.g. its window is not key); the caller handles it.
+    @discardableResult
+    func deliver(_ event: NSEvent) -> Bool {
+        guard role == .tile, interactive else { return false }
+        if surfaceIsInteractive, let s = surface { send(event, to: s.view); return true }
+        guard prewarm != nil, prewarmAttach == .owner else { return false }
+        heldInput.hold(event, at: event.timestamp)
+        return true
+    }
+
+    private func send(_ e: NSEvent, to view: NSView) {
+        switch e.type {
+        case .leftMouseDown: view.mouseDown(with: e)
+        case .leftMouseUp: view.mouseUp(with: e)
+        case .leftMouseDragged: view.mouseDragged(with: e)
+        case .scrollWheel: view.scrollWheel(with: e)
+        default: break
+        }
     }
 
     /// Focus the active tile's terminal (typing).
