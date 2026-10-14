@@ -23,7 +23,8 @@
 SHELL := /bin/bash
 export DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 
-VERSION ?= 0.1.0
+# The latest release tag (v1.2.3 → 1.2.3); a release passes VERSION itself.
+VERSION ?= $(or $(patsubst v%,%,$(shell git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null)),0.1.0)
 BUILD_NUMBER ?= $(shell git rev-list --count HEAD 2>/dev/null || echo 1)
 CONFIG ?= release
 APP := build/Hesper.app
