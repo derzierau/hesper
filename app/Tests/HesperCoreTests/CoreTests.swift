@@ -60,6 +60,18 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
         #expect(KeyChord(keyCode: 0, characters: nil).key == .other)
     }
 
+    /// Caps Lock: `charactersIgnoringModifiers` is "W" without ⇧. The
+    /// event's flags say whether ⇧ is down, so ⌘W stays Close, not Tidy Up.
+    @Test func capsLockLetterKeepsTheShiftFlag() {
+        let w = KeyChord(keyCode: 13, characters: "W", command: true)
+        #expect(w == KeyChord(.char("w"), command: true))
+        #expect(CommandRegistry.resolve(w, in: .wall) == .closeAgent)
+        #expect(CommandRegistry.resolve(KeyChord(keyCode: 45, characters: "N", command: true), in: .everywhere) == .newAgent)
+        let shifted = KeyChord(keyCode: 13, characters: "W", command: true, shift: true)
+        #expect(CommandRegistry.resolve(shifted, in: .wall) == .tidyUp)
+        #expect(KeyChord(keyCode: 0, characters: "A").shift == false)
+    }
+
     @Test func commandShortcutsAgreeInBothModes() {
         for mode in [AppMode.wall, .focus] {
             #expect(KeyRouter.route(KeyChord(.char("n"), command: true), mode: mode, selectedState: nil) == .newAgent)

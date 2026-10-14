@@ -21,6 +21,8 @@ public struct KeyChord: Hashable, Sendable {
     /// Digits, brackets, braces and slash come from the key code so a chord
     /// means the same on every layout (on German ⌥5 types `[`, and ⌥⌘5
     /// must stay the Grid layout); ⌫ is `.delete`, not a control character.
+    /// A letter is lowercase and ⇧ comes from the flags alone: with Caps
+    /// Lock on the layout says "W" for ⌘W, which is not ⇧⌘W.
     public init(keyCode: UInt16, characters: String?, command: Bool = false, shift: Bool = false, option: Bool = false, control: Bool = false) {
         let key: Key
         switch keyCode {
@@ -48,7 +50,7 @@ public struct KeyChord: Hashable, Sendable {
         case 30: key = .char(shift ? "}" : "]")
         case 44: key = .char("/")
         default:
-            if let c = characters?.first { key = .char(c) } else { key = .other }
+            if let c = characters?.first { key = .char(c.isLetter ? Character(c.lowercased()) : c) } else { key = .other }
         }
         self.init(key, command: command, shift: shift, option: option, control: control)
     }

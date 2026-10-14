@@ -4501,7 +4501,8 @@ panels) returning `.enabled`, `.disabled(reason)` or `.hidden`, and a
 palette flag. Chords are matched normalised (a letter lowercase with ⇧ as
 a flag); a shifted plain letter falls back to the unshifted command (⇧A on
 an approval is Always; Review's N and ⇧N are both bound), ⌘ chords match
-exactly.
+exactly. A key event's letter is always lowercase and ⇧ comes from its
+modifier flags only, so Caps Lock never turns ⌘W into ⇧⌘W.
 
 **Surfaces.** `.everywhere` (app-wide ⌘ chords, also every menu key
 equivalent), `.wall` (a selected tile), `.focus`, `.activeTile`,
