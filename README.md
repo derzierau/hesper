@@ -33,10 +33,11 @@ that needs you.
 
 ## Release availability
 
-**The current release is [v0.3.1](https://github.com/derzierau/hesper/releases/tag/v0.3.1),
+**The current release is [v0.3.2](https://github.com/derzierau/hesper/releases/tag/v0.3.2),
 signed and notarized for macOS 14+ and installed with [Homebrew](#homebrew).**
-Every feature this README describes is in it. v0.3.1 fixes Claude Code's
-`/voice` inside Hesper. New since v0.2.0:
+Every feature this README describes is in it. v0.3.2 makes a wall tile
+active with one click (⌃⌥ + arrow from the keyboard); v0.3.1 fixes Claude
+Code's `/voice` inside Hesper. New since v0.2.0:
 
 - Every action works with the mouse: buttons with key caps on tiles,
   sheets and popovers, right-click menus, close and back buttons
@@ -46,8 +47,8 @@ Every feature this README describes is in it. v0.3.1 fixes Claude Code's
 - VoiceOver and Full Keyboard Access support
 - `hesperctl open review` and `hesperctl open palette`
 
-See the [v0.3.1](docs/release-notes-v0.3.1.md) and
-[v0.3.0 release notes](docs/release-notes-v0.3.0.md) for the full list,
+See the [v0.3.2](docs/release-notes-v0.3.2.md), [v0.3.1](docs/release-notes-v0.3.1.md)
+and [v0.3.0 release notes](docs/release-notes-v0.3.0.md) for the full list,
 including the six shortcuts that moved.
 
 One Mac works without a relay. **Multiple Macs currently require a
@@ -489,7 +490,7 @@ security issues privately as described in [SECURITY.md](SECURITY.md).
 ## Status
 
 Hesper is young and used daily by its author. Signed releases are
-available through Homebrew and GitHub Releases; the current one is v0.3.1.
+available through Homebrew and GitHub Releases; the current one is v0.3.2.
 
 Supported agents are Claude Code, Codex and a plain shell.
 
