@@ -81,45 +81,46 @@ import Testing
     }
 
     @Test func keys() {
-        #expect(InboxKeys.route(.type("j")) == .move(1))
-        #expect(InboxKeys.route(.type("K")) == .move(-1))
         #expect(InboxKeys.route(.down) == .move(1))
         #expect(InboxKeys.route(.up) == .move(-1))
-        #expect(InboxKeys.route(.type("1")) == .answer(0))
-        #expect(InboxKeys.route(.type("9")) == .answer(8))
-        #expect(InboxKeys.route(.type("0")) == .none)
-        #expect(InboxKeys.route(.type("x")) == .none)
-        #expect(InboxKeys.route(.type("12")) == .none)
         #expect(InboxKeys.route(.activate) == .primary)
         #expect(InboxKeys.route(.alternate) == .open)
         #expect(InboxKeys.route(.close) == .close)
         #expect(InboxKeys.route(.pass) == .none)
         #expect(InboxKeys.route(.actOn) == .none)
-        // Through the overlay router: plain j/k and digits arrive as typing.
-        #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.char("j")), characters: "j")) == .move(1))
-        #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.char("2")), characters: "2")) == .answer(1))
+        #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.char("p"), control: true), surface: .inbox)) == .move(-1))
         #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.enter))) == .primary)
         #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.escape))) == .close)
     }
 
-    @Test func lettersPickAlwaysAndDeny() {
-        #expect(InboxKeys.route(.type("a")) == .decide(.always))
-        #expect(InboxKeys.route(.type("N")) == .decide(.deny))
-        let a = AttentionInbox.answers(state: .approval, attention: Attention(kind: "approval", options: ["allow", "always", "deny"]))
-        #expect(InboxKeys.answer(.always, in: a)?.title == "Always")
-        #expect(InboxKeys.answer(.deny, in: a)?.action == .decision(.deny))
-        let noAlways = AttentionInbox.answers(state: .approval, attention: Attention(kind: "approval", options: ["allow", "deny"]))
-        #expect(InboxKeys.answer(.always, in: noAlways) == nil)
-        #expect(InboxKeys.answer(.deny, in: AttentionInbox.answers(state: .question, attention: nil)) == nil)
+    /// Every letter and digit types into the filter, whether the field has
+    /// the keyboard or not and whatever it holds: typing "api" filters,
+    /// it never sends Always Allow. The verbs are the buttons, ⏎, ⌘⏎ and
+    /// the arrows.
+    @Test func lettersAndDigitsAlwaysType() {
+        for typing in [false, true] {
+            var list = OverlayList()
+            for c in ["a", "p", "i", "n", "m", "j", "k", "1", "9", "A", "N"] {
+                let k = KeyChord(keyCode: 0, characters: c, shift: c != c.lowercased())
+                let action = OverlayKeys.route(k, characters: c, surface: .inbox, typing: typing)
+                #expect(action == .type(c), "\(c) typing=\(typing)")
+                #expect(InboxKeys.route(action) == .none, "\(c) typing=\(typing)")
+                list.type(c)
+            }
+            #expect(list.query == "apinmjk19AN")
+            #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.down), surface: .inbox, typing: typing)) == .move(1))
+            #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.enter), surface: .inbox, typing: typing)) == .primary)
+            #expect(InboxKeys.route(OverlayKeys.route(KeyChord(.enter, command: true), surface: .inbox, typing: typing)) == .open)
+        }
     }
 
     @Test func keyCaps() {
         let a = AttentionInbox.answers(state: .approval, attention: Attention(kind: "approval", options: ["allow", "always", "deny"]))
-        #expect(a.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["⏎", "A", "N"])
+        #expect(a.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["⏎", nil, nil])
         let numbered = AttentionInbox.answers(state: .question, attention: Attention(kind: "question", detail: "Which? 1. Formal 2. Casual"))
-        #expect(numbered.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["1", "2"])
+        #expect(numbered.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["⏎", nil])
         let trust = AttentionInbox.answers(state: .question, attention: Attention(kind: "question", title: "Trust?", options: ["trust", "exit"]))
-        #expect(trust.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["1", "2"])
+        #expect(trust.enumerated().map { AttentionInbox.keyCap($1, primary: $0 == 0) } == ["⏎", nil])
         #expect(AttentionInbox.keyCap(InboxAnswer(title: "Open", action: .open, key: nil), primary: true) == "⏎")
     }
 
@@ -136,13 +137,10 @@ import Testing
         #expect(I.matches("   ", name: "api", project: "", question: ""))
     }
 
-    @Test func numberKeysPickAnswers() {
+    @Test func enterPicksTheFirstAnswer() {
         let a = AttentionInbox.answers(state: .approval, attention: Attention(kind: "approval", options: ["allow", "always", "deny"]))
-        #expect(InboxKeys.answer(2, in: a)?.action == .decision(.deny))
-        #expect(InboxKeys.answer(3, in: a) == nil)
         #expect(InboxKeys.primary(a)?.action == .decision(.allow))
         let open = AttentionInbox.answers(state: .question, attention: nil)
-        #expect(InboxKeys.answer(0, in: open) == nil) // Open has no number: ⏎ or ⌘O
         #expect(InboxKeys.primary(open)?.action == .open)
     }
 }

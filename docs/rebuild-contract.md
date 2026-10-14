@@ -1325,7 +1325,7 @@ popover from the tile (machines with route and round trip, offline
 dimmed, "with conversation + uncommitted work"; the tile says "moving to
 mini…" in place; undo moves it back); rename popover; the toolbar's
 machines pill (online, route, RTT, agents, pairing hint), attention pill
-(the ⌘J inbox: ⏎ the first answer, 1–9 answer, ⌘⏎ opens the tile) and
+(the ⌘J inbox: ⏎ the first answer, ⌘⏎ opens the tile, letters filter) and
 layout button (five layouts + min width; ⌥⌘1–5). Deny… expands the band
 into a one-line message field in place, with Send ⏎ and Cancel esc
 KeyButtons under it. ⌘W stops at once / removes at once (committed after 6 s) with
@@ -1411,12 +1411,13 @@ Every key an overlay shows sits on a control (`KeyButton`, `IconButton`:
 - **Inbox ⌘J.** A filter field under the title (agent name, project,
   question: `AttentionInbox.matches`). Each item is a `Row` (state mark,
   agent, "machine · other wall · age", the question as its subtitle) with
-  KeyButtons under it: approvals Allow ⏎ · Always A · Deny N, numbered
-  questions 1–n, free text Open ⏎, "Continue on mini M" when it can move,
-  and Open ⌘⏎ (an icon). J K ↑↓ move; the letters answer the selected
-  item; any other letter goes to the filter, and the field then has the
-  keyboard (every key types, J and K too; ↑↓ ⌃N ⌃P ⏎ ⌘⏎ esc still
-  route); ⌫ deletes; esc and
+  KeyButtons under it: approvals Allow ⏎ · Always · Deny, numbered
+  questions one button per option (the first ⏎), free text Open ⏎,
+  "Continue on mini" when it can move, and Open ⌘⏎ (an icon). ↑↓ ⌃N ⌃P
+  move; every letter and digit goes to the filter, and the field then has
+  the keyboard (↑↓ ⌃N ⌃P ⏎ ⌘⏎ esc still route), so the first keystroke
+  never answers: typing "api" filters, it does not send Always Allow.
+  The other answers and Continue are their buttons only; ⌫ deletes; esc and
   the × in the title close. "Nothing matches" under a filter, "Nothing
   needs you." (and the panel closes itself) with an empty queue; the
   filter clears when the inbox opens.
@@ -3314,7 +3315,7 @@ two lines (at least 0.8 s, at most 12 s, typing into it hides it).
 **Keys** (`HistoryKeys`, the overlay family's): ↑↓ select (also from the
 search field), ⌘↑ ⌘↓ / Home End first / last, page up/down, ⏎ resume,
 ⌘⏎ resume and open the agent full size (focus), ⌥⏎ fork, ⇥ the All
-scope with the query (⇧⇥ field ↔ list, where J K move as in the inbox
+scope with the query (⇧⇥ field ↔ list, where J K move
 and F C A M R ⌫ act; typing
 any other character goes back to the search with it), ⌘F the search, ⌘C
 copy id (the field's own copy when text is selected), esc / ⌘Y close;
@@ -4494,7 +4495,7 @@ exists, surface verbs otherwise: `historyFork`, `reviewAccept`,
 `inboxAnswer(n)`), title, `MenuPath` (menu, section, order), default
 `KeyChord`, the `Set<Surface>` the chord is live in, aliases (a second
 chord with its own surfaces: ⇥ steps agents on the wall, ⌥↑ ⌥↓ jump bands
-there, J K move in the inbox and History), an availability predicate over
+there, J K move in History), an availability predicate over
 `CommandContext` (selected agent state and whether it runs, mode, key
 window kind, a draft, the review count, undo, History support, open
 panels) returning `.enabled`, `.disabled(reason)` or `.hidden`, and a
@@ -4563,7 +4564,7 @@ one spelling of a chord ("⇧⌘W", "⌘⏎", "esc", "⌥⌘←").
 | Help | Hesper Help, Keyboard Shortcuts… ⌘/, hesperctl Reference, Report a Problem (the GitHub issues page) |
 
 Only ⌘ chords become key equivalents: Always Allow's A and Deny's N
-live on the selected tile and in the inbox (where N denies outright),
+live on the selected tile (the inbox has no letter keys: they filter),
 Quick Launch's hotkey is the system's.
 
 **Help ▸ Keyboard Shortcuts (⌘/).** A modal sheet over the front wall
@@ -4694,7 +4695,7 @@ validate up the responder chain as in any Mac app.
 
 **Bindings that changed with the registry.** ⌥⌘↑ ⌥⌘↓ step bands
 everywhere (View ▸ Previous / Next Band; ⌥↑ ⌥↓ stay wall-only aliases);
-J K move in History as in the inbox; ⇧⏎ in History no longer resumes;
+J K move in History; ⇧⏎ in History no longer resumes;
 ⌘⏎ in History resumes and opens the agent full size (the overlay
 family's "open full size") and M continues on the other Mac, a list
 verb like F C A R; ⌘W in Settings, First Run and the gallery closes

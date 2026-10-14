@@ -21,11 +21,10 @@ import Testing
         #expect(InboxKeys.route(.deleteBackward) == .none)
     }
 
-    /// The inbox's J and K move the selection until its filter field has
-    /// the keyboard: then they are letters for the field (an agent named
+    /// The inbox's J and K are letters for its filter (an agent named
     /// "jobs" can be filtered for), as every other letter is.
-    @Test func lettersTypeIntoTheInboxFilterWhileItHasTheKeyboard() {
-        #expect(OverlayKeys.route(KeyChord(.char("j")), characters: "j", surface: .inbox) == .down)
+    @Test func lettersTypeIntoTheInboxFilter() {
+        #expect(OverlayKeys.route(KeyChord(.char("j")), characters: "j", surface: .inbox) == .type("j"))
         #expect(OverlayKeys.route(KeyChord(.char("k")), characters: "k", surface: .inbox, typing: true) == .type("k"))
         #expect(OverlayKeys.route(KeyChord(.char("j")), characters: "j", surface: .inbox, typing: true) == .type("j"))
         #expect(OverlayKeys.route(KeyChord(.char("m")), characters: "m", surface: .inbox, typing: true) == .type("m"))

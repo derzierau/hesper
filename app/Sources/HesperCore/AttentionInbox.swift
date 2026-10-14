@@ -84,16 +84,10 @@ public enum AttentionInbox {
         }
     }
 
-    /// The key cap an answer's button shows: Always and Deny carry the
-    /// wall's A and N, Allow and Open the primary ⏎, a numbered option its
-    /// number; nil: no key (a second free-text answer).
+    /// The key cap an answer's button shows: the first answer carries ⏎;
+    /// the others have no key (letters and digits type into the filter).
     public static func keyCap(_ a: InboxAnswer, primary: Bool) -> String? {
-        switch a.action {
-        case .decision(.always): return "A"
-        case .decision(.deny): return "N"
-        case .decision(.allow), .open: return primary ? "⏎" : a.key.map(String.init)
-        default: return a.key.map(String.init) ?? (primary ? "⏎" : nil)
-        }
+        primary ? CommandRegistry.cap(.inboxPrimary, in: .inbox) : nil
     }
 
     /// The inbox's filter: every word of the query (case-insensitive) is in
@@ -160,13 +154,7 @@ public enum AttentionInbox {
 /// primary answer, ⌘⏎ opens its tile, esc closes.
 public enum InboxKeyAction: Equatable, Sendable {
     case move(Int)
-    /// 0-based: the answer with number key `n + 1`.
-    case answer(Int)
     case primary, open, close, none
-    /// M: continue the selected agent on the other Mac (agents.move).
-    case moveElsewhere
-    /// A / N: the selected item's Always or Deny answer.
-    case decide(Decision)
 }
 
 public enum InboxKeys {
@@ -176,12 +164,9 @@ public enum InboxKeys {
         switch id {
         case .moveDown: return .move(1)
         case .moveUp: return .move(-1)
-        case .inboxMoveElsewhere: return .moveElsewhere
-        case .inboxAnswer(let n): return .answer(n)
         case .inboxPrimary: return .primary
         case .inboxOpen: return .open
         case .closeOverlay: return .close
-        case .answer(let d): return .decide(d)
         default: return nil
         }
     }
@@ -193,24 +178,10 @@ public enum InboxKeys {
         case .activate: return .primary
         case .alternate: return .open
         case .close: return .close
-        case .type(let s):
-            // J K 1–9 M A N: typed letters, looked up in the inbox's surface.
-            guard s.count == 1, let c = s.first else { return .none }
-            if let id = CommandRegistry.resolve(KeyChord(.char(c)), in: .inbox) { return Self.action(for: id) ?? .none }
-            return .none
-        case .actOn, .back, .deleteBackward, .pass:
+        case .type, .actOn, .back, .deleteBackward, .pass:
+            // Typing is the filter's, never an answer.
             return .none
         }
-    }
-
-    /// The answer a number key picks (`InboxAnswer.key`), if any.
-    public static func answer(_ index: Int, in answers: [InboxAnswer]) -> InboxAnswer? {
-        answers.first { $0.key == index + 1 }
-    }
-
-    /// A / N: the answer with this decision, if offered.
-    public static func answer(_ d: Decision, in answers: [InboxAnswer]) -> InboxAnswer? {
-        answers.first { $0.action == .decision(d) }
     }
 
     /// ⏎: the first answer.

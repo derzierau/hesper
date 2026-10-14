@@ -129,8 +129,8 @@ final class SelfTest {
               (model.agent(a.id)?.state.rawValue ?? "?") + " active=\(model.activeTileID ?? "nil")")
 
         // 3. ⌘J: the inbox. Approval before question, oldest first; the
-        // approval answers inline (1 Allow · 2 Always · 3 Deny), free text
-        // opens; J moves, ⌘⏎ opens the tile, ⏎ the first answer, esc closes.
+        // approval answers inline (Allow · Always · Deny), free text opens;
+        // ↓ moves, ⌘⏎ opens the tile, ⏎ the first answer, esc closes.
         await setState(b.id, "question", attention: ["kind": "question", "title": "Question", "detail": "Home or settings?"])
         await Harness.sleep(0.05)
         await setState(c.id, "approval", attention: ["kind": "approval", "title": "Edit", "detail": "x.go", "options": ["allow", "always", "deny"]])
@@ -148,9 +148,9 @@ final class SelfTest {
         check("⌘⏎ opens the selected item's tile", model.popover == nil && model.selectedID == c.id, model.selectedID ?? "nil")
         window.makeFirstResponder(root.wall)
         Harness.press("j", keyCode: 0x26, flags: .command, window: window)
-        _ = Harness.press("j", keyCode: 0x26, window: window)
+        _ = Harness.press("\u{F701}", keyCode: 125, window: window)
         Harness.press("\r", keyCode: 36, flags: .command, window: window)
-        check("J moves down: ⌘⏎ then opens the question", model.popover == nil && model.selectedID == b.id, model.selectedID ?? "nil")
+        check("↓ moves down: ⌘⏎ then opens the question", model.popover == nil && model.selectedID == b.id, model.selectedID ?? "nil")
         window.makeFirstResponder(root.wall)
         Harness.press("j", keyCode: 0x26, flags: .command, window: window)
         _ = Harness.press("\r", keyCode: 36, window: window)
@@ -160,13 +160,20 @@ final class SelfTest {
         _ = Harness.press("\u{1b}", keyCode: 53, window: window)
         check("esc closes the inbox", model.popover == nil)
 
-        // 3b. The inbox filters: a letter that is none of its keys goes to
-        // the filter field (which then has the keyboard); only the items
-        // whose name, project or question match stay.
+        // 3b. The inbox filters: every letter goes to the filter field
+        // (which then has the keyboard); only the items whose name,
+        // project or question match stay. "a" first: it is no answer
+        // (Always Allow is its button), the approval stays unanswered.
         await setState(a.id, "question", attention: ["kind": "question", "title": "Question", "detail": "Pick a tone"])
-        _ = await Harness.wait(2) { self.model.agent(a.id)?.state == .question }
+        await setState(c.id, "approval", attention: ["kind": "approval", "title": "Edit", "detail": "x.go", "options": ["allow", "always", "deny"]])
+        _ = await Harness.wait(2) { self.model.agent(a.id)?.state == .question && self.model.agent(c.id)?.state == .approval }
         window.makeFirstResponder(root.wall)
         Harness.press("j", keyCode: 0x26, flags: .command, window: window)
+        _ = Harness.press("a", keyCode: 0, window: window)
+        let typedA = await Harness.wait(2) { self.model.popoverList.query == "a" }
+        check("a typed in the inbox filters, it never sends Always Allow", typedA && model.agent(c.id)?.state == .approval,
+              "\(model.popoverList.query) \(model.agent(c.id)?.state.rawValue ?? "?")")
+        _ = Harness.press("\u{7f}", keyCode: 51, window: window)
         for ch in "to" { _ = Harness.press(String(ch), keyCode: 0, window: window) }
         let filtered = await Harness.wait(2) { self.model.popoverList.query == "to" && self.model.inboxEntries().map(\.id) == [a.id] }
         check("typing in the inbox filters it (\"to\" keeps the tone question, drops the other)", filtered,

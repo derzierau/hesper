@@ -136,8 +136,7 @@ private let machines = [
     }
 
     @Test func inboxAndHistoryKeys() {
-        #expect(InboxKeys.route(.type("m")) == .moveElsewhere)
-        #expect(InboxKeys.route(.type("M")) == .moveElsewhere)
+        #expect(InboxKeys.route(.type("m")) == .none, "the inbox's M types into its filter")
         #expect(SearchKeys.history(KeyChord(.char("r")), characters: "r", focus: .list) == .restoreCheckpoint)
         #expect(SearchKeys.history(KeyChord(.char("r")), characters: "r", focus: .search) != .restoreCheckpoint)
         #expect(SearchKeys.history(KeyChord(.char("m")), characters: "m", focus: .list) == .continueOnOtherMac)

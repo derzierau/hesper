@@ -501,7 +501,7 @@ public enum CommandRegistry {
                 availability: { $0.mode == .focus ? .enabled : .disabled("Not in focus") }),
         Command(.nextAttention, "Needs You…", menu: MenuPath(.agents, 1, 0), chord: .cmd("j"), surfaces: [.everywhere], palette: true),
         Command(.answer(.allow), "Allow", menu: MenuPath(.agents, 2, 0), availability: awaitingApproval),
-        Command(.answer(.always), "Always Allow", menu: MenuPath(.agents, 2, 1), chord: .plain("a"), surfaces: [.wall, .inbox], availability: awaitingApproval),
+        Command(.answer(.always), "Always Allow", menu: MenuPath(.agents, 2, 1), chord: .plain("a"), surfaces: [.wall], availability: awaitingApproval),
         Command(.denyWithMessage, "Deny…", menu: MenuPath(.agents, 2, 2), chord: .plain("n"), surfaces: [.wall], availability: awaitingApproval),
         Command(.backgroundAgent, "Send to Background", menu: MenuPath(.agents, 3, 0), chord: .cmd("w", option: true), surfaces: [.everywhere],
                 availability: selected),
@@ -585,13 +585,14 @@ public enum CommandRegistry {
     ]
 
     private static let overlays: [Command] = [
-        // J K move in the inbox and History (Review's step hunks).
+        // J K move in History (Review's step hunks); the inbox's letters
+        // type into its filter.
         Command(.moveUp, "Move up", chord: .plain(.up), surfaces: lists,
                 aliases: [KeyBinding(KeyChord(.char("p"), control: true), in: overlaySurfaces.union([.inbox])),
-                          KeyBinding(.plain("k"), in: [.inbox, .history])]),
+                          KeyBinding(.plain("k"), in: [.history])]),
         Command(.moveDown, "Move down", chord: .plain(.down), surfaces: lists,
                 aliases: [KeyBinding(KeyChord(.char("n"), control: true), in: overlaySurfaces.union([.inbox])),
-                          KeyBinding(.plain("j"), in: [.inbox, .history])]),
+                          KeyBinding(.plain("j"), in: [.history])]),
         Command(.closeOverlay, "Close", chord: .plain(.escape), surfaces: lists),
         Command(.overlayActivate, "Choose", chord: .plain(.enter), surfaces: overlaySurfaces),
         Command(.overlayAlternate, "Open full size, or keep the popover open", chord: .cmd(.enter), surfaces: overlaySurfaces),
@@ -602,16 +603,18 @@ public enum CommandRegistry {
 
         Command(.inboxPrimary, "The first answer", chord: .plain(.enter), surfaces: [.inbox]),
         Command(.inboxOpen, "Open the agent", chord: .cmd(.enter), surfaces: [.inbox]),
-        // N here answers deny outright (the wall's N asks for a message).
-        Command(.answer(.deny), "Deny", chord: .plain("n"), surfaces: [.inbox]),
+        // The inbox's answers and its Continue have no key: a letter or a
+        // digit types into the filter, so the first keystroke never
+        // answers. Their buttons, ⏎ and ⌘⏎ do.
+        Command(.answer(.deny), "Deny", surfaces: [.inbox]),
     ]
 
     private static let inboxAnswers: [Command] = (1...9).map { n in
-        Command(.inboxAnswer(n - 1), "Answer \(n)", chord: .plain(.char(Character(String(n)))), surfaces: [.inbox])
+        Command(.inboxAnswer(n - 1), "Answer \(n)", surfaces: [.inbox])
     }
 
     private static let listVerbs: [Command] = [
-        Command(.inboxMoveElsewhere, "Continue on the other Mac", chord: .plain("m"), surfaces: [.inbox]),
+        Command(.inboxMoveElsewhere, "Continue on the other Mac", surfaces: [.inbox]),
 
         Command(.historyResume, "Resume", chord: .plain(.enter), surfaces: [.history]),
         Command(.historyOpenFullSize, "Resume and open full size", chord: .cmd(.enter), surfaces: [.history]),

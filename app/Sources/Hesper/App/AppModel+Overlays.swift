@@ -451,10 +451,11 @@ extension AppModel {
         if mode == .focus { focus(next.id) } else { activate(next.id) }
     }
 
-    /// The inbox's keys: J/K ↑↓ move, 1–9 A N answer, ⏎ primary, ⌘⏎ open,
-    /// M move, esc. Any other letter goes to the filter (and the field
-    /// takes the keyboard: from then on every key types); ⌫ deletes.
-    /// Typing never falls through to the wall while it is open.
+    /// The inbox's keys: ↑↓ ⌃P ⌃N move, ⏎ the first answer, ⌘⏎ open, esc.
+    /// Every letter and digit goes to the filter (and the field takes the
+    /// keyboard), so the first keystroke never answers; the other answers
+    /// and Continue are their buttons. ⌫ deletes. Typing never falls
+    /// through to the wall while it is open.
     func attentionKey(_ action: OverlayKeyAction) -> Bool {
         let entries = inboxEntries()
         var list = popoverList
@@ -469,18 +470,12 @@ extension AppModel {
         case .move(let d):
             list.move(d, enabled: enabled)
             popoverList = list
-        case .answer(let n):
-            if let sel, let a = InboxKeys.answer(n, in: entries[sel].answers) { answerFromQueue(entries[sel], a) }
         case .primary:
             if let sel, let a = InboxKeys.primary(entries[sel].answers) { answerFromQueue(entries[sel], a) }
         case .open:
             if let sel { openFromQueue(entries[sel].agent) }
         case .close:
             closePopover()
-        case .moveElsewhere:
-            if let sel, let t = entries[sel].moveTo { moveFromQueue(entries[sel].agent, to: t.short) }
-        case .decide(let d):
-            if let sel, let a = InboxKeys.answer(d, in: entries[sel].answers) { answerFromQueue(entries[sel], a) }
         case .none:
             if case .type(let s) = action {
                 list.type(s)

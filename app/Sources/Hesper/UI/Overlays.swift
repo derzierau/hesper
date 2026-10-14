@@ -432,11 +432,11 @@ struct BackgroundPanel: View {
 /// ⌘J: what needs you, as an inbox. A filter field at the top (agent
 /// name, project, question). Each item is a Row: its state mark, the
 /// agent, "machine · other wall · age", the exact question; under it the
-/// answers as KeyButtons — approvals "Allow ⏎ · Always A · Deny N",
-/// numbered questions one per option (1–n), free text "Open ⏎" — "Continue
-/// on mini M" when it can move, and Open ⌘⏎. J/K or ↑↓ move, the letters
-/// answer the selected item, ⏎ its first answer, ⌘⏎ opens its tile, any
-/// other letter filters (the field then has the keyboard), esc closes.
+/// answers as KeyButtons — approvals "Allow ⏎ · Always · Deny", numbered
+/// questions one per option, free text "Open ⏎" — "Continue on mini"
+/// when it can move, and Open ⌘⏎. ↑↓ move, ⏎ gives the selected item's
+/// first answer, ⌘⏎ opens its tile, every letter and digit filters (the
+/// field then has the keyboard), esc closes.
 /// Empty: "Nothing needs you." and it closes itself after a second.
 struct AttentionPanel: View {
     @Bindable var model: AppModel
@@ -453,7 +453,7 @@ struct AttentionPanel: View {
     static let emptyText = "Nothing needs you."
     static let noMatchText = "Nothing matches"
     static let filterPrompt = "Filter by agent, project or question"
-    static let hints: [(String, String)] = [("J K", "move"), ("esc", "close")]
+    static let hints: [(String, String)] = [("↑ ↓", "move"), ("esc", "close")]
     /// The empty panel closes itself after this long.
     static let emptyClose: Duration = .seconds(1)
     /// Option titles longer than this are cut (the agent has the full text).
