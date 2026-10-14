@@ -55,6 +55,9 @@ const reviewScans = 2
 // scansRun counts the scans started (tests).
 var scansRun atomic.Int64
 
+// scanned, when set, sees each scan's result before it is stored (tests).
+var scanned atomic.Pointer[func(*reviewScan)]
+
 // reviewKeyFiles bounds the changed files whose stat is in a key.
 const reviewKeyFiles = 256
 
@@ -95,6 +98,7 @@ type reviewEntry struct {
 	timer    *time.Timer   // a settle's scan, waiting
 	failures int
 	retryAt  time.Time
+	gen      uint64 // bumped by forgetScan
 }
 
 type reviewCache struct {
@@ -197,17 +201,44 @@ func (r *Registry) wantScan(c reviewCandidate) chan struct{} {
 	}
 	e.running = make(chan struct{})
 	timeout := reviewScanTimeout << min(e.failures, 2)
-	go r.runScan(c, e, timeout)
+	go r.runScan(c, e, e.gen, timeout)
 	return e.running
 }
 
-func (r *Registry) runScan(c reviewCandidate, e *reviewEntry, timeout time.Duration) {
+func (r *Registry) runScan(c reviewCandidate, e *reviewEntry, gen uint64, timeout time.Duration) {
 	rc := r.reviewScans()
-	rc.sem <- struct{}{}
-	start := time.Now()
-	sc, err := r.scanFolder(c, timeout)
-	<-rc.sem
-	rc.mu.Lock()
+	_, local := r.split(c.a.ID)
+	var sc *reviewScan
+	var err error
+	var start time.Time
+	for {
+		rc.sem <- struct{}{}
+		start = time.Now()
+		sc, err = r.scanFolder(c, timeout)
+		<-rc.sem
+		if f := scanned.Load(); f != nil {
+			(*f)(sc)
+		}
+		rc.mu.Lock()
+		if e.gen == gen {
+			break
+		}
+		// forgetScan ran meanwhile (review.accept, reject or sendBack
+		// changed the folder): this scan may show it as it was, so its
+		// waiters get a new one.
+		gen = e.gen
+		rc.mu.Unlock()
+		nc, ok := r.reviewCandidateOf(local)
+		if !ok {
+			rc.mu.Lock()
+			e.settled = false
+			close(e.running)
+			e.running = nil
+			rc.mu.Unlock()
+			return
+		}
+		c = nc
+	}
 	prev := e.scan
 	if err != nil {
 		e.failures++
@@ -339,6 +370,7 @@ func (r *Registry) forgetScan(local string) {
 	rc.mu.Lock()
 	if e := rc.entries[local]; e != nil {
 		e.scan, e.failures, e.retryAt = nil, 0, time.Time{}
+		e.gen++
 	}
 	rc.mu.Unlock()
 }

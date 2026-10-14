@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -205,6 +206,49 @@ func wantCode(t *testing.T, err error, code string) {
 // review.accept and review.reject: refused while the agent works and for
 // a folder that changed since the diff; reject reverts in the working
 // tree, accept commits on HEAD and moves the review base.
+// An accept while a scan of the unaccepted folder runs: review.list,
+// which joins that scan, must not get its result back.
+func TestReviewAcceptDuringScan(t *testing.T) {
+	h := reviewHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "do it"})
+	h.waitSettled(a.ID)
+	_, local := h.reg.split(a.ID)
+	held, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	hold := func(sc *reviewScan) {
+		if sc != nil && sc.item != nil {
+			once.Do(func() { close(held); <-release })
+		}
+	}
+	scanned.Store(&hold)
+	t.Cleanup(func() { scanned.Store(nil) })
+	os.WriteFile(filepath.Join(h.project, "b.txt"), []byte("accepted\n"), 0o644)
+	go h.call("review.list", nil, nil)
+	<-held
+	if err := h.call("review.accept", wire.ReviewAcceptParams{ID: a.ID, Message: "Add b"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := h.reg.reviewCandidateOf(local)
+	if !ok {
+		t.Fatal("not a review candidate")
+	}
+	running := h.reg.wantScan(c) // what review.list does now
+	close(release)
+	if running != nil {
+		<-running
+	}
+	rc := h.reg.reviewScans()
+	rc.mu.Lock()
+	sc := rc.entries[local].scan
+	rc.mu.Unlock()
+	if sc == nil || sc.item != nil {
+		t.Fatalf("scan after accept: %+v", sc)
+	}
+	if list := h.reviewList(); len(list) != 0 {
+		t.Fatalf("accepted work still listed: %+v", list)
+	}
+}
+
 func TestReviewAcceptReject(t *testing.T) {
 	h := reviewHarness(t)
 	a := h.spawn(wire.SpawnParams{Task: "do it"})
