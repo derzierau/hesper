@@ -1,8 +1,8 @@
 cask "hesper" do
   arch arm: "arm64", intel: "x86_64"
-  version "0.3.1"
-  sha256 arm: "5479c1d693e7e6c577de248692470921f8a3ecb9bff816c67c3123656f803a4a",
-         intel: "38676c8d3d268481b4125dda093cb188d537c60cea2f468afe6e63c772627ba4"
+  version "0.3.2"
+  sha256 arm: "79931a1ac2c7446d200be4d7e86faf18f6b463dd1b538f872c40803fc9b6eb4c",
+         intel: "4054784c866da1d1a3a7ed83d22cbdac63a42e3ef43aca3ac401f31101ecbe22"
 
   url "https://github.com/derzierau/hesper/releases/download/v#{version}/Hesper-v#{version}-#{arch}.zip"
   name "Hesper"
