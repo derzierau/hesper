@@ -1356,9 +1356,10 @@ terminal's bottom rows instead of shrinking it — calmer than reserving
 two rows on every card (`build/shots/flap-*.png`: 29 changes in 3 s, 1
 terminal frame). The shelf/treemap follow the shown (debounced) state.
 
-**Typing on the wall (the active tile).** A click on the selected tile,
-⏎ on it, typing a character on it, or ⌘J landing on it makes it active
-(a plain click only selects: see "As built — keyboard navigation"): cyan ring, "typing · ⌘esc
+**Typing on the wall (the active tile).** A click on a live tile, ⏎ on
+the selected tile, typing a character on it, or ⌘J landing on it makes it
+active (a tile with an approval selects on the first click: see "As
+built — keyboard navigation"): cyan ring, "typing · ⌘esc
 leaves"; every key goes to the agent (Esc, ⏎, arrows, ⌃-keys, IME,
 ⌘C/⌘V, selection) except the app's ⌘ shortcuts (the registry's
 `.activeTile` surface, "As built — commands": ⌘N ⌘K ⌘J ⌘W ⌘↩ ⌥⌘← ⌥⌘→ ⌘,
@@ -1380,7 +1381,9 @@ window into the scrollback (precise deltas / cell height, fractions
 accumulate, momentum included; at the live bottom or sideways the wall
 scrolls). A scrolled tile keeps its lines while the agent goes on; a pill
 "↓ N new lines ↑offset" takes it back (click, End, or scrolling down).
-Focus and the active tile scroll natively.
+Focus and the active tile scroll natively; a scrolled-back tile that
+becomes active starts at the live bottom (the read-write attach has its
+own scrollback).
 
 **Tests:** HesperCore 67 (token parsing/resolution/completion, branch
 suggestion, draft JSON, coalesced saving, local-wins, wall order anchors,
@@ -1464,8 +1467,9 @@ event after the main model applied it (`onEvent` → `ingest`). Tiles are
 one read-only view attach per agent per wall window (nothing is shared
 below that: each window needs its own surface).
 
-**Clicks and keys.** A plain click selects the tile, a second click
-activates it (typing into it; "As built — keyboard navigation"),
+**Clicks and keys.** A plain click on a live tile activates it (typing
+into it; one with an approval selects first: "As built — keyboard
+navigation"),
 ⌘↩ / double-click open the focus view in the same window (as before);
 only **⇧-click or ⌘-click** opens the agent in its own window (⌘-click is
 not reserved for multi-select), ⌥⌘↩ on the selected tile and the tile's
@@ -1643,7 +1647,21 @@ menu in `AppDelegate`.
 - **Active** (typing, existing): cyan ring 2.5 pt, header chip
   "typing · ⌘esc leaves", the cursor, read-write owner attach; every key
   but the app's ⌘ chords goes to the agent.
-- Plain click → selected. A click on the selected tile, ⏎, or typing any
+- Plain click on a live tile → active at once: its terminal takes keys,
+  clicks and the wheel. Clicks and wheel events that arrive before the
+  read-write terminal has swapped in (≤ 800 ms) are held and replayed
+  into it in order (at most 128, none older than 1.5 s), so nothing done
+  right after the click is lost; until then typed keys go through
+  `agents.input` as below. The second click of a double click on a tile
+  that wasn't active opens focus even if the terminal swapped in between
+  the two clicks (it would select a word). A click in a background
+  window acts at once (`acceptsFirstMouse`). Plain click → selected (not
+  active) on a shelf card, an ended agent, and a tile with an approval or
+  a question with answers until it is selected, so ⏎ / A / N answer it;
+  a click on it once selected makes it active (`TileClick`). Trade-off:
+  the keyboard is the agent's after a click; ⌘esc gives the wall its
+  arrows back, and clicking only to look still starts the read-write
+  attach. ⏎ or typing any
   printable character (⌥-characters too: ⌥L is @ on German layouts) →
   active; the typed text goes to the agent at once through
   `agents.input`, and until the read-write terminal has swapped in
@@ -1708,7 +1726,8 @@ skips agents with windows and wraps, retarget refuses a taken agent; key
 table (selection, Home/End, typing incl. ⌥-characters and drafts,
 approval precedence, ⌘esc on the wall, ⌥⌘← → everywhere, plain ← → in
 focus pass through, terminal key bytes). UI (`make -C app test-ui`, 62 +
-4; `test-ui-real` 60 + 4): click selects (no rw), → ← ↓ ↑ Home End move
+4; `test-ui-real` 60 + 4): one click activates, ⌘esc back to selected
+(no rw), a click on an approval tile selects, → ← ↓ ↑ Home End move
 by the layout, nothing rw and no size or frame change, typing "zeta" on a
 selected tile activates it and every character arrives, ⌘esc back to
 selected, a click on the selected tile activates, ⏎ on an approval tile

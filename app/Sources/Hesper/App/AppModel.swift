@@ -37,8 +37,8 @@ final class AppModel {
     /// opens the draft in that band, with its project.
     var focusedBandKey: String? { didSet { if oldValue != focusedBandKey { onAgentsChanged?() } } }
     /// The wall tile the keyboard types into (one per window; nil: none).
-    /// Two levels: a click / arrows select; a second click, ⏎ or typing a
-    /// character makes the selected tile active; ⌘esc back to selected.
+    /// Two levels: arrows select; a click on a live tile (TileClick), ⏎ or
+    /// typing a character makes it active; ⌘esc back to selected.
     var activeTileID: String?
     /// Main + stack's main card when nothing needs you: follows clicks,
     /// typing and focus, never the arrow keys (moving the selection must
