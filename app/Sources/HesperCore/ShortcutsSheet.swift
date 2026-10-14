@@ -65,9 +65,13 @@ public enum ShortcutsSheet {
     ///     none): a command they unbind keeps its row, with no chord,
     ///     in the surface its default chord lives in (`defaults`), so
     ///     it can be reset.
+    ///   - scanConflicts: look for chords bound twice (`Row.conflicts`);
+    ///     callers pass false while no override is stored, since the
+    ///     shipped table has none and the scan is quadratic.
     public static func sections(registry: [Command] = CommandRegistry.active.commands, current: Surface, query: String = "",
                                 hotKey: String? = nil, hotKeyConflict: String? = nil, context: CommandContext = .none,
-                                overrides: ShortcutOverrides = ShortcutOverrides(), defaults: [Command] = CommandRegistry.all) -> [Section] {
+                                overrides: ShortcutOverrides = ShortcutOverrides(), defaults: [Command] = CommandRegistry.all,
+                                scanConflicts: Bool = true) -> [Section] {
         let order = [current] + Self.order.filter { $0 != current }
         var rows: [Surface: [Row]] = [:]
         for c in registry where c.availability(context) != .hidden {
@@ -88,7 +92,7 @@ public enum ShortcutsSheet {
                     home = h
                 } else { continue }
                 row = Row(id: c.id, title: c.title, chord: c.bindings.map(\.chord.label).joined(separator: " "),
-                          conflicts: conflicts(of: c, in: registry), primary: c.chord?.label, aliases: c.aliases.map(\.chord.label),
+                          conflicts: scanConflicts ? conflicts(of: c, in: registry) : [], primary: c.chord?.label, aliases: c.aliases.map(\.chord.label),
                           overridden: overridden, rebindable: ShortcutOverrides.rebindable(c.id))
             }
             rows[home, default: []].append(row)

@@ -142,6 +142,7 @@ final class ShortcutsPanel: NSView {
         opens += 1
         hosting.rootView = ShortcutsSheetView(current: current, opens: opens,
                                               hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil,
+                                              overridden: !model.settings.shortcutOverrides.isEmpty,
                                               onClose: { [weak self] in self?.close() },
                                               onSettings: { [weak self] in self?.close(); self?.openSettings() })
         applyTheme()
@@ -245,6 +246,8 @@ struct ShortcutsSheetView: View {
     var opens: Int
     /// The quick launch hotkey's label (nil: quick launch is off).
     var hotKey: String?
+    /// The user has overrides: only then can two commands share a chord.
+    var overridden = false
     var onClose: () -> Void
     var onSettings: () -> Void
 
@@ -252,9 +255,15 @@ struct ShortcutsSheetView: View {
     /// The user's own folds (nil: the model's, the current surface open).
     @State private var folds: Set<Surface>?
     @FocusState private var searching: Bool
+    /// The sections for the current query, computed when it changes (and
+    /// on each open), not on every render.
+    @State private var sections: [ShortcutsSheet.Section] = []
 
-    private var sections: [ShortcutsSheet.Section] { ShortcutsSheet.sections(current: current, query: query, hotKey: hotKey) }
     private var count: Int { sections.reduce(0) { $0 + $1.rows.count } }
+
+    private func computeSections() {
+        sections = ShortcutsSheet.sections(current: current, query: query, hotKey: hotKey, scanConflicts: overridden)
+    }
 
     var body: some View {
         SheetChrome(title: "Keyboard Shortcuts", symbol: "keyboard", count: count, closeIdentifier: "shortcuts.close", toolbar: { search }, footer: {
@@ -273,9 +282,9 @@ struct ShortcutsSheetView: View {
             }
             .accessibilityIdentifier("shortcuts.list")
         }
-        .onAppear { searching = true }
-        .onChange(of: opens) { query = ""; folds = nil; searching = true }
-        .onChange(of: query) { folds = nil }
+        .onAppear { computeSections(); searching = true }
+        .onChange(of: opens) { query = ""; folds = nil; searching = true; computeSections() }
+        .onChange(of: query) { folds = nil; computeSections() }
     }
 
     private var search: some View {

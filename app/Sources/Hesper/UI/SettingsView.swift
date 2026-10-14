@@ -295,7 +295,7 @@ struct SettingsView: View {
     @ViewBuilder private var shortcuts: some View {
         let overrides = model.settings.shortcutOverrides
         let sections = ShortcutsSheet.sections(current: .everywhere, hotKey: model.settings.quickLaunchEnabled ? model.settings.hotKey.label : nil,
-                                               hotKeyConflict: hotKeyVerdict.conflict, overrides: overrides)
+                                               hotKeyConflict: hotKeyVerdict.conflict, overrides: overrides, scanConflicts: !overrides.isEmpty)
         HStack(spacing: DS.Spacing.m) {
             Text("Click a shortcut to record a new one; esc cancels, ⌫ removes it.").font(DS.font(.chrome)).foregroundStyle(Theme.dim)
             Spacer(minLength: DS.Spacing.m)

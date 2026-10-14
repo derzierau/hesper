@@ -73,6 +73,9 @@ import Testing
         // The sheet's pill shows it.
         let rows = ShortcutsSheet.sections(registry: CommandRegistry.resolved(with: stale), current: .review).flatMap(\.rows)
         #expect(rows.first { $0.id == .reviewReject }?.conflicts == ["Seen"])
+        // Without overrides the shipped table has no clash: the sheet skips the scan.
+        let unscanned = ShortcutsSheet.sections(registry: CommandRegistry.resolved(with: stale), current: .review, scanConflicts: false).flatMap(\.rows)
+        #expect(unscanned.allSatisfy { $0.conflicts.isEmpty })
     }
 
     @Test func reservedAndFixedChordsAreRefused() {
