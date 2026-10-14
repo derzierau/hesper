@@ -1,0 +1,20 @@
+.hero { padding-block: var(--s-band); }
+.grid { display: grid; grid-template-columns: 5fr 7fr; gap: var(--s-section); align-items: center; }
+.copy { min-width: 0; }
+.wall { min-width: 0; }
+.title { font-size: clamp(34px, 5vw, 60px); font-weight: 600; letter-spacing: -0.025em; line-height: 1.04; color: var(--text); }
+.line { display: block; }
+.sub { margin-top: var(--s-xl); font-size: 16px; line-height: 1.5; color: var(--text2); max-width: 44ch; }
+.fine { margin-top: var(--s-l); max-width: 44ch; }
+.ctas { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-l); margin-top: var(--s-xxl); }
+.cmd { flex: 1 1 280px; max-width: 100%; }
+/* Compact variant of CopyCommand for the hero: tighter padding, chrome-size type. */
+.cmd pre { padding: var(--s-m) 64px var(--s-m) var(--s-l); font-size: var(--t-chrome); line-height: 1.7; }
+.ghost { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--s-xs); font: 500 var(--t-body)/1 var(--sans); color: var(--text2); white-space: nowrap; transition: color var(--m-quick) var(--ease); }
+.ghost:hover { color: var(--text); text-decoration: underline; }
+@media (max-width: 819px) {
+  .grid { grid-template-columns: 1fr; gap: var(--s-section); }
+}
+@media (max-width: 599px) {
+  .hero { padding-block: var(--s-section); }
+}

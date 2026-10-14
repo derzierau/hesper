@@ -1,0 +1,16 @@
+# The landing page as a static nginx container on the shared proxy's Docker
+# network. The proxy's vhost (deploy/nginx.conf.template) terminates TLS and
+# forwards here. Deployed by scripts/deploy.sh.
+services:
+  site:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    container_name: hesper-site
+    volumes:
+      - ./out:/usr/share/nginx/html:ro
+      - ./static.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [proxy]
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK}

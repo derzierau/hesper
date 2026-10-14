@@ -1,0 +1,2 @@
+.mark { display: inline-flex; align-items: baseline; font: 600 1em/1 var(--sans); letter-spacing: -0.015em; color: var(--text); }
+.dot { display: inline-block; width: 0.34em; height: 0.34em; margin-left: 0.1em; background: var(--signal); border-radius: 1px; transform: translateY(-0.02em); }

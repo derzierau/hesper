@@ -1,0 +1,28 @@
+.figure { margin: var(--s-section) 0 0; }
+/* The table scrolls inside its box on narrow screens; the page never does. */
+.scroll { overflow-x: auto; }
+.table { width: 100%; min-width: 520px; border-collapse: collapse; }
+.table th {
+  padding: 0 var(--s-l) var(--s-m) 0;
+  border-bottom: 1px solid var(--line);
+  font: 500 var(--t-chrome)/1 var(--sans);
+  text-align: left;
+  color: var(--dim);
+}
+.table td {
+  padding: var(--s-l) var(--s-l) var(--s-l) 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  font-size: var(--t-body);
+  line-height: 1.5;
+}
+.what { font-weight: 500; color: var(--text); }
+.condition { color: var(--text2); }
+.table .result { text-align: right; padding-right: 0; }
+.table td.result {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text);
+}
+.note { margin-top: var(--s-l); }

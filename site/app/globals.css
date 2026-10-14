@@ -1,0 +1,91 @@
+/* Tokens copied from app/Sources/Hesper/UI/Theme.swift (Dusk, Daylight) and
+   docs/design-system.md. Keep the two in sync: a token change in the app is a
+   token change here. No literal colors outside this file. */
+:root {
+  --bg: #0F1020;
+  --surface: #171A2E;
+  --tile: #13152A;
+  --line: #272B48;
+  --text: #D7DBF5;
+  --text2: #B3B6CF;
+  --dim: #7A80A8;
+  --dim2: #505578;
+  --signal: #FF6F91;
+  --working: #8F9CFF;
+  --question: #FFCF5C;
+  --done: #7FE0A8;
+  --error: #FF5D5D;
+  --horizon: #FFB36B;
+  /* Terminals own their background: TokyoNight, the same in both schemes. */
+  --term: #1A1B26;
+  --term-fg: #C0CAF5;
+  --term-dim: #565F89;
+
+  /* Spacing scale: 2 4 6 8 12 16 24 (+ 40 64 for page rhythm) */
+  --s-xxs: 2px; --s-xs: 4px; --s-s: 6px; --s-m: 8px; --s-l: 12px; --s-xl: 16px; --s-xxl: 24px;
+  --s-section: 40px; --s-band: 64px;
+  /* Radii: kbd 4 · control 7 · tile 10 · panel 14 */
+  --r-kbd: 4px; --r-control: 7px; --r-tile: 10px; --r-panel: 14px;
+  /* Type: meta 11 mono · chrome 12 · body 13 · panelTitle 15 · sheetTitle 20 · display 28 · web 34 · hero 46 */
+  --t-meta: 11px; --t-chrome: 12px; --t-body: 13px; --t-panel: 15px; --t-sheet: 20px; --t-display: 28px; --t-web: 34px; --t-hero: 46px;
+  /* Motion: quick 0.12 · move 0.18 · settle 0.22; one curve */
+  --m-quick: 120ms; --m-move: 180ms; --m-settle: 220ms;
+  /* Web additions: a step in a typed line, the gap between staggered siblings, one travel across the page */
+  --m-type: 24ms; --m-stagger: 70ms; --m-travel: 600ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --pulse: 2s;
+
+  --sans: var(--font-geist), -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #F6F5FA;
+    --surface: #ECEBF3;
+    --tile: #FFFFFF;
+    --line: #DFDEEA;
+    --text: #1B1D33;
+    --text2: #424457;
+    --dim: #61668C;
+    --dim2: #A0A2BB;
+    --signal: #C9305C;
+    --working: #4B55D6;
+    --question: #8C6300;
+    --done: #17804F;
+    --error: #D93636;
+    --horizon: #B4600F;
+    color-scheme: light;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 15px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--working); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--working); outline-offset: 2px; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+p { margin: 0; }
+code, kbd, pre { font-family: var(--mono); }
+img, svg, video { max-width: 100%; height: auto; }
+
+/* Shared layout helpers */
+.wrap { width: 100%; max-width: 1080px; margin-inline: auto; padding-inline: 20px; }
+.prose { max-width: 60ch; }
+.section { padding-block: var(--s-band); border-top: 1px solid var(--line); }
+.section h2 { font-size: clamp(28px, 3.2vw, 40px); line-height: 1.12; letter-spacing: -0.02em; max-width: 24ch; }
+.section .lede { color: var(--text2); font-size: 17px; line-height: 1.5; max-width: 56ch; margin-top: var(--s-xl); }
+.caption { font: 400 var(--t-chrome)/1.5 var(--sans); color: var(--dim); }

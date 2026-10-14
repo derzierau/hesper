@@ -1,0 +1,10 @@
+.mark { display: inline-block; width: 7px; height: 7px; border-radius: 1px; flex: none; vertical-align: middle; }
+.starting { box-shadow: inset 0 0 0 1.5px var(--working); }
+.working { background: var(--working); }
+.needsYou { background: var(--signal); animation: pulse var(--pulse) ease-in-out infinite; }
+.question { background: var(--question); }
+.done { background: var(--done); }
+.idle { box-shadow: inset 0 0 0 1.5px var(--dim); }
+.error { background: var(--error); }
+.exited { box-shadow: inset 0 0 0 1.5px var(--dim); background: linear-gradient(135deg, transparent 45%, var(--dim) 45%, var(--dim) 55%, transparent 55%); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }

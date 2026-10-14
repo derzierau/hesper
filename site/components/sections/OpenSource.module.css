@@ -1,0 +1,12 @@
+.card { margin-top: var(--s-section); padding: var(--s-xxl); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-tile); display: flex; flex-direction: column; gap: var(--s-l); }
+.title { font: 600 var(--t-sheet)/1.3 var(--sans); letter-spacing: -0.01em; color: var(--text); overflow-wrap: anywhere; }
+.stack { font-size: var(--t-body); color: var(--text2); }
+.facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s-m) var(--s-xl); font-size: var(--t-body); color: var(--text2); }
+.facts li { display: inline-flex; align-items: center; gap: var(--s-m); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--s-m); margin-top: var(--s-m); }
+.ghost { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--s-xl); border: 1px solid var(--line); border-radius: var(--r-control); font: 500 var(--t-body)/1 var(--sans); color: var(--text); background: transparent; transition: background var(--m-quick) var(--ease); }
+.ghost:hover { background: var(--line); text-decoration: none; }
+.note { margin-top: var(--s-xxl); max-width: 60ch; color: var(--text2); }
+@media (max-width: 640px) {
+  .card { padding: var(--s-xl); }
+}
