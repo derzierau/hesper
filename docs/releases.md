@@ -8,14 +8,15 @@ architecture. libghostty is built without libintl as described in licensing.md.
 
 ## Current distribution
 
-Homebrew installs **v0.2.0**, the signed and notarized release for macOS 14+,
+Homebrew installs **v0.3.0**, the signed and notarized release for macOS 14+,
 once its cask update is merged. Install Claude Code or Codex separately. Local
 use needs no relay; multi-Mac use requires a self-hosted relay and device
 enrollment.
 
-v0.2.0 adds checkpoint-based moves, live-session forks, folder transfer on
-launch, scratch projects and the native Review inbox to what v0.1.4 shipped.
-Its [release notes](release-notes-v0.2.0.md) are the text to publish on
+v0.3.0 makes every action reachable by menu, pointer and shortcut from one
+command table, adds a complete menu bar, a shortcuts sheet, rebinding and
+accessibility support to what v0.2.0 shipped. Its
+[release notes](release-notes-v0.3.0.md) are the text to publish on
 GitHub; editing the file later does not change notes already published.
 
 ## One-time credentials
