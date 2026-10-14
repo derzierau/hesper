@@ -4634,7 +4634,11 @@ aliases): click, then press the new chord; esc cancels, ⌫ unbinds, and
 the registry's `rebinding` either stores the override or leaves it and
 puts the reason under the row in the error tone
 (`settings.shortcut.reason.<id>`: "macOS reserves ⌘Q", "Conflicts with
-New Agent", "Needs ⌘ here: plain keys belong to the agent"). An
+New Agent", "Needs ⌘ here: plain keys belong to the agent"; a command
+live in a surface with a field the user types into, a composer, quick
+launch, the palette, a popover, the inbox or History, takes no chord
+without ⌘ either: "Needs ⌘ here: plain keys type in its field", though
+re-recording its own default resets it). An
 overridden row gets a Reset IconButton (`settings.shortcut.reset.<id>`,
 tooltip "Reset to ⇧⌘W"); "Reset All" above the sections
 (`settings.shortcuts.resetAll`) clears every override. An unbound

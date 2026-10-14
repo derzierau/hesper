@@ -35,6 +35,23 @@ import Testing
         #expect(ShortcutConflicts.check(CommandRegistry.all, o2).isEmpty)
     }
 
+    /// A command live where the user types (a composer, quick launch, the
+    /// palette, a popover, the inbox, History) can't take a key without ⌘:
+    /// it would fire instead of typing. Re-recording its default is a reset.
+    @Test func plainChordsAreRefusedWhereTheUserTypes() {
+        let o = ShortcutOverrides().rebinding(.startDraft, to: .chord(.plain("s")))
+        guard case .refused(let reason) = o else { Issue.record("S in the composer applied: \(o)"); return }
+        #expect(reason.contains("⌘"))
+        for (id, k) in [(CommandID.historyFork, KeyChord.plain("s")), (.closeOverlay, .plain("q")), (.inboxOpen, .plain("o", shift: true)),
+                        (.overlayActivate, .plain("x", option: true))] {
+            guard case .refused = ShortcutOverrides().rebinding(id, to: .chord(k)) else { Issue.record("\(id) took \(k.label)"); continue }
+        }
+        guard case .applied(let reset) = ShortcutOverrides().rebinding(.historyArchive, to: .chord(.plain("a"))), reset.isEmpty else {
+            Issue.record("re-recording History's A was refused"); return
+        }
+        guard case .applied = ShortcutOverrides().rebinding(.startDraft, to: .chord(.cmd("s", option: true))) else { Issue.record("⌥⌘S refused"); return }
+    }
+
     @Test func aConflictingOverrideIsReportedNotApplied() {
         // ⌘N is New Agent everywhere: Tidy Up can't take it.
         let o = ShortcutOverrides().rebinding(.tidyUp, to: .chord(.cmd("n")))

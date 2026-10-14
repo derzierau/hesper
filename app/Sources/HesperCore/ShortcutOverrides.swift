@@ -57,11 +57,16 @@ public struct ShortcutOverrides: Equatable, Sendable {
     /// the agent).
     static let agentSurfaces: Set<Surface> = [.everywhere, .focus, .activeTile, .agentWindow]
 
+    /// The surfaces with a field the user types into (a draft, quick
+    /// launch, a filter or search): a key without ⌘ there would fire
+    /// instead of typing, so a rebound chord needs ⌘ too.
+    static let typingSurfaces: Set<Surface> = [.composer, .quickLaunch, .palette, .popover, .inbox, .history]
+
     /// `self` with `id` bound to `binding`, or the reason it can't be:
     /// a reserved chord, a fixed command, a key the table can't hold, a
-    /// chord without ⌘ where the agent types, or a chord another command
-    /// has in a surface both are live in. Binding the default chord
-    /// resets instead.
+    /// chord without ⌘ where the agent or the user types, or a chord
+    /// another command has in a surface both are live in. Binding the
+    /// default chord resets instead.
     public func rebinding(_ id: CommandID, to binding: Binding, registry: [Command] = CommandRegistry.all) -> RebindOutcome {
         guard let c = registry.first(where: { $0.id == id }) else { return .refused("Not a command") }
         guard Self.rebindable(id) else { return .refused("\(c.title) keeps macOS's shortcut") }
@@ -76,6 +81,9 @@ public struct ShortcutOverrides: Equatable, Sendable {
             if Self.reserved.contains(k) { return .refused("macOS reserves \(k.label)") }
             if !k.command, !c.surfaces.isDisjoint(with: Self.agentSurfaces) || (c.surfaces.isEmpty && c.menu != nil) {
                 return .refused("Needs ⌘ here: plain keys belong to the agent")
+            }
+            if !k.command, k != c.chord, !c.surfaces.isDisjoint(with: Self.typingSurfaces) {
+                return .refused("Needs ⌘ here: plain keys type in its field")
             }
             if k == c.chord { out.reset(id) } else { out.set(id, to: .chord(k)) }
             let clashes = ShortcutConflicts.check(registry, out).filter { $0.chord == k && $0.commands.contains(id) }
