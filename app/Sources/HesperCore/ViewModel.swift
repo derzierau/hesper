@@ -5,9 +5,10 @@ import Foundation
 // "As built — projects (views)". Pure rules, unit-tested; the AppKit side
 // is WallView / BandHeaderView / ProjectSidebar.
 
-/// The grouping a wall asks for. `auto` goes one level below the scope:
-/// All / Overflow / Filter → groups (projects when there are none), a
-/// group → projects, a project → packages / branches / worktrees.
+/// The grouping a wall asks for. `auto` starts one level below the scope
+/// (All / Overflow / Filter → groups, a group → projects, a project →
+/// packages / branches / worktrees) and goes down a level while its
+/// agents would all land in one band (`ViewGrouping.effective`).
 public enum Grouping: String, Codable, CaseIterable, Sendable {
     case auto, none, group, project, branch
 
@@ -41,6 +42,31 @@ public enum ViewGrouping {
             case .all, .overflow, .filter: return hasGroups ? .group : .project
             }
         }
+    }
+
+    /// The levels Automatic tries, coarsest first.
+    static func autoCandidates(scope: WallScope, hasGroups: Bool) -> [GroupLevel] {
+        switch scope {
+        case .project: return [.branch]
+        case .group: return [.project, .branch]
+        case .all, .overflow, .filter: return (hasGroups ? [.group] : []) + [.project, .branch]
+        }
+    }
+
+    /// The level a wall draws. A chosen grouping is taken as is;
+    /// Automatic takes the first level, coarsest first, at which `basis`
+    /// (the wall's cards before its state filter) splits into two or more
+    /// bands, and its first level when none does (one band: a plain wall).
+    /// So one group, or one project, never hides that the agents run in
+    /// several projects or branches.
+    public static func effective(_ g: Grouping, scope: WallScope, catalog: ProjectCatalog, basis: [ViewItem]) -> GroupLevel {
+        guard g == .auto else { return level(g, scope: scope, hasGroups: catalog.hasGroups) }
+        let candidates = autoCandidates(scope: scope, hasGroups: catalog.hasGroups)
+        for l in candidates {
+            let keys = Set(basis.map { ViewResolver.key($0, level: l, catalog: catalog, scope: scope) }).subtracting([ViewResolver.newKey])
+            if keys.count >= 2 { return l }
+        }
+        return candidates[0]
     }
 }
 
@@ -91,7 +117,7 @@ public struct Band: Equatable, Sendable, Identifiable {
     /// The scope "↗ open as wall" gives this band.
     public var wallScope: WallScope? {
         switch level {
-        case .group: return groupID.map(WallScope.group)
+        case .group: return groupID.map(WallScope.group) ?? projectID.map(WallScope.project)
         case .project, .branch: return projectID.map(WallScope.project)
         case .none: return nil
         }
@@ -121,7 +147,7 @@ public struct ResolvedView: Equatable, Sendable {
 }
 
 public enum ViewResolver {
-    static let other = "~other", scratch = "~scratch", none = "~none"
+    static let scratch = "~scratch", none = "~none"
     /// Scratch projects' agents: one "Scratch" band (by group or by
     /// project), at the end, collapsed until opened.
     public static let scratchKeys: Set<String> = ["g:" + scratch, "p:" + scratch]
@@ -150,7 +176,9 @@ public enum ViewResolver {
             if case .group(let g) = scope, gids.contains(g) { gids = [g] }
             if let g = gids.first { return "g:" + g }
             guard let pid else { return "g:" + none }
-            return "g:" + (isScratch(pid, catalog: catalog) ? scratch : other)
+            if isScratch(pid, catalog: catalog) { return "g:" + scratch }
+            // A project in no group is a band of its own beside the groups.
+            return "p:" + (catalog.root(pid) ?? pid)
         case .project:
             guard let pid else { return "p:" + none }
             if isScratch(pid, catalog: catalog) { return "p:" + scratch }
@@ -171,7 +199,7 @@ public enum ViewResolver {
 
     /// Overflow's unit order: groups in order, then the rest.
     public static func unitOrder(catalog: ProjectCatalog) -> [String] {
-        if catalog.hasGroups { return catalog.orderedGroups.map { "g:" + $0.id } + ["g:" + other, "g:" + scratch, "g:" + none] }
+        if catalog.hasGroups { return catalog.orderedGroups.map { "g:" + $0.id } + ["g:" + scratch, "g:" + none] }
         return []
     }
 
@@ -249,10 +277,11 @@ public enum ViewResolver {
             return b
         }
         let rest = String(k.drop { $0 != ":" }.dropFirst())
+        // A project in no group on a group wall: a project band.
+        if level == .group, k.hasPrefix("p:") { return makeBand(k, first: first, level: .project, catalog: catalog) }
         switch level {
         case .group:
             switch rest {
-            case other: b.title = "Other projects"
             case scratch: b.title = scratchTitle; b.colorHex = "#73daca"
             case none: b.title = "No project"
             default:
@@ -347,8 +376,9 @@ public enum ViewResolver {
             let rest = String(k.drop { $0 != ":" }.dropFirst())
             switch level {
             case .group:
+                if k.hasPrefix("p:") { return (10_000, catalog.name(project: rest).lowercased()) }
                 if let r = groupRank[rest] { return (r, "") }
-                return (10_000 + ([other, scratch, none].firstIndex(of: rest) ?? 3), rest)
+                return (20_000 + ([scratch, none].firstIndex(of: rest) ?? 2), rest)
             case .project:
                 if rest == none { return (30_000, "") }
                 if rest == scratch { return (25_000, "") }

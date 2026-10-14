@@ -200,7 +200,7 @@ extension AppModel {
             }
             // Projects (views): bands one level below the scope, or the user's choice.
             if wallScope != nil {
-                let auto = ViewGrouping.level(.auto, scope: scope, hasGroups: catalog.hasGroups)
+                let auto = ViewGrouping.effective(.auto, scope: scope, catalog: catalog, basis: levelBasis.map(viewItem))
                 for g in Grouping.allCases {
                     let detail = g == .auto ? "now \(auto == .branch ? "by branch / package" : "by \(auto.rawValue)")" : ""
                     items.append(OverlayItem(id: "grouping:\(g.rawValue)", section: "Grouping", title: "Grouping: \(g.title)", detail: detail,

@@ -49,7 +49,22 @@ extension AppModel {
         }
     }
 
-    var groupLevel: GroupLevel { ViewGrouping.level(grouping, scope: scope, hasGroups: catalog.hasGroups) }
+    var groupLevel: GroupLevel { ViewGrouping.effective(grouping, scope: scope, catalog: catalog, basis: levelBasis.map(viewItem)) }
+
+    /// The cards Automatic picks its level from: the wall's, plus those its
+    /// state filter (Needs you, Working) hides, so switching the filter
+    /// narrows the bands' cards instead of regrouping the wall.
+    var levelBasis: [WallItem] {
+        let shown = scopedWallItems
+        guard case .filter(var f) = scope, !f.states.isEmpty else { return shown }
+        f.states = []
+        let ids = Set(shown.map(\.id))
+        return shown + unscopedWallItems.filter { item in
+            guard !ids.contains(item.id), case .agent(let a) = item else { return false }
+            let pid = catalog.projectID(for: a)
+            return f.matches(a, place: AgentPlace(projectID: pid, lineage: catalog.lineage(pid), groupIDs: Set(catalog.groupIDs(of: pid)), unit: ""))
+        }
+    }
 
     func resolveView(_ items: [WallItem]) -> ResolvedView {
         // An agent window has no wall (its scope is empty): nothing to group.

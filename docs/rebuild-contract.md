@@ -2004,16 +2004,28 @@ packages), Overflow, Filter (Project / **Group** / Machine / Kind /
 State; `WallFilter.projects` holds project ids, older files' folders
 still match, `groups` is new and optional in the file). **Grouping**
 (`Grouping`: auto, none, group, project, branch; layout popover section
-"Grouping") resolves one level below the scope: All / Overflow / Filter
+"Grouping") starts one level below the scope: All / Overflow / Filter
 → groups (projects when there are no groups), Group → projects,
 Project → package / branch / worktree / "main" (the project folder).
-Band keys: `g:<group>` / `g:~other` (projects in no group) /
-`g:~scratch` / `g:~none`; `p:<project>` (packages fold into their
-repository); `b:pkg:<id>`, `b:br:<branch>`, `b:wt:<dir>`, `b:main`. A
-project in several groups bands with its first group (by order). Band
-order: groups by `order`, then other, scratch, none; projects by their
-group's order, scratch last; then the wall's own order (header drag)
-first. **Bands are drawn only when there are two or more** (or one
+**Automatic goes down a level while the agents would all land in one
+band** (`ViewGrouping.effective`): All tries groups, then projects, then
+branches; a Group wall projects, then branches; a Project wall only
+branches. It takes the first level that gives two or more bands, else
+the first one (a plain wall). The cards it decides on are the wall's
+before its state filter, so the Needs you / Working segments narrow the
+bands' cards and never regroup the wall. A chosen grouping (By group,
+By project, By branch, None) is taken as is. The layout popover's
+Automatic row names the level in use ("now by project").
+Band keys: `g:<group>` / `g:~scratch` / `g:~none`, and at group level
+a project in no group is **a band of its own**, `p:<project>`, beside
+the groups (a project band: its name, color, ＋ and ↗; the tile drops
+the project from its header there; Overflow keeps it whole as its own
+unit); `p:<project>` (packages fold into their repository);
+`b:pkg:<id>`, `b:br:<branch>`, `b:wt:<dir>`, `b:main`. A project in
+several groups bands with its first group (by order). Band order:
+groups by `order`, then projects in no group by name, then scratch,
+none; projects by their group's order, scratch last; then the wall's
+own order (header drag) first. **Bands are drawn only when there are two or more** (or one
 continued from another wall): a wall with one project is exactly the
 plain wall of before (so every earlier UI test, and the real daemon's
 one-project test run, lay out unchanged).
