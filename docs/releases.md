@@ -8,7 +8,7 @@ architecture. libghostty is built without libintl as described in licensing.md.
 
 ## Current distribution
 
-Homebrew installs **v0.3.3**, the signed and notarized release for macOS 14+,
+Homebrew installs **v0.3.4**, the signed and notarized release for macOS 14+,
 once its cask update is merged. Install Claude Code or Codex separately. Local
 use needs no relay; multi-Mac use requires a self-hosted relay and device
 enrollment.
@@ -19,8 +19,9 @@ accessibility support to what v0.2.0 shipped. v0.3.1 lets agents use the
 microphone, so Claude Code's `/voice` works. v0.3.2 makes a wall tile
 active with one click, and ⌃⌥ + arrow moves to a neighbor and types there.
 v0.3.3 groups the wall by project or branch whenever its agents run in more
-than one, and gives projects outside a group their own band.
-The [v0.3.3 release notes](release-notes-v0.3.3.md) are the text to publish on
+than one, and gives projects outside a group their own band. v0.3.4 lets
+agents name their own tiles after what they work on, keeping a name you give.
+The [v0.3.4 release notes](release-notes-v0.3.4.md) are the text to publish on
 GitHub; editing the file later does not change notes already published.
 
 ## One-time credentials
