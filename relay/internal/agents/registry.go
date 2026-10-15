@@ -1075,19 +1075,42 @@ func (r *Registry) Remove(id string) error {
 	return nil
 }
 
-// Rename gives an agent a new display name.
-func (r *Registry) Rename(id, name string) (wire.Agent, error) {
-	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, "\n\r") {
+// Rename gives an agent a new display name and records who chose it
+// (p.By; empty: a person). A person's name stays: an agent's rename
+// returns the agent unchanged. p.Auto (a person) hands naming back to
+// the agent, with or without a new name.
+func (r *Registry) Rename(p wire.RenameParams) (wire.Agent, error) {
+	name := strings.TrimSpace(p.Name)
+	by := p.By
+	switch by {
+	case "":
+		by = wire.NameByPerson
+	case wire.NameByPerson, wire.NameByAgent:
+	default:
+		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "by is %q or %q", wire.NameByPerson, wire.NameByAgent)
+	}
+	if p.Auto && by != wire.NameByPerson {
+		return wire.Agent{}, wire.Errorf(wire.CodeForbidden, "only a person hands an agent's name back to it")
+	}
+	if strings.ContainsAny(name, "\n\r") || (name == "" && !p.Auto) {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "a name is one non-empty line")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	a, err := r.find(id)
+	a, err := r.find(p.ID)
 	if err != nil {
 		return wire.Agent{}, err
 	}
-	a.Name = name
+	if by == wire.NameByAgent && a.NameBy == wire.NameByPerson {
+		return a.Agent, nil
+	}
+	if name != "" {
+		a.Name = name
+	}
+	a.NameBy = by
+	if p.Auto {
+		a.NameBy = ""
+	}
 	r.changed(a)
 	return a.Agent, nil
 }
@@ -1114,13 +1137,22 @@ func (r *Registry) Profiles() wire.ProfilesResult {
 
 // Hook takes one hook event.
 func (r *Registry) Hook(p wire.HookParams) error {
+	_, err := r.HookResult(p)
+	return err
+}
+
+// HookResult takes one hook event and answers it: on SessionStart of a
+// tile agent's own conversation (startup, resume, /clear, compaction;
+// not a shell tile's claude nor a nested run, which hookAgent ignores),
+// the tile-naming context (TileNaming).
+func (r *Registry) HookResult(p wire.HookParams) (wire.HookResult, error) {
 	var data map[string]any
 	if len(p.Payload) > 0 {
 		if err := json.Unmarshal(p.Payload, &data); err != nil {
 			// Codex's notify passes the payload as a JSON string argument.
 			var s string
 			if json.Unmarshal(p.Payload, &s) != nil || json.Unmarshal([]byte(s), &data) != nil {
-				return wire.Errorf(wire.CodeInvalid, "payload is not a JSON object")
+				return wire.HookResult{}, wire.Errorf(wire.CodeInvalid, "payload is not a JSON object")
 			}
 		}
 	}
@@ -1132,7 +1164,7 @@ func (r *Registry) Hook(p wire.HookParams) error {
 		event = str(data, "hook_event_name")
 	}
 	if p.Source != wire.KindClaude && p.Source != wire.KindCodex {
-		return wire.Errorf(wire.CodeInvalid, "source must be claude or codex")
+		return wire.HookResult{}, wire.Errorf(wire.CodeInvalid, "source must be claude or codex")
 	}
 	summary, message := "", ""
 	if event == "Stop" || (event == "notify" && str(data, "type") == "agent-turn-complete") {
@@ -1149,7 +1181,7 @@ func (r *Registry) Hook(p wire.HookParams) error {
 	defer r.mu.Unlock()
 	a := r.hookAgent(p, event, data)
 	if a == nil || a.term == nil || a.Exit != nil {
-		return nil // not one of ours (another claude, a nested one): ignored
+		return wire.HookResult{}, nil // not one of ours (another claude, a nested one): ignored
 	}
 	if checkpointable(a.Kind) {
 		evidenceOf = a.local
@@ -1164,7 +1196,10 @@ func (r *Registry) Hook(p wire.HookParams) error {
 	if message = strings.TrimSpace(message); message != "" {
 		r.setLastMessage(a, message) // agent tree: agents.result
 	}
-	return nil
+	if event == "SessionStart" {
+		return wire.HookResult{Context: TileNaming}, nil
+	}
+	return wire.HookResult{}, nil
 }
 
 // hookAgent finds the agent a hook is about: HESPER_AGENT_ID, else (Codex

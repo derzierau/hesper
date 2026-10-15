@@ -92,10 +92,13 @@ type MoveInfo struct {
 
 // AgentInfo is the moved agent.
 type AgentInfo struct {
-	LocalID   string    `json:"localId"`
-	Kind      string    `json:"kind"`
-	Profile   string    `json:"profile"`
-	Name      string    `json:"name"`
+	LocalID string `json:"localId"`
+	Kind    string `json:"kind"`
+	Profile string `json:"profile"`
+	Name    string `json:"name"`
+	// NameBy: who chose the name (wire.Agent.NameBy); a person's stays
+	// after the move. Absent from older sources: the task's.
+	NameBy    string    `json:"nameBy,omitempty"`
 	Task      string    `json:"task"`
 	Created   time.Time `json:"created"`
 	SessionID string    `json:"sessionId,omitempty"`
@@ -269,7 +272,7 @@ func PackCheckpoint(ctx context.Context, a wire.Agent, machine string, have []st
 	g := p.git(ctx)
 	m := &Manifest{Version: Version, ID: newID(), Created: time.Now().Unix()}
 	m.Source.Machine, m.Source.Home = machine, p.Home
-	m.Agent = AgentInfo{LocalID: localPart(a.ID), Kind: a.Kind, Profile: a.Profile, Name: a.Name, Task: a.Task, Created: a.Created,
+	m.Agent = AgentInfo{LocalID: localPart(a.ID), Kind: a.Kind, Profile: a.Profile, Name: a.Name, NameBy: a.NameBy, Task: a.Task, Created: a.Created,
 		Parent: a.Parent, Depth: a.Depth, LetParentAnswer: a.LetParentAnswer, Track: a.Track, ReviewBase: a.ReviewBase}
 	m.Project = ProjectInfo{Path: a.Project, Worktree: a.Worktree, Branch: a.Branch}
 	if r := g.repoInfo(a.Dir()); r != nil && r.base != "" {

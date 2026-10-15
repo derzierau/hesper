@@ -167,7 +167,8 @@ extension AppModel {
             return PopoverContent(title: "Move \(a.name) to", items: items, note: note,
                                   hints: [("⏎", "continue"), ("⌘⏎", "fork"), ("esc", "close")], empty: movable ? "No other machines" : "Can't move")
         case .rename(let id):
-            return PopoverContent(title: "Rename \(agent(id)?.name ?? "")", items: [], note: nil, hints: [("⏎", "rename"), ("esc", "close")], field: "Name")
+            return PopoverContent(title: "Rename \(agent(id)?.name ?? "")", items: [], note: "Your name stays; the agent won't rename it",
+                                  hints: [("⏎", "rename"), ("esc", "close")], field: "Name")
         case .attention:
             // Drawn by AttentionPanel (Overlays.swift) from attentionEntries();
             // these rows serve the generic list code (selection, tests).

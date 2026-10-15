@@ -580,6 +580,13 @@ func (f *Fleet) Call(ctx context.Context, short, method string, params json.RawM
 	}
 	delete(fields, "machine")
 	raw, err := f.request(ctx, c, m, method, fields)
+	var we *wire.Error
+	if _, by := fields["by"]; by && method == "agents.rename" && errors.As(err, &we) && we.Code == wire.CodeInvalid {
+		// A host before tile names decodes strictly and has no nameBy:
+		// the rename without "by".
+		delete(fields, "by")
+		raw, err = f.request(ctx, c, m, method, fields)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -305,6 +305,97 @@ func TestAgentTreeVerifiedCaller(t *testing.T) {
 	rw.Close()
 }
 
+func TestAgentNamesItself(t *testing.T) {
+	h := newHarness(t)
+	parent := h.spawn(wire.SpawnParams{Task: "small job"})
+	child, err := h.spawnAs(parent.ID, wire.SpawnParams{Task: "small job"})
+	allowed(t, "spawn", err)
+	name := func(id string) (string, string) {
+		t.Helper()
+		g, err := h.reg.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g.Name, g.NameBy
+	}
+	rename := func(caller, id, n string, auto bool) error {
+		return h.callAs(caller, "agents.rename", wire.RenameParams{ID: id, Name: n, Auto: auto}, nil)
+	}
+	if _, by := name(child.ID); by != "" {
+		t.Fatalf("a new agent's name is the task's, by %q", by)
+	}
+
+	// An agent names itself; the rest of the self-steering stays refused.
+	allowed(t, "the agent names itself", rename(child.ID, child.ID, "Fix the login redirect", false))
+	if n, by := name(child.ID); n != "Fix the login redirect" || by != wire.NameByAgent {
+		t.Fatalf("self-rename: %q by %q", n, by)
+	}
+	forbidden(t, "the agent stops itself", h.callAs(child.ID, "agents.stop", wire.IDParams{ID: child.ID}, nil))
+	allowed(t, "a person's agent names itself", rename(parent.ID, parent.ID, "Plan the release", false))
+
+	// The client can't claim who renames: hesperd decides from the caller.
+	allowed(t, "a claimed person", h.callAs(child.ID, "agents.rename", wire.RenameParams{ID: child.ID, Name: "Tests", By: wire.NameByPerson}, nil))
+	if _, by := name(child.ID); by != wire.NameByAgent {
+		t.Fatalf("an agent's claim to be a person was taken: %q", by)
+	}
+	allowed(t, "a person claims to be an agent", h.callAs("", "agents.rename", wire.RenameParams{ID: parent.ID, Name: "Release", By: wire.NameByAgent}, nil))
+	if _, by := name(parent.ID); by != wire.NameByPerson {
+		t.Fatalf("a person's rename recorded as %q", by)
+	}
+	// Only the two values reach the registry (a paired Mac forwards by).
+	var we *wire.Error
+	if _, err := h.reg.Rename(wire.RenameParams{ID: child.ID, Name: "x", By: "robot"}); !errors.As(err, &we) || we.Code != wire.CodeInvalid {
+		t.Fatalf("by robot: %v", err)
+	}
+
+	// A person's name stays, for the agent and the agent that started it.
+	allowed(t, "a person names it", rename("", child.ID, "Ole's login fix", false))
+	allowed(t, "the agent renames it again", rename(child.ID, child.ID, "Write tests", false))
+	allowed(t, "its parent renames it", rename(parent.ID, child.ID, "kid", false))
+	var got wire.Agent
+	allowed(t, "kept", h.callAs(child.ID, "agents.rename", wire.RenameParams{ID: child.ID, Name: "Other"}, &got))
+	if got.Name != "Ole's login fix" || got.NameBy != wire.NameByPerson {
+		t.Fatalf("a person's name was replaced: %+v", got)
+	}
+
+	// Only a person hands it back; then the agent names it again.
+	forbidden(t, "the agent takes its name back", rename(child.ID, child.ID, "", true))
+	allowed(t, "a person hands it back", rename("", child.ID, "", true))
+	if n, by := name(child.ID); n != "Ole's login fix" || by != "" {
+		t.Fatalf("auto keeps the name and clears who: %q by %q", n, by)
+	}
+	allowed(t, "the agent names it", rename(child.ID, child.ID, "Review the fix", false))
+	if n, _ := name(child.ID); n != "Review the fix" {
+		t.Fatalf("after auto: %q", n)
+	}
+	if err := rename("", child.ID, " ", false); !errors.As(err, &we) || we.Code != wire.CodeInvalid {
+		t.Fatalf("an empty name without --auto: %v", err)
+	}
+
+	// Who named it survives a restart.
+	allowed(t, "a person names it", rename("", child.ID, "Ole's login fix", false))
+	h.close()
+	h.open()
+	if n, by := name(child.ID); n != "Ole's login fix" || by != wire.NameByPerson {
+		t.Fatalf("after restart: %q by %q", n, by)
+	}
+}
+
+func TestCallParams(t *testing.T) {
+	for _, c := range []struct{ method, caller, in, want string }{
+		{"agents.stop", "", `{"id":"L/a"}`, `{"id":"L/a"}`},
+		{"agents.stop", "L/p", `{"caller":"L/p","id":"L/a"}`, `{"id":"L/a"}`},
+		// A person: no "by", whatever was sent (what older hosts accept).
+		{"agents.rename", "", `{"id":"L/a","name":"n","by":"agent"}`, `{"id":"L/a","name":"n"}`},
+		{"agents.rename", "", `{"id":"L/a","name":"n"}`, `{"id":"L/a","name":"n"}`},
+		{"agents.rename", "L/a", `{"caller":"L/a","id":"L/a","name":"n","by":"person"}`, `{"by":"agent","id":"L/a","name":"n"}`},
+	} {
+		if got := string(callParams(c.method, c.caller, json.RawMessage(c.in))); got != c.want {
+			t.Errorf("%s by %q: %s, want %s", c.method, c.caller, got, c.want)
+		}
+	}
+}
+
 // The policy as a table over a tree (no daemon).
 func TestAgentTreePolicyTable(t *testing.T) {
 	s := &Server{reg: &Registry{machine: "L"}}
@@ -339,6 +430,10 @@ func TestAgentTreePolicyTable(t *testing.T) {
 		{"L/p", "agents.stop", "L/p", false}, // itself
 		{"L/c", "agents.stop", "L/p", false}, // its parent
 		{"L/c", "agents.rename", "L/n", false},
+		{"L/c", "agents.rename", "L/c", true},  // its own name
+		{"L/x", "agents.rename", "L/x", true},  // a person's agent too
+		{"L/c", "agents.rename", "L/p", false}, // its parent
+		{"L/c", "agents.close", "L/c", false},  // only renaming itself
 		{"L/p", "agents.kill", "L/x", false},
 		{"L/p", "agents.move", "L/xc", false},
 		{"L/p", "agents.list", "L/x", true},   // read only

@@ -459,6 +459,41 @@ func TestDeliverTaskAfterTrustQuestion(t *testing.T) {
 	waitFor(t, func() bool { g, _ := h.reg.Get(a.ID); return g.Summary == "Done: the first prompt" })
 }
 
+func TestTileNamingContext(t *testing.T) {
+	h := newHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "job"})
+	shell := h.spawn(wire.SpawnParams{Kind: "shell"})
+	h.waitState(a.ID, wire.StateDone)
+	start := func(agent, source, session, how string) string {
+		t.Helper()
+		res, err := h.reg.HookResult(wire.HookParams{Agent: agent, Source: source, Event: "SessionStart",
+			Payload: mustJSON(map[string]any{"session_id": session, "source": how})})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Context
+	}
+	g, _ := h.reg.Get(a.ID)
+	if start(a.ID, "claude", g.SessionID, "resume") != TileNaming {
+		t.Fatal("the tile's own conversation gets no naming context")
+	}
+	if start(a.ID, "claude", "nested", "startup") != "" {
+		t.Fatal("a nested run inside the tile is told to name it")
+	}
+	if start(shell.ID, "claude", "in-a-shell", "startup") != "" {
+		t.Fatal("claude in a shell tile is told to rename the shell's tile")
+	}
+	if start(a.ID, "claude", "cleared", "clear") != TileNaming {
+		t.Fatal("after /clear the agent is not told again")
+	}
+	if res, _ := h.reg.HookResult(wire.HookParams{Agent: a.ID, Source: "claude", Event: "Stop", Payload: mustJSON(map[string]any{})}); res.Context != "" {
+		t.Fatal("context on an event other than SessionStart")
+	}
+	if SessionStartOutput("SessionStart", "") != nil || SessionStartOutput("Stop", "x") != nil {
+		t.Fatal("hook output without context")
+	}
+}
+
 func TestHookResolution(t *testing.T) {
 	h := newHarness(t)
 	a := h.spawn(wire.SpawnParams{Task: "job"})

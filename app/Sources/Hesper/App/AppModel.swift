@@ -789,6 +789,11 @@ final class AppModel {
         run("rename") { _ = try await self.client.rename(a.id, name: name) }
     }
 
+    /// The agent names its tile again (after a person named it).
+    func letAgentName(_ a: Agent) {
+        run("rename") { _ = try await self.client.letAgentName(a.id) }
+    }
+
     func clone(url: String, machine: String?) async -> CloneResult {
         var p: [String: JSONValue] = ["url": .string(url)]
         if let machine { p["machine"] = .string(machine) }

@@ -406,9 +406,13 @@ hesperctl attach fix-the-login-redirect       # Ctrl-] detaches
 hesperctl send ID "yes, go ahead" ; hesperctl approve ID ; hesperctl deny ID
 hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl move ID --to mini
 hesperctl open review --agent ID ; hesperctl open palette --query TEXT   # the app's sheets
+hesperctl rename ID "Release notes" ; hesperctl rename ID --auto   # your name stays; --auto hands it back
 ```
 
-Agents are addressed by id (`L/a7f3k2`), local id or unique name.
+Agents are addressed by id (`L/a7f3k2`), local id or unique name. Claude
+and Codex agents name their own tile after what they work on, in your
+language (`hesperctl rename self`), and rename it when the work moves on;
+a name you give stays.
 
 `hesperctl mcp` serves the same commands as MCP tools on stdio, so Claude
 Code and Codex can start, watch and answer agents themselves

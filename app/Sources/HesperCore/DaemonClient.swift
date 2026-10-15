@@ -285,6 +285,8 @@ public final class DaemonClient: @unchecked Sendable {
     public func resume(_ id: String) async throws -> Agent { try await call("agents.resume", ["id": .string(id)]).decode(Agent.self) }
     public func remove(_ id: String) async throws { _ = try await call("agents.remove", ["id": .string(id)]) }
     public func rename(_ id: String, name: String) async throws -> Agent { try await call("agents.rename", ["id": .string(id), "name": .string(name)]).decode(Agent.self) }
+    /// Hands the name back to the agent (it renames its tile again); the name stays until it does.
+    public func letAgentName(_ id: String) async throws -> Agent { try await call("agents.rename", ["id": .string(id), "name": .string(""), "auto": .bool(true)]).decode(Agent.self) }
     /// agents.move: checkpoint, carry and resume on `machine` (hesperd
     /// closes it here unless `fork`). Returns the new agent's id. Preflight
     /// refusals carry `data.code` (`MovePreflight`); -32601: an older

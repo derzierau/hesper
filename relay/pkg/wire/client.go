@@ -363,36 +363,45 @@ func (a *AttachConn) write(typ byte, p []byte) error {
 }
 
 // SendHook delivers a hook event and waits for the daemon's answer, all
-// within timeout. It is what `hesperd hook` does.
+// within timeout (SendHookResult without the answer).
 func SendHook(path string, p HookParams, timeout time.Duration) error {
+	_, err := SendHookResult(path, p, timeout)
+	return err
+}
+
+// SendHookResult is SendHook returning hesperd's answer. It is what
+// `hesperd hook` does.
+func SendHookResult(path string, p HookParams, timeout time.Duration) (HookResult, error) {
 	deadline := time.Now().Add(timeout)
 	conn, err := net.DialTimeout("unix", path, timeout)
 	if err != nil {
-		return err
+		return HookResult{}, err
 	}
 	defer conn.Close()
 	conn.SetDeadline(deadline)
 	params, err := json.Marshal(p)
 	if err != nil {
-		return err
+		return HookResult{}, err
 	}
 	line, err := json.Marshal(Request{JSONRPC: "2.0", ID: json.RawMessage("1"), Method: "hook", Params: params})
 	if err != nil {
-		return err
+		return HookResult{}, err
 	}
 	if _, err := conn.Write(append(line, '\n')); err != nil {
-		return err
+		return HookResult{}, err
 	}
 	reply, err := readLine(bufio.NewReader(conn))
 	if err != nil {
-		return err
+		return HookResult{}, err
 	}
 	var res Response
 	if err := json.Unmarshal(reply, &res); err != nil {
-		return err
+		return HookResult{}, err
 	}
 	if res.Error != nil {
-		return res.Error.Err()
+		return HookResult{}, res.Error.Err()
 	}
-	return nil
+	var out HookResult
+	json.Unmarshal(res.Result, &out) // an older daemon: {}
+	return out, nil
 }

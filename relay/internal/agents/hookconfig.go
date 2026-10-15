@@ -285,3 +285,31 @@ func InstallHooks(files []HookFile) error {
 	}
 	return nil
 }
+
+// TileNaming is what a Claude or Codex agent in a Hesper tile is told when
+// its session starts (and after /clear or a compaction): name the tile
+// after what it does, in the user's language, and keep a person's name.
+const TileNaming = "You run in a Hesper tile: its name tells the user what you are working on. " +
+	"Once you understand the task, name the tile in 2 to 5 words, in the language the user writes in: " +
+	"hesperctl rename self \"<name>\". " +
+	"Rename it again only when the work moves on to something the name no longer describes " +
+	"(a new phase, such as from investigating to fixing, or a new request); you decide when. " +
+	"Never rename it for each step. " +
+	"If the command prints \"kept\", the user named the tile: leave the name. " +
+	"Don't mention the renaming to the user."
+
+// SessionStartOutput is what `hesperd hook` prints for hesperd's answer
+// to a SessionStart (HookResult.Context): the text in the shape Claude
+// Code and Codex both read (hookSpecificOutput.additionalContext); nil
+// without context, so other sessions and older daemons get nothing.
+func SessionStartOutput(event, context string) []byte {
+	if event != "SessionStart" || context == "" {
+		return nil
+	}
+	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{
+		"hookEventName": "SessionStart", "additionalContext": context}})
+	if err != nil {
+		return nil
+	}
+	return out
+}

@@ -65,7 +65,7 @@ func TestMoveWithConversationAndUncommittedWork(t *testing.T) {
 	session := "11111111-2222-4333-8444-555555555555"
 	transcript := filepath.Join(src.ClaudeHome, "projects", ClaudeSlug(worktree), session+".jsonl")
 	write(t, transcript, `{"type":"user","cwd":"`+worktree+`","message":{"content":"fix <it> & more"},"n":12345678901234567890}`+"\n"+`{"type":"assistant","text":"ok"}`+"\n")
-	agent := wire.Agent{ID: "L/abc123", Kind: wire.KindClaude, Profile: "claude-auto-rc", Name: "fix", Task: "Fix it",
+	agent := wire.Agent{ID: "L/abc123", Kind: wire.KindClaude, Profile: "claude-auto-rc", Name: "fix", NameBy: wire.NameByPerson, Task: "Fix it",
 		Project: project, Worktree: worktree, Branch: "feature/fix", SessionID: session, Created: time.Now()}
 	ctx := context.Background()
 
@@ -79,7 +79,7 @@ func TestMoveWithConversationAndUncommittedWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Project.Bundle != "full" || m.Agent.Transcript == "" {
+	if m.Project.Bundle != "full" || m.Agent.Transcript == "" || m.Agent.NameBy != wire.NameByPerson {
 		t.Fatalf("manifest %+v", m)
 	}
 	// The source's checkout is untouched.

@@ -39,6 +39,9 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
     public var kind: String
     public var profile: String?
     public var name: String
+    /// Who chose the name: "person", "agent", or nil (from the task). A
+    /// person's name stays: the agent's own renames keep it.
+    public var nameBy: String?
     public var task: String?
     public var project: String?
     /// The daemon's project (projects.list); nil from an older daemon.
@@ -64,6 +67,10 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
     /// Its worktree's last checkpoint (hesperd, on done / close / move).
     public var checkpoint: Checkpoint?
 
+    /// A person named it (the app, hesperctl outside an agent): the agent
+    /// no longer renames it until "Let the Agent Name It".
+    public var isNamedByPerson: Bool { nameBy == "person" }
+
     /// The agent's process is alive (attach shows it live).
     public var isRunning: Bool { exit == nil && state != .exited }
 
@@ -86,7 +93,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, machine, kind, profile, name, task, project, projectId, worktree, branch, state, stateSince, attention, summary, activity, sessionId, size, created, pid, exit
+        case id, machine, kind, profile, name, nameBy, task, project, projectId, worktree, branch, state, stateSince, attention, summary, activity, sessionId, size, created, pid, exit
         case background, ended, checkpoint
     }
 
@@ -97,6 +104,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
         kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? "shell"
         profile = try c.decodeIfPresent(String.self, forKey: .profile)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? id
+        nameBy = try c.decodeIfPresent(String.self, forKey: .nameBy).flatMap { $0.isEmpty ? nil : $0 }
         task = try c.decodeIfPresent(String.self, forKey: .task)
         project = try c.decodeIfPresent(String.self, forKey: .project)
         projectId = try c.decodeIfPresent(String.self, forKey: .projectId).flatMap { $0.isEmpty ? nil : $0 }
@@ -124,6 +132,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
         try c.encode(kind, forKey: .kind)
         try c.encodeIfPresent(profile, forKey: .profile)
         try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(nameBy, forKey: .nameBy)
         try c.encodeIfPresent(task, forKey: .task)
         try c.encodeIfPresent(project, forKey: .project)
         try c.encodeIfPresent(projectId, forKey: .projectId)

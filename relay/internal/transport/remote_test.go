@@ -73,7 +73,7 @@ func TestRemoteSpawnStatesAnswerDone(t *testing.T) {
 	}
 	L.waitAgent(t, a.ID, func(x wire.Agent) bool { return x.State == wire.StateDone && x.Summary == "Done: SECRET-PROMPT-1234" })
 	var renamed wire.Agent
-	if err := L.call(t, "agents.rename", wire.RenameParams{ID: a.ID, Name: "SECRET-NAME-55"}, &renamed); err != nil || renamed.ID != a.ID {
+	if err := L.call(t, "agents.rename", wire.RenameParams{ID: a.ID, Name: "SECRET-NAME-55"}, &renamed); err != nil || renamed.ID != a.ID || renamed.NameBy != wire.NameByPerson {
 		t.Fatalf("rename %+v %v", renamed, err)
 	}
 	if err := L.call(t, "agents.stop", wire.IDParams{ID: a.ID}, nil); err != nil {

@@ -234,7 +234,12 @@ func hook(args []string) {
 		return
 	}
 	payload = trimPayload(payload)
-	wire.SendHook(wire.SocketPath(), wire.HookParams{Agent: os.Getenv("HESPER_AGENT_ID"), Source: source, Event: event, Payload: payload}, hookTimeout)
+	res, _ := wire.SendHookResult(wire.SocketPath(), wire.HookParams{Agent: os.Getenv("HESPER_AGENT_ID"), Source: source, Event: event, Payload: payload}, hookTimeout)
+	// A tile agent's own conversation learns to name its tile (hesperd
+	// decides: not a shell tile's claude, not a nested run).
+	if out := agents.SessionStartOutput(event, res.Context); out != nil {
+		os.Stdout.Write(append(out, '\n'))
+	}
 }
 
 // chainNotify starts the notify program hesperd's came before (argv, the

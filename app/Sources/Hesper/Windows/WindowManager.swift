@@ -699,6 +699,9 @@ final class WindowManager: NSObject {
             model?.renameText[id] = a.name
             model?.openPopover(.rename(id))
         }
+        if a.isNamedByPerson {
+            add("Let the Agent Name It") { [weak model] in model?.letAgentName(a) }
+        }
         // Its scratch: rename, keep, promote, archive, delete.
         if let pid = model.scratchID(of: a), !model.scratchActions(pid).isEmpty {
             menu.addItem(.separator())

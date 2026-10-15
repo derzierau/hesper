@@ -220,6 +220,9 @@ func (s *Server) authorize(caller, method, target string, t treeView) error {
 		return answerAllowed(caller, a)
 	}
 	if !t.descends(target, caller) {
+		if target == caller && method == "agents.rename" {
+			return nil // an agent names its own tile (a person's name stays: Registry.Rename)
+		}
 		if target == caller {
 			return wire.Errorf(wire.CodeForbidden, "agent %s may not %s itself: only agents it started (a person may)", caller, verb(method))
 		}
@@ -420,6 +423,35 @@ func withoutCaller(params json.RawMessage) json.RawMessage {
 		return params
 	}
 	delete(m, "caller")
+	out, err := json.Marshal(m)
+	if err != nil {
+		return params
+	}
+	return out
+}
+
+// callParams is what dispatch passes on: params without "caller" and,
+// for agents.rename, with "by" set from the verified caller ("agent")
+// or dropped (a person, the default), whatever the client sent. One
+// decode for both; params as they are when neither applies.
+func callParams(method, caller string, params json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(params, &m) != nil || m == nil {
+		return params
+	}
+	_, claimed := m["caller"]
+	_, by := m["by"]
+	rename := method == "agents.rename"
+	if !claimed && !(rename && (by || caller != "")) {
+		return params
+	}
+	delete(m, "caller")
+	if rename {
+		delete(m, "by") // a person: the default, and what older hosts accept
+		if caller != "" {
+			m["by"], _ = json.Marshal(wire.NameByAgent)
+		}
+	}
 	out, err := json.Marshal(m)
 	if err != nil {
 		return params

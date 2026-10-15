@@ -449,7 +449,7 @@ renames to its own machine naming.
 | `agents.spawn` | `SpawnParams` (`machine` empty or the host's) | `Agent` |
 | `agents.input`, `agents.answer` | as locally | `{}` |
 | `agents.stop` | `{id, wait?}`: `wait` (a move) returns once the process ended | `{}` |
-| `agents.resume`, `agents.rename` | as locally | `Agent` |
+| `agents.resume`, `agents.rename` | as locally (`agents.rename` may carry `by: "agent"`, set by the controller's hesperd from its verified caller, and `auto`; a host that refuses `by` as unknown gets the rename again without it) | `Agent` |
 | `agents.remove` | `{id}` | `{}` |
 | `agents.link` | `{}` | a terminal ticket: the [link](#links) |
 | `agents.attach` | `{link, ch, mode, request}`: `request` is the local attach request (every option of it, passed through), `mode` repeats its mode for the rights table | `{}`; the attach runs on channel `ch` of the caller's link |

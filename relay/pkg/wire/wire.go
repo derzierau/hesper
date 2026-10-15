@@ -56,6 +56,10 @@ type Agent struct {
 	Kind    string `json:"kind"`
 	Profile string `json:"profile"`
 	Name    string `json:"name"`
+	// NameBy is who chose Name: "" (from the task), NameByAgent (the agent
+	// itself or the agent that started it, agents.rename) or NameByPerson.
+	// A person's name stays: the agent's own renames keep it. Persisted.
+	NameBy  string `json:"nameBy,omitempty"`
 	Task    string `json:"task"`
 	Project string `json:"project"`
 	// ProjectID is the project the agent works in (the deepest project
@@ -236,7 +240,20 @@ type AnswerParams struct {
 type RenameParams struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// By is who renames: hesperd sets it from the verified caller
+	// (NameByPerson or NameByAgent) and replaces what a client sent; a
+	// paired Mac forwards it. Empty: a person.
+	By string `json:"by,omitempty"`
+	// Auto (a person only) hands the name back to the agent: Name may be
+	// empty (the name stays), and the agent's next rename changes it.
+	Auto bool `json:"auto,omitempty"`
 }
+
+// Agent.NameBy and RenameParams.By.
+const (
+	NameByPerson = "person"
+	NameByAgent  = "agent"
+)
 
 // BackgroundParams are agents.background's.
 type BackgroundParams struct {
@@ -270,6 +287,13 @@ type HookParams struct {
 	Source  string          `json:"source"`
 	Event   string          `json:"event"`
 	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+// HookResult is hook's answer. Context (SessionStart of an agent's own
+// conversation in a Hesper tile) is text for the agent: `hesperd hook`
+// prints it as the hook's additional context. Older daemons answer {}.
+type HookResult struct {
+	Context string `json:"context,omitempty"`
 }
 
 // Project is one entry of projects.recent: the projects (their folder on

@@ -90,6 +90,17 @@ func eventually(t *testing.T, what string, f func() bool) {
 	}
 }
 
+// new --name is chosen, so it is recorded as the person's (a rename).
+func TestNewNameIsAPersons(t *testing.T) {
+	reg, sock, project := daemon(t)
+	if err := run(context.Background(), []string{"new", "--daemon-socket", sock, "--project", project, "--name", "Ole's fix", "fix", "it"}); err != nil {
+		t.Fatal(err)
+	}
+	if l := reg.List(); len(l) != 1 || l[0].Name != "Ole's fix" || l[0].NameBy != wire.NameByPerson {
+		t.Fatalf("new --name %+v", l)
+	}
+}
+
 func TestAgentCommands(t *testing.T) {
 	reg, sock, project := daemon(t)
 	ctx := context.Background()
@@ -136,6 +147,42 @@ func TestAgentCommands(t *testing.T) {
 	}
 	if err := ctl("ls"); err != nil {
 		t.Fatal(err)
+	}
+	if err := ctl("rename", local, "better", "name"); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := reg.Get(a.ID); g.NameBy != wire.NameByPerson {
+		t.Fatalf("a person's rename %+v", g)
+	}
+	// Inside the agent: rename self works, a person's name stays ("kept"),
+	// and only a person hands the name back (--auto).
+	t.Setenv("HESPER_AGENT_ID", a.ID)
+	t.Setenv("HESPER_SOCKET", sock)
+	out := capture(t, func() {
+		if err := ctl("rename", "self", "Fix", "the", "redirect"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, "kept \"better name\"") {
+		t.Fatalf("an agent renamed a person's name: %q", out)
+	}
+	if err := ctl("rename", "self", "--auto"); !errors.As(err, new(*wire.Error)) {
+		t.Fatalf("an agent's --auto: %v", err)
+	}
+	t.Setenv("HESPER_AGENT_ID", "")
+	if err := ctl("rename", a.ID, "--auto"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HESPER_AGENT_ID", a.ID)
+	if err := ctl("rename", "self", "Fix", "the", "redirect"); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := reg.Get(a.ID); g.Name != "Fix the redirect" || g.NameBy != wire.NameByAgent {
+		t.Fatalf("self-rename after --auto %+v", g)
+	}
+	t.Setenv("HESPER_AGENT_ID", "")
+	if err := ctl("rename", "self", "x"); err == nil || !strings.Contains(err.Error(), "not inside a Hesper agent") {
+		t.Fatalf("self outside an agent: %v", err)
 	}
 	if err := ctl("rename", local, "better", "name"); err != nil {
 		t.Fatal(err)

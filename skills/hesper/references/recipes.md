@@ -101,7 +101,9 @@ starts (`--next` ignores the state the agent is in when wait starts).
 Decisions: `approve ID [--always]`, `deny ID [--message M]`,
 `answer ID DECISION [--message M]` (DECISION from `attention.options`),
 `choose ID N` (N from `show`'s `choices`). Others: `stop`, `resume`,
-`rename`, `mv ID MACHINE` (move to another Mac, conversation included),
+`rename` (`rename self NAME` names your own tile; a name the user gave
+stays, `rename ID --auto` hands it back), `mv ID MACHINE` (move to
+another Mac, conversation included),
 `kill` (last resort; stays listed as exited/killed).
 
 ## Shell agents
