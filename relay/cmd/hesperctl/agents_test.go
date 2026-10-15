@@ -90,6 +90,17 @@ func eventually(t *testing.T, what string, f func() bool) {
 	}
 }
 
+// new --name is chosen, so it is recorded as the person's (a rename).
+func TestNewNameIsAPersons(t *testing.T) {
+	reg, sock, project := daemon(t)
+	if err := run(context.Background(), []string{"new", "--daemon-socket", sock, "--project", project, "--name", "Ole's fix", "fix", "it"}); err != nil {
+		t.Fatal(err)
+	}
+	if l := reg.List(); len(l) != 1 || l[0].Name != "Ole's fix" || l[0].NameBy != wire.NameByPerson {
+		t.Fatalf("new --name %+v", l)
+	}
+}
+
 func TestAgentCommands(t *testing.T) {
 	reg, sock, project := daemon(t)
 	ctx := context.Background()
@@ -139,6 +150,9 @@ func TestAgentCommands(t *testing.T) {
 	}
 	if err := ctl("rename", local, "better", "name"); err != nil {
 		t.Fatal(err)
+	}
+	if g, _ := reg.Get(a.ID); g.NameBy != wire.NameByPerson {
+		t.Fatalf("a person's rename %+v", g)
 	}
 	// Inside the agent: rename self works, a person's name stays ("kept"),
 	// and only a person hands the name back (--auto).

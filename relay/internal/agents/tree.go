@@ -414,25 +414,6 @@ func (s *Server) files(caller, method string, params json.RawMessage, t treeView
 
 // withoutCaller drops "caller" from params forwarded to another machine
 // (this daemon enforced the policy; hosts decode strictly).
-// renamedBy sets agents.rename's "by" from the verified caller (an agent,
-// or "" a person), replacing whatever the client sent.
-func renamedBy(params json.RawMessage, caller string) json.RawMessage {
-	var m map[string]json.RawMessage
-	if json.Unmarshal(params, &m) != nil || m == nil {
-		return params
-	}
-	by := wire.NameByPerson
-	if caller != "" {
-		by = wire.NameByAgent
-	}
-	m["by"], _ = json.Marshal(by)
-	out, err := json.Marshal(m)
-	if err != nil {
-		return params
-	}
-	return out
-}
-
 func withoutCaller(params json.RawMessage) json.RawMessage {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(params, &m) != nil || m == nil {
@@ -442,6 +423,35 @@ func withoutCaller(params json.RawMessage) json.RawMessage {
 		return params
 	}
 	delete(m, "caller")
+	out, err := json.Marshal(m)
+	if err != nil {
+		return params
+	}
+	return out
+}
+
+// callParams is what dispatch passes on: params without "caller" and,
+// for agents.rename, with "by" set from the verified caller ("agent")
+// or dropped (a person, the default), whatever the client sent. One
+// decode for both; params as they are when neither applies.
+func callParams(method, caller string, params json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(params, &m) != nil || m == nil {
+		return params
+	}
+	_, claimed := m["caller"]
+	_, by := m["by"]
+	rename := method == "agents.rename"
+	if !claimed && !(rename && (by || caller != "")) {
+		return params
+	}
+	delete(m, "caller")
+	if rename {
+		delete(m, "by") // a person: the default, and what older hosts accept
+		if caller != "" {
+			m["by"], _ = json.Marshal(wire.NameByAgent)
+		}
+	}
 	out, err := json.Marshal(m)
 	if err != nil {
 		return params

@@ -124,7 +124,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `projects.clone` | `{url, machine?}` | `{path}` (git clone into the projects root `<repo>`; on `machine` through the gateway) |
 | `profiles.list` | – | `{profiles, defaults}` |
 | `fs.stat` | `{machine?, path}` | `{exists, isDir}` (added, see "Machine and folder agree") |
-| `hook` | `{agent, source: claude\|codex, event, payload}` | `{}` (what hook processes send) |
+| `hook` | `{agent, source: claude\|codex, event, payload}` | `{context?}` (what hook processes send; context: the tile-naming text on a tile agent's own SessionStart, see "As built — agent tree") |
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
@@ -3661,22 +3661,31 @@ NAME` (`self` is `HESPER_AGENT_ID`, any command's ID may be `self`).
 `Agent.nameBy` (omitempty, persisted, carried by moves as the handoff
 manifest's `agent.nameBy`) says who chose the name: absent (the task's),
 `agent` (the agent itself or an ancestor) or `person`. hesperd sets
-`agents.rename`'s `by` from the verified caller, replacing a client's,
-and a paired Mac's hesperd forwards it to the host. **A person's name
+`agents.rename`'s `by` from the verified caller: `agent`, or none for a
+person (the default), whatever the client sent; a host stores only
+those values. A paired Mac's hesperd forwards `by`; a host from before
+tile names refuses the unknown field, so the controller resends the
+rename without it (that host keeps no `nameBy`). `hesperctl new --name`
+renames right after the spawn, so a chosen name is recorded like any
+rename; names hesperd or the app generate at spawn (History's
+"continue in", resumed sessions) stay the task's. **A person's name
 stays**: an agent's rename of it succeeds without changing it (the
 answer shows the person's name; hesperctl prints `kept "NAME"`).
 `auto: true` (a person only; hesperctl `rename ID --auto`, the tile
 menu's "Let the Agent Name It") clears `nameBy`, keeping the name until
 the agent's next rename. No rate limit: the agent decides when a new
-name says more. **How agents learn it**: `hesperd hook claude|codex
-SessionStart` run inside an agent (`HESPER_AGENT_ID` set) prints
-`{"hookSpecificOutput": {"hookEventName": "SessionStart",
-"additionalContext": …}}` (`agents.TileNaming`): name the tile in 2 to 5
-words in the user's language once the task is understood, again only
-when the work moves on to something the name no longer describes, keep
-a person's name, don't mention it. Claude Code and Codex add that text
-as context at startup, resume, /clear and compaction; outside Hesper
-the hook prints nothing. The Hesper skill says the same.
+name says more. **How agents learn it**: hesperd answers the `hook`
+method with `{context?}` (`wire.HookResult`; older daemons `{}`): on
+SessionStart of a tile agent's own conversation, the one `hookAgent`
+matches (the agent's kind, its session or a /clear, resume or
+compaction of it; not claude in a shell tile, not a nested run inside
+the tile), the context is `agents.TileNaming`. `hesperd hook` prints it
+as `{"hookSpecificOutput": {"hookEventName": "SessionStart",
+"additionalContext": …}}`, which Claude Code and Codex add for the
+model: name the tile in 2 to 5 words in the user's language once the
+task is understood, again only when the work moves on to something the
+name no longer describes, keep a person's name, don't mention it.
+Everything else prints nothing. The Hesper skill says the same.
 
 Refusals are JSON-RPC errors with `data.code: "forbidden"` (hesperctl
 exit 5) and a message naming the rule. Limits come from settings.json in

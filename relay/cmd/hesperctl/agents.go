@@ -367,6 +367,13 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		if err := c.Call(ctx, "agents.spawn", p, &a); err != nil {
 			return err
 		}
+		if *name != "" {
+			// --name is chosen, not generated: a rename, so hesperd records
+			// who chose it (a person's name stays).
+			if err := c.Call(ctx, "agents.rename", wire.RenameParams{ID: a.ID, Name: *name}, &a); err != nil {
+				return err
+			}
+		}
 		if *tree.wait {
 			if !*asJSON {
 				fmt.Println(a.ID) // the id first, then (once settled) the result

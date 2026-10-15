@@ -289,6 +289,13 @@ type HookParams struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+// HookResult is hook's answer. Context (SessionStart of an agent's own
+// conversation in a Hesper tile) is text for the agent: `hesperd hook`
+// prints it as the hook's additional context. Older daemons answer {}.
+type HookResult struct {
+	Context string `json:"context,omitempty"`
+}
+
 // Project is one entry of projects.recent: the projects (their folder on
 // this machine, ProjectID set) first, then other folders agents started in.
 type Project struct {

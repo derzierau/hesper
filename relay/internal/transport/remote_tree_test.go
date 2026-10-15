@@ -60,7 +60,8 @@ func TestRemoteAgentTree(t *testing.T) {
 	if !errors.As(err, &we) || we.Code != wire.CodeForbidden {
 		t.Fatalf("renaming another agent on M: %v", err)
 	}
-	if err := as(parent.ID, "agents.rename", wire.RenameParams{ID: child.ID, Name: "kid"}, nil); err != nil {
-		t.Fatalf("renaming its child on M: %v", err)
+	var kid wire.Agent
+	if err := as(parent.ID, "agents.rename", wire.RenameParams{ID: child.ID, Name: "kid"}, &kid); err != nil || kid.NameBy != wire.NameByAgent {
+		t.Fatalf("renaming its child on M: %+v %v", kid, err)
 	}
 }

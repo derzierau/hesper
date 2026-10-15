@@ -298,17 +298,16 @@ const TileNaming = "You run in a Hesper tile: its name tells the user what you a
 	"If the command prints \"kept\", the user named the tile: leave the name. " +
 	"Don't mention the renaming to the user."
 
-// SessionStartOutput is what `hesperd hook` prints for event inside an
-// agent (inAgent: HESPER_AGENT_ID is set): the tile-naming context for
-// SessionStart, in the shape Claude Code and Codex both read
-// (hookSpecificOutput.additionalContext); nil otherwise, so sessions
-// outside Hesper get nothing.
-func SessionStartOutput(event string, inAgent bool) []byte {
-	if event != "SessionStart" || !inAgent {
+// SessionStartOutput is what `hesperd hook` prints for hesperd's answer
+// to a SessionStart (HookResult.Context): the text in the shape Claude
+// Code and Codex both read (hookSpecificOutput.additionalContext); nil
+// without context, so other sessions and older daemons get nothing.
+func SessionStartOutput(event, context string) []byte {
+	if event != "SessionStart" || context == "" {
 		return nil
 	}
 	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{
-		"hookEventName": "SessionStart", "additionalContext": TileNaming}})
+		"hookEventName": "SessionStart", "additionalContext": context}})
 	if err != nil {
 		return nil
 	}

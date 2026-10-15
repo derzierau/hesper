@@ -156,24 +156,28 @@ func TestHookDelivers(t *testing.T) {
 			t.Fatalf("hook %v: %v %q", args, err, out)
 		}
 	}
-	// SessionStart tells the agent to name its tile; outside an agent, nothing.
-	for _, env := range []string{"HESPER_AGENT_ID=" + a.ID, "HESPER_AGENT_ID="} {
+	// SessionStart of the tile's own conversation: hesperd answers with the
+	// naming context and the hook prints it; a nested run, or a session
+	// outside Hesper, prints nothing.
+	for _, c := range []struct {
+		agent, session string
+		context        bool
+	}{{a.ID, a.SessionID, true}, {a.ID, "nested-run", false}, {"", "elsewhere", false}} {
 		cmd := exec.Command(bin, "hook", "claude", "SessionStart")
-		cmd.Env = append(os.Environ(), "HESPER_SOCKET="+d.sock, env)
-		cmd.Stdin = strings.NewReader(`{"session_id":"` + a.SessionID + `","source":"startup"}`)
+		cmd.Env = append(os.Environ(), "HESPER_SOCKET="+d.sock, "HESPER_AGENT_ID="+c.agent)
+		cmd.Stdin = strings.NewReader(`{"session_id":"` + c.session + `","source":"startup"}`)
 		out, err := cmd.Output()
 		var got struct {
 			HookSpecificOutput struct{ HookEventName, AdditionalContext string }
 		}
-		inAgent := env != "HESPER_AGENT_ID="
 		switch {
 		case err != nil:
-			t.Fatalf("SessionStart: %v", err)
-		case !inAgent && len(out) != 0:
-			t.Fatalf("SessionStart outside an agent printed %q", out)
-		case inAgent && (json.Unmarshal(out, &got) != nil || got.HookSpecificOutput.HookEventName != "SessionStart" ||
+			t.Fatalf("SessionStart %+v: %v", c, err)
+		case !c.context && len(out) != 0:
+			t.Fatalf("SessionStart %+v printed %q", c, out)
+		case c.context && (json.Unmarshal(out, &got) != nil || got.HookSpecificOutput.HookEventName != "SessionStart" ||
 			!strings.Contains(got.HookSpecificOutput.AdditionalContext, "hesperctl rename self")):
-			t.Fatalf("SessionStart in an agent printed %q", out)
+			t.Fatalf("SessionStart %+v printed %q", c, out)
 		}
 	}
 	hook(`{"session_id":"`+a.SessionID+`","prompt":"hi"}`, "claude", "UserPromptSubmit")
