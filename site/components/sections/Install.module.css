@@ -1,0 +1,8 @@
+.command { margin-top: var(--s-section); width: 100%; }
+.requirements { list-style: none; margin: var(--s-xl) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-xxs); font-size: var(--t-body); color: var(--text2); }
+.hooks { margin-top: var(--s-m); font-size: var(--t-body); color: var(--text2); }
+.hooks code { font-size: var(--t-chrome); color: var(--text); }
+.multi { margin-top: var(--s-xxl); max-width: 60ch; color: var(--text2); }
+.quiet { margin-top: var(--s-xl); font: 400 var(--t-chrome)/1.6 var(--sans); color: var(--dim); }
+.quiet a { color: var(--text2); }
+.version { margin-top: var(--s-m); font: 400 var(--t-chrome)/1.6 var(--sans); color: var(--dim); font-variant-numeric: tabular-nums; }

@@ -1,0 +1,8 @@
+.footer { border-top: 1px solid var(--line); padding-block: var(--s-section); }
+.row1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-xxl); }
+.tagline { flex: 1 1 320px; font-size: 14px; line-height: 1.5; color: var(--text2); max-width: 56ch; }
+.links { display: flex; flex-wrap: wrap; gap: var(--s-xl); margin: var(--s-xxl) 0 0; padding: 0; list-style: none; font: 500 var(--t-chrome)/1.5 var(--sans); }
+.link { color: var(--dim); transition: color var(--m-quick) var(--ease); }
+.link:hover { color: var(--text); }
+.note { margin-top: var(--s-m); }
+.links + .note { margin-top: var(--s-xl); }

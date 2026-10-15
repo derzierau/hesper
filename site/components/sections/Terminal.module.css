@@ -1,0 +1,13 @@
+.term { margin: var(--s-section) 0 0; padding: var(--s-l) var(--s-xl); background: var(--term); color: var(--term-fg); border: 1px solid var(--line); border-radius: var(--r-tile); font: 400 12.5px/1.7 var(--mono); overflow-x: auto; white-space: pre; }
+.line { display: block; }
+.comment, .prompt { color: var(--term-dim); }
+.prompt { user-select: none; }
+/* Text that has not been typed yet keeps its space, so the block never reflows. */
+.pending { opacity: 0; }
+.caret { display: inline-block; width: 7px; height: 1em; vertical-align: -0.15em; background: var(--term-fg); }
+
+.facts { display: flex; flex-wrap: wrap; gap: var(--s-xl) var(--s-section); margin: var(--s-xxl) 0 0; }
+.fact { flex: 1 1 220px; min-width: 0; margin: 0; }
+.label { font: 500 var(--t-body)/1.5 var(--sans); color: var(--text); }
+.value { margin: var(--s-xxs) 0 0; font: 400 var(--t-body)/1.55 var(--sans); color: var(--text2); }
+.value code { font-size: var(--t-chrome); color: var(--text); }

@@ -1,0 +1,13 @@
+.table { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-xxl); margin-top: var(--s-section); }
+.col { min-width: 0; }
+.head { margin: 0; font: 500 var(--t-body)/1.5 var(--sans); color: var(--text); padding-bottom: var(--s-m); border-bottom: 1px solid var(--line); }
+.rows { list-style: none; margin: 0; padding: 0; }
+.row { display: flex; align-items: center; gap: var(--s-l); padding: var(--s-l) 0; border-bottom: 1px solid var(--line); font-size: var(--t-panel); color: var(--text); }
+.facts { margin-top: var(--s-xxl); max-width: 60ch; color: var(--text2); }
+.facts a { color: var(--text2); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.facts a:hover { text-decoration-color: currentColor; }
+.facts code { font-size: var(--t-body); overflow-wrap: anywhere; }
+.more { margin-top: var(--s-xl); font-size: var(--t-body); font-weight: 500; }
+@media (max-width: 640px) {
+  .table { grid-template-columns: 1fr; gap: var(--s-xl); }
+}
