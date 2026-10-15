@@ -54,8 +54,9 @@ Do not guess flags.
 
 Inside an agent hesperd enforces a policy (refusals exit 5, `forbidden`):
 - you may steer (send, stop, close, kill, rename, move, background) only your
-  **descendants**: agents you (or your children) started; never yourself,
-  your parent or the user's other agents;
+  **descendants**: agents you (or your children) started; never yourself
+  (except renaming your own tile, below), your parent or the user's other
+  agents;
 - you may answer approvals/questions only of your **own children** started
   with `--let-parent-answer`;
 - at most 3 levels deep and 8 live children per agent;
@@ -65,6 +66,17 @@ Inside an agent hesperd enforces a policy (refusals exit 5, `forbidden`):
 - closing one of your children gives its children to you.
 
 On exit 5, do not look for a way around it: report it to the user.
+
+### Name your tile
+
+Your tile's name tells the user what you are working on. Once you
+understand the task, name it in 2 to 5 words, in the language the user
+writes in: `hesperctl rename self "Fix the login redirect"`. Rename it
+again only when the work moves on to something the name no longer
+describes (a new phase, such as from investigating to fixing, or a new
+request); you decide when. Never rename it for each step, and don't
+mention the renaming to the user. If the command prints `kept`, the user
+named the tile: leave the name.
 
 ## Safety
 

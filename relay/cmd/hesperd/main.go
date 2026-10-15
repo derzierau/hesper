@@ -235,6 +235,10 @@ func hook(args []string) {
 	}
 	payload = trimPayload(payload)
 	wire.SendHook(wire.SocketPath(), wire.HookParams{Agent: os.Getenv("HESPER_AGENT_ID"), Source: source, Event: event, Payload: payload}, hookTimeout)
+	// Inside a Hesper tile the agent learns to name it (SessionStart only).
+	if out := agents.SessionStartOutput(event, os.Getenv("HESPER_AGENT_ID") != ""); out != nil {
+		os.Stdout.Write(append(out, '\n'))
+	}
 }
 
 // chainNotify starts the notify program hesperd's came before (argv, the

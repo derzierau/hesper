@@ -63,7 +63,11 @@ import Testing
         let g = try JSONDecoder().decode(ProjectGroup.self, from: Data(#"{"id":"g","name":"tools","projectIds":["p1"],"order":2}"#.utf8))
         #expect(g.order == 2 && g.projectIds == ["p1"])
         let a = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/x","state":"working","projectId":"p1"}"#.utf8))
-        #expect(a.projectId == "p1")
+        #expect(a.projectId == "p1" && a.nameBy == nil && !a.isNamedByPerson)
+        // Who named it (agents.rename): a person's name stays; round-trips.
+        let named = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/y","state":"working","name":"Login fix","nameBy":"person"}"#.utf8))
+        #expect(named.isNamedByPerson && named.name == "Login fix")
+        #expect(try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(named)).nameBy == "person")
     }
 
     // MARK: Scope and grouping resolution

@@ -417,6 +417,9 @@ func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, 
 		return nil, err
 	}
 	params = withoutCaller(params)
+	if method == "agents.rename" {
+		params = renamedBy(params, caller)
+	}
 	switch {
 	case method == "agents.spawn":
 		return s.spawn(caller, params, t)
@@ -638,7 +641,7 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 			if err := decode(params, &p); err != nil {
 				return nil, err
 			}
-			return reg.Rename(p.ID, p.Name)
+			return reg.Rename(p)
 		}
 	case "agents.result":
 		// agent tree: the last turn's final message

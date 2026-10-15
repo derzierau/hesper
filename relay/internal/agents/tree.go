@@ -220,6 +220,9 @@ func (s *Server) authorize(caller, method, target string, t treeView) error {
 		return answerAllowed(caller, a)
 	}
 	if !t.descends(target, caller) {
+		if target == caller && method == "agents.rename" {
+			return nil // an agent names its own tile (a person's name stays: Registry.Rename)
+		}
 		if target == caller {
 			return wire.Errorf(wire.CodeForbidden, "agent %s may not %s itself: only agents it started (a person may)", caller, verb(method))
 		}
@@ -411,6 +414,25 @@ func (s *Server) files(caller, method string, params json.RawMessage, t treeView
 
 // withoutCaller drops "caller" from params forwarded to another machine
 // (this daemon enforced the policy; hosts decode strictly).
+// renamedBy sets agents.rename's "by" from the verified caller (an agent,
+// or "" a person), replacing whatever the client sent.
+func renamedBy(params json.RawMessage, caller string) json.RawMessage {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(params, &m) != nil || m == nil {
+		return params
+	}
+	by := wire.NameByPerson
+	if caller != "" {
+		by = wire.NameByAgent
+	}
+	m["by"], _ = json.Marshal(by)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return params
+	}
+	return out
+}
+
 func withoutCaller(params json.RawMessage) json.RawMessage {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(params, &m) != nil || m == nil {

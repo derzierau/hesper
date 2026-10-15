@@ -140,6 +140,39 @@ func TestAgentCommands(t *testing.T) {
 	if err := ctl("rename", local, "better", "name"); err != nil {
 		t.Fatal(err)
 	}
+	// Inside the agent: rename self works, a person's name stays ("kept"),
+	// and only a person hands the name back (--auto).
+	t.Setenv("HESPER_AGENT_ID", a.ID)
+	t.Setenv("HESPER_SOCKET", sock)
+	out := capture(t, func() {
+		if err := ctl("rename", "self", "Fix", "the", "redirect"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, "kept \"better name\"") {
+		t.Fatalf("an agent renamed a person's name: %q", out)
+	}
+	if err := ctl("rename", "self", "--auto"); !errors.As(err, new(*wire.Error)) {
+		t.Fatalf("an agent's --auto: %v", err)
+	}
+	t.Setenv("HESPER_AGENT_ID", "")
+	if err := ctl("rename", a.ID, "--auto"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HESPER_AGENT_ID", a.ID)
+	if err := ctl("rename", "self", "Fix", "the", "redirect"); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := reg.Get(a.ID); g.Name != "Fix the redirect" || g.NameBy != wire.NameByAgent {
+		t.Fatalf("self-rename after --auto %+v", g)
+	}
+	t.Setenv("HESPER_AGENT_ID", "")
+	if err := ctl("rename", "self", "x"); err == nil || !strings.Contains(err.Error(), "not inside a Hesper agent") {
+		t.Fatalf("self outside an agent: %v", err)
+	}
+	if err := ctl("rename", local, "better", "name"); err != nil {
+		t.Fatal(err)
+	}
 	if err := ctl("stop", a.ID); err != nil {
 		t.Fatal(err)
 	}

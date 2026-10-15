@@ -1075,19 +1075,38 @@ func (r *Registry) Remove(id string) error {
 	return nil
 }
 
-// Rename gives an agent a new display name.
-func (r *Registry) Rename(id, name string) (wire.Agent, error) {
-	name = strings.TrimSpace(name)
-	if name == "" || strings.ContainsAny(name, "\n\r") {
+// Rename gives an agent a new display name and records who chose it
+// (p.By; empty: a person). A person's name stays: an agent's rename
+// returns the agent unchanged. p.Auto (a person) hands naming back to
+// the agent, with or without a new name.
+func (r *Registry) Rename(p wire.RenameParams) (wire.Agent, error) {
+	name := strings.TrimSpace(p.Name)
+	by := p.By
+	if by == "" {
+		by = wire.NameByPerson
+	}
+	if p.Auto && by != wire.NameByPerson {
+		return wire.Agent{}, wire.Errorf(wire.CodeForbidden, "only a person hands an agent's name back to it")
+	}
+	if strings.ContainsAny(name, "\n\r") || (name == "" && !p.Auto) {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "a name is one non-empty line")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	a, err := r.find(id)
+	a, err := r.find(p.ID)
 	if err != nil {
 		return wire.Agent{}, err
 	}
-	a.Name = name
+	if by == wire.NameByAgent && a.NameBy == wire.NameByPerson {
+		return a.Agent, nil
+	}
+	if name != "" {
+		a.Name = name
+	}
+	a.NameBy = by
+	if p.Auto {
+		a.NameBy = ""
+	}
 	r.changed(a)
 	return a.Agent, nil
 }

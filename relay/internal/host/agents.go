@@ -165,7 +165,8 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 		if err != nil {
 			return nil, err
 		}
-		got, err := reg.Rename(a.ID, p.Name)
+		p.ID = a.ID
+		got, err := reg.Rename(p)
 		if err != nil {
 			return nil, publicError(err)
 		}

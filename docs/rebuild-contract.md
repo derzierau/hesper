@@ -117,7 +117,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `agents.stop` | `{id}` | `{}` (SIGHUP, then SIGKILL after 5 s; registry keeps it as `exited`) |
 | `agents.resume` | `{id}` | `Agent` (respawn with its session id) |
 | `agents.remove` | `{id}` | `{}` (forget an exited agent) |
-| `agents.rename` | `{id, name}` | `Agent` |
+| `agents.rename` | `{id, name, auto?}` | `Agent` (who named it in `nameBy`; see "As built — agent tree", tile names) |
 | `agents.move` | `{id, to}` | `Agent` (handoff with conversation; part R) |
 | `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?:{col,row}, alt?}`: the terminal as plain text (added, see "As built — agent lifecycle CLI") |
 | `projects.recent` | – | `[{path, name, lastUsed}]` |
@@ -3653,7 +3653,30 @@ launchd) and unset `HESPER_AGENT_ID`, and is then a person.
 | read-only (`agents.list`, `agents.result`, `agents.subscribe`, ro attach, `hello`, …) | always |
 | `agents.spawn` | the child's depth (caller's + 1) ≤ `maxAgentDepth` (default 3) and the caller has < `maxAgentChildren` (default 8) live children (not exited; spawns under way count) |
 | `agents.answer`; `agents.input` to an agent in `approval` or `question` | the target is the caller's **own child** (not a grandchild, not itself) started with `letParentAnswer` |
-| `agents.input` (otherwise), `stop`, `resume`, `remove`, `rename`, `move`, `close`, `kill`, `background`; rw attach (verified callers only) | the target is a strict **descendant** of the caller (never itself, never its parent or another agent's) |
+| `agents.rename` | the target is the caller **itself** or a strict descendant (a person's name stays, below) |
+| `agents.input` (otherwise), `stop`, `resume`, `remove`, `move`, `close`, `kill`, `background`; rw attach (verified callers only) | the target is a strict **descendant** of the caller (never itself, never its parent or another agent's) |
+
+**Tile names.** An agent names its own tile: `hesperctl rename self
+NAME` (`self` is `HESPER_AGENT_ID`, any command's ID may be `self`).
+`Agent.nameBy` (omitempty, persisted, carried by moves as the handoff
+manifest's `agent.nameBy`) says who chose the name: absent (the task's),
+`agent` (the agent itself or an ancestor) or `person`. hesperd sets
+`agents.rename`'s `by` from the verified caller, replacing a client's,
+and a paired Mac's hesperd forwards it to the host. **A person's name
+stays**: an agent's rename of it succeeds without changing it (the
+answer shows the person's name; hesperctl prints `kept "NAME"`).
+`auto: true` (a person only; hesperctl `rename ID --auto`, the tile
+menu's "Let the Agent Name It") clears `nameBy`, keeping the name until
+the agent's next rename. No rate limit: the agent decides when a new
+name says more. **How agents learn it**: `hesperd hook claude|codex
+SessionStart` run inside an agent (`HESPER_AGENT_ID` set) prints
+`{"hookSpecificOutput": {"hookEventName": "SessionStart",
+"additionalContext": …}}` (`agents.TileNaming`): name the tile in 2 to 5
+words in the user's language once the task is understood, again only
+when the work moves on to something the name no longer describes, keep
+a person's name, don't mention it. Claude Code and Codex add that text
+as context at startup, resume, /clear and compaction; outside Hesper
+the hook prints nothing. The Hesper skill says the same.
 
 Refusals are JSON-RPC errors with `data.code: "forbidden"` (hesperctl
 exit 5) and a message naming the rule. Limits come from settings.json in

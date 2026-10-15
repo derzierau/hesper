@@ -76,7 +76,12 @@ func init() {
 				"every 60 s), at close and move; kept 14 days. Prints the commit and the number of changed files (nothing for a folder outside Git).",
 			Output: "{checkpoint: {ref, commit, at, changed, branch?} | null}"},
 		{Name: "rm", Destructive: true, Summary: "Forget an exited agent", Usage: "rm ID", Help: idHelp},
-		{Name: "rename", Summary: "Rename an agent", Usage: "rename ID NAME… [--json]", Help: idHelp, Output: "Agent"},
+		{Name: "rename", Summary: "Rename an agent", Usage: "rename ID NAME… [--auto] [--json]",
+			Help: idHelp + " ID self is the agent this command runs in: an agent may rename itself (and the agents it started), " +
+				"never others. A name a person gives stays: an agent's rename of it changes nothing and prints \"kept\" with the person's name. " +
+				"--auto (a person) hands the name back to the agent; NAME is then optional.",
+			Output:   "Agent (nameBy: \"person\", \"agent\" or absent for the task's name)",
+			Examples: []string{"hesperctl rename self \"Fix the login redirect\"", "hesperctl rename a7f3k2 release notes", "hesperctl rename a7f3k2 --auto"}},
 	} {
 		c.Group, c.Run = groupAgents, agentRun(c.Name)
 		if c.Name == "approve" {
@@ -143,8 +148,21 @@ func dialDaemon(ctx context.Context, socket string) (*wire.Client, error) {
 	return c, nil
 }
 
-// resolveAgent finds an agent by full id, local id or unique name.
+// selfID is the agent this command runs in (envAgentID).
+func selfID() (string, error) {
+	id := envAgentID()
+	if id == "" {
+		return "", failf(wire.CodeNotFound, "not inside a Hesper agent (HESPER_AGENT_ID is not set)")
+	}
+	return id, nil
+}
+
+// resolveAgent finds an agent by full id, local id, unique name, or
+// self (the agent this command runs in).
 func resolveAgent(ctx context.Context, c *wire.Client, ref string) (string, error) {
+	if ref == "self" {
+		return selfID()
+	}
 	if strings.Contains(ref, "/") {
 		return ref, nil
 	}
@@ -176,12 +194,9 @@ func resolveAgent(ctx context.Context, c *wire.Client, ref string) (string, erro
 func selfCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	asJSON := jsonFlag(f)
 	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, _ []string) error {
-		id := os.Getenv("HESPER_AGENT_ID")
-		if id == "" {
-			return failf(wire.CodeNotFound, "not inside a Hesper agent (HESPER_AGENT_ID is not set)")
-		}
-		if m := os.Getenv("HESPER_MACHINE"); m != "" && !strings.Contains(id, "/") {
-			id = m + "/" + id
+		id, err := selfID()
+		if err != nil {
+			return err
 		}
 		var list []wire.Agent
 		if err := c.Call(ctx, "agents.list", nil, &list); err != nil {
@@ -213,7 +228,7 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 	asJSON := jsonFlag(f)
 	var (
 		kind, profile, project, name, branch, machine, worktreePath *string
-		worktree, noSubmit, always, ro, owner                       *bool
+		worktree, noSubmit, always, ro, owner, auto                 *bool
 		message                                                     *string
 		tree                                                        newTreeFlags // agent tree (tree.go)
 	)
@@ -235,6 +250,8 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		always = f.Bool("always", false, "Approve and don't ask again")
 	case "deny":
 		message = f.String("message", "", "Tell the agent what to do instead")
+	case "rename":
+		auto = f.Bool("auto", false, "Hand the name back to the agent (a person; NAME optional)")
 	case "attach":
 		ro = f.Bool("ro", false, "Read only")
 		owner = f.Bool("owner", true, "Resize the agent to this terminal")
@@ -416,16 +433,25 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		}
 		return print(a)
 	case "rename":
-		if err := need(2, "rename ID NAME"); err != nil {
+		if !*auto {
+			if err := need(2, "rename ID NAME"); err != nil {
+				return err
+			}
+		} else if err := need(1, "rename ID --auto"); err != nil {
 			return err
 		}
 		target, err := id()
 		if err != nil {
 			return err
 		}
+		name := strings.Join(positional[1:], " ")
 		var a wire.Agent
-		if err := c.Call(ctx, "agents.rename", wire.RenameParams{ID: target, Name: strings.Join(positional[1:], " ")}, &a); err != nil {
+		if err := c.Call(ctx, "agents.rename", wire.RenameParams{ID: target, Name: name, Auto: *auto}, &a); err != nil {
 			return err
+		}
+		if !*asJSON && name != "" && a.Name != strings.TrimSpace(name) && a.NameBy == wire.NameByPerson {
+			fmt.Printf("kept %q: a person named %s\n", a.Name, a.ID)
+			return nil
 		}
 		return print(a)
 	case "move":
