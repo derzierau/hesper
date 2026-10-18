@@ -92,6 +92,19 @@ GitHub issue before implementation (see [CONTRIBUTING.md](CONTRIBUTING.md)).
   or change its underlying identity.
 - Issue / implementation PR: Not yet opened.
 
+### Keep group headers visible during horizontal scrolling
+
+- Type: feature
+- Status: idea
+- Problem: In large groups or folders such as Scratch, horizontal scrolling can
+  move the header out of view, making it difficult to tell which group is shown.
+- Proposed change: Keep the group header anchored in place while its contents
+  scroll horizontally, so the group name stays visible.
+- Success criteria: In a group wider than the viewport, scroll horizontally
+  through its contents. The group header remains visible and identifies the
+  current group throughout.
+- Issue / implementation PR: Not yet opened.
+
 ## Templates
 
 ### Bug report
