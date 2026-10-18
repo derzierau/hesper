@@ -105,6 +105,23 @@ GitHub issue before implementation (see [CONTRIBUTING.md](CONTRIBUTING.md)).
   current group throughout.
 - Issue / implementation PR: Not yet opened.
 
+### Choose the default folder for new chats
+
+- Type: feature
+- Status: idea
+- Problem: A chat started without a project always lands in a new scratch
+  folder under `~/scratch`. People who keep their work in a dedicated folder
+  (one subfolder per project) have to pick the project every time, and quick
+  chats pile up in scratch instead.
+- Proposed change: Add a setting for where new chats start: a default project
+  folder (with a project picker that opens there) and, separately, the
+  location of scratch projects, instead of only the undocumented
+  `HESPER_SCRATCH_ROOT` environment variable.
+- Success criteria: With the setting set, new chats started without choosing a
+  project open in the configured folder; the setting is per Mac, survives app
+  restarts and updates, and scratch projects keep working.
+- Issue / implementation PR: Not yet opened.
+
 ## Templates
 
 ### Bug report
