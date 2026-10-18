@@ -32,6 +32,32 @@ commitments. Discuss larger changes in a GitHub issue before implementation
   back to the first column.
 - Issue / implementation PR: Not yet opened.
 
+## Custom display names for connected machines
+
+- Status: idea
+- Problem: Connected machines need recognizable, user-chosen names so it is
+  easier to identify where agents are running.
+- Proposed change: Allow users to assign and edit a custom display name for
+  each connected machine.
+- Success criteria: A connected machine can be renamed in Hesper, the custom
+  name persists across reconnects and app restarts, and machine selectors and
+  labels use it consistently. Renaming does not break the machine connection
+  or change its underlying identity.
+- Issue / implementation PR: Not yet opened.
+
+## Keep menu navigation expanded and fully visible
+
+- Status: idea
+- Problem: The menu window sometimes becomes too wide, and its first option,
+  "General", appears slid inward or partially hidden.
+- Proposed change: Keep the menu navigation permanently expanded, with every
+  option fully visible, instead of sliding or collapsing it. Keep the window
+  width appropriate for the available screen space.
+- Success criteria: Opening, resizing, and reopening the menu keeps "General"
+  and all other navigation options fully visible and expanded. The window does
+  not unexpectedly become too wide or clip navigation on smaller screens.
+- Issue / implementation PR: Not yet opened.
+
 ## Template for new ideas
 
 Copy this template below for each idea:
