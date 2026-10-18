@@ -58,6 +58,17 @@ commitments. Discuss larger changes in a GitHub issue before implementation
   not unexpectedly become too wide or clip navigation on smaller screens.
 - Issue / implementation PR: Not yet opened.
 
+## Show the full text of suggested chat answers
+
+- Status: idea
+- Problem: When the chat suggests an answer, the first letter of the suggestion
+  is cut off.
+- Proposed change: Adjust the suggested-answer layout so the entire text is
+  visible, including its first character.
+- Success criteria: Display a suggested answer in chat and verify that its
+  first letter is fully visible, with no clipping at the left edge.
+- Issue / implementation PR: Not yet opened.
+
 ## Template for new ideas
 
 Copy this template below for each idea:
