@@ -2616,7 +2616,8 @@ Mac's agents to devices approved here) and `controller.credentials.json`
 role whose credential is rejected stops and logs the login command, the
 other role and the agents keep running. New flags: `--host-credentials`,
 `--controller-credentials`, `--control-socket` (default
-`controller.sock`, `off`), `--allow-shell`, `--require-device-keys`,
+`controller.sock`, `off`), `--allow-shell`, `--allow-forward PORTS`
+(port forwards, below), `--require-device-keys`,
 `--direct auto|on|off`, `--direct-port`, `--keep-awake`,
 `--keep-awake-min-battery`. Device keys, `e2e.key`, `trusted-hosts.json`,
 `controllers.json`, the audit log, nonces and move uploads live in the
@@ -2631,7 +2632,8 @@ approve(-device), devices-local and the agent commands.
 **What the relay sees** (host publication, unsigned `snapshot`): per agent
 its local id (`terminalId`), kind (`role`), state, attention kind and
 `attentionSince`, PTY size, `exited`; the host's `short`, capabilities
-(`agents`, `e2e`, `direct`, `transfer`, `spawn`, `shell`, `ping`), keys,
+(`agents`, `e2e`, `direct`, `transfer`, `spawn`, `shell`, `ping`,
+`forward`), keys,
 machine stats. No names, tasks, attention titles/details,
 summaries, activity, paths, branches or terminal bytes: those travel only
 sealed (request results, link events, attach channels). A hesperd host
@@ -2645,11 +2647,13 @@ host `--allow-shell`), `agents.input`, `agents.answer`, `agents.stop
 {id, wait?}`, `agents.resume`, `agents.remove`, `agents.rename`,
 `agents.link`, `agents.attach`, `agents.plan`, `agents.probe`,
 `agents.export`, `download`, `transfer`, `agents.import`, `job`,
-`projects.clone`, `projects.recent`, `profiles.list`, `fs.stat`, `files.put`, `files.chunk`. Rights: observe
+`projects.clone`, `projects.recent`, `profiles.list`, `fs.stat`, `files.put`, `files.chunk`,
+`ports.open {link, ch, port}` (a port forward's connection, host
+`--allow-forward`). Rights: observe
 (list, link, ro attach, plan, probe, export, download, job, recent,
 profiles, fs.stat), answer, type (input, rw attach, files.put/chunk), transfer (spawn, stop, resume,
 remove, rename, import, transfer, clone), shell (any shell agent, plus
-the strong key to start one). Shell agents are invisible to callers
+the strong key to start one; `ports.open`). Shell agents are invisible to callers
 without the shell right (lists and link events).
 
 **Links and attach.** One link per (controller device, host): an

@@ -94,6 +94,11 @@ Code: `relay/macos/hesper-keys/main.swift` (helper), `relay/pkg/devicekey`
 - **Rights table additions**: `setPersistence` and writable `terminal.open`
   need `type`, `terminal.open` with `readOnly: true` needs `observe`; methods
   not in the table are refused while enforcing. `snapshot` is not signed.
+  The `shell` right also covers `ports.open` (a port forward to the host's
+  loopback, device key, host `--allow-forward`): a shell there reaches
+  those ports anyway, and a new right would make `controllers.json`
+  unreadable to an older hesperd. Refused, like shells, while enforcement
+  is off.
 - **Enforcement** (deviation, fail closed): on as soon as `controllers.json`
   *exists* (created by the first approval), not "has a controller": revoking
   the last device keeps the host closed. Before that: allowed and audited as
