@@ -461,6 +461,12 @@ Opening a shell on another Mac is off by default. Install with
 `--allow-shell` on the Mac that should accept it; the request then needs
 Touch ID on the Mac that sends it.
 
+To open a dev server's `localhost` ports on your Mac, run its hesperd
+with `hesperd serve --allow-forward 3000,8000-8999` (or `all`), approve
+your Mac there with the `shell` right, then on the Mac:
+`hesperctl forwards add dev:3000` and open `http://localhost:3000`.
+Forwards are kept across restarts (`hesperctl forwards ls`, `rm`).
+
 ## Where things live
 
 | Path | |
