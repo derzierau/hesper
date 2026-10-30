@@ -109,7 +109,7 @@ struct SettingsView: View {
     // MARK: General
 
     @ViewBuilder private var general: some View {
-        SettingsSection("Wall", footer: "Each wall keeps its own layout; this is the frontmost wall's (also ⌥⌘L for the next layout, and the layout button in the toolbar). Every tile uses the tile font and shows as much of its agent as fits; cards never get narrower than the minimum width, the wall adds rows or scrolls instead.") {
+        SettingsSection("Wall", footer: "Each wall keeps its own layout; this is the frontmost wall's (also ⌥⌘L for the next layout, and the layout button in the toolbar). Every tile, the focused agent and agent windows use this font size; a tile shows as much of its agent as fits; cards never get narrower than the minimum width, the wall adds rows or scrolls instead.") {
             SettingsLine("Layout") {
                 Segments(LayoutSwitcher(wall.arrangement).rows.map { r in (r.arrangement, r.title, r.shortcut) }, selection: Bindable(wall).arrangement)
                     .accessibilityIdentifier("settings.layout")
@@ -118,12 +118,12 @@ struct SettingsView: View {
                 Segments([(60, "60 · dense", nil), (80, "80", nil), (100, "100 characters", nil)], selection: Bindable(wall).minChars)
                     .accessibilityIdentifier("settings.minChars")
             }
-            SettingsLine("Tile font size") {
+            SettingsLine("Font size") {
                 HStack(spacing: DS.Spacing.m) {
-                    Slider(value: Bindable(model.settings).tileFontSize, in: AppSettings.tileFontRange, step: 0.5)
+                    Slider(value: Bindable(model.settings).fontSize, in: TerminalFont.range, step: TerminalFont.step)
                         .frame(width: Self.sliderWidth)
                         .accessibilityIdentifier("settings.tileFont")
-                    Text(String(format: "%.1f pt", model.settings.tileFontSize)).font(DS.font(.meta)).foregroundStyle(Theme.dim).monospacedDigit()
+                    Text(String(format: "%.1f pt", model.settings.fontSize)).font(DS.font(.meta)).foregroundStyle(Theme.dim).monospacedDigit()
                 }
             }
         }

@@ -16,11 +16,16 @@ final class AppSettings {
     var hotKey: HotKeySpec { didSet { save("quickLaunchKeyCode", Int(hotKey.keyCode)); save("quickLaunchModifiers", Int(hotKey.carbonModifiers)) } }
     var notificationsEnabled: Bool { didSet { save("notificationsEnabled", notificationsEnabled) } }
     var notificationSound: Bool { didSet { save("notificationSound", notificationSound) } }
-    /// The one font of every wall tile (9–16 pt; default: the user's
-    /// Ghostty font size, else 12).
-    var tileFontSize: Double { didSet { save("tileFontSize", tileFontSize); if oldValue != tileFontSize { onTileFontChanged?() } } }
-    @ObservationIgnored var onTileFontChanged: (() -> Void)?
-    static let tileFontRange: ClosedRange<Double> = 9...16
+    /// The one terminal font: wall tiles, the focused agent, agent
+    /// windows (HesperCore `TerminalFont`; default: the user's Ghostty font
+    /// size, else 12). A change posts `fontSizeDidChange`.
+    var fontSize: Double {
+        didSet {
+            save(TerminalFont.key, fontSize)
+            if oldValue != fontSize { NotificationCenter.default.post(name: Self.fontSizeDidChange, object: self) }
+        }
+    }
+    static let fontSizeDidChange = Notification.Name("HesperFontSizeDidChange")
     /// kind → profile; missing: hesperd's default for the kind.
     var defaultProfiles: [String: String] { didSet { save("defaultProfiles", defaultProfiles) } }
     /// Desks: switch desks automatically when the displays change.
@@ -55,11 +60,12 @@ final class AppSettings {
     }
     @ObservationIgnored var onShortcutsChanged: (() -> Void)?
 
-    init(persist: Bool, defaultTileFont: Double = 12) {
+    init(persist: Bool, defaultFont: Double = TerminalFont.defaultSize) {
         self.persist = persist
         let d = UserDefaults.standard
-        let f = persist ? (d.object(forKey: "tileFontSize") as? Double ?? defaultTileFont) : defaultTileFont
-        tileFontSize = min(max(f, Self.tileFontRange.lowerBound), Self.tileFontRange.upperBound)
+        fontSize = TerminalFont.resolve(stored: persist ? d.object(forKey: TerminalFont.key) as? Double : nil,
+                                        legacy: persist ? d.object(forKey: TerminalFont.legacyKey) as? Double : nil,
+                                        fallback: defaultFont)
         quickLaunchEnabled = persist ? (d.object(forKey: "quickLaunchEnabled") as? Bool ?? true) : true
         if persist, let k = d.object(forKey: "quickLaunchKeyCode") as? Int, let m = d.object(forKey: "quickLaunchModifiers") as? Int {
             hotKey = HotKeySpec(keyCode: UInt32(k), carbonModifiers: UInt32(m))

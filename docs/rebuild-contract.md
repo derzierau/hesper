@@ -1334,7 +1334,7 @@ an agent whose local worktree has uncommitted changes (`git status
 --porcelain`) asks, inline on the tile (Close anyway ⏎ · Keep esc as
 KeyButtons; the strip takes the keyboard while it shows and gives it
 back after: "pointer paths" below).
-Settings ⌘, is a window (General: layout, tile font, min width; Quick
+Settings ⌘, is a window (General: layout, font size, min width; Quick
 Launch; Notifications; Profiles per kind) of one fixed size on every
 pane (`SettingsView.size`, set by AppKit, never by a pane's fitting
 size): the sidebar shows each pane's title and ⌘N chip, a control row
@@ -1342,9 +1342,11 @@ too wide for its column stacks under its label, and the pane scrolls
 instead of clipping. Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
 
-**One tile font; the PTY follows the tile.** Every tile uses the same
-font (Settings › Tile font size, default the user's Ghostty font, 9–16
-pt) and shows as many cols × rows as fill its terminal area; tiles attach
+**One font; the PTY follows the tile.** Every tile, the focused agent
+and every agent window use the same font (Settings › Font size, default
+the user's Ghostty font, 9–16 pt; HesperCore `TerminalFont`, stored as
+`terminalFontSize`, an earlier `tileFontSize` value carried over; a
+change re-attaches open tiles and focus views at once). A tile shows as many cols × rows as fill its terminal area; tiles attach
 with `--fit`, so with no owner the PTY takes the largest tile's grid (≥
 80 × 24, hesperd's rule). A focused agent's PTY returns to its tile's
 grid when focus closes (checked end to end). Min card width = N columns at

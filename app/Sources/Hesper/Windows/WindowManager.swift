@@ -14,7 +14,6 @@ import SwiftUI
 final class WindowManager: NSObject {
     let primary: AppModel
     let env: AppEnvironment
-    let userFontSize: Double
     private(set) var walls: [WallEntry] = []
     private var book = AgentWindowBook<AgentWindowController>()
     let ownership = SizeOwnership()
@@ -30,10 +29,9 @@ final class WindowManager: NSObject {
     /// Call before the main window (and its toolbar) is created.
     static func prepare() { ScopePill.install() }
 
-    init(primary: AppModel, main: MainWindowController, env: AppEnvironment, userFontSize: Double) {
+    init(primary: AppModel, main: MainWindowController, env: AppEnvironment) {
         self.primary = primary
         self.env = env
-        self.userFontSize = userFontSize
         restorer = WindowRestorer(env: env)
         front = FrontWall(primary)
         super.init()
@@ -354,7 +352,7 @@ final class WindowManager: NSObject {
             updateCapacityNow(first)
         }
         let s = scope ?? ScopeMath.defaultScope(firstWallCapacity: walls.first?.capacity ?? 1, agentCount: primary.registry.agents.count)
-        let c = WallWindowController(model: m, userFontSize: userFontSize, title: "Hesper — \(scopeName(s) ?? "Wall \(n)")", manager: self)
+        let c = WallWindowController(model: m, title: "Hesper — \(scopeName(s) ?? "Wall \(n)")", manager: self)
         let w = WallEntry(id: id ?? "wall-\(UUID().uuidString.prefix(8).lowercased())", isMain: false, model: m, root: c.root, window: c.window!, scope: s)
         w.controller = c
         walls.append(w)
@@ -422,7 +420,7 @@ final class WindowManager: NSObject {
         let front = frontAgentWindow()
         let (c, created) = book.openOrFocus(id) {
             let m = mirrorModel()
-            let c = AgentWindowController(agent: a, model: m, manager: self, fontSize: userFontSize, ownsSize: ownsSize)
+            let c = AgentWindowController(agent: a, model: m, manager: self, ownsSize: ownsSize)
             m.routeAttention = { [weak self, weak m] a in self?.routeAttention(a, from: m) ?? false }
             return c
         }

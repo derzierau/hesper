@@ -848,7 +848,7 @@ final class WallView: NSView {
     func spec() -> WallSpec {
         var s = Metrics.wall
         s.minChars = model?.minChars ?? 80
-        s.tileFont = model?.settings.tileFontSize ?? 12
+        s.tileFont = model?.settings.fontSize ?? TerminalFont.defaultSize
         return s
     }
 

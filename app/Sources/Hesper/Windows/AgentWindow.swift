@@ -28,7 +28,7 @@ final class AgentWindowController: NSWindowController, NSWindowDelegate {
     private var rootModeChanged: (() -> Void)?
     private var rootAgentsChanged: (() -> Void)?
 
-    init(agent: Agent, model: AppModel, manager: WindowManager, fontSize: Double, ownsSize: Bool) {
+    init(agent: Agent, model: AppModel, manager: WindowManager, ownsSize: Bool) {
         agentID = agent.id
         self.model = model
         self.manager = manager
@@ -36,7 +36,6 @@ final class AgentWindowController: NSWindowController, NSWindowDelegate {
         model.wallScope = { _ in [] }   // no wall tiles behind the focus view
         model.draftsShown = { _ in [] } // no wall: ⌘N opens quick launch
         root = RootView(model: model)
-        root.userFontSize = fontSize
         let w = AgentWindow(contentRect: NSRect(origin: .zero, size: Self.defaultSize),
                             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         w.model = model

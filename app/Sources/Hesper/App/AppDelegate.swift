@@ -27,8 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         model = AppModel(env: env, userFontSize: user.fontSize)
         WindowManager.prepare() // window layer: before the main toolbar exists
-        windowController = MainWindowController(model: model, userFontSize: user.fontSize ?? 13)
-        windows = WindowManager(primary: model, main: windowController, env: env, userFontSize: user.fontSize ?? 13)
+        windowController = MainWindowController(model: model)
+        windows = WindowManager(primary: model, main: windowController, env: env)
         CommandRegistry.install(model.settings.shortcutOverrides)
         buildMenu()
         // A rebound shortcut: the routers read the new table at key time,
