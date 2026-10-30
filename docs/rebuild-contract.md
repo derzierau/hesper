@@ -1335,7 +1335,11 @@ an agent whose local worktree has uncommitted changes (`git status
 KeyButtons; the strip takes the keyboard while it shows and gives it
 back after: "pointer paths" below).
 Settings ⌘, is a window (General: layout, tile font, min width; Quick
-Launch; Notifications; Profiles per kind). Focus ⌘↩ zooms the card to the
+Launch; Notifications; Profiles per kind) of one fixed size on every
+pane (`SettingsView.size`, set by AppKit, never by a pane's fitting
+size): the sidebar shows each pane's title and ⌘N chip, a control row
+too wide for its column stacks under its label, and the pane scrolls
+instead of clipping. Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
 
 **One tile font; the PTY follows the tile.** Every tile uses the same

@@ -40,10 +40,10 @@ struct SettingsView: View {
         }
     }
 
-    static let size = NSSize(width: 720, height: 540)
+    static let size = NSSize(width: 960, height: 640)
     /// Posted to open a pane (userInfo "pane"): the shortcuts sheet's footer.
     static let showPane = Notification.Name("hesper.settings.showPane")
-    static let sidebarWidth: CGFloat = 196
+    static let sidebarWidth: CGFloat = 224
     static let labelWidth: CGFloat = 168
     static let sliderWidth: CGFloat = 180
 
@@ -51,23 +51,25 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             sidebar
             Rectangle().fill(Theme.stroke).frame(width: 1)
-            ScrollView {
-                VStack(alignment: .leading, spacing: DS.Spacing.xl) {
-                    Text(pane.title).font(DS.font(.sheetTitle, .semibold)).foregroundStyle(Theme.fg)
-                    content
+            GeometryReader { area in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: DS.Spacing.xl) {
+                        Text(pane.title).font(DS.font(.sheetTitle, .semibold)).foregroundStyle(Theme.fg)
+                        content
+                    }
+                    .padding(.horizontal, DS.Spacing.xxl)
+                    .padding(.top, DS.chromeMaxHeight + DS.Spacing.l)
+                    .padding(.bottom, DS.Spacing.xxl)
+                    .frame(width: area.size.width, alignment: .leading)
                 }
-                .padding(.horizontal, DS.Spacing.xxl)
-                .padding(.top, DS.chromeMaxHeight + DS.Spacing.l)
-                .padding(.bottom, DS.Spacing.xxl)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .frame(minWidth: 0, maxWidth: .infinity)
             .accessibilityIdentifier("settings.\(pane.rawValue)")
         }
-        .frame(width: Self.size.width, height: Self.size.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.color(.background))
         .font(DS.font(.body))
         .foregroundStyle(Theme.fg)
-        .background(SettingsWindowStyle())
         .ignoresSafeArea()
         .onAppear { symbolicHotKeys = Self.readSymbolicHotKeys() }
         .onReceive(NotificationCenter.default.publisher(for: Self.showPane)) { n in
@@ -434,11 +436,20 @@ private struct SettingsLine<Control: View>: View {
     init(_ label: String, @ViewBuilder control: () -> Control) { self.label = label; self.control = control() }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.l) {
-            Text(label).font(DS.font(.body)).foregroundStyle(Theme.fg2)
-                .frame(width: SettingsView.labelWidth, alignment: .leading)
-            control.frame(maxWidth: .infinity, alignment: .leading)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.l) {
+                labelView.frame(width: SettingsView.labelWidth, alignment: .leading)
+                control.frame(maxWidth: .infinity, alignment: .leading)
+            }
+            VStack(alignment: .leading, spacing: DS.Spacing.s) {
+                labelView
+                control.frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
+    }
+
+    private var labelView: some View {
+        Text(label).font(DS.font(.body)).foregroundStyle(Theme.fg2)
     }
 }
 
@@ -454,16 +465,21 @@ private struct Segments<T: Hashable>: View {
     }
 
     var body: some View {
-        HStack(spacing: DS.Spacing.xxs) {
-            ForEach(Array(options.enumerated()), id: \.offset) { _, o in
-                Button { selection = o.value } label: { Pill(o.title, variant: .segment(selected: o.value == selection), kbd: o.kbd) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(o.title)
-                    .accessibilityAddTraits(o.value == selection ? .isSelected : [])
-            }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DS.Spacing.xxs) { choices }
+            VStack(alignment: .leading, spacing: DS.Spacing.xxs) { choices }
         }
         .padding(DS.Spacing.xxs)
         .overlay(DS.Radius.shape(DS.Radius.control + DS.Spacing.xxs).strokeBorder(Theme.stroke))
+    }
+
+    private var choices: some View {
+        ForEach(Array(options.enumerated()), id: \.offset) { _, o in
+            Button { selection = o.value } label: { Pill(o.title, variant: .segment(selected: o.value == selection), kbd: o.kbd) }
+                .buttonStyle(.plain)
+                .accessibilityLabel(o.title)
+                .accessibilityAddTraits(o.value == selection ? .isSelected : [])
+        }
     }
 }
 
@@ -484,20 +500,6 @@ struct CommandText: View {
         .padding(.leading, DS.Spacing.m)
         .padding(.vertical, DS.Spacing.xxs)
         .background(DS.Radius.shape(DS.Radius.control).fill(Theme.chipBG))
-    }
-}
-
-/// The settings window: content under a transparent title bar, so the
-/// sidebar runs to the top.
-private struct SettingsWindowStyle: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { NSView() }
-    func updateNSView(_ v: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let w = v.window, !w.styleMask.contains(.fullSizeContentView) else { return }
-            w.styleMask.insert(.fullSizeContentView)
-            w.titlebarAppearsTransparent = true
-            w.titleVisibility = .hidden
-        }
     }
 }
 

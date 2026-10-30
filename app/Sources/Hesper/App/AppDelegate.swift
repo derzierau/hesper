@@ -282,9 +282,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var settingsWindow: NSWindow?
     @objc func showSettings() {
         if settingsWindow == nil {
-            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: model, onHotKeyChanged: { [weak self] in self?.registerHotKey() }, desks: windows.desks, front: windows.front)))
+            let host = NSHostingController(rootView: SettingsView(model: model, onHotKeyChanged: { [weak self] in self?.registerHotKey() }, desks: windows.desks, front: windows.front))
+            // AppKit owns the size; a pane's fitting size must not resize it.
+            host.sizingOptions = []
+            let w = NSWindow(contentRect: NSRect(origin: .zero, size: SettingsView.size),
+                             styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.contentViewController = host
+            w.setContentSize(SettingsView.size)
+            w.contentMinSize = SettingsView.size
+            w.contentMaxSize = SettingsView.size
             w.title = "Settings"
-            w.styleMask = [.titled, .closable]
             w.toolbarStyle = .preference
             w.isReleasedWhenClosed = false
             w.center()
