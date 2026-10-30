@@ -89,6 +89,8 @@ named the tile: leave the name.
 - `review accept` commits and `review reject` reverts files in the user's
   repository: only on explicit request.
 - Read an agent's screen before typing into it (it may be mid-question).
+- Port forwards (`forwards add|rm`) are the user's to make; inside Hesper
+  `forwards ls` works, adding or removing is refused (exit 5).
 
 ## Recipes
 

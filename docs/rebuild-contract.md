@@ -4924,6 +4924,10 @@ Code: `pkg/agentlink/pipe.go` (`Pipe`, the `W` window),
   breaks or moves to the direct path; the listener stays and the next
   connection uses the new link. Removing a forward closes its listeners and
   connections.
+- **CLI.** `hesperctl forwards ls`, `forwards add MACHINE:PORT [--local
+  L]` (prints `localhost:L → MACHINE:PORT`), `forwards rm LOCAL|MACHINE:PORT`
+  (`cmd/hesperctl/forwards.go`); MCP tools and `hesperctl reference` come
+  from the registry.
 - **Agents.** Agents inside Hesper may list forwards but not add or
   remove them (`forbidden`): a forward opens this Mac to another machine's
   services without Touch ID.

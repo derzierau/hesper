@@ -93,7 +93,10 @@ does not use this setting: each role talks to the relay its credentials
 file names, so an enrolled Mac keeps working when the setting changes.
 
 Flags of `hesperd serve`: `--allow-shell` (devices with the shell right
-may start shells here, Touch ID on theirs), `--direct auto|on|off`
+may start shells here, Touch ID on theirs), `--allow-forward PORTS`
+(`3000,8000-8999` or `all`: devices with the shell right may forward
+these ports of this machine's loopback to theirs with `hesperctl forwards
+add MACHINE:PORT`), `--direct auto|on|off`
 (`auto`: listen unless the macOS firewall would ask), `--direct-port`,
 `--require-device-keys`, `--keep-awake` (macOS, on by default: no idle
 sleep while an agent works or waits), `--control-socket`. Short machine
