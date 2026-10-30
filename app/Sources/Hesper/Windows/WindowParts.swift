@@ -63,8 +63,8 @@ final class AgentWindowMarker: NSView {
 // MARK: Title stop (agent windows)
 
 /// The agent window's full stop: a square in the title bar mirroring the
-/// agent's state (StateMarkView: Signal and pulsing only while it needs
-/// you). A trailing titlebar accessory, so it stays put across tabs and
+/// agent's state (StateMarkView: pulsing while an approval or a question
+/// waits). A trailing titlebar accessory, so it stays put across tabs and
 /// full screen.
 @MainActor
 final class TitleStopAccessory: NSTitlebarAccessoryViewController {

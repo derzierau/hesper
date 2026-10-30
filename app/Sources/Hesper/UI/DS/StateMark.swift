@@ -4,8 +4,8 @@ import SwiftUI
 
 /// StateMark: the one marker for every agent state, a 7 pt square (the
 /// wordmark's full stop). Filled for active states, outlined (1.5 pt) for
-/// idle and starting, outlined with a slash for exited; "needs you" pulses
-/// slowly (2 s, off under Reduce Motion). Shape and fill carry the meaning
+/// idle and starting, outlined with a slash for exited; "needs you" and a
+/// question pulse slowly (2 s, off under Reduce Motion). Shape and fill carry the meaning
 /// as well as the color.
 ///
 /// SwiftUI: `StateMark(state: agent.state)`, `StateMark(.needsYou)`,
@@ -111,7 +111,8 @@ struct StateMark: View {
 }
 
 /// AppKit StateMark: a layer-backed square that redraws in its appearance
-/// and pulses (Core Animation, 2 s) for "needs you" unless Reduce Motion.
+/// and pulses (Core Animation, 2 s) for "needs you" and a question unless
+/// Reduce Motion.
 /// Its intrinsic size is the mark's side.
 @MainActor
 final class StateMarkView: NSView {
