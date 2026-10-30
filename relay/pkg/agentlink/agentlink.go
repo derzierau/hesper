@@ -7,7 +7,10 @@
 //   - every other channel carries one attach connection, byte for byte the
 //     local attach protocol (the reply line, then frames) in both
 //     directions, opened by a signed agents.attach request that names the
-//     link and the channel.
+//     link and the channel;
+//   - or one forwarded TCP connection (a port forward, opened by a signed
+//     ports.open), whose bytes flow only as far as the receiver granted
+//     with W frames (pipe.go).
 //
 // One stream for everything keeps within the relay's four streams per host
 // and opens an attach in one round trip.
@@ -33,6 +36,9 @@ const (
 	KindEvent byte = 'E' // host→controller, channel 0: JSON Event
 	KindData  byte = 'D' // channel > 0, both: attach bytes
 	KindClose byte = 'X' // channel > 0, both: the attach ended
+	// KindWindow: channel > 0, both: a byte-stream channel's receiver
+	// grants the sender more bytes (uint32 BE).
+	KindWindow byte = 'W'
 )
 
 // MaxPayload bounds a frame's payload.

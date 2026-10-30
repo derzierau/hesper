@@ -487,7 +487,8 @@ kind (1 byte) | channel (uint32 BE) | length (uint32 BE) | payload (≤ 1 MiB)
 | --- | --- | --- | --- |
 | `E` | 0 | host → controller | JSON event: first `{"machine","list":[Agent…],"full":true}`, then `{"changed":Agent}` or `{"removed":"id"}` at every change |
 | `D` | > 0 | both | an attach connection's bytes, exactly the local attach protocol after the request line: the host's reply line and frames, the controller's frames |
-| `X` | > 0 | both | the attach on this channel ended |
+| `X` | > 0 | both | the attach (or byte stream) on this channel ended |
+| `W` | > 0 | both | a byte-stream channel's window: the receiver grants the sender this many more bytes (uint32 BE) |
 
 The controller opens channel `ch` with a signed `agents.attach {link, ch,
 mode, request}`; the host bridges it to the agent's PTY like a local
@@ -496,6 +497,17 @@ SIZE and a fresh redraw, EXIT last). One link per pair keeps within the
 relay's four streams per host however many tiles show remote agents.
 A host keeps at most four links per device (the oldest goes) and 256
 channels per link.
+
+A byte-stream channel (a port forward) carries raw bytes in `D` frames of
+at most 32 KiB and has flow control: each side may send 256 KiB, and the
+receiver grants more with `W` once it wrote bytes on (in steps of at least
+64 KiB). A side that receives more than it granted, or a grant that would
+put the sender past 256 KiB, closes the channel. So a link's reader never
+waits for a slow connection and a bulk transfer never queues more than
+256 KiB per direction ahead of the terminals on the same link. `X` ends
+the channel both ways after the sender sent what it had; there is no
+half-close. A controller sends `W` only on such channels, and only to a
+host that announced them (an older host ends a link on an unknown kind).
 
 ## Moves
 
