@@ -14,7 +14,9 @@
 //   - attaching to a remote agent is a channel on the link, bridged byte
 //     for byte to the local attach connection (bridge.go);
 //   - agents.move carries an agent with its conversation and code between
-//     any two machines (move.go).
+//     any two machines (move.go);
+//   - port forwards carry connections to this Mac's loopback ports to
+//     another machine's (forward.go).
 //
 // It also serves the control socket (internal/controlsock) for hesperctl's
 // relay commands, which must not open a second connection with the same
@@ -94,6 +96,7 @@ type Fleet struct {
 	ready    chan struct{} // closed with the first inventory
 
 	files fileUploads // attachments being forwarded (files.go)
+	fwd   forwards    // port forwards (forward.go)
 }
 
 // machine is another machine of this owner.
@@ -153,6 +156,8 @@ func (f *Fleet) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("cannot load this machine's end-to-end key: %w", err)
 	}
+	f.startForwards()
+	defer f.stopForwards()
 	backoff := time.Second
 	for ctx.Err() == nil {
 		started := time.Now()

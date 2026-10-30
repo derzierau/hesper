@@ -126,6 +126,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `fs.stat` | `{machine?, path}` | `{exists, isDir}` (added, see "Machine and folder agree") |
 | `hook` | `{agent, source: claude\|codex, event, payload}` | `{context?}` (what hook processes send; context: the tile-naming text on a tile agent's own SessionStart, see "As built — agent tree") |
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
+| `forwards.list` / `forwards.add` / `forwards.remove` | – / `{machine, port, local?}` / `{id}` (the local port, or `machine:port`) | `[Forward]` / `Forward` / `{}`: port forwards to other machines' loopback (added, see "As built — port forwarding"; a person only adds or removes) |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
@@ -2654,7 +2655,8 @@ without the shell right (lists and link events).
 `agents.link` ticket opened like the former `terminal.open` (sealed relay
 stream, or a direct stream), multiplexed (`kind | channel | len |
 payload`): channel 0 carries the host's agent events (full list, then
-each change/removal, pushed as they happen), channels > 0 one attach each,
+each change/removal, pushed as they happen), channels > 0 one attach (or
+one port forward's connection, see "As built — port forwarding") each,
 opened by a signed `agents.attach {link, ch, mode, request}` where
 `request` is the local `AttachRequest` passed through unchanged (so
 additive options such as `view` behave the same remotely). The host runs
@@ -2732,7 +2734,8 @@ attach rw; no shell without the shell right; no shell without
 `--allow-shell`; shells invisible without the right); direct path used
 and its loss falling back with the attach carrying on; move L→M→L with
 conversation and uncommitted work; reconnect after every relay socket
-dropped. Plus `internal/handoff` (full and incremental bundles, worktrees,
+dropped; port forwards (`remote_forward_test.go`, see "As built — port
+forwarding"). Plus `internal/handoff` (full and incremental bundles, worktrees,
 transcript path mapping, Codex rollouts, manifest checks), `internal/host`
 (snapshot without task text, rights, plaintext refusal, imports/exports),
 `pkg/agentlink`, `cmd/hesperctl` (device approval end to end, control
@@ -4867,6 +4870,70 @@ Review's note field and stream) are `DS.focusRingType`: off as usual,
 on while Full Keyboard Access is enabled, read when the view is made
 (a change takes effect on the next open or launch;
 `docs/design-system.md` rule 12).
+
+### As built — port forwarding (daemon)
+
+Code: `pkg/agentlink/pipe.go` (`Pipe`, the `W` window),
+`internal/host/forward.go` (`ports.open`, `--allow-forward`),
+`internal/remote/forward.go` (listeners, `forwards.json`),
+`internal/agents/server.go` and `tree.go` (`forwards.*`, person only),
+`pkg/wire/forwards.go`. Wire: `relay/docs/protocol.md` (Links,
+`ports.open`, capability `forward`).
+
+- **Use.** On the dev server: `hesperd serve --allow-forward 3000,8000-8999`
+  (or `all`), and its approval of this Mac includes the `shell` right. On
+  the Mac: `forwards.add {machine, port, local?}`; `http://localhost:LOCAL`
+  then reaches `localhost:PORT` on the server.
+- **Controller.** A forward listens on `127.0.0.1:LOCAL` and, when there
+  is IPv6, `[::1]:LOCAL`; a port taken on either address is taken (a
+  browser may try `::1` first, where a local dev server may listen alone).
+  Without `local` it takes the remote port, or a free port when that is
+  taken; a `local` that is taken is `exists`. Its id is the local port.
+  Accept errors from running out of file descriptors are retried with a
+  growing pause (up to 1 s); another error ends that listener; both show
+  in `error`. Like `ssh -L`, an open forward is usable by every user and
+  process on this Mac, not only the one that added it. A connection the
+  host closed gets what the host sent for at most 30 s, then is closed. `forwards.add` is `unavailable` for a machine that
+  is offline or does not announce `forward` (the message names the flag).
+  Each accepted connection waits up to 10 s for the machine's link, then
+  takes a new channel and sends `ports.open {link, ch, port}`; a refusal
+  closes the connection and shows in the forward's `error` until a
+  connection gets through. `conns` counts open connections. Forwards are
+  saved in `forwards.json` (state directory, 0600) and listen again when
+  hesperd starts; one whose port is taken then lists the reason in `error`.
+- **Host.** `ports.open` needs the `shell` right (device key; refused
+  while device keys are not enforced), the flag and the port in its list;
+  it dials `127.0.0.1:port`, else `[::1]:port` (2 s), never another
+  address. At most 64 forwarded connections per link; one the controller
+  closed counts until the host wrote what it sent (at most 30 s). A
+  `ports.open` whose request expired while the host connected is closed
+  again. Removing a forward on the controller sends `X` for each of its
+  connections, so the host closes its side too.
+- **Flow control.** Data frames of at most 32 KiB; each direction may send
+  256 KiB before the receiver grants more (`W`, after writing to its
+  connection, in steps of at least 64 KiB); more than granted closes the
+  channel. `X` ends a channel both ways once the sender's bytes were
+  sent; no half-close.
+- **Links.** A forwarded connection is reset (TCP RST) when its link
+  breaks or moves to the direct path; the listener stays and the next
+  connection uses the new link. Removing a forward closes its listeners and
+  connections.
+- **Agents.** Agents inside Hesper may list forwards but not add or
+  remove them (`forbidden`): a forward opens this Mac to another machine's
+  services without Touch ID.
+- **Compatibility.** A host without the capability is never sent
+  `ports.open` or `W` (an older host ends a link on an unknown frame
+  kind); the relay is unchanged.
+- **Tests** (`internal/transport/remote_forward_test.go`): 10 MB each way
+  through an echo server on M with no plaintext at the relay; persistence
+  across a restart; refusals (no flag, port not listed, no shell right, an
+  agent caller); a host without the capability; the direct path; a link
+  restart resetting connections and new ones working; a terminal on the
+  same link answering within 3 s during a 30 MB transfer. Plus
+  `pkg/agentlink` (window, close semantics) and `internal/host` (gates,
+  port lists, a forwarded echo).
+- **Not done:** reverse forwards (a port of the server reaching this Mac),
+  UDP, half-close, a Hesper.app view.
 
 ## Wire names kept from Ghosty
 

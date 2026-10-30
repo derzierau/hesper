@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"net"
 	"sync"
 	"time"
 
@@ -20,10 +21,11 @@ type link struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu      sync.Mutex
-	bridges map[uint32]*bridge
-	next    uint32
-	moved   bool // its bridges went to a newer link
+	mu       sync.Mutex
+	bridges  map[uint32]*bridge
+	forwards map[uint32]*fwdConn // port forwards' connections (forward.go)
+	next     uint32
+	moved    bool // its bridges went to a newer link
 }
 
 // linkSetup bounds opening a link.
@@ -55,7 +57,8 @@ func (f *Fleet) openLink(c *client.Controller, m *machine) {
 		return
 	}
 	lctx, lcancel := context.WithCancel(context.Background())
-	l := &link{f: f, m: m, id: t.ID, route: client.RouteRelay, conn: agentlink.New(t), ctx: lctx, cancel: lcancel, bridges: map[uint32]*bridge{}}
+	l := &link{f: f, m: m, id: t.ID, route: client.RouteRelay, conn: agentlink.New(t), ctx: lctx, cancel: lcancel, bridges: map[uint32]*bridge{},
+		forwards: map[uint32]*fwdConn{}}
 	if t.Direct() {
 		l.route = client.RouteDirect
 	}
@@ -75,9 +78,15 @@ func (f *Fleet) openLink(c *client.Controller, m *machine) {
 		old.moved = true
 		moving := old.bridges
 		old.bridges = map[uint32]*bridge{}
+		cut := old.forwards
+		old.forwards = map[uint32]*fwdConn{}
 		old.mu.Unlock()
 		for _, b := range moving {
 			go b.moveTo(l)
+		}
+		// A byte stream cannot resume on another link.
+		for _, c := range cut {
+			c.reset()
 		}
 		old.close()
 	}
@@ -123,6 +132,39 @@ func (l *link) bridge(ch uint32) *bridge {
 	return l.bridges[ch]
 }
 
+// addForward registers a forwarded connection on a new channel.
+func (l *link) addForward(nc net.Conn) (*fwdConn, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.ctx.Err() != nil || l.moved {
+		return nil, false
+	}
+	l.next++
+	c := &fwdConn{ch: l.next, nc: nc, pipe: agentlink.NewPipe(l.conn, l.next, nc)}
+	c.ctx, c.cancel = context.WithCancel(l.ctx)
+	l.forwards[c.ch] = c
+	return c, true
+}
+
+// removeForward drops c's channel; notify tells the host.
+func (l *link) removeForward(c *fwdConn, notify bool) {
+	l.mu.Lock()
+	ok := l.forwards[c.ch] == c
+	if ok {
+		delete(l.forwards, c.ch)
+	}
+	l.mu.Unlock()
+	if ok && notify && l.ctx.Err() == nil {
+		l.conn.Write(l.ctx, agentlink.KindClose, c.ch, nil)
+	}
+}
+
+func (l *link) forward(ch uint32) *fwdConn {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.forwards[ch]
+}
+
 // read takes the host's frames until the link ends.
 func (l *link) read() {
 	defer l.lost()
@@ -147,11 +189,25 @@ func (l *link) read() {
 			}
 			l.f.event(l, e)
 		case agentlink.KindData:
-			if b := l.bridge(ch); b != nil {
+			if c := l.forward(ch); c != nil {
+				if !c.pipe.Data(payload) {
+					l.removeForward(c, true) // past its window
+					c.reset()
+				}
+			} else if b := l.bridge(ch); b != nil {
 				b.fromHost(l, ch, payload)
 			}
+		case agentlink.KindWindow:
+			if c := l.forward(ch); c != nil && !c.pipe.Window(payload) {
+				l.removeForward(c, true)
+				c.reset()
+			}
 		case agentlink.KindClose:
-			if b := l.bridge(ch); b != nil {
+			if c := l.forward(ch); c != nil {
+				l.removeForward(c, false)
+				c.nc.SetWriteDeadline(time.Now().Add(l.f.forwardFlush()))
+				c.pipe.Close()
+			} else if b := l.bridge(ch); b != nil {
 				l.remove(ch, false)
 				b.hostClosed(l, ch)
 			}
@@ -186,9 +242,14 @@ func (l *link) lost() {
 	l.mu.Lock()
 	bridges := l.bridges
 	l.bridges = map[uint32]*bridge{}
+	cut := l.forwards
+	l.forwards = map[uint32]*fwdConn{}
 	l.mu.Unlock()
 	for _, b := range bridges {
 		go b.linkLost(l)
+	}
+	for _, c := range cut {
+		c.reset()
 	}
 }
 
