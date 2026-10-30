@@ -280,6 +280,8 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 		return protocol.JSON(wire.CheckpointResult{Checkpoint: cp}), nil
 	case "agents.attach":
 		return s.attach(ctx, m)
+	case "ports.open":
+		return s.openPort(ctx, m) // forward.go
 	case "agents.screen":
 		return s.screen(ctx, m) // screen.go
 	case "projects.clone":

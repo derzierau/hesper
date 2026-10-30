@@ -9,7 +9,7 @@ package host
 // agents.attach (right observe for "ro", type for "rw"; shells need the
 // shell right) and bridged to the agent's PTY exactly like a local attach
 // (internal/ptyhost: the redraw, the size owner rule, slow viewers resynced
-// with a fresh redraw).
+// with a fresh redraw). Port forwards are channels on it too (forward.go).
 
 import (
 	"bufio"
@@ -64,6 +64,7 @@ type hostLink struct {
 	opened     time.Time
 	mu         sync.Mutex
 	chans      map[uint32]*hostChan
+	draining   int // forwards closed by the controller, still flushing (forward.go)
 }
 
 type hostChan struct {
@@ -71,6 +72,12 @@ type hostChan struct {
 	done chan struct{}
 	pipe net.Conn
 	once sync.Once
+	fwd  *agentlink.Pipe // a port forward's (forward.go; in unused)
+	// A forward's state, under the link's mu: draining (counted in
+	// hostLink.draining), ended (its pipe returned); flush bounds its
+	// drain.
+	draining, ended bool
+	flush           time.Duration
 }
 
 func (l *links) add(link *hostLink) {
@@ -294,6 +301,8 @@ func (r *Runner) serveLink(link *hostLink) {
 				link.input(ch, payload)
 			case agentlink.KindClose:
 				link.closeChan(ch, false)
+			case agentlink.KindWindow:
+				link.window(ch, payload) // forward.go
 			default:
 				return
 			}
@@ -344,6 +353,12 @@ func (l *hostLink) input(ch uint32, p []byte) {
 	if c == nil {
 		return
 	}
+	if c.fwd != nil {
+		if !c.fwd.Data(p) {
+			l.closeChan(ch, true) // past its window
+		}
+		return
+	}
 	select {
 	case c.in <- p:
 	case <-c.done:
@@ -361,6 +376,10 @@ func (l *hostLink) closeChan(ch uint32, notify bool) {
 	delete(l.chans, ch)
 	l.mu.Unlock()
 	if c == nil {
+		return
+	}
+	if c.fwd != nil && !notify {
+		l.drainForward(c) // the controller's X: what it sent is written first
 		return
 	}
 	c.once.Do(func() {

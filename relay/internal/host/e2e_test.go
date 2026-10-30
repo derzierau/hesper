@@ -170,7 +170,7 @@ func TestE2EOpenRefusesReplaysDuplicatesAndUnknownSessions(t *testing.T) {
 
 func TestRequireE2ECoversEverythingButObserving(t *testing.T) {
 	for method, want := range map[string]bool{"snapshot": false, "ping": false, "devices.request": false, e2e.HelloMethod: false, "agents.list": true, "job": true,
-		"agents.input": true, "agents.answer": true, "agents.link": true, "agents.attach": true, "transfer": true, "files.put": true, "files.chunk": true, "agents.spawn": true, "unknown": true} {
+		"agents.input": true, "agents.answer": true, "agents.link": true, "agents.attach": true, "transfer": true, "files.put": true, "files.chunk": true, "agents.spawn": true, "ports.open": true, "unknown": true} {
 		if got := requiresE2E(protocol.Message{Method: method, Params: json.RawMessage(`{}`)}); got != want {
 			t.Errorf("%s: %v", method, got)
 		}

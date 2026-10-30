@@ -34,12 +34,13 @@ import (
 	"github.com/derzierau/hesper/relay/internal/agents"
 	"github.com/derzierau/hesper/relay/internal/attachtty"
 	"github.com/derzierau/hesper/relay/internal/gateway"
+	"github.com/derzierau/hesper/relay/internal/host"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
 var version = "dev"
 
-const usage = `usage: hesperd serve [--state-dir D] [--config-dir D] [--allow-shell] [--direct auto|on|off]
+const usage = `usage: hesperd serve [--state-dir D] [--config-dir D] [--allow-shell] [--allow-forward PORTS] [--direct auto|on|off]
        hesperd attach <id> [--ro] [--owner] [--view] [--view-rows R] [--fit]
        hesperd hook <claude|codex> [event] [payload]
        hesperd hooks print [--bin PATH]
@@ -96,12 +97,18 @@ func serve(args []string) int {
 	controllerCreds := f.String("controller-credentials", "", "Controller enrollment: reach the other machines' agents (default: controller.credentials.json in the state directory; missing: the role is off)")
 	controlSocket := f.String("control-socket", "", "Socket through which hesperctl's relay commands use the controller connection (default: controller.sock in the state directory; \"off\" disables it)")
 	allowShell := f.Bool("allow-shell", false, "Offer shells on this Mac to devices approved with the shell right (Touch ID on theirs)")
+	allowForward := f.String("allow-forward", "", "Let devices approved with the shell right forward these ports of this machine's loopback to theirs: 3000,8000-8999 or all")
 	requireKeys := f.Bool("require-device-keys", false, "Refuse every request not signed by an approved device, even before any device is approved")
 	directMode := f.String("direct", "auto", "Direct path for machines on the same network: on, off, or auto (on unless the macOS firewall would ask about or block incoming connections)")
 	directPort := f.Int("direct-port", 0, "TCP port of the direct path on this Mac's private addresses (0: random)")
 	keepAwake := f.Bool("keep-awake", runtime.GOOS == "darwin", "Prevent idle sleep while an agent works or waits for an answer (macOS)")
 	minBattery := f.Int("keep-awake-min-battery", 20, "Allow sleep below this battery percentage on battery power")
 	if err := f.Parse(args); err != nil {
+		return 2
+	}
+	forwards, err := host.ParsePorts(*allowForward)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hesperd: --allow-forward: %v\n", err)
 		return 2
 	}
 	if *socket == "" {
@@ -128,7 +135,7 @@ func serve(args []string) int {
 	d, err := gateway.Start(ctx, gateway.Config{
 		Registry:        agents.Options{StateDir: *stateDir, ConfigDir: *configDir, Socket: *socket},
 		HostCredentials: *hostCreds, ControllerCredentials: *controllerCreds, KeysDir: *stateDir,
-		AllowShell: *allowShell, RequireDeviceKeys: *requireKeys, Direct: *directMode, DirectPort: *directPort,
+		AllowShell: *allowShell, AllowForward: forwards, RequireDeviceKeys: *requireKeys, Direct: *directMode, DirectPort: *directPort,
 		ControlSocket: *controlSocket, KeepAwake: *keepAwake, MinBattery: *minBattery, ScratchRoot: scratchRoot(),
 	})
 	if err != nil {
