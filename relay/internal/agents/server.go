@@ -409,7 +409,7 @@ func decode(params json.RawMessage, v any) error {
 // dispatch runs one method of control connection c: the agent tree's
 // policy (tree.go) first for the methods that start or change agents.
 func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, error) {
-	if method != "agents.spawn" && !treeMutating[method] && !treeStarting[method] && !treeFiles[method] {
+	if method != "agents.spawn" && !treeMutating[method] && !treeStarting[method] && !treeFiles[method] && !treePerson[method] {
 		return s.call(method, params)
 	}
 	caller, t, err := s.callerOf(c, method, params)
@@ -424,6 +424,10 @@ func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, 
 		return s.startSession(caller, method, params, t) // tree.go
 	case treeFiles[method]:
 		return s.files(caller, method, params, t) // tree.go
+	case treePerson[method] && caller != "":
+		err := wire.Errorf(wire.CodeForbidden, "agent %s may not %s: a person does (hesperctl %s)", caller, method, strings.ReplaceAll(method, ".", " "))
+		s.auditCall(caller, method, "", err, nil)
+		return nil, err
 	}
 	if caller == "" {
 		return s.call(method, params)
@@ -735,6 +739,31 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return reg.Files().Chunk(p, false)
 	case "drafts.list", "drafts.save", "drafts.remove":
 		return s.drafts.call(method, params)
+	case "forwards.list", "forwards.add", "forwards.remove":
+		// port forwards (internal/remote): agents may list them only
+		// (dispatch, treePerson)
+		params = withoutCaller(params)
+		if remote == nil {
+			if method == "forwards.list" {
+				return []wire.Forward{}, nil
+			}
+			return nil, wire.Errorf(wire.CodeUnavailable, "port forwards need the controller role (hesperctl login --role controller)")
+		}
+		switch method {
+		case "forwards.add":
+			var p wire.ForwardAddParams
+			if err := decode(params, &p); err != nil {
+				return nil, err
+			}
+			return remote.AddForward(p)
+		case "forwards.remove":
+			var p wire.IDParams
+			if err := decode(params, &p); err != nil {
+				return nil, err
+			}
+			return struct{}{}, remote.RemoveForward(p.ID)
+		}
+		return remote.Forwards(), nil
 	case "projects.list", "projects.update", "projects.promote", "projects.remove", "groups.list", "groups.save", "groups.remove",
 		"projects.scratch", "projects.scratchKeep", "projects.scratchArchive", "projects.scratchRestore", "projects.scratchDelete",
 		"projects.scratchSettings", "settings.get", "settings.set": // scratch projects

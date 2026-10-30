@@ -35,4 +35,11 @@ type Remote interface {
 	// it started. Found reports whether the upload is the Remote's.
 	FilePut(ctx context.Context, machine string, p FilePut) (FilePutResult, error)
 	FileChunk(ctx context.Context, p FileChunkParams) (res FileChunkResult, found bool, err error)
+	// Forwards are this Mac's port forwards (forwards.list); AddForward
+	// listens on a local port and carries its connections to a port on
+	// another machine's loopback; RemoveForward ends one and its
+	// connections (by id, or machine:port).
+	Forwards() []wire.Forward
+	AddForward(p wire.ForwardAddParams) (wire.Forward, error)
+	RemoveForward(id string) error
 }

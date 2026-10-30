@@ -35,7 +35,8 @@ import (
 //     question: only the caller's own children started with
 //     letParentAnswer — never itself, never another agent's;
 //   - every other method that changes an agent (treeMutating), and rw
-//     attaches (verified callers only): the caller's descendants only.
+//     attaches (verified callers only): the caller's descendants only;
+//   - adding or removing a port forward (treePerson): never.
 
 // Agent tree limits (settings.json maxAgentDepth, maxAgentChildren).
 const (
@@ -301,6 +302,10 @@ var treeStarting = map[string]bool{"sessions.resume": true, "sessions.fork": tru
 // treeFiles are the upload methods: an agent gives files only to its
 // descendants.
 var treeFiles = map[string]bool{"files.put": true, "files.chunk": true}
+
+// treePerson are the methods only a person may call: a port forward opens
+// this Mac to another machine's services without Touch ID.
+var treePerson = map[string]bool{"forwards.add": true, "forwards.remove": true}
 
 // startSession runs a session start (treeStarting): an agent's makes its
 // child (parent the caller, depth the caller's + 1, within the limits,

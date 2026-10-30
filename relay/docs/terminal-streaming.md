@@ -66,6 +66,16 @@ reattaches (SIZE, then the redraw), so one slow tile never holds up the
 link or the agent. Input typed while an attach reattaches is dropped,
 never replayed.
 
+Port forwards share the link with the attaches. Their channels carry raw
+bytes in frames of at most 32 KiB, and each direction may run at most
+256 KiB ahead of what the receiver wrote on (`W` grants, see
+[links](protocol.md#links)). So neither link reader ever waits for a slow
+TCP connection (a blocked relay write would end the whole link after 10
+seconds), and a bulk transfer queues at most one window per direction
+ahead of a keystroke's echo. A forwarded connection does not survive its
+link: when the link breaks or moves to the direct path the controller
+resets it, and the next connection uses the new link.
+
 Relay pings active peers every 15 seconds with a 10-second timeout. Either
 peer closing ends the stream. Credential expiry, revocation, allowlist
 removal, host control disconnection and relay shutdown close streams.
