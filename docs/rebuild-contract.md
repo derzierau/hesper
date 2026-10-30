@@ -1405,6 +1405,9 @@ offset / rw preamble / alt screen, `internal/attachtty` scroll parser,
 `make -C app layout SHOW=draft|draft-typing|palette|move|attention|
 machines|layout|undo|deny|quick|settings|flap|after-focus|active|scroll
 [DAEMON=real]` screenshots each (quick/settings: the panel/window too).
+`SHOW=settings:<pane>` (general, machines, agents, appearance,
+shortcuts, advanced) opens that Settings pane; the dump's
+`extraWindowFrame` is the Settings window's frame.
 
 #### As built — pointer paths in the overlays (UI control, phase 3c)
 
