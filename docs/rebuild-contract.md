@@ -5072,7 +5072,23 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
   line ("Runs on this Mac · 12 wakes today · 2 waiting") and the
   `steward.set` patches (nil when nothing changes).
 
-**Status: built and unit-tested headless only** (HesperCoreTests).
+- **Fake hesperd** (`app/Tools/fake-hesperd/loops.go`, TEST-ONLY): every
+  `loops.*`, `goals.*` and `steward.*` method on an in-memory store,
+  results shaped like the wire (`loops.list` an array, `loops.get` /
+  `save` / `link` / `item` / `merge` / `split` / `goals.file` the loop,
+  `goals.save` `{goal}` or `{milestone}`, `goals.item` the milestone,
+  `goals.accept` `{accepted}`, `steward.plan` `{id}` plus two proposed
+  milestones), the notifications after each change and a snapshot after
+  `agents.subscribe` (open and parked loops, every goal and milestone,
+  the Steward). Who acts next follows the wire's rule, simplified.
+  `serve --loops demo` (with `--projects demo`) seeds invented loops in
+  every column (an ask, a named step with a command, looks done, debris,
+  stale, parked, blocked, done today), a map over L and M with a handoff
+  file and a parent nobody knows, the product "acme apps" with done,
+  open, stalled and proposed milestones, and an enabled Steward.
+
+**Status: built and unit-tested headless only** (HesperCoreTests,
+`go test` in the fake). Not run against a real hesperd with loops yet.
 
 ## Wire names kept from Ghosty
 
