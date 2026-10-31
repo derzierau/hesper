@@ -121,6 +121,7 @@ func (r *Registry) restore(rec record) {
 	profile, err := r.profileOf(a)
 	fresh := false
 	if err == nil {
+		a.before, a.beforeSince = a.State, a.StateSince
 		fresh, err = r.comeBack(a, profile)
 	}
 	if err != nil {

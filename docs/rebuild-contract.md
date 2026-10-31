@@ -777,7 +777,11 @@ every agent and keeps them `running`; on start those are respawned in the
 same cwd as `starting`: with resume when their session exists (rule
 above), else fresh — with their task only when they never got past
 `starting`, else without it and with the "could not be resumed" note
-(shells always fresh). A daemon stop never makes an agent `exited`: its
+(shells always fresh). A respawned agent back in the state it was saved
+with keeps that state's `stateSince` (an idle shell stays idle since
+when it was idle); the first other state after `starting` starts a new
+time (a done Claude resumed with `--resume` comes back idle, since
+now). A daemon stop never makes an agent `exited`: its
 process's end while the daemon stops (Claude ends with status 0 on the
 hangup) keeps it `running` in the file. **A respawn or resume that fails is
 `error` "Not resumed" with the reason** (a profile that is gone, the

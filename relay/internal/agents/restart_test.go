@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -316,5 +317,28 @@ func TestComputerUseNotifyIsChained(t *testing.T) {
 	h.reg.mu.Unlock()
 	if j := strings.Join(args, "\n"); !strings.Contains(j, "notify="+tomlArray(append([]string{"/opt/hesperd", "hook", "codex", "notify", "--then"}, sky...))) {
 		t.Fatalf("args:\n%s", j)
+	}
+}
+
+// A daemon restart keeps how long an agent has been in its state: back
+// in the same state it keeps the time; in another it starts anew.
+func TestRestartKeepsStateSince(t *testing.T) {
+	h := newHarness(t)
+	shell := h.spawn(wire.SpawnParams{Kind: "shell"})
+	h.waitState(shell.ID, wire.StateIdle)
+	claude := h.spawn(wire.SpawnParams{Task: "Reply OK"})
+	h.waitState(claude.ID, wire.StateDone)
+	h.close()
+	before := "2026-01-02T03:04:05Z"
+	for _, id := range []string{shell.ID, claude.ID} {
+		editRecord(t, h, id, func(rec map[string]any) { rec["stateSince"] = before })
+	}
+	h.open()
+	if g := h.waitState(shell.ID, wire.StateIdle); g.StateSince.Format(time.RFC3339) != before {
+		t.Errorf("shell idle again since %v, want %s", g.StateSince, before)
+	}
+	// Claude comes back idle (resumed), not done: a new time.
+	if g := h.waitState(claude.ID, wire.StateIdle); g.StateSince.Format(time.RFC3339) == before {
+		t.Errorf("claude idle since %v, its done time", g.StateSince)
 	}
 }
