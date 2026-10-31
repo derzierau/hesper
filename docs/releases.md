@@ -75,6 +75,10 @@ runner (it now runs under the test world's 2 minutes),
 `TestReviewAcceptReject` exposed a real race: a scan running during an
 accept stored what it read before it.
 
+The release workflow passes the tag (without its `v`) as `VERSION` to both
+builds, so the app and `hesperd --version` report it. Local builds take the
+latest release tag instead.
+
 The release workflow runs tests again, publishes both notarized zip files and
 SHA256SUMS, then commits `Casks/hesper.rb` with exact archive hashes to the
 branch `brew/<tag>`. Changes reach main only through pull requests, so open

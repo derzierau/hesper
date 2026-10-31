@@ -2,10 +2,13 @@
 UNAME := $(shell uname -s)
 MACOS_MIN_VERSION ?= 14.0
 SWIFT_TARGET ?= $(shell uname -m)-apple-macosx$(MACOS_MIN_VERSION)
+# The latest release tag (v1.2.3 → 1.2.3), as app/Makefile does; a release
+# passes VERSION itself. hesperd --version and its hello report it.
+VERSION ?= $(or $(patsubst v%,%,$(shell git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null)),dev)
 
 build: keys
 	mkdir -p dist
-	go build -trimpath -o dist/ ./cmd/...
+	go build -trimpath -ldflags '-X main.version=$(VERSION)' -o dist/ ./cmd/...
 
 # hesper-keys (Secure Enclave device keys) is a Swift helper, macOS only.
 keys:

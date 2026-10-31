@@ -34,6 +34,11 @@ with tempfile.TemporaryDirectory(prefix='hesper-release-test-') as temporary:
     (assets/'Hesper-v1.2.3-x86_64.zip').unlink()
     assert subprocess.run(['python3', str(generator), 'v1.2.3', str(assets)], capture_output=True).returncode != 0
     assert (checkout/'Casks/hesper.rb').read_text() == cask
+    # hesperd reports the release version, not "dev" (the release passes it).
+    build = subprocess.run(['make', '-n', '-C', str(root/'relay'), 'build', 'VERSION=1.2.3'],
+                           capture_output=True, text=True, check=True).stdout
+    assert "-X main.version=1.2.3" in build
+    assert 'make -C relay build VERSION="${RELEASE_TAG#v}"' in (root/'.github/workflows/release.yml').read_text()
     if os.uname().sysname == 'Darwin':
         app = temp/'App & Space/Hesper.app'
         resources = app/'Contents/Resources'
