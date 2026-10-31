@@ -351,6 +351,10 @@ func (f *Fleet) renameLocked(m *machine, short string) {
 	for local, a := range old {
 		f.emitRemovedLocked(a.ID)
 		a.ID, a.Machine = short+"/"+local, short
+		// Its parent on the same host moves with it.
+		if s, p, ok := strings.Cut(a.Parent, "/"); ok && s == m.short && old[p].ID != "" {
+			a.Parent = short + "/" + p
+		}
 		m.agents[local] = a
 		f.emitChangedLocked(a)
 	}
@@ -438,9 +442,37 @@ func (f *Fleet) dropAgentsLocked(m *machine) {
 
 // named is a host's agent in this Mac's naming.
 func (m *machine) named(a wire.Agent) wire.Agent {
+	return m.namedIn(a, m.isAgent)
+}
+
+// namedIn is named with the host's agents known by isHost (local ids).
+func (m *machine) namedIn(a wire.Agent, isHost func(local string) bool) wire.Agent {
 	a.ID = m.short + "/" + localID(a.ID)
 	a.Machine = m.short
+	a.Parent = m.parentIn(a.Parent, isHost)
 	return a
+}
+
+func (m *machine) isAgent(local string) bool {
+	_, ok := m.agents[local]
+	return ok
+}
+
+// hostParent is a parent link the host stored, in this Mac's naming.
+func (m *machine) hostParent(parent string) string {
+	return m.parentIn(parent, m.isAgent)
+}
+
+// parentIn: a parent the host named in its own naming (its short name
+// for itself) that is one of its agents is renamed like them. Any other
+// is kept: a parent this Mac sent is in this Mac's naming already, and
+// both Macs may call themselves "L".
+func (m *machine) parentIn(parent string, isHost func(local string) bool) string {
+	short, local, ok := strings.Cut(parent, "/")
+	if !ok || m.hostShort == "" || short != m.hostShort || !isHost(local) {
+		return parent
+	}
+	return m.short + "/" + local
 }
 
 func localID(id string) string {

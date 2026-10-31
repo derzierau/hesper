@@ -265,7 +265,16 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 			return wire.Agent{}, wireError(err)
 		}
 	}
-	if err := markMove(bundle, handoff.MoveInfo{From: src.short, To: dst.short, Fork: p.Fork, Note: true}); err != nil {
+	// A host's agent's parent travels in this Mac's naming.
+	var parent func(string) string
+	if src.m != nil {
+		parent = func(id string) string {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return src.m.hostParent(id)
+		}
+	}
+	if err := markMove(bundle, handoff.MoveInfo{From: src.short, To: dst.short, Fork: p.Fork, Note: true}, parent); err != nil {
 		return wire.Agent{}, err
 	}
 	// 3. The target imports it.
@@ -365,8 +374,8 @@ func (f *Fleet) importUpload(ctx context.Context, dst side, upload string) (json
 }
 
 // markMove adds the move's part to a packed bundle's manifest (older
-// targets ignore it).
-func markMove(bundle string, info handoff.MoveInfo) error {
+// targets ignore it); parent, when set, renames the agent's parent.
+func markMove(bundle string, info handoff.MoveInfo, parent func(string) string) error {
 	path := filepath.Join(bundle, handoff.ManifestFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -377,6 +386,18 @@ func markMove(bundle string, info handoff.MoveInfo) error {
 		return wire.Errorf(wire.CodeRemote, "the bundle's manifest does not read: %v", err)
 	}
 	fields["move"], _ = json.Marshal(info)
+	if parent != nil && len(fields["agent"]) > 0 {
+		var agent map[string]json.RawMessage
+		if err := json.Unmarshal(fields["agent"], &agent); err != nil {
+			return wire.Errorf(wire.CodeRemote, "the bundle's manifest does not read: %v", err)
+		}
+		var was string
+		json.Unmarshal(agent["parent"], &was)
+		if now := parent(was); now != was {
+			agent["parent"], _ = json.Marshal(now)
+			fields["agent"], _ = json.Marshal(agent)
+		}
+	}
 	out, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
 		return err

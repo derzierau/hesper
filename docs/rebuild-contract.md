@@ -3657,6 +3657,15 @@ for an agent a person started), `depth` (0 for a person's agent, parent's
 survive daemon restarts and respawns), carried by moves (handoff
 manifest `agent.parent/depth/letParentAnswer`; after `agents.move` the
 controller re-points its local children at the moved agent's new id).
+`parent` is in the naming of the Mac that lists it. A host stores the
+parents its own agents start with its name for itself (often `L`); the
+controller renames such a parent like the host's agents (`L/x` →
+`L2/x`) when its prefix is the host's name for itself and `x` is one of
+the host's agents. A parent the controller sent is in the controller's
+naming already and is kept (both Macs may be called `L`). The same
+holds for the manifest of a move from a host, and for a rename of the
+host. A Mac renamed between daemon starts re-prefixes a stored parent
+only when it was named with the Mac's old name.
 `agents.spawn` gains `letParentAnswer` (ignored without a parent) and
 `caller`. Every `agents.*` call may carry `caller` (the calling agent's
 id; `wire.Client.Caller` adds it, hesperctl sets it from

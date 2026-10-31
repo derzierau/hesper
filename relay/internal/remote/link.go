@@ -264,9 +264,14 @@ func (f *Fleet) event(l *link, e agentlink.Event) {
 	switch {
 	case e.Full:
 		m.hostShort = e.Machine
+		listed := map[string]bool{}
+		for _, a := range e.List {
+			listed[localID(a.ID)] = true
+		}
+		isHost := func(local string) bool { return listed[local] }
 		fresh := map[string]wire.Agent{}
 		for _, a := range e.List {
-			a = m.named(a)
+			a = m.namedIn(a, isHost)
 			fresh[localID(a.ID)] = a
 		}
 		for local, a := range m.agents {
