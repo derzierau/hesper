@@ -71,3 +71,17 @@ func TestStateGolden(t *testing.T) {
 		t.Fatalf("round trip changed it:\n%s", again)
 	}
 }
+
+func TestNodeOfMachineOf(t *testing.T) {
+	a := Open(Options{Machine: "mini", Logf: t.Logf})
+	defer a.Close()
+	b := Open(Options{Machine: "studio", Logf: t.Logf})
+	defer b.Close()
+	a.Merge(b.Export(), "big-mac") // this Mac calls studio "big-mac"
+	if a.NodeOf("mini") != a.Node() || a.NodeOf("big-mac") != b.Node() || a.NodeOf("studio") != "" || a.NodeOf("") != "" {
+		t.Fatalf("NodeOf: %q %q %q", a.NodeOf("mini"), a.NodeOf("big-mac"), a.NodeOf("studio"))
+	}
+	if a.MachineOf(b.Node()) != "big-mac" || a.MachineOf("n-unknown") != "" {
+		t.Fatalf("MachineOf %q", a.MachineOf(b.Node()))
+	}
+}

@@ -24,6 +24,7 @@ import (
 	"github.com/derzierau/hesper/relay/internal/agents"
 	"github.com/derzierau/hesper/relay/internal/handoff"
 	"github.com/derzierau/hesper/relay/internal/host"
+	"github.com/derzierau/hesper/relay/internal/loops"
 	"github.com/derzierau/hesper/relay/internal/projects"
 	"github.com/derzierau/hesper/relay/internal/remote"
 	"github.com/derzierau/hesper/relay/internal/sessions"
@@ -93,6 +94,8 @@ type Daemon struct {
 	Registry *agents.Registry
 	// Projects is the project registry (projects step 1).
 	Projects *projects.Store
+	// Loops is the loops store (internal/loops).
+	Loops *loops.Store
 	// History is the shared history (internal/sessions); nil with
 	// NoHistory.
 	History *sessions.Service
@@ -151,6 +154,10 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	d.Projects = projects.Open(projects.Options{StateDir: opt.StateDir, Machine: opt.Machine, Home: opt.Home, Logf: opt.Logf,
 		ScratchRoot: scratch, ProjectsRoot: opt.ProjectsRoot, ConfigDir: opt.ConfigDir})
 	opt.Projects = d.Projects
+	// loops: before the agents (restored agents keep their loops); its
+	// node is the projects store's.
+	d.Loops = loops.Open(loops.Options{StateDir: opt.StateDir, Node: d.Projects.Node(), Machine: opt.Machine, Logf: opt.Logf})
+	opt.Loops = d.Loops
 	// shared history: before the agents (the socket serves sessions.*).
 	if !cfg.NoHistory {
 		h := cfg.History
@@ -184,6 +191,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 		var err error
 		if ln, err = agents.Listen(opt.Socket); err != nil {
 			d.closeHistory()
+			d.closeLoops()
 			d.Projects.Close()
 			cancel()
 			return nil, err
@@ -193,6 +201,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	if err != nil {
 		ln.Close()
 		d.closeHistory()
+		d.closeLoops()
 		d.Projects.Close()
 		cancel()
 		return nil, err
@@ -200,6 +209,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	d.Registry = reg
 	d.wireProjects()
 	d.wireHistory() // shared history
+	d.wireLoops(ctx)
 	d.Server = agents.NewServer(reg)
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.Server.Serve(ln) }()
@@ -380,6 +390,7 @@ func (d *Daemon) Close() {
 		}
 		d.wg.Wait()
 		d.closeHistory()
+		d.closeLoops()
 		if d.Projects != nil {
 			d.Projects.Close()
 		}
