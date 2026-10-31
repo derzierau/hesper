@@ -14,6 +14,10 @@ import (
 
 func run(t *testing.T, dir string, args ...string) string {
 	t.Helper()
+	if args[0] == "git" {
+		// Unsigned: a global commit.gpgsign would sign (and fail) here.
+		args = append([]string{"git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args[1:]...)
+	}
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")

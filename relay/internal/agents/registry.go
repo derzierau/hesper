@@ -246,7 +246,30 @@ type agent struct {
 	// hooks counts the agent's hook events: its review scan is out of
 	// date once it changed (reviewcache.go).
 	hooks uint64
+	// before, beforeSince: its state and since when, as saved before a
+	// daemon restart (restore); kept until it settles after starting.
+	before      string
+	beforeSince time.Time
 }
+
+// since is when an agent entered state, now: an agent the daemon
+// restarted that is back in the state it had keeps that state's time.
+// Done and idle are one quiet state here: a done Claude resumed comes
+// back idle.
+func (a *agent) since(state string) time.Time {
+	before, at := a.before, a.beforeSince
+	same := before == state || quiet(before) && quiet(state)
+	if !same && state == wire.StateStarting {
+		return time.Now().UTC() // on its way back
+	}
+	a.before, a.beforeSince = "", time.Time{}
+	if same && !at.IsZero() {
+		return at
+	}
+	return time.Now().UTC()
+}
+
+func quiet(state string) bool { return state == wire.StateDone || state == wire.StateIdle }
 
 // Open loads the registry from the state directory and respawns the agents
 // that were running (with resume).
@@ -423,7 +446,7 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 		return
 	}
 	if a.State != state {
-		a.StateSince = time.Now().UTC()
+		a.StateSince = a.since(state)
 	}
 	finished := a.Background && turnEnded(a.State, state)
 	if state == wire.StateDone && a.State != state {
@@ -663,9 +686,9 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		if a.shellTask != "" && a.Track {
 			state = wire.StateStarting
 		}
-		a.State, a.StateSince, a.Attention, a.Activity = state, time.Now().UTC(), nil, ""
+		a.State, a.StateSince, a.Attention, a.Activity = state, a.since(state), nil, ""
 	} else {
-		a.State, a.StateSince, a.Attention = wire.StateStarting, time.Now().UTC(), nil
+		a.State, a.StateSince, a.Attention = wire.StateStarting, a.since(wire.StateStarting), nil
 	}
 	return nil
 }

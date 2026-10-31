@@ -448,13 +448,16 @@ func (s *Store) resolveLocked(real string, gi gitInfo, pkgs []wire.DetectedPacka
 			}
 		}
 	}
-	best, bestLen := "", -1
+	best, bestLen, bestRemote := "", -1, false
 	consider := func(r *Record, p string) {
 		if r == nil || r.Deleted.V || p == "" {
 			return
 		}
-		if len(p) > bestLen {
-			best, bestLen = r.ID, len(p)
+		// The deepest wins; of two with the same folder the one with a
+		// remote identity (never its duplicateOf), then the lowest id.
+		remote := r.Identity.Remote != ""
+		if len(p) > bestLen || len(p) == bestLen && (remote && !bestRemote || remote == bestRemote && r.ID < best) {
+			best, bestLen, bestRemote = r.ID, len(p), remote
 		}
 	}
 	for _, r := range s.projects {

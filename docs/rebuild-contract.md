@@ -777,7 +777,11 @@ every agent and keeps them `running`; on start those are respawned in the
 same cwd as `starting`: with resume when their session exists (rule
 above), else fresh — with their task only when they never got past
 `starting`, else without it and with the "could not be resumed" note
-(shells always fresh). A daemon stop never makes an agent `exited`: its
+(shells always fresh). A respawned agent back in the state it was saved
+with keeps that state's `stateSince` (an idle shell stays idle since
+when it was idle); done and idle count as one quiet state here, so a
+done Claude resumed with `--resume` comes back idle since it was done.
+The first other state after `starting` starts a new time. A daemon stop never makes an agent `exited`: its
 process's end while the daemon stops (Claude ends with status 0 on the
 hangup) keeps it `running` in the file. **A respawn or resume that fails is
 `error` "Not resumed" with the reason** (a profile that is gone, the
@@ -2821,7 +2825,9 @@ package). Candidates: every project with a path on this Mac containing
 the folder (in the main checkout's coordinates, or literally), plus the
 repository and package found by identity (a second clone of the same
 repository on one Mac joins it too; the first clone keeps the recorded
-path while it exists). No candidate: `scratch:<folder>`.
+path while it exists). Of two with the same folder, the one with a
+remote identity wins (never a `duplicateOf` project), then the lowest
+id. No candidate: `scratch:<folder>`.
 **Auto-registration:** the folder's repository, and the detected package
 the folder is in, become projects on first sight, except repositories at
 the home folder or above (a dotfiles repository in `~` would swallow
@@ -2873,7 +2879,13 @@ manifest; never node_modules or dot folders; ≤ 2000 per repository.
   name this Mac gives it (as in agent ids: machines.json, …), else the
   name it gives itself, else its node id. `detectedPackages` only for
   repositories with a folder on this Mac whose manifests declare packages
-  (paths relative to the repository).
+  (paths relative to the repository). `duplicateOf?` (computed when the
+  views are built, never stored): set on a repository or folder with a
+  generated (local) identity that has the same folder on a machine as a
+  project with a remote identity, naming that project (the lowest id
+  when there are more). It happens when a repository was a project
+  before it had a remote: both list, and `duplicateOf` lets a client
+  offer to remove the one with the local identity.
 - `projects.list`: every project, most recently used first (then name),
   then the scratch projects of the agents there are (local and remote; one
   per `scratch:<folder>`, `paths` = the machines of those agents,
@@ -3657,6 +3669,15 @@ for an agent a person started), `depth` (0 for a person's agent, parent's
 survive daemon restarts and respawns), carried by moves (handoff
 manifest `agent.parent/depth/letParentAnswer`; after `agents.move` the
 controller re-points its local children at the moved agent's new id).
+`parent` is in the naming of the Mac that lists it. A host stores the
+parents its own agents start with its name for itself (often `L`); the
+controller renames such a parent like the host's agents (`L/x` →
+`L2/x`) when its prefix is the host's name for itself and `x` is one of
+the host's agents. A parent the controller sent is in the controller's
+naming already and is kept (both Macs may be called `L`). The same
+holds for the manifest of a move from a host, and for a rename of the
+host. A Mac renamed between daemon starts re-prefixes a stored parent
+only when it was named with the Mac's old name.
 `agents.spawn` gains `letParentAnswer` (ignored without a parent) and
 `caller`. Every `agents.*` call may carry `caller` (the calling agent's
 id; `wire.Client.Caller` adds it, hesperctl sets it from

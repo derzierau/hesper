@@ -69,7 +69,31 @@ func (s *Store) viewLocked(r *Record) wire.ProjectInfo {
 			info.DetectedPackages = s.det.cachedPackages(p)
 		}
 	}
+	info.DuplicateOf = s.duplicateOfLocked(r)
 	return info
+}
+
+// duplicateOfLocked: a repository or folder with a generated identity
+// (made before the repository had a remote) that has the same folder on
+// a machine as a project with a remote identity duplicates that one
+// (the lowest id when there are more).
+func (s *Store) duplicateOfLocked(r *Record) string {
+	if r.Identity.Local == "" || r.Identity.Remote != "" || r.Identity.Package != "" || r.Kind.V == wire.ProjectScratch {
+		return ""
+	}
+	dup := ""
+	for _, o := range s.projects {
+		if o.Deleted.V || o.Identity.Remote == "" || o.Identity.Package != "" || dup != "" && o.ID >= dup {
+			continue
+		}
+		for node, p := range r.Paths {
+			if p.V != "" && o.Paths[node].V == p.V {
+				dup = o.ID
+				break
+			}
+		}
+	}
+	return dup
 }
 
 func (s *Store) groupViewLocked(g *GroupRecord) wire.Group {
