@@ -457,6 +457,12 @@ func (r *Registry) changed(a *agent) {
 
 // Spawn starts a new agent.
 func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
+	return r.spawn(p, nil)
+}
+
+// spawn starts a new agent; prepare (optional) changes it before its
+// process starts (the lock is held): a service agent's role.
+func (r *Registry) spawn(p wire.SpawnParams, prepare func(*agent)) (wire.Agent, error) {
 	if p.Machine != "" && p.Machine != r.machine {
 		return wire.Agent{}, wire.Errorf(wire.CodeUnavailable, "machine %s is not connected", p.Machine)
 	}
@@ -554,6 +560,9 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 	}
 	if a.Kind == wire.KindShell {
 		a.shellTask = task // typed once the prompt is ready (shell.go)
+	}
+	if prepare != nil {
+		prepare(a)
 	}
 	r.agents[local] = a
 	if err := r.start(a, profile, false); err != nil {
@@ -730,9 +739,10 @@ func (r *Registry) exited(local string, gen int, e *wire.Exit) {
 		}
 		r.setState(a, wire.StateError, &wire.Attention{Kind: "error", Title: title, Detail: detail})
 	} else {
-		if a.Background && a.Ended == "" {
+		if a.Background && a.Ended == "" && a.Service == "" {
 			// A background agent that ended on its own (or was stopped)
-			// has finished: closed (close.go).
+			// has finished: closed (close.go). Not a service agent:
+			// hesperd runs it and restarts it (loopwork.go).
 			r.removeLocked(a, wire.ReasonFinishedInBackground)
 			return
 		}

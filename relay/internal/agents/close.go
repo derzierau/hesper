@@ -163,9 +163,10 @@ func turnEnded(from, to string) bool {
 
 // finishedInBackground closes a background agent that finished (the lock
 // is held): its process ends (graceful is moot), then it leaves with
-// reason "finished-in-background".
+// reason "finished-in-background". A service agent (loopwork.go) stays:
+// it lives in the background between its turns.
 func (r *Registry) finishedInBackground(a *agent) {
-	if a.closeReason != "" || a.Ended != "" || r.agents[a.local] != a || a.term == nil || a.Exit != nil {
+	if a.closeReason != "" || a.Ended != "" || r.agents[a.local] != a || a.term == nil || a.Exit != nil || a.Service != "" {
 		return // an ended one: exited closes it
 	}
 	a.closeReason = wire.ReasonFinishedInBackground

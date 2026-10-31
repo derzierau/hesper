@@ -4957,6 +4957,20 @@ Code: `pkg/agentlink/pipe.go` (`Pipe`, the `W` window),
 - **Not done:** reverse forwards (a port of the server reaching this Mac),
   UDP, half-close, a Hesper.app view.
 
+### As built — loops (agents)
+
+Code: `internal/agents/loopwork.go` (the registry's side),
+`loophook.go` (the `Loops` and `Steward` interfaces), `loopscall.go`
+(policy), `internal/endings` (the classifier). The loops store
+(`internal/loops`) and the Steward (`internal/steward`) plug in through
+`Options.Loops` and `Options.Steward`; either may be nil.
+
+- **Service agents.** `Registry.SpawnService(p, service)` starts an agent
+  with `Agent.service` (`steward`, `planner`; persisted) set before its
+  process starts. A service agent is exempt from closing when it finishes
+  in the background (its turn ends, or its process ends on its own: it
+  stays, exited, for the Steward to restart) and from `hesperctl tidy`.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
