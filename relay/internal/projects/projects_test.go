@@ -259,6 +259,38 @@ func TestAgentInPackageJoinsThePackage(t *testing.T) {
 	}
 }
 
+// A repository listed before it had a remote (a generated identity) and
+// again after (its remote's): the first names the second as its
+// duplicate; nothing else does.
+func TestDuplicateOfLocalIdentity(t *testing.T) {
+	root, state := tempDir(t), t.TempDir()
+	repo := newRepo(t, filepath.Join(root, "app"), "", map[string]string{"a": "b"})
+	other := newRepo(t, filepath.Join(root, "other"), "", map[string]string{"a": "b"})
+	s := openStore(t, state, "L")
+	localID, otherID := s.Resolve(repo), s.Resolve(other)
+	s.Close()
+	gitRun(t, repo, "remote", "add", "origin", "git@github.com:acme/app.git")
+	s = openStore(t, state, "L")
+	s.Resolve(repo)
+	remoteID := ProjectID(wire.ProjectIdentity{Remote: "github.com/acme/app"})
+	if _, err := s.Get(remoteID); err != nil || !strings.HasPrefix(localID, "p-") {
+		t.Fatalf("ids %s %s: %v (the test proves nothing)", localID, remoteID, err)
+	}
+	want := map[string]string{localID: remoteID, remoteID: "", otherID: ""}
+	for _, p := range s.List() {
+		if dup, ok := want[p.ID]; ok && p.DuplicateOf != dup {
+			t.Errorf("%s (%+v): duplicateOf %q, want %q", p.ID, p.Identity, p.DuplicateOf, dup)
+		}
+		delete(want, p.ID)
+	}
+	if len(want) > 0 {
+		t.Fatalf("not listed: %v", want)
+	}
+	if p, _ := s.Get(localID); p.DuplicateOf != remoteID {
+		t.Fatalf("get %+v", p)
+	}
+}
+
 func TestDeepestProjectScratchPromoteRemove(t *testing.T) {
 	root := tempDir(t)
 	repo := newRepo(t, filepath.Join(root, "app"), "git@github.com:acme/app.git", map[string]string{

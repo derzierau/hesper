@@ -2877,7 +2877,13 @@ manifest; never node_modules or dot folders; ≤ 2000 per repository.
   name this Mac gives it (as in agent ids: machines.json, …), else the
   name it gives itself, else its node id. `detectedPackages` only for
   repositories with a folder on this Mac whose manifests declare packages
-  (paths relative to the repository).
+  (paths relative to the repository). `duplicateOf?` (computed when the
+  views are built, never stored): set on a repository or folder with a
+  generated (local) identity that has the same folder on a machine as a
+  project with a remote identity, naming that project (the lowest id
+  when there are more). It happens when a repository was a project
+  before it had a remote: both list, and `duplicateOf` lets a client
+  offer to remove the one with the local identity.
 - `projects.list`: every project, most recently used first (then name),
   then the scratch projects of the agents there are (local and remote; one
   per `scratch:<folder>`, `paths` = the machines of those agents,
