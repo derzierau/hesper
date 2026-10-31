@@ -321,7 +321,8 @@ func TestComputerUseNotifyIsChained(t *testing.T) {
 }
 
 // A daemon restart keeps how long an agent has been in its state: back
-// in the same state it keeps the time; in another it starts anew.
+// in the same state (done and idle count as one) it keeps the time; in
+// another it starts anew.
 func TestRestartKeepsStateSince(t *testing.T) {
 	h := newHarness(t)
 	shell := h.spawn(wire.SpawnParams{Kind: "shell"})
@@ -337,8 +338,13 @@ func TestRestartKeepsStateSince(t *testing.T) {
 	if g := h.waitState(shell.ID, wire.StateIdle); g.StateSince.Format(time.RFC3339) != before {
 		t.Errorf("shell idle again since %v, want %s", g.StateSince, before)
 	}
-	// Claude comes back idle (resumed), not done: a new time.
-	if g := h.waitState(claude.ID, wire.StateIdle); g.StateSince.Format(time.RFC3339) == before {
-		t.Errorf("claude idle since %v, its done time", g.StateSince)
+	// Claude comes back idle (resumed) from done: still quiet since then.
+	if g := h.waitState(claude.ID, wire.StateIdle); g.StateSince.Format(time.RFC3339) != before {
+		t.Errorf("claude idle since %v, want its done time %s", g.StateSince, before)
+	}
+	// Its next turn starts a new time.
+	allowed(t, "send", h.call("agents.input", wire.InputParams{ID: claude.ID, Text: "Reply OK\r"}, nil))
+	if g := h.waitState(claude.ID, wire.StateDone); g.StateSince.Format(time.RFC3339) == before {
+		t.Errorf("claude done again since %v, the old time", g.StateSince)
 	}
 }

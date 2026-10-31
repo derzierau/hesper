@@ -254,17 +254,22 @@ type agent struct {
 
 // since is when an agent entered state, now: an agent the daemon
 // restarted that is back in the state it had keeps that state's time.
+// Done and idle are one quiet state here: a done Claude resumed comes
+// back idle.
 func (a *agent) since(state string) time.Time {
 	before, at := a.before, a.beforeSince
-	if before != state && state == wire.StateStarting {
+	same := before == state || quiet(before) && quiet(state)
+	if !same && state == wire.StateStarting {
 		return time.Now().UTC() // on its way back
 	}
 	a.before, a.beforeSince = "", time.Time{}
-	if before == state && !at.IsZero() {
+	if same && !at.IsZero() {
 		return at
 	}
 	return time.Now().UTC()
 }
+
+func quiet(state string) bool { return state == wire.StateDone || state == wire.StateIdle }
 
 // Open loads the registry from the state directory and respawns the agents
 // that were running (with resume).
