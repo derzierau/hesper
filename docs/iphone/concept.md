@@ -1,7 +1,8 @@
 # Hesper for iPhone: concept
 
 Status: concept, 31 Oct 2026. Wireframes in [`wireframes/`](wireframes/),
-critique between rounds in [`critique.md`](critique.md).
+critique between rounds in [`critique.md`](critique.md), the writable
+terminal researched in [`writable-terminal.md`](writable-terminal.md).
 
 This concept starts from core Hesper as it is on `main`: hesperd on each
 Mac, the relay, the wire protocol and the Mac app's features. It does not
@@ -23,10 +24,12 @@ Three rules hold the design together:
 2. **Attention first, machines second.** The owner thinks in tasks and
    projects, not in Macs. The Mac is metadata on every row and a tab of its
    own for when it matters (asleep, offline, pairing).
-3. **The real terminal, read-only by default.** The agent view shows the
-   agent's actual terminal (decided: live terminal first). Decisions and
-   replies are native controls under it, so the owner never has to aim at a
-   TUI menu with a thumb.
+3. **The real terminal, writable, without taking the Mac's size.** The
+   agent view shows the agent's actual terminal (decided: live terminal
+   first), and the owner can type into it as on the Mac (decided). It
+   keeps the Mac's size unless the owner taps **Fit to iPhone**. Decisions
+   and replies stay native controls under it, so the owner never has to
+   aim at a TUI menu with a thumb.
 
 ## Core jobs
 
@@ -35,7 +38,7 @@ Three rules hold the design together:
 | 1 | See what needs me, across every Mac | Inbox tab, lock screen, Live Activity, widget | `agents.link` events (channel 0) |
 | 2 | Answer or approve | Inbox row, agent dock, notification action | `agents.answer`, `agents.input` (digit for choices) |
 | 3 | Start an agent on any Mac and project | New agent accessory, Siri / Action button | `agents.spawn`, `projects.recent`, `profiles.list` |
-| 4 | Follow and steer | Agent view: live terminal plus reply dock | view attach (`ro`, `anchor: bottom`), `agents.input` |
+| 4 | Follow and steer | Agent view: live writable terminal plus reply dock | `agents.attach` `rw` (`owner: false`; `owner: true` after Fit to iPhone), `agents.input` for the reply field |
 | 5 | Stop, resume, close | Agent menu, swipe on rows | `agents.stop`, `agents.resume`, `agents.close` |
 | 6 | Judge the result | Review sheet from the Inbox | `review.list`, `review.diff`, `review.evidence`, `review.accept`, `review.sendBack` |
 | 7 | Know the Macs are fine | Macs tab | inventory (`machines`, `machine.updated`), `snapshot` stats |
@@ -54,7 +57,8 @@ Tab bar (Liquid Glass, minimizes on scroll)
 ├── Macs         machines, their health, pairing
 └── Search       (role: search) agents, projects, past sessions
 Bottom accessory: "New agent" with a mic button, on every tab
-Agent view       pushed from any row; live terminal + dock
+Agent view       pushed from any row; live writable terminal + dock;
+                 portrait and landscape (iPad: the detail column)
 Sheets           New agent · Review · Deny with a message · Pair a Mac
 System surfaces  notifications · one fleet Live Activity · widgets · controls · App Intents
 ```
@@ -137,8 +141,10 @@ The agent view is the agent's real terminal. Under it sits the dock:
   or the numbered choices). Deny… opens a field for "tell Claude what to do
   instead".
 - **working, done, idle**: a reply field ("Message migrations"), a mic, and
-  a Keys button for Esc, Tab, ↑ ↓, ⏎, ^C and digits. Text goes in with
-  `agents.input`; the PTY size is never taken.
+  a **Keyboard** button that puts the focus in the terminal itself. The
+  reply field sends whole messages with `agents.input`. In the terminal,
+  every key goes straight to the agent, as on the Mac. The PTY keeps the
+  Mac's size until the owner taps Fit to iPhone.
 - **exited**: Resume and Close.
 - **error**: the error line, Open on Mac, Resume, Close.
 
@@ -214,29 +220,87 @@ for confirmation (`requestConfirmation`,
 
 ## The terminal on a phone
 
-The terminal is a read-only **view attach** (`mode: ro`,
-`view: {rows, cols, anchor: "bottom"}`): the host sends the last rows from
-its own screen copy, then only changed rows, at most every 8 ms. The phone
-renders the PTY's grid with libghostty and never resizes the PTY, so the
-Mac's tile is untouched.
+The terminal is writable, like the Mac's. Typing and owning the size are
+separate in hesperd, so the phone can type without resizing anything
+([research](writable-terminal.md)). It renders with libghostty through
+libghostty-spm's `GhosttyTerminal` view (decided). That view brings the
+iOS input layer: keyboard and IME, hardware keys, key bar, touch selection
+and scrolling.
+
+**Mirror** (default). A read-write attach without owner (`agents.attach`,
+`mode: rw`, `owner: false`). The phone draws the PTY at exactly the Mac's
+`cols × rows` and scales or pans the view, never the grid. A TUI then
+never garbles, and the Mac's tile is untouched.
 
 - **Readable** (default when the PTY is wider than about 90 columns): a
-  fixed font of about 9 pt, lines starting at the left edge, a "120 cols →"
-  label, pan for the rest. **Fit width** (default for narrower PTYs): the
-  font scales so every column fits. Double tap toggles; pinch zooms;
-  landscape shows the full width with the dock at the side.
-- **Bottom-anchored**: the newest line sits just above the dock, as in the
-  view attach (`anchor: bottom`).
-- **Scrollback**: dragging up sends `SCROLL` frames; "Live ↓" returns.
-- **Selection**: long press selects and copies.
-- **Typing**: the reply field and Keys cover what agents need. Taking the
-  PTY's size (an `rw` owner attach) is a later, explicit "Fit to iPhone"
-  with a warning that the Mac's view reflows.
+  fixed font of about 9 pt, a "120 cols →" label, pan for the rest. **Fit
+  width** (default for narrower PTYs): the font scales so every column
+  fits. Double tap toggles; pinch zooms. While typing, the view follows
+  the cursor.
+- **Landscape** (decided). The agent view rotates, and at about 9 pt a
+  120-column terminal fits the width. The dock moves to the side. The rest
+  of the app stays portrait on iPhone.
+- **Bottom-anchored**: the newest line sits just above the dock or the
+  keyboard.
 
-Terminal apps on phones show the same lessons: read-only and zoom work;
-the missing Esc/Ctrl/arrows and fragile connections are what hurts
+**Fit to iPhone** (decided: an explicit tap each time, never automatic).
+The phone becomes the size owner (`owner: true`) while the agent view is
+open. The agent redraws at the phone's grid, about 46 × 19 at 11 pt in
+portrait with the keyboard up. The Mac's tile becomes a view marked **On
+iPhone**. The Mac takes the size back on its next keystroke or click in
+that agent (the latest owner wins), and the phone drops back to Mirror. The
+phone lets go when the view closes or the app leaves the front. Resizes
+from the keyboard showing or hiding are debounced. This needs the core
+work in items 9 and 10 below. With an older hesperd only Mirror is
+offered.
+
+- **Keyboard**: the software keyboard with autocorrect, smart quotes and
+  inline predictions off. IME works (marked text). A key bar above it
+  holds esc ⇥ ← ↑ ↓ → ⏎ ^C, a sticky ctrl and a paste control (no paste
+  prompt). Hardware keyboards get Ctrl and Esc ahead of iOS's own
+  shortcuts. Dictation and Scribble arrive as text. Keys follow the
+  program's modes (application cursor, bracketed paste, kitty keys), as
+  on the Mac.
+- **Cost**: one signed `agents.attach` per opening, with right `type` and
+  no Face ID. After that, keystrokes are sealed data frames, never signed
+  one by one. Shell agents need right `shell`, so Face ID and the strong
+  key once per attach (decided: the phone may type into shells).
+- **Scrollback**: the read-write attach brings up to 10,000 lines. Then
+  drag to scroll locally; "Live ↓" returns. Programs that capture the mouse
+  get the scroll instead.
+- **Selection**: long press with handles and the loupe, then copy.
+- **Links**: a tap opens a URL after a confirmation, never by itself.
+- **Latency**: about 45 ms to echo through the relay, under 1 ms on the
+  direct path. No local echo prediction in v1: Claude Code draws its own
+  input box, so a mosh-style prediction would be wrong there. Long text
+  goes through the reply field and Speak.
+
+Terminal apps on phones show the same lessons: zoom works; the missing
+Esc/Ctrl/arrows and fragile connections are what hurts
 ([Blink](https://docs.blink.sh/),
-[Termius](https://termius.com/blog/new-touch-terminal-on-ios)).
+[Termius](https://termius.com/blog/new-touch-terminal-on-ios)). The key
+bar and the foreground-only attach answer both.
+
+## iPad
+
+In scope (decided). One app, adaptive:
+
+- **Layout**: a split view with Inbox / Agents / Search in the sidebar and
+  the agent view as the detail column. On a narrow window or in Slide
+  Over it is the iPhone layout.
+- **Windows**: each window is its own scene. In iPadOS windowing and Stage
+  Manager, the owner can open agents side by side. With Fit to iPhone
+  ("Fit to iPad"), a window resize resizes the PTY, as with a Mac window.
+  There is at most one size owner per agent.
+- **Hardware keyboard**: the main input on iPad. Cmd shortcuts for the
+  app (⌘N new agent, ⌘F search, ⌘1–4 tabs). In the terminal everything else
+  goes to the agent. Esc has its own key or Caps Lock → Escape in the
+  system settings, because Cmd-. is unreliable. The key bar hides while a
+  hardware keyboard is attached.
+- **Pointer**: trackpad selection and scroll in the terminal, hover on
+  rows.
+- **External display**: the iPad's own window there, through iPadOS
+  windowing. The iPhone mirrors only.
 
 ## Visual language
 
@@ -272,7 +336,7 @@ The Mac's design system, adapted to iOS 26:
 | History: fork, continue as, archive, delete | Search and Resume only | Resume is the phone job |
 | Review hunk by hunk, bulk accept | Triage only | Reading diffs is the Mac's job |
 | Move between Macs | Later, through a Mac | Decided |
-| Shell agents | Later, behind Face ID and the strong key | Highest risk right |
+| Starting shell agents | Later, behind Face ID and the strong key | Highest risk right; typing into an existing shell is in (Face ID once per attach) |
 | Attach files | Later (photo of a screen or sketch) | Nice, not core |
 | Drafts | Out; an unsent New agent text is kept on the phone | Drafts are a Mac wall concept |
 | Density, themes beyond Dusk / Daylight | Out | System settings cover it |
@@ -289,9 +353,12 @@ until the link is live
 
 **Streaming.** One `agents.link` per Mac with channel-0 events
 (`list` then `changed` / `removed`). That is all the lists need. Exactly one
-terminal view attach at a time: the agent on screen. It is detached when
-the view goes away and when the app backgrounds. Rows update at most at
-the display rate, coalesced per agent.
+terminal attach at a time: the agent on screen (on iPad, one per window).
+It is detached, and the size given back, when the view goes away and when
+the app backgrounds. On return, the first frame is a full redraw, about
+46 ms through the relay. Parsing a Claude Code flood (about 0.3 MB/s)
+costs well under 1% of a core. Rows update at most at the display rate,
+coalesced per agent.
 
 **Battery.** No background sockets: WebSockets do not run in the
 background and the app is suspended shortly after leaving the foreground
@@ -329,6 +396,18 @@ What core Hesper (`main`) needs before this app can ship, in order:
 6. **`agents.result` over the relay** (or the last message in
    `ReviewItem`) for the Review sheet and Done rows.
 7. **`agents.move` driven by a Mac on the phone's behalf** (later).
+8. **Attach channels in the mobile client library**: open an
+   `agents.attach` on a link, then read and write its `D` frames and close
+   it with `X` (HesperLink drops them today). This is needed for the
+   writable terminal (Mirror). No protocol change.
+9. **Who owns the size, in hesperd**: record whether the size owner is
+   local or a remote device. Publish it as `sizeOwner` in the agent's info
+   and events, and set `capabilities.sizeOwner` in the snapshot. Both are
+   additive; update `relay/docs/protocol.md`. This is needed for Fit to
+   iPhone.
+10. **The Mac yields to a remote owner**: while `sizeOwner` names another
+    device, `SizeOwnership` makes that agent's panes fit views marked "On
+    iPhone"; a keystroke or click takes the size back.
 
 ## Open decisions
 

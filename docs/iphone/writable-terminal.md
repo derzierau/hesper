@@ -424,19 +424,24 @@ Phone (iOS 26)                         hesperd (Mac)
 
 ---
 
-## 10. Open decisions (owner)
+## 10. Decisions (owner, 2026-10-31)
 
-1. **Take over: explicit or automatic?** Recommended: explicit ("Fit to
-   iPhone") for each opening, with the Mac taking back on its next
-   keystroke. The alternative is automatic when the Mac is idle or locked.
-2. **iPad.** In scope for the writable terminal (hardware keyboards, Stage
-   Manager make it the best device for it), or iPhone only for now?
-3. **Landscape** for the terminal screen only. Needed for Mirror.
-4. **Typing into shells from the phone** (right `shell`, Face ID per
-   attach). The spec lists `shell` as out of phone rights (§2).
-5. **The libghostty-spm questions** from `ios/docs/renderer-decision.md`
-   are still open, now including the `GhosttyTerminal` product (and its
-   `Lakr233/DisplayLink` dependency) for the input layer.
+1. **Take over is an explicit tap** ("Fit to iPhone") each time, never
+   automatic. The Mac takes the size back on its next keystroke.
+2. **iPad is in scope**, with hardware keyboards and iPadOS windowing. The
+   concept's iPad section covers it.
+3. **Landscape** for the agent view (the terminal screen). The rest of the
+   app stays portrait on iPhone.
+4. **The phone may type into shells**: right `shell`, Face ID and the
+   strong key once per attach. Starting shells from the phone stays later.
+   This changes the spec's phone rights (§2).
+5. **libghostty-spm goes into the iOS app**, `GhosttyTerminal` product
+   included (with its `Lakr233/DisplayLink` dependency, MIT), at the Mac's
+   pin. This answers the open questions in
+   `ios/docs/renderer-decision.md`.
+
+These are folded into [`concept.md`](concept.md) ("The
+terminal on a phone", "iPad", "Core work" 8–10).
 
 Spike code (not committed) lives in the session's scratch folder: a Mac
 probe, an iOS Simulator probe (XcodeGen) and a SwiftTerm benchmark,
