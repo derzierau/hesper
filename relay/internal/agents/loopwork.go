@@ -1,7 +1,9 @@
 package agents
 
 import (
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/derzierau/hesper/relay/internal/endings"
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -96,6 +98,9 @@ func (r *Registry) settle(a *agent, ending string) {
 		r.changed(a)
 	}
 	r.events.push(loopEvent{AgentEvent: AgentEvent{Ref: r.ref(a.local), Agent: r.view(a), Ending: ending, Message: message}})
+	if a.ReportToParent {
+		r.queueReport(a)
+	}
 }
 
 // closedWork records that a left the registry (removeLocked, the single
@@ -104,6 +109,120 @@ func (r *Registry) settle(a *agent, ending string) {
 func (r *Registry) closedWork(a *agent, reason, to string) {
 	r.events.push(loopEvent{closed: true, AgentEvent: AgentEvent{Ref: r.ref(a.local), Agent: r.view(a), Ending: a.Ending,
 		Message: a.lastMessage, Reason: reason, To: to}})
+}
+
+// Reports to a parent (SpawnParams.ReportToParent): when such a child's
+// turn ends, its parent is told with one fixed line, never free text
+// from the child (a child's words could steer its parent). The line is
+// typed into the parent once it is done or idle and no person typed into
+// it (a read-write attach) for reportQuiet; until then it waits, one per
+// child (the latest ending), at most maxReports per parent. Same Mac only:
+// a parent on another Mac is not told (not done in v1). Pending reports
+// are not persisted.
+const (
+	reportQuiet = 30 * time.Second
+	maxReports  = 32
+)
+
+// reportQuietFor is reportQuiet (tests shorten it).
+var reportQuietFor = reportQuiet
+
+type parentReports struct {
+	order  []string          // child ids, oldest first
+	ending map[string]string // by child id
+	timer  *time.Timer       // retries once the person stopped typing
+}
+
+// reportLine is what a parent is told about child id.
+func reportLine(id, ending string) string {
+	return "[hesper] child " + id + " settled: " + ending + "; run hesperctl result " + id
+}
+
+// queueReport queues child's report for its parent (the lock is held).
+func (r *Registry) queueReport(child *agent) {
+	m, local := r.split(child.Parent)
+	if m != r.machine {
+		return // a parent on another Mac: not done in v1
+	}
+	parent := r.agents[local]
+	if parent == nil || (parent.Kind != wire.KindClaude && parent.Kind != wire.KindCodex) {
+		return // gone, or a shell (the line would run as a command)
+	}
+	if r.reports == nil {
+		r.reports = map[string]*parentReports{}
+	}
+	pr := r.reports[local]
+	if pr == nil {
+		pr = &parentReports{ending: map[string]string{}}
+		r.reports[local] = pr
+	}
+	if _, queued := pr.ending[child.ID]; !queued {
+		if len(pr.order) >= maxReports {
+			delete(pr.ending, pr.order[0])
+			pr.order = pr.order[1:]
+		}
+		pr.order = append(pr.order, child.ID)
+	}
+	pr.ending[child.ID] = child.Ending
+	r.deliverReports(parent)
+}
+
+// deliverReports types parent's waiting reports into it when it is done
+// or idle and no person typed into it lately (the lock is held), the way
+// Answer types (no dispatch: hesperd's own input). Else they wait for its
+// next quiet state, or for the end of the person's typing.
+func (r *Registry) deliverReports(parent *agent) {
+	pr := r.reports[parent.local]
+	if pr == nil || r.closing {
+		return
+	}
+	if parent.State != wire.StateDone && parent.State != wire.StateIdle || parent.term == nil || parent.Exit != nil || parent.closeReason != "" {
+		return
+	}
+	if wait := reportQuietFor - time.Since(parent.term.LastInput()); wait > 0 {
+		if pr.timer == nil {
+			local := parent.local
+			pr.timer = time.AfterFunc(wait, func() {
+				r.mu.Lock()
+				defer r.mu.Unlock()
+				if pr := r.reports[local]; pr != nil {
+					pr.timer = nil
+					if a := r.agents[local]; a != nil {
+						r.deliverReports(a)
+					}
+				}
+			})
+		}
+		return
+	}
+	lines := make([]string, 0, len(pr.order))
+	for _, id := range pr.order {
+		lines = append(lines, reportLine(id, pr.ending[id]))
+	}
+	if err := typeText(parent.term, strings.Join(lines, "\n"), true, true); err != nil {
+		r.opt.Logf("hesperd: %s: reports from its children: %v", parent.ID, err)
+		return
+	}
+	r.dropReports(parent)
+}
+
+// dropReports forgets parent's waiting reports (the lock is held).
+func (r *Registry) dropReports(parent *agent) {
+	if pr := r.reports[parent.local]; pr != nil {
+		if pr.timer != nil {
+			pr.timer.Stop()
+		}
+		delete(r.reports, parent.local)
+	}
+}
+
+// stopReports stops every retry (Close; the lock is held).
+func (r *Registry) stopReports() {
+	for _, pr := range r.reports {
+		if pr.timer != nil {
+			pr.timer.Stop()
+		}
+	}
 }
 
 // maxLoopEvents bounds the queue of events for the loops store and the

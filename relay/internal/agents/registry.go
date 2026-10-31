@@ -188,6 +188,8 @@ type Registry struct {
 	// lock is held).
 	events  *loopEvents
 	hooking *agent
+	// reports to parents waiting for them, by the parent's local id.
+	reports map[string]*parentReports
 
 	// review (review.go): the agents' review logs (reviewlog.go); one
 	// accept, reject or send-back at a time.
@@ -453,6 +455,9 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 	if ended {
 		r.turnSettled(a) // loopwork.go
 	}
+	if state == wire.StateDone || state == wire.StateIdle {
+		r.deliverReports(a) // loopwork.go: its children's, now it is quiet
+	}
 	if finished {
 		r.finishedInBackground(a) // close.go
 	}
@@ -575,6 +580,8 @@ func (r *Registry) spawn(p wire.SpawnParams, source string, prepare func(*agent)
 		Parent: p.Parent, Depth: p.Depth, LetParentAnswer: p.LetParentAnswer && p.Parent != "",
 		Track:      p.Track && profile.Kind == wire.KindShell, // shell.go
 		ReviewBase: reviewBase,                                // review.go
+		// loopwork.go: its parent hears when its turns end
+		ReportToParent: p.ReportToParent && p.Parent != "",
 	}}
 	if a.Parent == "" {
 		a.Depth = 0
@@ -1332,6 +1339,7 @@ func (r *Registry) Close() {
 			a.term.Stop(2 * time.Second)
 		}
 	}
+	r.stopReports() // loopwork.go
 	for s := range r.subs {
 		s.close()
 	}

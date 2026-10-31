@@ -199,6 +199,7 @@ func (r *Registry) removeLocked(a *agent, reason string) {
 		s.pushRemovedTo(a.ID, reason, to)
 	}
 	r.closedWork(a, reason, to) // loopwork.go: the closed-work record
+	r.dropReports(a)            // loopwork.go
 	r.scheduleSave()
 	r.reviews().forget(a.local) // reviewlog.go
 }

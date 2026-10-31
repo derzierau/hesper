@@ -362,3 +362,109 @@ func TestLoopEventsDropOldest(t *testing.T) {
 		t.Fatalf("%d delivered, first queued %q", len(b.settled), b.settled[1].Ref)
 	}
 }
+
+// resultHas waits until id's last message contains text.
+func (h *harness) resultHas(id, text string) {
+	h.t.Helper()
+	eventuallyTrue(h.t, id+" was told "+text, func() bool {
+		res, err := h.reg.Result(id)
+		return err == nil && strings.Contains(res.Message, text)
+	})
+}
+
+func TestReportToParent(t *testing.T) {
+	h, _ := newLoopsHarness(t)
+	parent := h.spawn(wire.SpawnParams{Task: "small job"})
+	h.waitState(parent.ID, wire.StateDone)
+	// A person's spawn has no parent to tell.
+	if a := h.spawn(wire.SpawnParams{Task: "small job", ReportToParent: true}); a.ReportToParent {
+		t.Fatal("reportToParent without a parent")
+	}
+	child, err := h.spawnAs(parent.ID, wire.SpawnParams{Task: "Should I go on?", ReportToParent: true})
+	allowed(t, "child", err)
+	if !child.ReportToParent {
+		t.Fatalf("child %+v", child)
+	}
+	h.resultHas(parent.ID, reportLine(child.ID, wire.EndingAsks))
+	// A working parent is told once its turn ended.
+	h.waitState(parent.ID, wire.StateDone)
+	h.call("agents.input", wire.InputParams{ID: parent.ID, Text: "approve it", Submit: true}, nil)
+	h.waitState(parent.ID, wire.StateApproval)
+	h.call("agents.input", wire.InputParams{ID: child.ID, Text: "all good", Submit: true}, nil)
+	eventuallyTrue(t, "child settled", func() bool {
+		g, _ := h.reg.Get(child.ID)
+		return g.State == wire.StateDone && g.Ending == wire.EndingDone
+	})
+	time.Sleep(100 * time.Millisecond)
+	if g, _ := h.reg.Get(parent.ID); g.State != wire.StateApproval {
+		t.Fatalf("parent typed into while waiting: %s", g.State)
+	}
+	h.call("agents.answer", wire.AnswerParams{ID: parent.ID, Decision: wire.Allow}, nil)
+	h.resultHas(parent.ID, reportLine(child.ID, wire.EndingDone))
+	// Persisted.
+	h.close()
+	h.open()
+	if g, _ := h.reg.Get(child.ID); !g.ReportToParent {
+		t.Fatal("reportToParent not persisted")
+	}
+}
+
+// TestReportWaitsForTyping: a person typing into the parent (a read-write
+// attach) holds the report back for reportQuiet.
+func TestReportWaitsForTyping(t *testing.T) {
+	old := reportQuietFor
+	reportQuietFor = time.Second
+	t.Cleanup(func() { reportQuietFor = old })
+	h, _ := newLoopsHarness(t)
+	parent := h.spawn(wire.SpawnParams{Task: "small job"})
+	h.waitState(parent.ID, wire.StateDone)
+	rw, err := wire.Attach(t.Context(), h.sock, wire.AttachRequest{Attach: parent.ID, Mode: wire.ModeRW, Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rw.Close()
+	if err := rw.Input([]byte(" ")); err != nil {
+		t.Fatal(err)
+	}
+	term, _ := h.reg.Term(parent.ID)
+	eventuallyTrue(t, "typed", func() bool { return !term.LastInput().IsZero() })
+	child, err := h.spawnAs(parent.ID, wire.SpawnParams{Task: "small job", ReportToParent: true})
+	allowed(t, "child", err)
+	h.waitState(child.ID, wire.StateDone)
+	if res, _ := h.reg.Result(parent.ID); strings.Contains(res.Message, "[hesper]") {
+		t.Fatal("told while the person was typing")
+	}
+	h.resultHas(parent.ID, reportLine(child.ID, wire.EndingDone))
+}
+
+// TestReportsCoalesce: one line per child (its latest ending), the
+// oldest dropped over maxReports; a removed parent's reports go.
+func TestReportsCoalesce(t *testing.T) {
+	h, _ := newLoopsHarness(t)
+	parent := h.spawn(wire.SpawnParams{Task: "approve it"})
+	h.waitState(parent.ID, wire.StateApproval)
+	h.reg.mu.Lock()
+	child := &agent{Agent: wire.Agent{ID: "L/kid001", Parent: parent.ID, ReportToParent: true}}
+	child.Ending = wire.EndingAsks
+	h.reg.queueReport(child)
+	child.Ending = wire.EndingDone
+	h.reg.queueReport(child)
+	for i := range maxReports {
+		h.reg.queueReport(&agent{Agent: wire.Agent{ID: fmt.Sprintf("L/kid%03d", i+2), Parent: parent.ID, Ending: wire.EndingDone}})
+	}
+	pr := h.reg.reports[strings.TrimPrefix(parent.ID, "L/")]
+	n, first := len(pr.order), pr.order[0]
+	h.reg.mu.Unlock()
+	if n != maxReports || first != "L/kid002" {
+		t.Fatalf("%d queued, first %s", n, first)
+	}
+	h.reg.mu.Lock()
+	child.Ending = wire.EndingWaits
+	pr.ending["L/kid002"] = wire.EndingWaits
+	h.reg.mu.Unlock()
+	h.call("agents.answer", wire.AnswerParams{ID: parent.ID, Decision: wire.Allow}, nil)
+	h.resultHas(parent.ID, reportLine("L/kid002", wire.EndingWaits))
+	if res, _ := h.reg.Result(parent.ID); strings.Contains(res.Message, "kid001") {
+		t.Fatalf("dropped report delivered: %s", res.Message)
+	}
+}

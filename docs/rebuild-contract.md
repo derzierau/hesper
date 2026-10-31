@@ -5009,6 +5009,21 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   `finished-in-background`, `removed`, `moved` with `To`, the agent it
   became), the agent (its summary), its last ending and its final
   message; the store keeps an excerpt.
+- **Report to parent.** `SpawnParams.reportToParent` on a spawn with a
+  parent sets `Agent.reportToParent` (persisted; ignored without a
+  parent). When such a child's turn ends, its parent is told one fixed
+  line, never free text from the child:
+  `[hesper] child <id> settled: <ending>; run hesperctl result <id>`.
+  The line is typed into the parent (hesperd's own input, no dispatch;
+  pasted, then Enter) only once the parent is `done` or `idle` and no
+  read-write attach typed into it in the last 30 s
+  (`ptyhost.Term.LastInput`); until then it waits, one per child with the
+  latest ending, at most 32 per parent (the oldest dropped), and goes out
+  at the parent's next quiet state or when the 30 s are up. Several
+  waiting lines go out as one paste. Only Claude and Codex parents (a
+  shell would run the line), only on the same Mac: a parent on another
+  Mac is not told (not done in v1). Waiting reports are not persisted and
+  go with a removed parent.
 
 ## Wire names kept from Ghosty
 
