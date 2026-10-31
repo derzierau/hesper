@@ -640,7 +640,7 @@ final class WallView: NSView {
             MainActor.assumeIsolated { self?.needsLayout = true }
         }
         NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateFades() }
+            MainActor.assumeIsolated { self?.updateFades(); self?.pinHeadings() }
         }
         // Density (Settings): header, gutter, margin and band headings change.
         NotificationCenter.default.addObserver(forName: DS.densityDidChange, object: nil, queue: .main) { [weak self] _ in
@@ -932,6 +932,7 @@ final class WallView: NSView {
         let m = Metrics.wall.margin
         strip.frame = NSRect(x: m, y: m, width: max(0, size.width - 2 * m), height: Self.stripHeight)
         updateFades()
+        pinHeadings()
     }
 
     // MARK: Bands (projects)
@@ -1008,6 +1009,21 @@ final class WallView: NSView {
             if animated && !bd.frame.isEmpty { bd.animator().frame = frame } else { bd.frame = frame }
         }
         for (k, h) in bandHeaders where !seen.contains(k) { h.isHidden = true; backdrops[k]?.isHidden = true }
+    }
+
+    /// Sticky headings: a band wider than the viewport keeps its title at
+    /// the visible left edge, clear of the edge fade, while the wall scrolls
+    /// sideways (StickyHeading). Runs on every scroll: one comparison per
+    /// band, a re-layout of a heading only when its offset changes.
+    private func pinHeadings() {
+        let minX = Double(scrollView.contentView.bounds.minX + scrollView.contentInsets.left)
+        let fade = Double(RootView.fadeWidth)
+        for f in layoutResult.bands {
+            guard let h = bandHeaders[f.key] else { continue }
+            // The title's width is measured only for a band scrolled past.
+            let behind = !f.collapsed && drag?.key != f.key && StickyHeading.offset(header: f.header, visibleMinX: minX, fade: fade, keep: 0) > 0
+            h.titleOffset = behind ? CGFloat(StickyHeading.offset(header: f.header, visibleMinX: minX, fade: fade, keep: Double(h.titleKeep))) : 0
+        }
     }
 
     /// Header drag: the header follows the mouse, the band under it

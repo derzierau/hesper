@@ -2065,6 +2065,14 @@ the Tokyo Night palette by FNV of the id. `identity` objects are decoded
   between lanes), the wall scrolls sideways as one (deviation from "per
   lane": nested scroll views per lane would fight the wall's own
   scrolling and the edge fades; one sideways scroll keeps today's B).
+  A lane wider than the window keeps its heading's title in view: while
+  the lane is on screen the title follows the visible left edge, clear of
+  the edge fade (its floor grows with the scroll, so it never jumps), and
+  stops where title and ＋ ↗ ⋯ just fit before the lane's end, so it leaves
+  with the lane; the buttons stay at the lane's end (`StickyHeading`,
+  HesperCore, tests `StickyHeadingTests`; an offset update per scroll, no
+  re-layout of the wall). `make -C app layout SHOW=wall-scroll` scrolls
+  the wall halfway sideways before the dump.
 - **C treemap**: **nested** — bands by the sum of their agents' weights
   (4/2/1 as before), then the agents inside each band's rect below its
   header.
