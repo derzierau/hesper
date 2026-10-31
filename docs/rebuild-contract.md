@@ -4970,6 +4970,21 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   process starts. A service agent is exempt from closing when it finishes
   in the background (its turn ends, or its process ends on its own: it
   stays, exited, for the Steward to restart) and from `hesperctl tidy`.
+- **Assign.** An agent is put in a loop where it is inserted, not on each
+  spawn path: `Spawn` (and `SpawnFrom`, `SpawnService`), `SpawnSession`
+  and `Import`. That covers spawns, resume, fork, continue-as, bring,
+  `Handoff.Spawn` and gateway imports. `Loops.Assign` gets the agent's ref
+  (`<loops node>/<local id>`), the agent, its parent's ref (a parent on
+  this Mac only; one on another Mac is the controller's to link), the
+  source session's ref for resume, fork and continue-as (the session
+  record's key, `<sessions node>:<kind>:<session id>`), and the spawn's
+  `loop` and `milestone`, which win. A move carries the loop in the
+  manifest (`AgentInfo.loop`; an older source sends none and the agent
+  gets a new loop). Service agents are never assigned.
+- **`Agent.loop`** is filled from `Loops.LoopOf(ref)` whenever this Mac's
+  agents are listed, fetched or notified; it is never kept in the
+  registry nor written to `agents.json` (the store's links are the
+  truth).
 
 ## Wire names kept from Ghosty
 

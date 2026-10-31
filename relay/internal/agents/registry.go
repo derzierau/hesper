@@ -368,7 +368,7 @@ func (r *Registry) Working() bool {
 func (r *Registry) listLocked() []wire.Agent {
 	out := make([]wire.Agent, 0, len(r.agents))
 	for _, a := range r.agents {
-		out = append(out, a.Agent)
+		out = append(out, r.view(a))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].Created.Equal(out[j].Created) {
@@ -387,7 +387,7 @@ func (r *Registry) Get(id string) (wire.Agent, error) {
 	if err != nil {
 		return wire.Agent{}, err
 	}
-	return a.Agent, nil
+	return r.view(a), nil
 }
 
 // Term is an agent's terminal (for attach).
@@ -448,7 +448,7 @@ func attentionEqual(x, y *wire.Attention) bool {
 
 // changed tells subscribers and schedules a save (the lock is held).
 func (r *Registry) changed(a *agent) {
-	snap := a.Agent
+	snap := r.view(a)
 	for s := range r.subs {
 		s.push(snap.ID, &snap)
 	}
@@ -457,12 +457,20 @@ func (r *Registry) changed(a *agent) {
 
 // Spawn starts a new agent.
 func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
-	return r.spawn(p, nil)
+	return r.spawn(p, "", nil)
 }
 
-// spawn starts a new agent; prepare (optional) changes it before its
-// process starts (the lock is held): a service agent's role.
-func (r *Registry) spawn(p wire.SpawnParams, prepare func(*agent)) (wire.Agent, error) {
+// SpawnFrom starts a new agent that continues the session source (a
+// session ref, "<sessions node>:<kind>:<session id>"; sessions.continueAs):
+// it joins that session's loop unless p names one.
+func (r *Registry) SpawnFrom(p wire.SpawnParams, source string) (wire.Agent, error) {
+	return r.spawn(p, source, nil)
+}
+
+// spawn starts a new agent from source (a session ref, or ""); prepare
+// (optional) changes it before its process starts (the lock is held): a
+// service agent's role.
+func (r *Registry) spawn(p wire.SpawnParams, source string, prepare func(*agent)) (wire.Agent, error) {
 	if p.Machine != "" && p.Machine != r.machine {
 		return wire.Agent{}, wire.Errorf(wire.CodeUnavailable, "machine %s is not connected", p.Machine)
 	}
@@ -569,9 +577,10 @@ func (r *Registry) spawn(p wire.SpawnParams, prepare func(*agent)) (wire.Agent, 
 		delete(r.agents, local)
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "cannot start %s: %v", profile.Argv[0], err)
 	}
+	r.assign(a, AssignInfo{SourceSession: source, Loop: p.Loop, Milestone: p.Milestone}) // loopwork.go
 	r.touchProject(project, now)
 	r.changed(a)
-	return a.Agent, nil
+	return r.view(a), nil
 }
 
 // argv is the command line of a profile for an agent: placeholders
@@ -986,7 +995,7 @@ func (r *Registry) Resume(id string) (wire.Agent, error) {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "cannot start %s: %v", profile.Argv[0], err)
 	}
 	r.changed(a)
-	return a.Agent, nil
+	return r.view(a), nil
 }
 
 // notResumed: an agent that could not be started again is an error with
