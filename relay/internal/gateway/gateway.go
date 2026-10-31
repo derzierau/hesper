@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
+	"github.com/derzierau/hesper/relay/internal/endings"
 	"github.com/derzierau/hesper/relay/internal/handoff"
 	"github.com/derzierau/hesper/relay/internal/host"
 	"github.com/derzierau/hesper/relay/internal/loops"
@@ -157,6 +158,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	// loops: before the agents (restored agents keep their loops); its
 	// node is the projects store's.
 	d.Loops = loops.Open(loops.Options{StateDir: opt.StateDir, Node: d.Projects.Node(), Machine: opt.Machine, Logf: opt.Logf})
+	d.Loops.SetClassify(endings.Classify) // loose ends from final messages
 	opt.Loops = d.Loops
 	// shared history: before the agents (the socket serves sessions.*).
 	if !cfg.NoHistory {
