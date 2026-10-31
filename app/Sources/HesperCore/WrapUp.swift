@@ -104,17 +104,18 @@ public struct WrapUp: Equatable, Sendable {
         }
     }
 
-    /// One decision per loop: done when it looks done; the next step when
-    /// the person has open items; drop for debris (only agents that ended
-    /// in error or exited, nothing open, nothing else linked); park when
-    /// nothing changed in three days; else keep.
+    /// One decision per loop: drop for debris (only agents that ended in
+    /// error or exited, nothing open, nothing else linked); done when it
+    /// looks done; the next step when the person has open items; park
+    /// when nothing changed in three days; else keep.
     public static func suggest(_ l: Loop, now: Date) -> (WrapUpDecision, String) {
+        // Debris looks done to hesperd too (every agent quiet): drop first.
+        if isDebris(l) { return (.drop, "Only failed or exited agents, nothing open") }
         if l.looksDone { return (.done, "Nothing open and every agent is quiet") }
         if let first = l.yourItems.first {
             let n = l.yourItems.count
             return (.nextStep(first.text), n == 1 ? "One step is yours" : "\(n) steps are yours")
         }
-        if isDebris(l) { return (.drop, "Only failed or exited agents, nothing open") }
         if l.status != .parked, now.timeIntervalSince(l.lastChange) >= Double(parkAfterDays) * 86_400 {
             return (.park, "No change in \(parkAfterDays) days")
         }

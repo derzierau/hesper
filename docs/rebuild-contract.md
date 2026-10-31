@@ -5026,10 +5026,11 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
 - **Wrap-up** (`WrapUp.swift`). Today's loops: active and changed since
   local midnight, or on the person. Order: You, looks done, Agents,
   Others, Parked, then most recent. One suggestion each, first match:
-  done (looks done), next step (the first open item of the person's),
   drop (debris: every live agent in error or exited and every gone one
   left no ending, summary or result; nothing open; no file, URL or loop
-  linked), park (no change in 3 days), else keep. Tallies: started
+  linked; hesperd marks such a loop looks done too), done (looks done),
+  next step (the first open item of the person's), park (no change in 3
+  days), else keep. Tallies: started
   today, finished today (done since midnight), on you, parked. `accept`,
   `decide`, `undo`, `progress` and `patches` (done/dropped/parked until
   tomorrow 09:00). `isDue` after `LoopSettings.eveningAt`.

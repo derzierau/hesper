@@ -53,6 +53,9 @@ struct WrapUpTests {
         #expect(WrapUp.suggest(stale, now: evening).0 == .park)
         #expect(WrapUp.suggest(F.loop("s", next: .agents, updated: days(2.9)), now: evening).0 == .keep)
         #expect(WrapUp.suggest(F.loop("s", next: .you, looksDone: true, updated: days(30)), now: evening).0 == .done)
+        // hesperd marks debris "looks done" too (every agent quiet): drop wins.
+        let debris = F.loop("d", next: .you, looksDone: true, links: [F.agent("n/x", agent: "L/x", state: .error)])
+        #expect(WrapUp.suggest(debris, now: evening).0 == .drop)
         // One step.
         #expect(WrapUp.suggest(F.loop("s", next: .you, items: [F.item("i", "Do it")]), now: evening) == (.nextStep("Do it"), "One step is yours"))
         // Debris needs every agent failed or gone without a trace, and nothing else linked.
