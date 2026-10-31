@@ -49,6 +49,9 @@ struct TopBarData {
     var review = 0
     /// Dense Cards is on (the ⋯ menu's checkmark).
     var dense = false
+    /// Loops waiting on the person's step (the inbox's "Your move"): a
+    /// quiet pill when nothing else needs them, so ⌘J has its anchor.
+    var yourMove = 0
 
     /// The wordmark's stop is Signal (approvals and questions).
     var wordmarkSignal: Bool { counts.approval + counts.question > 0 }
@@ -91,7 +94,7 @@ enum TopBarSource {
             return TopBarData(counts: m.counts, machines: m.machines, scope: m.scope, popover: m.popover, connected: m.isConnected,
                               connectionMessage: m.connectionMessage, arrangement: m.arrangement,
                               scopeName: s.name, scopeCount: s.count, scopeOf: s.of, compact: compact, background: m.backgroundSummary,
-                              review: m.reviewCount, dense: m.minChars < 80)
+                              review: m.reviewCount, dense: m.minChars < 80, yourMove: m.yourMoveCount)
         }
     }
 
@@ -441,6 +444,23 @@ struct AttentionPill: View {
             .help(IconButton.tooltip("What needs you", CommandRegistry.cap(.nextAttention)))
             .accessibilityLabel("\(c.needingYou) need\(c.needingYou == 1 ? "s" : "") you")
             .accessibilityIdentifier("topbar.approvals")
+        } else if data.yourMove > 0 {
+            let open = data.popover == .attention
+            Button { actions.popover(.attention) } label: {
+                HStack(spacing: DS.Spacing.s) {
+                    StateMark(.idle)
+                    Text("\(data.yourMove) your move").font(.ds(.chrome, .medium)).foregroundStyle(Theme.fg)
+                }
+                .padding(.horizontal, DS.Spacing.m).frame(height: Pill.height)
+                .background(DS.Radius.shape(DS.Radius.control).fill(Theme.chipBG.opacity(open ? 1 : 0.6)))
+                .contentShape(DS.Radius.shape(DS.Radius.control))
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .barAnchor("attention")
+            .help(IconButton.tooltip("Your move", CommandRegistry.cap(.nextAttention)))
+            .accessibilityLabel("\(data.yourMove) loop\(data.yourMove == 1 ? "" : "s") waiting on your move")
+            .accessibilityIdentifier("topbar.yourmove")
         }
     }
 }

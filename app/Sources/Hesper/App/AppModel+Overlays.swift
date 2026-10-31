@@ -170,15 +170,22 @@ extension AppModel {
             return PopoverContent(title: "Rename \(agent(id)?.name ?? "")", items: [], note: "Your name stays; the agent won't rename it",
                                   hints: [("⏎", "rename"), ("esc", "close")], field: "Name")
         case .attention:
-            // Drawn by AttentionPanel (Overlays.swift) from attentionEntries();
-            // these rows serve the generic list code (selection, tests).
-            let items = inboxEntries().map { e -> OverlayItem in
+            // Drawn by AttentionPanel (Overlays.swift) from attentionEntries()
+            // and inboxYourMove(); these rows serve the generic list code
+            // (selection, tests).
+            var items = inboxEntries().map { e -> OverlayItem in
                 OverlayItem(id: e.id, title: e.agent.name, detail: ([e.agent.machine] + e.whereabouts).joined(separator: " · "),
                             stateMark: StateMarkKind(e.agent.state),
                             run: { [weak self] in self?.openFromQueue(e.agent) },
                             alternate: { [weak self] in if let p = InboxKeys.primary(e.answers) { self?.answerFromQueue(e, p) } })
             }
-            return PopoverContent(title: "Needs you · \(items.count)", items: items, note: nil, hints: AttentionPanel.hints, empty: AttentionPanel.emptyText)
+            for e in inboxYourMove() {
+                items.append(OverlayItem(id: "loop:\(e.loop.id)", section: InboxList.yourMoveTitle, title: e.loop.displayTitle, detail: e.text,
+                                         stateMark: YourMoveItem.mark(e),
+                                         run: { [weak self] in self?.yourMoveAct(e, .open(loop: e.loop.id)) },
+                                         alternate: { [weak self] in if let a = e.actions.first { self?.yourMoveAct(e, a.intent) } }))
+            }
+            return PopoverContent(title: "Inbox · \(items.count)", items: items, note: nil, hints: AttentionPanel.hints, empty: AttentionPanel.emptyText)
         case .machines:
             let items = machines.map { m -> OverlayItem in
                 let n = wall.filter { $0.machine == m.short }.count
@@ -423,13 +430,37 @@ extension AppModel {
         return all.filter { AttentionInbox.matches(q, name: $0.agent.name, project: $0.agent.project ?? "", question: $0.question) }
     }
 
+    /// The inbox's "Your move" entries (YourMove.entries, cached by the
+    /// hub) through the same filter; the queue's agents are not repeated.
+    func inboxYourMove() -> [YourMoveEntry] {
+        let q = popoverLists[PopoverKind.attention.key]?.query ?? ""
+        return InboxList.filter(loopHub.yourMove(excluding: queueIDs), query: q)
+    }
+
+    /// The toolbar's quiet "n your move" pill (the queue's agents left out).
+    var yourMoveCount: Int { loopHub.yourMove(excluding: queueIDs).count }
+
+    /// The agents in the attention queue (approval, question, error).
+    private var queueIDs: Set<String> { Set(registry.agents.values.lazy.filter(\.state.needsAttention).map(\.id)) }
+
+    /// Both sections of the inbox, as the panel and its keys see them.
+    func inboxList() -> InboxList {
+        InboxList(queue: inboxEntries().map(\.id), yourMove: inboxYourMove())
+    }
+
+    /// Nothing in the queue and nothing in "Your move" (the filter aside).
+    func inboxIsEmpty() -> Bool {
+        !registry.agents.values.contains(where: \.state.needsAttention) && loopHub.yourMove(excluding: queueIDs).isEmpty
+    }
+
     /// ⌘J: opens the inbox under the toolbar's attention pill (again:
-    /// closes it). Nothing in the queue: says so. No pill to hang it on
-    /// (an agent window): goes to the next agent, as before.
+    /// closes it). Nothing in the queue nor in "Your move": says so. No
+    /// pill to hang it on (an agent window): goes to the next agent
+    /// needing you, as before, else opens nothing.
     func toggleAttentionQueue() {
         if popover == .attention { closePopover(); return }
         pruneQueueAnswered()
-        guard !AttentionQueue.ordered(registry.agents.values).isEmpty else {
+        guard !inboxIsEmpty() else {
             closePopover()
             showToast(AttentionPanel.emptyText)
             return
@@ -459,9 +490,11 @@ extension AppModel {
     /// through to the wall while it is open.
     func attentionKey(_ action: OverlayKeyAction) -> Bool {
         let entries = inboxEntries()
+        let moves = inboxYourMove()
         var list = popoverList
-        let enabled = entries.map { _ in true }
+        let enabled = Array(repeating: true, count: entries.count + moves.count)
         let sel = list.selection(enabled: enabled)
+        let move = sel.flatMap { $0 >= entries.count ? moves[$0 - entries.count] : nil }
         if action == .deleteBackward {
             list.deleteBackward()
             popoverList = list
@@ -472,9 +505,11 @@ extension AppModel {
             list.move(d, enabled: enabled)
             popoverList = list
         case .primary:
-            if let sel, let a = InboxKeys.primary(entries[sel].answers) { answerFromQueue(entries[sel], a) }
+            if let move { if let a = move.actions.first { yourMoveAct(move, a.intent) } }
+            else if let sel, let a = InboxKeys.primary(entries[sel].answers) { answerFromQueue(entries[sel], a) }
         case .open:
-            if let sel { openFromQueue(entries[sel].agent) }
+            if let move { yourMoveAct(move, .open(loop: move.loop.id)) }
+            else if let sel { openFromQueue(entries[sel].agent) }
         case .close:
             closePopover()
         case .none:
@@ -489,8 +524,8 @@ extension AppModel {
     }
 
     /// Selects an item (a click on it).
-    func selectAttention(_ id: String) {
-        guard let i = inboxEntries().firstIndex(where: { $0.id == id }) else { return }
+    func selectAttention(_ item: InboxList.Item) {
+        guard let i = inboxList().index(of: item) else { return }
         var l = popoverList
         l.index = i
         popoverList = l
@@ -538,6 +573,66 @@ extension AppModel {
         bringBackIfNeeded(a.id) // a background agent that needs you comes back
         if routeAttention?(a) == true { return }
         if mode == .focus { focus(a.id) } else { activate(a.id) }
+    }
+
+    /// A "Your move" quick action. Yes / No / Did it to a live agent type
+    /// the answer and submit it (agents.input, as the inbox answers a
+    /// free-text question); Did it on an item ticks it off; Later files
+    /// an agent's request in its loop and parks the loop until tomorrow
+    /// morning; Copy command puts it on the clipboard; Open shows the
+    /// loop. The entry hides while its calls are out and comes back with
+    /// the error when one fails.
+    func yourMoveAct(_ e: YourMoveEntry, _ intent: YourMoveIntent) {
+        let hub = loopHub
+        let calls = YourMoveCall.calls(intent, entry: e, parkUntil: YourMoveCall.parkUntil())
+        var remote: [YourMoveCall] = []
+        for c in calls {
+            switch c {
+            case .copy(let text):
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                showToast("Copied: \(text)")
+            case .open(let id):
+                openLoop(id, from: e)
+            case .input, .item, .save:
+                remote.append(c)
+            }
+        }
+        guard !remote.isEmpty else { return }
+        hub.markActed(e.loop, true)
+        Task { @MainActor in
+            for c in remote {
+                let err: String?
+                switch c {
+                case .input(let a, let text):
+                    err = await hub.run { client in try await client.input(a, text: text, submit: true); return nil }
+                case .item(let l, let patch):
+                    err = await hub.run { client in try await client.loopItem(l, item: patch); return nil }
+                case .save(let patch):
+                    err = await hub.run { client in try await client.loopSave(patch) }
+                case .copy, .open:
+                    err = nil
+                }
+                if let err {
+                    hub.markActed(e.loop, false)
+                    self.showToast("Could not do it for \(e.loop.displayTitle): \(err)", error: true)
+                    return
+                }
+            }
+        }
+    }
+
+    /// The loop's detail in the Loops sheet when it is there
+    /// (`LoopHub.openLoop`); else the tile of the agent the entry comes
+    /// from.
+    private func openLoop(_ id: String, from e: YourMoveEntry) {
+        if let open = loopHub.openLoop { closePopover(); open(id); return }
+        let ref: String?
+        switch e.reason {
+        case .asks(let k), .yourStep(let k): ref = k.agent
+        case .item(let it): ref = it.source.flatMap { s in e.loop.links.first { $0.ref == s }?.agent }
+        }
+        if let a = ref.flatMap({ agent($0) }) { openFromQueue(a) } else { closePopover() }
     }
 
     /// Drops answered marks of agents that left the queue (or asked again).

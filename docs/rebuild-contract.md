@@ -5112,6 +5112,36 @@ above.
   error text (`LoopsErrorText`: forbidden says only a person can do it,
   -32601 says to update hesperd).
 
+### As built — loops (app integration)
+
+Code: the existing surfaces of the `Hesper` target reading `LoopHub`;
+the logic is in HesperCore (`InboxList.swift` and the app core above).
+
+- **Inbox** (⌘J, `UI/Overlays.swift` `AttentionPanel`,
+  `AppModel+Overlays.swift`). The attention queue exactly as before,
+  then "Your move" (`LoopHub.yourMove(excluding:)`: `YourMove.entries`
+  without the queue's agents, cached per store version). Headers
+  ("Needs you", "Your move") show only when "Your move" has entries; the
+  title is "Inbox · n" over both. One selection runs through both
+  (`InboxList.items`, a queue agent or a loop); ↑↓ ⏎ ⌘⏎ esc and the
+  filter work as before (the filter also matches a loop's title, the
+  entry's text and its sender). The panel's height comes from
+  `InboxList.height` (rows, headers, gaps) before layout. An entry's
+  quick actions are buttons (the first ⏎, Open ⌘⏎; letters stay the
+  filter's, so no keystroke answers by accident) and become
+  `YourMoveCall`s: Yes / No / Did it to a live agent type the text and
+  submit it (`agents.input` with submit), Did it on an item ticks it
+  off, Copy command copies, Later files an agent's ask or step as the
+  person's item (question or step) and parks the loop until tomorrow
+  09:00, Open calls `LoopHub.openLoop` (the Loops sheet) or else opens
+  the asking agent's tile. An acted-on entry hides until its loop
+  changes and comes back with a toast when a call fails. ⌘J opens when
+  either section has entries (else the "Nothing needs you." toast) and
+  closes itself a second after both are empty. With an empty queue the
+  toolbar shows a quiet "n your move" pill (never red) as the inbox's
+  anchor. Offers never appear. The menu bar, the red pill and
+  notifications still count approval, question and error only.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

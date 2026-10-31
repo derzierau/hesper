@@ -132,10 +132,40 @@ final class LoopHub {
     }
 
     private func derive() {
+        // An acted-on loop that changed shows as it is now.
+        for (id, at) in inboxActed where store.loops[id]?.lastChange != at { inboxActed[id] = nil }
         let c = LoopChip.all(store)
         if c != chips { chips = c }
         let n = LoopChip.onYouCount(store)
         if n != onYouCount { onYouCount = n }
+    }
+
+    // MARK: Inbox
+
+    /// Loops acted on from the inbox (Yes, Later, Did it) and the change
+    /// they showed then: hidden until the loop changes (the call's
+    /// notification), shown again when the call fails.
+    private(set) var inboxActed: [String: Date] = [:]
+    @ObservationIgnored private var yourMoveMemo: (version: Int, excluding: Set<String>, acted: [String: Date], entries: [YourMoveEntry])?
+
+    /// The inbox's "Your move" entries (YourMove.entries without the
+    /// queue's agents and the loops just acted on), cached per store
+    /// version: the panel asks on every render and key.
+    func yourMove(excluding: Set<String>) -> [YourMoveEntry] {
+        if let m = yourMoveMemo, m.version == store.version, m.excluding == excluding, m.acted == inboxActed { return m.entries }
+        let acted = inboxActed
+        let e = YourMove.entries(loops: store.loops.values, excluding: excluding).filter { acted[$0.loop.id] != $0.loop.lastChange }
+        yourMoveMemo = (store.version, excluding, acted, e)
+        return e
+    }
+
+    /// Opens a loop's detail (set by the Loops sheet; nil: the inbox's
+    /// Open goes to the asking agent's tile instead).
+    @ObservationIgnored var openLoop: ((String) -> Void)?
+
+    /// Hides a loop's entry until the loop changes (nil: shows it again).
+    func markActed(_ loop: Loop, _ on: Bool) {
+        inboxActed[loop.id] = on ? loop.lastChange : nil
     }
 
     // MARK: Writes

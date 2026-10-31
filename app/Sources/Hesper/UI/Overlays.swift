@@ -175,16 +175,17 @@ struct OverlayRoot: View {
     /// ⌘J: the inbox, a glass panel under the toolbar's attention pill.
     private func attention(in size: CGSize) -> some View {
         let entries = model.inboxEntries()
+        let moves = model.inboxYourMove()
         let width = AttentionPanel.width
         let maxList = max(AttentionPanel.minListHeight, size.height * AttentionPanel.maxHeightFraction - AttentionPanel.chromeHeight)
-        let listH = min(AttentionPanel.listHeight(entries), maxList)
+        let listH = min(AttentionPanel.listHeight(InboxList(queue: entries.map(\.id), yourMove: moves)), maxList)
         let h = AttentionPanel.chromeHeight + listH
         let a = model.popoverAnchor
         let placed = PopoverPlacement.place(anchor: Rect(x: a.minX, y: a.minY, width: a.width, height: a.height),
                                             width: width, height: h + OverlayLook.arrow,
                                             container: Rect(x: 0, y: 0, width: size.width, height: size.height),
                                             avoid: avoid())
-        return AttentionPanel(model: model, entries: entries, queueEmpty: model.attentionEntries().isEmpty, listHeight: listH)
+        return AttentionPanel(model: model, entries: entries, moves: moves, queueEmpty: model.inboxIsEmpty(), listHeight: listH)
             .frame(width: width, height: h)
             .overlayGlass(DS.Radius.shape(DS.Radius.panel))
             .contentShape(Rectangle())
@@ -434,14 +435,18 @@ struct BackgroundPanel: View {
 /// agent, "machine · other wall · age", the exact question; under it the
 /// answers as KeyButtons — approvals "Allow ⏎ · Always · Deny", numbered
 /// questions one per option, free text "Open ⏎" — "Continue on mini"
-/// when it can move, and Open ⌘⏎. ↑↓ move, ⏎ gives the selected item's
-/// first answer, ⌘⏎ opens its tile, every letter and digit filters (the
+/// when it can move, and Open ⌘⏎. Then, under a "Your move" header, one
+/// entry per loop waiting on the person's step (YourMove): the loop, what
+/// it asks, its quick actions (Yes, No, Did it, Copy command, Later) and
+/// Open ⌘⏎. ↑↓ move through both, ⏎ gives the selected item's first
+/// answer or action, ⌘⏎ opens it, every letter and digit filters (the
 /// field then has the keyboard), esc closes.
 /// Empty: "Nothing needs you." and it closes itself after a second.
 struct AttentionPanel: View {
     @Bindable var model: AppModel
     var entries: [AppModel.AttentionEntry]
-    /// Nothing in the queue at all (not just nothing matching the filter).
+    var moves: [YourMoveEntry] = []
+    /// Nothing in the inbox at all (not just nothing matching the filter).
     var queueEmpty: Bool
     var listHeight: CGFloat
     @FocusState private var filterFocused: Bool
@@ -469,19 +474,24 @@ struct AttentionPanel: View {
     /// A Row with the question as its subtitle, the answer buttons under it.
     static var itemHeight: CGFloat { Row.height(subtitle: true) + DS.Spacing.xs + KeyButton.height + DS.Spacing.s }
 
-    static func listHeight(_ entries: [AppModel.AttentionEntry]) -> CGFloat {
-        guard !entries.isEmpty else { return minListHeight }
-        return CGFloat(entries.count) * itemHeight + CGFloat(entries.count - 1) * itemSpacing + 2 * DS.Spacing.s
+    /// A section header ("Needs you", "Your move").
+    static var sectionHeight: CGFloat { DS.chromeMaxHeight - DS.Spacing.s }
+
+    static var metrics: InboxList.Metrics {
+        InboxList.Metrics(item: itemHeight, header: sectionHeight, spacing: itemSpacing, padding: DS.Spacing.s, empty: minListHeight)
     }
+
+    static func listHeight(_ list: InboxList) -> CGFloat { CGFloat(list.height(metrics)) }
 
     private var query: String { model.popoverLists[PopoverKind.attention.key]?.query ?? "" }
 
     var body: some View {
         let list = model.popoverLists[PopoverKind.attention.key] ?? OverlayList()
-        let sel = list.selection(enabled: entries.map { _ in true })
+        let inbox = InboxList(queue: entries.map(\.id), yourMove: moves)
+        let sel = list.selection(enabled: Array(repeating: true, count: inbox.count))
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: DS.Spacing.s) {
-                Text("Needs you · \(entries.count)").font(.ds(.body, .semibold)).foregroundStyle(Theme.fg)
+                Text(inbox.title).font(.ds(.body, .semibold)).foregroundStyle(Theme.fg)
                     .accessibilityIdentifier("attention.title")
                 Spacer(minLength: DS.Spacing.s)
                 KeyButton("Close", kbd: CommandRegistry.cap(.closeOverlay), variant: .icon("xmark")) { model.closePopover() }
@@ -491,7 +501,7 @@ struct AttentionPanel: View {
             .frame(height: Self.headerHeight)
             filter
             Rectangle().fill(OverlayLook.line).frame(height: 1)
-            if entries.isEmpty {
+            if inbox.isEmpty {
                 Text(queueEmpty ? Self.emptyText : Self.noMatchText).font(.ds(.body)).foregroundStyle(Theme.dim)
                     .frame(maxWidth: .infinity, minHeight: listHeight)
                     .accessibilityIdentifier("attention.empty")
@@ -499,19 +509,27 @@ struct AttentionPanel: View {
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: Self.itemSpacing) {
+                            if inbox.showsQueueHeader { sectionHeader(InboxList.queueTitle) }
                             ForEach(Array(entries.enumerated()), id: \.element.id) { i, e in
                                 AttentionItem(entry: e, selected: i == sel,
                                               onAnswer: { a in model.answerFromQueue(e, a) },
-                                              onSelect: { model.selectAttention(e.id) },
+                                              onSelect: { model.selectAttention(.agent(e.id)) },
                                               onOpen: { model.openFromQueue(e.agent) },
                                               onMove: { t in model.moveFromQueue(e.agent, to: t) })
-                                    .id(e.id)
+                                    .id(InboxList.Item.agent(e.id))
+                            }
+                            if !moves.isEmpty { sectionHeader(InboxList.yourMoveTitle) }
+                            ForEach(Array(moves.enumerated()), id: \.element.id) { i, e in
+                                YourMoveItem(entry: e, selected: entries.count + i == sel,
+                                             onAct: { intent in model.yourMoveAct(e, intent) },
+                                             onSelect: { model.selectAttention(.loop(e.loop.id)) })
+                                    .id(InboxList.Item.loop(e.loop.id))
                             }
                         }
                         .padding(DS.Spacing.s)
                     }
                     .frame(height: listHeight)
-                    .onChange(of: sel) { if let sel, sel < entries.count { proxy.scrollTo(entries[sel].id) } }
+                    .onChange(of: sel) { if let item = inbox.item(at: sel) { proxy.scrollTo(item) } }
                 }
             }
             Spacer(minLength: 0)
@@ -535,8 +553,16 @@ struct AttentionPanel: View {
         .task(id: queueEmpty) {
             guard queueEmpty else { return }
             try? await Task.sleep(for: Self.emptyClose)
-            if !Task.isCancelled, model.popover == .attention, model.attentionEntries().isEmpty { model.closePopover() }
+            if !Task.isCancelled, model.popover == .attention, model.inboxIsEmpty() { model.closePopover() }
         }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title).font(.ds(.meta, .medium)).foregroundStyle(Theme.dim)
+            .frame(maxWidth: .infinity, minHeight: Self.sectionHeight, maxHeight: Self.sectionHeight, alignment: .bottomLeading)
+            .padding(.horizontal, DS.Spacing.m)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("attention.section.\(title)")
     }
 
     private var filter: some View {
@@ -622,6 +648,59 @@ struct AttentionItem: View {
         return KeyButton(title, kbd: AttentionInbox.keyCap(ans, primary: primary),
                          variant: primary ? .primary(StateMarkKind(entry.agent.state).tone) : .quiet) { onAnswer(ans) }
             .accessibilityIdentifier("attention.answer.\(entry.agent.id).\(ans.key ?? 0)")
+    }
+}
+
+/// One "Your move" entry: a Row (the loop, what it asks, who and when)
+/// and its quick actions; the first is the primary (⏎). Open (⌘⏎) shows
+/// the loop. Never red: signal is for approvals (an ask is a question,
+/// a step outlined).
+struct YourMoveItem: View {
+    var entry: YourMoveEntry
+    var selected: Bool
+    var onAct: (YourMoveIntent) -> Void
+    var onSelect: () -> Void
+
+    static func mark(_ e: YourMoveEntry) -> StateMarkKind {
+        if case .asks = e.reason { return .question }
+        return .idle
+    }
+
+    var body: some View {
+        let e = entry
+        let meta = ([e.from].compactMap { $0 } + [Theme.elapsed(since: e.at) ?? ""]).filter { !$0.isEmpty }.joined(separator: " · ")
+        let open = YourMoveIntent.open(loop: e.loop.id)
+        let acts = e.actions.filter { $0.intent != open }
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Row(title: e.loop.displayTitle, subtitle: e.text, meta: meta, mark: Self.mark(e), selected: selected)
+                .help(e.text)
+            HStack(spacing: DS.Spacing.s) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: DS.Spacing.s) {
+                        ForEach(Array(acts.enumerated()), id: \.element.id) { i, a in
+                            KeyButton(a.title, kbd: i == 0 ? CommandRegistry.cap(.inboxPrimary) : nil,
+                                      variant: i == 0 ? .primary(Self.mark(e).tone) : .quiet) { onAct(a.intent) }
+                                .accessibilityIdentifier("yourmove.action.\(e.loop.id).\(a.title)")
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                KeyButton("Open", kbd: CommandRegistry.cap(.inboxOpen), variant: .icon("arrow.up.left.and.arrow.down.right")) { onAct(open) }
+                    .accessibilityIdentifier("yourmove.open.\(e.loop.id)")
+            }
+            .frame(height: KeyButton.height)
+            .padding(.horizontal, DS.Spacing.m)
+        }
+        .padding(.bottom, DS.Spacing.s)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { onAct(open) }
+        .onTapGesture { onSelect() }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(InboxList.yourMoveTitle): \(e.loop.displayTitle): \(e.text)")
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { onSelect() }
+        .accessibilityAction(named: "Open") { onAct(open) }
+        .accessibilityIdentifier("yourmove.item.\(e.loop.id)")
     }
 }
 
