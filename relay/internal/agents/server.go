@@ -414,7 +414,7 @@ func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, 
 	if isLoopMethod(method) {
 		return s.loopsDispatch(c, method, params) // loopscall.go
 	}
-	if method != "agents.spawn" && !treeMutating[method] && !treeStarting[method] && !treeFiles[method] && !treePerson[method] {
+	if method != "agents.spawn" && method != "drafts.save" && !treeMutating[method] && !treeStarting[method] && !treeFiles[method] && !treePerson[method] {
 		return s.call(method, params)
 	}
 	caller, t, err := s.callerOf(c, method, params)
@@ -425,6 +425,17 @@ func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, 
 	switch {
 	case method == "agents.spawn":
 		return s.spawn(caller, params, t)
+	case method == "drafts.save":
+		// loops: the Steward saves drafts from level suggest on
+		if refused := s.draftsAllowed(t[caller]); caller != "" && refused != nil {
+			s.auditCall(caller, method, "", refused, nil)
+			return nil, refused
+		}
+		return s.call(method, params)
+	case treeStarting[method] && caller != "" && t[caller].Service != "":
+		refused := s.serviceSpawn(t[caller], method, wire.SpawnParams{}) // loopscall.go
+		s.auditCall(caller, method, "", refused, nil)
+		return nil, refused
 	case treeStarting[method]:
 		return s.startSession(caller, method, params, t) // tree.go
 	case treeFiles[method]:
@@ -459,6 +470,13 @@ func (s *Server) spawn(caller string, params json.RawMessage, t treeView) (any, 
 		return nil, err
 	}
 	p.Caller, p.Parent, p.Depth = "", "", 0
+	if a := t[caller]; caller != "" && a.Service != "" {
+		// loops: what the Steward and its planners may start (loopscall.go)
+		if refused := s.serviceSpawn(a, "agents.spawn", p); refused != nil {
+			s.auditCall(caller, "agents.spawn", "", refused, nil)
+			return nil, refused
+		}
+	}
 	if caller != "" {
 		depth, release, err := s.spawnTree(caller, t)
 		if err != nil {

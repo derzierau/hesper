@@ -5024,6 +5024,32 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   shell would run the line), only on the same Mac: a parent on another
   Mac is not told (not done in v1). Waiting reports are not persisted and
   go with a removed parent.
+- **Policy** (`loopscall.go`; a person may do everything). The calling
+  agent is found as for the agent tree (`callerOf`); the store and the
+  Steward get `Caller{agent, ref, loop, service}` and the params without
+  `caller`. `pkg/wire` sends `caller` with `loops.*`, `goals.*`,
+  `steward.*` and `drafts.save`. For an agent caller:
+  - reads (`loops.list`, `loops.get`, `loops.settings.get`, `goals.list`,
+    `steward.status`): anything;
+  - a person's only: `steward.set`, `goals.accept`, `goals.remove`,
+    `loops.settings.set`, and any `loops.save` or `goals.save` that sets a
+    loop's, goal's or milestone's status to `done` or `dropped`;
+  - `loops.merge`, `loops.split`: only the Steward (service `steward`) at
+    level act;
+  - other writes (`loops.save`, `loops.link`, `loops.item`, `goals.save`,
+    `goals.item`, `goals.file`, `steward.plan`, `steward.inbox`): a service
+    agent may; any other agent only `loops.item` and `loops.link` of its
+    own loop;
+  - `drafts.save` by the Steward: refused at level watch;
+  - a service agent starting agents (`agents.spawn`, `sessions.resume`,
+    `fork`, `continueAs`): refused, except the Steward at level act
+    starting a draft (`SpawnParams.draft`), never with `letParentAnswer`.
+    Planners are started in hesperd (`SpawnService`), not through the
+    socket.
+
+  Refusals are `forbidden` and name the rule. Every write by an agent,
+  allowed or refused, is in `audit.log` (`agent.request` /
+  `agent.refused`); reads are not.
 
 ## Wire names kept from Ghosty
 
