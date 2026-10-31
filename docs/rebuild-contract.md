@@ -1157,9 +1157,13 @@ branch suggested from the first line (`Fix the flaky badge test` →
 `fix/flaky-badge-test`), ⌥⌘B toggles (⇧⌘W tidies up, as everywhere). ⌘↩ starts: the spawn's agent takes
 the draft's place (`placements`, remembered in UserDefaults; the agent's
 tile is created in the draft tile's frame — no movement), the first line
-names it, the draft leaves hesperd. ⌥↩ starts and opens the next draft
-right of it. Esc parks the draft (quiet: the shelf in grid + shelf); an
-empty draft is discarded. ⌘W discards with undo. Saving is continuous
+names it, the draft leaves hesperd. The draft stays selected while it is
+written: daemon events (agents' states, the draft's own save echo) keep
+a selected card that is still on the wall, draft or ghost included
+(`WallSelection.kept`; before, any event moved the selection to the
+first agent, and ⌘↩ then scrolled Columns back to the first card). ⌥↩
+starts and opens the next draft right of it. Esc parks the draft (quiet:
+the shelf in grid + shelf); an empty draft is discarded. ⌘W discards with undo. Saving is continuous
 (300 ms after typing stops, at least every 2 s; quit flushes ≤ 2 s);
 local edits win over late echoes until saved. Files and screenshots
 dropped or pasted on a draft insert their paths; images without a file
