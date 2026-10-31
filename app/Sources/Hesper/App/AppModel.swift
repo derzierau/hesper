@@ -398,10 +398,11 @@ final class AppModel {
         case .draftChanged, .draftsListed, .projectsListed, .projectChanged: normalizeDrafts()
         default: break
         }
-        if selectedID == nil || !wall.contains(where: { $0.id == selectedID }) {
-            // Shared history: a selected ghost card keeps the selection.
-            if !(selectedID?.hasPrefix("ghost:") == true && wallItems.contains(where: { $0.id == selectedID })) { selectedID = wall.first?.id }
-        }
+        // A selected draft (being written) or ghost card keeps the selection
+        // too: starting the draft scrolls to its card, not the first one.
+        let items = wallItems
+        let kept = WallSelection.kept(selectedID, cards: items.map(\.id), firstAgent: items.lazy.compactMap(\.agent).first?.id)
+        if kept != selectedID { selectedID = kept }
         if !transitions.isEmpty { onTransitions?(transitions) }
         onAgentsChanged?()
         onEvent?(e)

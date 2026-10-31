@@ -189,6 +189,20 @@ import Testing
         #expect(l.neighbor(of: s, .left) == 3)
         #expect(l.neighbor(of: 3, .first) == 3)
     }
+
+    /// A daemon event (an agent's state, the draft's own save echo) never
+    /// takes the selection off a card that is still on the wall: a draft
+    /// being written stays selected, so starting it doesn't scroll Columns
+    /// back to the first card.
+    @Test func daemonEventsKeepASelectedDraft() {
+        let cards = ["a", "b", "d-1", "c"]
+        #expect(WallSelection.kept("d-1", cards: cards, firstAgent: "a") == "d-1")
+        #expect(WallSelection.kept("c", cards: cards, firstAgent: "a") == "c")
+        #expect(WallSelection.kept("ghost:s", cards: cards + ["ghost:s"], firstAgent: "a") == "ghost:s")
+        #expect(WallSelection.kept("gone", cards: cards, firstAgent: "a") == "a")   // left the wall: the first agent
+        #expect(WallSelection.kept(nil, cards: cards, firstAgent: "a") == "a")
+        #expect(WallSelection.kept("d-1", cards: [], firstAgent: nil) == nil)
+    }
 }
 
 @Suite struct AgentWindowStepTests {
