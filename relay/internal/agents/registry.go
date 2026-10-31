@@ -76,6 +76,10 @@ type Options struct {
 	// Sessions (optional; shared history) serves sessions.* and their
 	// notifications (sessionhook.go).
 	Sessions Sessions
+	// Loops is the loops store and Steward the Steward (loophook.go);
+	// nil: none.
+	Loops   Loops
+	Steward Steward
 }
 
 func (o *Options) defaults() {

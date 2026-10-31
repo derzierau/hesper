@@ -343,6 +343,8 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 	go func() { defer wg.Done(); c.watchProjects() }() // projects step 1
 	wg.Add(1)
 	go func() { defer wg.Done(); c.watchSessions() }() // shared history
+	wg.Add(1)
+	go func() { defer wg.Done(); c.watchLoops() }() // loops (loophook.go)
 	ctx, cancel := context.WithCancel(context.Background())
 	if remote := c.s.reg.opt.Remote; remote != nil {
 		// review: a remote agent that settles may be ready for review.
@@ -409,6 +411,9 @@ func decode(params json.RawMessage, v any) error {
 // dispatch runs one method of control connection c: the agent tree's
 // policy (tree.go) first for the methods that start or change agents.
 func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, error) {
+	if isLoopMethod(method) {
+		return s.loopsDispatch(c, method, params) // loopscall.go
+	}
 	if method != "agents.spawn" && !treeMutating[method] && !treeStarting[method] && !treeFiles[method] && !treePerson[method] {
 		return s.call(method, params)
 	}
