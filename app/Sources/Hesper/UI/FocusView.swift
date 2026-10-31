@@ -127,11 +127,6 @@ final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
         focusTerminal()
     }
 
-    /// Settings › Font size changed: the shown terminal re-attaches at it.
-    func fontSizeChanged(_ size: Double) {
-        terminal?.userFontSize = size
-    }
-
     /// ←/→ between agents: the card comes in from the side it was stepped
     /// to (DS.Motion.move); instant under Reduce Motion. Only the card's
     /// layer moves (no relayout, the PTY size is untouched).

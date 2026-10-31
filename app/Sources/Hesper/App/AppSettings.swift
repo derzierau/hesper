@@ -16,9 +16,9 @@ final class AppSettings {
     var hotKey: HotKeySpec { didSet { save("quickLaunchKeyCode", Int(hotKey.keyCode)); save("quickLaunchModifiers", Int(hotKey.carbonModifiers)) } }
     var notificationsEnabled: Bool { didSet { save("notificationsEnabled", notificationsEnabled) } }
     var notificationSound: Bool { didSet { save("notificationSound", notificationSound) } }
-    /// The one terminal font: wall tiles, the focused agent, agent
-    /// windows (HesperCore `TerminalFont`; default: the user's Ghostty font
-    /// size, else 12). A change posts `fontSizeDidChange`.
+    /// The wall's terminal font: every wall tile (HesperCore `TerminalFont`;
+    /// default: the user's Ghostty font size, else 12). A change posts
+    /// `fontSizeDidChange`.
     var fontSize: Double {
         didSet {
             save(TerminalFont.key, fontSize)
@@ -26,6 +26,9 @@ final class AppSettings {
         }
     }
     static let fontSizeDidChange = Notification.Name("HesperFontSizeDidChange")
+    /// The focused agent's and agent windows' font: the user's Ghostty font
+    /// size, uncapped, else 13 (`TerminalFont.focusSize`); not a setting.
+    let focusFontSize: Double
     /// kind → profile; missing: hesperd's default for the kind.
     var defaultProfiles: [String: String] { didSet { save("defaultProfiles", defaultProfiles) } }
     /// Desks: switch desks automatically when the displays change.
@@ -60,8 +63,9 @@ final class AppSettings {
     }
     @ObservationIgnored var onShortcutsChanged: (() -> Void)?
 
-    init(persist: Bool, defaultFont: Double = TerminalFont.defaultSize) {
+    init(persist: Bool, defaultFont: Double = TerminalFont.defaultSize, ghosttyFont: Double? = nil) {
         self.persist = persist
+        focusFontSize = TerminalFont.focusSize(ghostty: ghosttyFont)
         let d = UserDefaults.standard
         fontSize = TerminalFont.resolve(stored: persist ? d.object(forKey: TerminalFont.key) as? Double : nil,
                                         legacy: persist ? d.object(forKey: TerminalFont.legacyKey) as? Double : nil,

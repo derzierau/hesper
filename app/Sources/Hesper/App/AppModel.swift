@@ -249,7 +249,8 @@ final class AppModel {
         // never touch the user's defaults.
         let d = UserDefaults.standard
         let automated = env.values["perf-out"] != nil || env.values["selftest-out"] != nil || env.values["layout-out"] != nil || env.options.contains("ephemeral")
-        settings = AppSettings(persist: !automated, defaultFont: env.values["tile-font"].flatMap(Double.init) ?? userFontSize ?? TerminalFont.defaultSize)
+        settings = AppSettings(persist: !automated, defaultFont: env.values["tile-font"].flatMap(Double.init) ?? userFontSize ?? TerminalFont.defaultSize,
+                               ghosttyFont: userFontSize)
         if let a = env.values["arrangement"].flatMap(WallArrangement.init(rawValue:)) {
             arrangement = a
         } else if !automated {

@@ -22,6 +22,14 @@ struct TerminalFontTests {
         #expect(TerminalFont.resolve(stored: nil, legacy: nil, fallback: .nan) == TerminalFont.defaultSize)
     }
 
+    @Test func focusKeepsTheGhosttyFontUncapped() {
+        #expect(TerminalFont.focusSize(ghostty: 18) == 18)
+        #expect(TerminalFont.focusSize(ghostty: 10) == 10)
+        #expect(TerminalFont.focusSize(ghostty: nil) == 13)
+        #expect(TerminalFont.focusSize(ghostty: .nan) == 13)
+        #expect(TerminalFont.focusSize(ghostty: 0) == 13)
+    }
+
     @Test func movesToANewKey() {
         #expect(TerminalFont.key != TerminalFont.legacyKey)
         #expect(TerminalFont.legacyKey == "tileFontSize")

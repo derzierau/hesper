@@ -182,13 +182,9 @@ final class RootView: NSView {
         model.onAgentsChanged = { [weak self] in self?.agentsChanged() }
         model.onModeChanged = { [weak self] in self?.modeChanged() }
         model.onLayoutSettingsChanged = { [weak self] in self?.wall.settingsChanged() }
-        // Settings › Font size: every window's tiles and focused agent.
+        // Settings › Font size: every window's wall tiles.
         NotificationCenter.default.addObserver(forName: AppSettings.fontSizeDidChange, object: model.settings, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.wall.settingsChanged()
-                self.focus.fontSizeChanged(self.model.settings.fontSize)
-            }
+            MainActor.assumeIsolated { self?.wall.settingsChanged() }
         }
         model.onReconnected = { [weak self] in self?.wall.reconnected(); self?.focus.reconnected() }
         model.anchorProvider = { [weak self] k in self?.anchor(for: k) }
@@ -440,7 +436,7 @@ final class RootView: NSView {
                 wall.renderingVisible = false
                 focus.alphaValue = 0
                 focus.isHidden = false
-                focus.show(a, fontSize: model.settings.fontSize)
+                focus.show(a, fontSize: model.settings.focusFontSize)
                 let to = focus.cardFrame(in: self)
                 zoom(from: from, to: to) { [weak self] in
                     guard let self, self.model.mode == .focus else { return }
@@ -452,7 +448,7 @@ final class RootView: NSView {
                 hideWall()
                 focus.alphaValue = 1
                 focus.isHidden = false
-                focus.show(a, fontSize: model.settings.fontSize)
+                focus.show(a, fontSize: model.settings.focusFontSize)
             }
         }
     }

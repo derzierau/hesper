@@ -43,11 +43,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     private(set) var agent: Agent
     private(set) var surface: (any TerminalSurface)?
     let host = NSView()
-    /// Focus role: the font (Settings › Font size); a change re-attaches
-    /// (debounced), like a tile's.
-    var userFontSize: Double = TerminalFont.defaultSize {
-        didSet { if role == .focus && oldValue != userFontSize { scheduleRefit() } }
-    }
+    var userFontSize: Double = TerminalFont.focusDefaultSize
     var visible = true { didSet { surface?.isRenderingVisible = visible; prewarm?.isRenderingVisible = visible } }
     /// Tiles: the font the wall laid this tile out with. libghostty must not
     /// change a live surface's font (see "As built"), so a new font means a

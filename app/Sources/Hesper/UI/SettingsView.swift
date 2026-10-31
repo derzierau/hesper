@@ -109,7 +109,7 @@ struct SettingsView: View {
     // MARK: General
 
     @ViewBuilder private var general: some View {
-        SettingsSection("Wall", footer: "Each wall keeps its own layout; this is the frontmost wall's (also ⌥⌘L for the next layout, and the layout button in the toolbar). Every tile, the focused agent and agent windows use this font size; a tile shows as much of its agent as fits; cards never get narrower than the minimum width, the wall adds rows or scrolls instead.") {
+        SettingsSection("Wall", footer: "Each wall keeps its own layout; this is the frontmost wall's (also ⌥⌘L for the next layout, and the layout button in the toolbar). Every tile uses this font size and shows as much of its agent as fits (the focused agent and agent windows keep your Ghostty font size); cards never get narrower than the minimum width, the wall adds rows or scrolls instead.") {
             SettingsLine("Layout") {
                 Segments(LayoutSwitcher(wall.arrangement).rows.map { r in (r.arrangement, r.title, r.shortcut) }, selection: Bindable(wall).arrangement)
                     .accessibilityIdentifier("settings.layout")

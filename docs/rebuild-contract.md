@@ -910,7 +910,8 @@ libghostty findings that shaped the code:
   still runs (≤ 5 tries / 10 s), after the control connection comes back,
   and when `exit` becomes null (resume). An agent is live iff
   `exit == null && state != exited`.
-- Focus: `hesperd attach <id> --owner` (rw), the user's Ghostty font size;
+- Focus: `hesperd attach <id> --owner` (rw), the user's Ghostty font size
+  (uncapped, else 13; `TerminalFont.focusSize`), never the wall's font;
   its grid becomes the PTY's size, tiles refit when `agents.changed` brings
   the new size.
 - Control: one connection, `hello` → `agents.subscribe` → `agents.list`
@@ -1342,11 +1343,13 @@ too wide for its column stacks under its label, and the pane scrolls
 instead of clipping. Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
 
-**One font; the PTY follows the tile.** Every tile, the focused agent
-and every agent window use the same font (Settings › Font size, default
-the user's Ghostty font, 9–16 pt; HesperCore `TerminalFont`, stored as
-`terminalFontSize`, an earlier `tileFontSize` value carried over; a
-change re-attaches open tiles and focus views at once). A tile shows as many cols × rows as fill its terminal area; tiles attach
+**One tile font; the PTY follows the tile.** Every wall tile uses the
+same font (Settings › Font size, default the user's Ghostty font, 9–16
+pt; HesperCore `TerminalFont`, stored as `terminalFontSize`, an earlier
+`tileFontSize` value carried over; a change re-attaches the open tiles
+of every wall at once). The focused agent and agent windows keep the
+user's Ghostty font size (uncapped, else 13), so a dense wall never
+shrinks them. A tile shows as many cols × rows as fill its terminal area; tiles attach
 with `--fit`, so with no owner the PTY takes the largest tile's grid (≥
 80 × 24, hesperd's rule). A focused agent's PTY returns to its tile's
 grid when focus closes (checked end to end). Min card width = N columns at
