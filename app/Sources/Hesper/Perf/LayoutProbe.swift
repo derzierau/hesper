@@ -32,6 +32,7 @@ final class LayoutProbe {
     struct Dump: Encodable {
         var windowNumber: Int
         var sheetWindowNumber: Int
+        var extraWindowFrame: [Double]?
         var window: [Double]
         var wall: [Double]
         var scale: Double
@@ -167,9 +168,13 @@ final class LayoutProbe {
             clip.setBoundsOrigin(NSPoint(x: max(0, (wall.frame.width - clip.bounds.width) / 2), y: clip.bounds.minY))
             wall.scrollView.reflectScrolledClipView(clip)
             await Harness.sleep(0.8)
-        case "settings":
+        case let value? where value == "settings" || value.hasPrefix("settings:"):
             (NSApp.delegate as? AppDelegate)?.showSettings()
             await Harness.sleep(1)
+            if let pane = value.split(separator: ":").last.flatMap({ SettingsView.Pane(rawValue: String($0)) }) {
+                NotificationCenter.default.post(name: SettingsView.showPane, object: nil, userInfo: ["pane": pane])
+                await Harness.sleep(1)
+            }
             extraWindow = (NSApp.delegate as? AppDelegate)?.settingsWindow?.windowNumber ?? 0
         default:
             break
@@ -255,6 +260,9 @@ final class LayoutProbe {
         }
         let w = root.window
         return Dump(windowNumber: w?.windowNumber ?? 0, sheetWindowNumber: extraWindow != 0 ? extraWindow : (w?.attachedSheet?.windowNumber ?? 0),
+                    extraWindowFrame: NSApp.windows.first(where: { $0.windowNumber == extraWindow }).map { w in
+                        [w.frame.minX, w.frame.minY, w.frame.width, w.frame.height].map(Self.r)
+                    },
                     window: [w?.frame.width ?? 0, w?.frame.height ?? 0].map(Self.r),
                     wall: [wall.bounds.width, wall.bounds.height].map(Self.r), scale: scale,
                     arrangement: wall.layoutResult.arrangement.rawValue,

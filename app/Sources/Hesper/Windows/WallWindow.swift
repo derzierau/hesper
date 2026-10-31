@@ -37,11 +37,10 @@ final class WallWindowController: NSWindowController, NSWindowDelegate {
     let toolbar: MainToolbar
     weak var manager: WindowManager?
 
-    init(model: AppModel, userFontSize: Double, title: String, manager: WindowManager) {
+    init(model: AppModel, title: String, manager: WindowManager) {
         self.model = model
         self.manager = manager
         root = RootView(model: model)
-        root.userFontSize = userFontSize
         toolbar = MainToolbar(model: model)
         let w = MainWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
                            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)

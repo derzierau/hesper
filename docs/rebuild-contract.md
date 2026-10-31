@@ -912,7 +912,8 @@ libghostty findings that shaped the code:
   still runs (≤ 5 tries / 10 s), after the control connection comes back,
   and when `exit` becomes null (resume). An agent is live iff
   `exit == null && state != exited`.
-- Focus: `hesperd attach <id> --owner` (rw), the user's Ghostty font size;
+- Focus: `hesperd attach <id> --owner` (rw), the user's Ghostty font size
+  (uncapped, else 13; `TerminalFont.focusSize`), never the wall's font;
   its grid becomes the PTY's size, tiles refit when `agents.changed` brings
   the new size.
 - Control: one connection, `hello` → `agents.subscribe` → `agents.list`
@@ -1341,13 +1342,21 @@ an agent whose local worktree has uncommitted changes (`git status
 --porcelain`) asks, inline on the tile (Close anyway ⏎ · Keep esc as
 KeyButtons; the strip takes the keyboard while it shows and gives it
 back after: "pointer paths" below).
-Settings ⌘, is a window (General: layout, tile font, min width; Quick
-Launch; Notifications; Profiles per kind). Focus ⌘↩ zooms the card to the
+Settings ⌘, is a window (General: layout, font size, min width; Quick
+Launch; Notifications; Profiles per kind) of one fixed size on every
+pane (`SettingsView.size`, set by AppKit, never by a pane's fitting
+size): the sidebar shows each pane's title and ⌘N chip, a control row
+too wide for its column stacks under its label, and the pane scrolls
+instead of clipping. Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
 
-**One tile font; the PTY follows the tile.** Every tile uses the same
-font (Settings › Tile font size, default the user's Ghostty font, 9–16
-pt) and shows as many cols × rows as fill its terminal area; tiles attach
+**One tile font; the PTY follows the tile.** Every wall tile uses the
+same font (Settings › Font size, default the user's Ghostty font, 9–16
+pt; HesperCore `TerminalFont`, stored as `terminalFontSize`, an earlier
+`tileFontSize` value carried over; a change re-attaches the open tiles
+of every wall at once). The focused agent and agent windows keep the
+user's Ghostty font size (uncapped, else 13), so a dense wall never
+shrinks them. A tile shows as many cols × rows as fill its terminal area; tiles attach
 with `--fit`, so with no owner the PTY takes the largest tile's grid (≥
 80 × 24, hesperd's rule). A focused agent's PTY returns to its tile's
 grid when focus closes (checked end to end). Min card width = N columns at
@@ -1412,6 +1421,9 @@ offset / rw preamble / alt screen, `internal/attachtty` scroll parser,
 `make -C app layout SHOW=draft|draft-typing|palette|move|attention|
 machines|layout|undo|deny|quick|settings|flap|after-focus|active|scroll
 [DAEMON=real]` screenshots each (quick/settings: the panel/window too).
+`SHOW=settings:<pane>` (general, machines, agents, appearance,
+shortcuts, advanced) opens that Settings pane; the dump's
+`extraWindowFrame` is the Settings window's frame.
 
 #### As built — pointer paths in the overlays (UI control, phase 3c)
 

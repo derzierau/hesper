@@ -148,7 +148,6 @@ final class RootView: NSView {
     let toolbarGlass = ToolbarGlass()
     private let overlay: OverlayHostingView
     private let hit = OverlayHit()
-    var userFontSize: Double = 13
     /// Toolbar controls' frames (screen coordinates) for popovers.
     var toolbarAnchor: ((PopoverKind) -> NSRect?)?
     private var hideOverlayWork: DispatchWorkItem?
@@ -183,6 +182,10 @@ final class RootView: NSView {
         model.onAgentsChanged = { [weak self] in self?.agentsChanged() }
         model.onModeChanged = { [weak self] in self?.modeChanged() }
         model.onLayoutSettingsChanged = { [weak self] in self?.wall.settingsChanged() }
+        // Settings › Font size: every window's wall tiles.
+        NotificationCenter.default.addObserver(forName: AppSettings.fontSizeDidChange, object: model.settings, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.wall.settingsChanged() }
+        }
         model.onReconnected = { [weak self] in self?.wall.reconnected(); self?.focus.reconnected() }
         model.anchorProvider = { [weak self] k in self?.anchor(for: k) }
         model.attentionFrames = { [weak self] in
@@ -433,7 +436,7 @@ final class RootView: NSView {
                 wall.renderingVisible = false
                 focus.alphaValue = 0
                 focus.isHidden = false
-                focus.show(a, fontSize: userFontSize)
+                focus.show(a, fontSize: model.settings.focusFontSize)
                 let to = focus.cardFrame(in: self)
                 zoom(from: from, to: to) { [weak self] in
                     guard let self, self.model.mode == .focus else { return }
@@ -445,7 +448,7 @@ final class RootView: NSView {
                 hideWall()
                 focus.alphaValue = 1
                 focus.isHidden = false
-                focus.show(a, fontSize: userFontSize)
+                focus.show(a, fontSize: model.settings.focusFontSize)
             }
         }
     }
@@ -505,10 +508,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     let root: RootView
     let toolbar: MainToolbar
 
-    init(model: AppModel, userFontSize: Double) {
+    init(model: AppModel) {
         self.model = model
         root = RootView(model: model)
-        root.userFontSize = userFontSize
         toolbar = MainToolbar(model: model)
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1600, height: 1000)
         let w = MainWindow(contentRect: screen.insetBy(dx: screen.width * 0.04, dy: screen.height * 0.04),
