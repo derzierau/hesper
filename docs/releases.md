@@ -102,7 +102,9 @@ Use the app directory printed by Homebrew if you supplied `--appdir`.
 The setup command installs the LaunchAgent, hooks and skill without modifying
 the signed app. Enable Codex hooks once with `/hooks`. Run setup again after
 `brew update` and `brew upgrade --cask derzierau/hesper/hesper` to restart
-the daemon with the updated binary.
+the daemon with the updated binary; it keeps `hesperd serve`'s flags, saved in
+`~/.local/state/hesper/serve-flags` because the cask's uninstall step deletes
+the LaunchAgent plist.
 Homebrew uninstall unloads the daemon and keeps your agents and configuration.
 
 The repository and release downloads are public. The cask uses HTTPS

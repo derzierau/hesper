@@ -75,10 +75,15 @@ esac
         value = plistlib.loads(plist.read_bytes())
         assert value['ProgramArguments'] == [str(tools/'hesperd'), 'serve']
         assert (home/'.agents/skills/hesper').resolve() == (resources/'hesper-skill').resolve()
-        value['ProgramArguments'].append('--allow-shell')
+        flags = ['--allow-shell', '--allow-forward', '3000,8000-8999']
+        value['ProgramArguments'] += flags
         plist.write_bytes(plistlib.dumps(value))
         subprocess.run(['/bin/sh', str(resources/'hesper-setup.sh')], env=env, check=True)
-        assert '--allow-shell' in plistlib.loads(plist.read_bytes())['ProgramArguments']
+        assert plistlib.loads(plist.read_bytes())['ProgramArguments'] == [str(tools/'hesperd'), 'serve'] + flags
+        # brew upgrade's uninstall step deletes the plist; setup keeps the flags.
+        plist.unlink()
+        subprocess.run(['/bin/sh', str(resources/'hesper-setup.sh')], env=env, check=True)
+        assert plistlib.loads(plist.read_bytes())['ProgramArguments'] == [str(tools/'hesperd'), 'serve'] + flags
         assert before == {str(p): p.read_bytes() for p in app.rglob('*') if p.is_file()}
         assert 'hooks install --bin' in (temp/'calls').read_text()
 print('Release packaging checks passed')
