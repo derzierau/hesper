@@ -4957,6 +4957,139 @@ Code: `pkg/agentlink/pipe.go` (`Pipe`, the `W` window),
 - **Not done:** reverse forwards (a port of the server reaching this Mac),
   UDP, half-close, a Hesper.app view.
 
+### As built — loops (app core)
+
+Plan: loops, goals, milestones and the Steward (wire:
+`relay/pkg/wire/loops.go`). Code: `HesperCore/Loops.swift` (wire types,
+store, calls) and the pure view models below; the sheets and inbox
+sections that draw them live in the `Hesper` target. hesperd computes
+who acts next (`Loop.next`); the app only sorts, filters and lays out.
+
+- **Wire types** (`Loop`, `LoopItem`, `LoopLink`, `LoopCounts`, `Goal`,
+  `Milestone`, `GoalsList`, `StewardStatus`, `StewardEvent`,
+  `LoopSettings`) decode leniently like `Projects.swift`: unknown fields
+  are ignored, missing ones defaulted, Go's zero time and empty strings
+  are nil, a bad entry in a list is skipped. Unknown enum values take
+  their safest case: status open, next others (never "needs you" by
+  accident), owner agent, item state open, kind step, relation member,
+  Steward level watch (a missing level is the default, suggest); an
+  unknown ending is nil and an unknown link kind keeps its raw value.
+  Items arrive sorted by `order`; an item with no `after` is ready.
+  Settings of 0 or a time that is not "HH:MM" are hesperd's defaults
+  (limit 5, stall 7 days, evening 18:00, 40 wakes).
+- **Agent** gains `parent`, `loop`, `service` (`isService`),
+  `reportToParent` and `ending`.
+- **Calls** (`DaemonClient`): `loopsList` (an array or `{loops}`),
+  `loopGet`, `loopSave(LoopPatch)`, `loopLink`, `loopItem(ItemPatch)`,
+  `loopMerge`, `loopSplit`, `loopSettings`/`setLoopSettings`,
+  `goalsList`, `goalSave(GoalPatch)`, `milestoneSave(MilestonePatch)`,
+  `goalRemove`, `milestoneItem`, `goalFile`, `goalsAccept`,
+  `stewardStatus`, `stewardSet(StewardPatch)`, `stewardInbox`,
+  `stewardPlan`. Patches send only the fields given. An older hesperd
+  answers -32601: `LoopsRPC.missing`.
+- **Notifications.** `DaemonClient.onLoopsNotification` gets every
+  `loops.*`, `goals.*` and `steward.*` notification on the reader
+  thread; `LoopsEvent.decode` turns one into `loopChanged`,
+  `loopRemoved`, `goalChanged`, `milestoneChanged` (goals.changed with a
+  milestone), `goalRemoved` (a goal's or a milestone's id) or
+  `stewardChanged`. `LoopStore` applies them and counts a `version` on
+  every change; derived models rebuild only when it moved.
+
+- **Board** (`LoopBoard.swift`). Columns You, Agents, Others, Parked
+  from `next` (a parked status always goes to Parked); closed and merged
+  loops are hidden. You: oldest waiting first (its oldest open item of
+  the person's, else its last change), looks-done loops last; Agents and
+  Others: most recent change first; Parked: soonest back first. Filters
+  (project with its packages, group, machine, milestone; "" milestone:
+  unfiled only) narrow the columns, never the totals: `yourMove` (You
+  without looks done), `looksDone`, `pill` ("3 your move") and
+  `limitHint` (over `loopLimit`) count every active loop. Selection is
+  kept across rebuilds while the loop is shown, else the first loop;
+  ↑↓ move in a column, ←→ to the nearest non-empty column at the same
+  row.
+- **Map** (`LoopMap.swift`). One loop or every active loop. Lanes per
+  machine (this Mac first, then by name, "Other loops" last), regions per
+  project inside a lane (by name, "No project" last). Nodes: the loop's
+  agent links, live agents in the loop it does not link yet (service
+  agents never), file links, the person's open items (not offers) and
+  missing parents. Edges: `started`, `continued`, `handoff` (an agent to
+  a file, a file to the agent that took it, or an agent's handoff
+  link), `youStep` (an item's source to the item), `blocks` (between the
+  loops' first agents, or to an "Other loops" node for a loop not
+  drawn) and `brokenParent` (a parent ref nobody here knows, the
+  cross-Mac dangling link). Columns are the longest path from a root
+  (blocks don't count, cycles are cut); every node has its own
+  (lane, region, column, row) slot, so nothing overlaps; children sort
+  near their parent's row. Output is plain `MapRect`/`MapPoint`
+  geometry from `LoopMapMetrics` (the spacing scale). `LoopMapCache`
+  rebuilds only when scope, metrics or the input version change.
+- **Wrap-up** (`WrapUp.swift`). Today's loops: active and changed since
+  local midnight, or on the person. Order: You, looks done, Agents,
+  Others, Parked, then most recent. One suggestion each, first match:
+  drop (debris: every live agent in error or exited and every gone one
+  left no ending, summary or result; nothing open; no file, URL or loop
+  linked; hesperd marks such a loop looks done too), done (looks done),
+  next step (the first open item of the person's), park (no change in 3
+  days), else keep. Tallies: started
+  today, finished today (done since midnight), on you, parked. `accept`,
+  `decide`, `undo`, `progress` and `patches` (done/dropped/parked until
+  tomorrow 09:00). `isDue` after `LoopSettings.eveningAt`.
+- **Start check** (`StartCheck.swift`). `LoopTokens.of`: case-, accent-
+  and width-folded words, split at non-alphanumerics, English and German
+  stop words and one-letter words dropped, a plural "s" cut from words
+  over four letters. `StartCheckIndex` (built per store version) holds
+  each open loop's tokens (title, goal, open item texts) and its loose
+  ends, steps and promises. A loop matches when at least 40 % of the
+  task's words are in it and two words are shared or it is in the
+  task's project (a package counts for its repository), or when 60 % of
+  one loose end's words (at least two) are in the task. Best: same
+  project, then score, then a loose end, then the task's machine, then
+  the most recent. `onYou` (looks done left out) and `atLimit`
+  (≥ `loopLimit`) drive the red strip; a hint only.
+- **Inbox** (`YourMove.swift`). Sections: the queue exactly as
+  `AttentionQueue.ordered`, then "Your move": one entry per active,
+  unparked loop, newest first; an ask from a quiet agent beats a step it
+  named, which beats the person's first open item; an ask or step that
+  already became an item (its `source`) shows as the item; agents in
+  the queue are not repeated. Offers never appear (`YourMove.offers`
+  lists them for the loop's detail). Intents: Yes / No (`answer`, live
+  agents only), Did it (`checkOff` an item, or "Done." to the live agent
+  that named the step), Copy command (the first `code span` or `$ `
+  line), Later (park until tomorrow), Open.
+- **Product page** (`Products.swift`). Products are scopes with a goal
+  or milestone that is not dropped (`ProductPage.scopes`, groups first).
+  A page: open goals in order, accepted milestones in order (done
+  last), each with progress and a standing: done; on you (a filed loop
+  on the person, or an open condition of theirs); waiting on another
+  open milestone (all its active loops are blocked by that milestone's
+  loops, or a condition checks such a loop); stalled (hesperd's flag);
+  on track. Unfiled: active loops of the scope's projects filed under no
+  milestone. Proposed milestones in order for the planning view, with
+  `acceptAll`, `accept(id)` (goals.accept) and `drop(id)` (goals.remove).
+- **Settings › Steward** (`StewardSettings.swift`): the switch (on pins
+  it to this Mac when none is set), the three levels with their texts,
+  the machine choices (this Mac first, offline ones kept), a summary
+  line ("Runs on this Mac · 12 wakes today · 2 waiting") and the
+  `steward.set` patches (nil when nothing changes).
+
+- **Fake hesperd** (`app/Tools/fake-hesperd/loops.go`, TEST-ONLY): every
+  `loops.*`, `goals.*` and `steward.*` method on an in-memory store,
+  results shaped like the wire (`loops.list` an array, `loops.get` /
+  `save` / `link` / `item` / `merge` / `split` / `goals.file` the loop,
+  `goals.save` `{goal}` or `{milestone}`, `goals.item` the milestone,
+  `goals.accept` `{accepted}`, `steward.plan` `{id}` plus two proposed
+  milestones), the notifications after each change and a snapshot after
+  `agents.subscribe` (open and parked loops, every goal and milestone,
+  the Steward). Who acts next follows the wire's rule, simplified.
+  `serve --loops demo` (with `--projects demo`) seeds invented loops in
+  every column (an ask, a named step with a command, looks done, debris,
+  stale, parked, blocked, done today), a map over L and M with a handoff
+  file and a parent nobody knows, the product "acme apps" with done,
+  open, stalled and proposed milestones, and an enabled Steward.
+
+**Status: built and unit-tested headless only** (HesperCoreTests,
+`go test` in the fake). Not run against a real hesperd with loops yet.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
