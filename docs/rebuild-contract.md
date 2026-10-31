@@ -5142,6 +5142,19 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   anchor. Offers never appear. The menu bar, the red pill and
   notifications still count approval, question and error only.
 
+- **Tile loop tag** (`UI/TileParts.swift` `LoopTagView`, built in
+  `TileView.refreshContent` and the focus view's band). Right of the
+  band's one line, never on an action strip: who acts next as a
+  StateMark (`TileLoopTag.mark`: you a question's tone, agents working,
+  looks done done, others and parked outlined; never signal), the loop's
+  short title (`LoopChip`, 28 characters) and the word ("Your move");
+  a tight band keeps mark and title, the tooltip is `nextText`. A
+  service agent shows "Steward" / "Planner" and no loop. The tag is a
+  lookup in `LoopHub.chips` when the band refreshes; the wall observes
+  `chips` and refreshes only the bands whose loop's chip changed, and
+  relays out when one gains or loses its tag (a done or idle agent with
+  a tag but no summary keeps its one line: `AttentionBar.hasContent`).
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
