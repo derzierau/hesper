@@ -50,7 +50,11 @@ const header = 9
 // own short name) and the full List; later ones one Changed agent or one
 // Removed id.
 type Event struct {
-	Machine string       `json:"machine,omitempty"`
+	Machine string `json:"machine,omitempty"`
+	// Node (loops) is the host's node (internal/projects' node id, the
+	// first half of its agent refs "<node>/<local id>"); with Machine.
+	// Older controllers ignore it.
+	Node    string       `json:"node,omitempty"`
 	List    []wire.Agent `json:"list,omitempty"`
 	Full    bool         `json:"full,omitempty"`
 	Changed *wire.Agent  `json:"changed,omitempty"`
@@ -69,6 +73,12 @@ type Event struct {
 	// the link opens and after changes; the controller pulls when it is
 	// behind. An event with Sessions carries nothing else.
 	Sessions json.RawMessage `json:"sessions,omitempty"`
+	// Loops is the host's loops hint (internal/loops.Hint: node, epoch,
+	// newest sequence number): sent when the link opens and after
+	// changes; the controller pulls when it is behind, and takes the
+	// first one as the host's "loops" capability. An event with Loops
+	// carries nothing else.
+	Loops json.RawMessage `json:"loops,omitempty"`
 }
 
 // Stream is what a link runs on: a terminal stream's messages.

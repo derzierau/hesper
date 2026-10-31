@@ -181,7 +181,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 		}
 		d.Fleet = remote.New(remote.Options{Credentials: cfg.ControllerCredentials, HostDeviceID: hostID, ConfigDir: opt.ConfigDir,
 			StateDir: cfg.KeysDir, Signer: cfg.Signer, Direct: cfg.ControllerDirect, ControlSocket: cfg.ControlSocket, Grace: cfg.Grace, Logf: logf,
-			Projects: d.Projects})
+			Projects: d.Projects, Loops: d.Loops})
 		opt.Remote = d.Fleet
 	} else {
 		logf("controller role off: no %s (hesperctl login --role controller)", cfg.ControllerCredentials)
@@ -334,7 +334,7 @@ func (d *Daemon) startHost(ctx context.Context, cfg Config, logf func(string, ..
 		return errors.New("direct must be on, off or auto")
 	}
 	d.Service = &host.Service{Agents: reg, Handoff: d.Handoff, Machine: &host.MachineMonitor{},
-		AllowShell: cfg.AllowShell, AllowForward: cfg.AllowForward, E2EKey: channel.PublicKey(), Direct: direct, Audit: auth.Audit, Projects: d.Projects}
+		AllowShell: cfg.AllowShell, AllowForward: cfg.AllowForward, E2EKey: channel.PublicKey(), Direct: direct, Audit: auth.Audit, Projects: d.Projects, Loops: d.Loops}
 	if d.History != nil { // shared history
 		d.Service.Sessions = d.History
 		d.History.SetHostKey(key)

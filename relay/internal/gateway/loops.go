@@ -8,13 +8,28 @@ import (
 
 // wireLoops connects the loops store (internal/loops) to the agents:
 // this Mac's name, the live agents its views join in (local and remote),
-// machine names to nodes and back (the project registry's, which every
-// Mac shares), the shared history's node for session refs, and a rebuild
+// machine names to nodes and back (the linked hosts' own, else the
+// project registry's, which every Mac shares), the shared history's node for session refs, and a rebuild
 // of its views whenever an agent changes.
 func (d *Daemon) wireLoops(ctx context.Context) {
 	store, reg, fleet, proj := d.Loops, d.Registry, d.Fleet, d.Projects
 	store.SetMachine(reg.Machine())
-	store.SetNames(proj.NodeOf, proj.MachineOf)
+	nodeOf, machineOf := proj.NodeOf, proj.MachineOf
+	if fleet != nil {
+		nodeOf = func(machine string) string {
+			if n := fleet.NodeOf(machine); n != "" {
+				return n
+			}
+			return proj.NodeOf(machine)
+		}
+		machineOf = func(node string) string {
+			if m := fleet.MachineOf(node); m != "" {
+				return m
+			}
+			return proj.MachineOf(node)
+		}
+	}
+	store.SetNames(nodeOf, machineOf)
 	if d.History != nil {
 		store.SetSessionsNode(d.History.Node)
 	}
