@@ -292,6 +292,26 @@ func TestDuplicateOfLocalIdentity(t *testing.T) {
 	}
 }
 
+// Two projects with the same folder: the folder resolves to the one with
+// the remote identity, every time, never to its duplicate.
+func TestResolvePrefersRemoteIdentity(t *testing.T) {
+	root, state := tempDir(t), t.TempDir()
+	repo := newRepo(t, filepath.Join(root, "app"), "", map[string]string{"a": "b"})
+	s := openStore(t, state, "L")
+	s.Resolve(repo)
+	s.Close()
+	gitRun(t, repo, "remote", "add", "origin", "git@github.com:acme/app.git")
+	s = openStore(t, state, "L")
+	want := ProjectID(wire.ProjectIdentity{Remote: "github.com/acme/app"})
+	for i := 0; i < 50; i++ {
+		for _, dir := range []string{repo, filepath.Join(repo, "src")} {
+			if got := s.Resolve(dir); got != want {
+				t.Fatalf("try %d: %s → %s, want %s", i, dir, got, want)
+			}
+		}
+	}
+}
+
 func TestDeepestProjectScratchPromoteRemove(t *testing.T) {
 	root := tempDir(t)
 	repo := newRepo(t, filepath.Join(root, "app"), "git@github.com:acme/app.git", map[string]string{

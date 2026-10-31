@@ -2825,7 +2825,9 @@ package). Candidates: every project with a path on this Mac containing
 the folder (in the main checkout's coordinates, or literally), plus the
 repository and package found by identity (a second clone of the same
 repository on one Mac joins it too; the first clone keeps the recorded
-path while it exists). No candidate: `scratch:<folder>`.
+path while it exists). Of two with the same folder, the one with a
+remote identity wins (never a `duplicateOf` project), then the lowest
+id. No candidate: `scratch:<folder>`.
 **Auto-registration:** the folder's repository, and the detected package
 the folder is in, become projects on first sight, except repositories at
 the home folder or above (a dotfiles repository in `~` would swallow
