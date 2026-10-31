@@ -18,12 +18,15 @@ import (
 // is set before its process starts. A service agent is never put in a
 // loop, never closed for finishing in the background nor by tidy, and
 // its events are flagged (AgentEvent.Agent.Service) so the Steward never
-// wakes on its own work.
+// wakes on its own work. The Steward starts in the background (a planner
+// on the walls); its options come from Options.ServiceArgv.
 func (r *Registry) SpawnService(p wire.SpawnParams, service string) (wire.Agent, error) {
 	if service != wire.ServiceSteward && service != wire.ServicePlanner {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "service must be %s or %s", wire.ServiceSteward, wire.ServicePlanner)
 	}
-	return r.spawn(p, "", func(a *agent) { a.Service = service })
+	return r.spawn(p, "", func(a *agent) {
+		a.Service, a.Background = service, service == wire.ServiceSteward
+	})
 }
 
 // view is an agent as the wire shows it (the lock is held): with the loop

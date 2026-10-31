@@ -81,6 +81,11 @@ type Options struct {
 	// nil: none.
 	Loops   Loops
 	Steward Steward
+	// ServiceArgv (internal/steward) is a service agent's command-line
+	// options: they replace its profile's (only the command stays), so
+	// a service never inherits a profile that skips permissions. Nil:
+	// the profile's.
+	ServiceArgv func(service string) []string
 }
 
 func (o *Options) defaults() {
@@ -641,6 +646,9 @@ func (r *Registry) argv(a *agent, profile wire.Profile, resume, deliverLater boo
 	argv := make([]string, 0, len(profile.Argv)+4)
 	for _, s := range profile.Argv {
 		argv = append(argv, vars.Replace(s))
+	}
+	if a.Service != "" && r.opt.ServiceArgv != nil && len(argv) > 0 {
+		argv = append(argv[:1:1], r.opt.ServiceArgv(a.Service)...) // loopwork.go
 	}
 	if a.forkFrom != "" { // shared history: sessions.fork
 		return r.forkArgv(a, argv)
