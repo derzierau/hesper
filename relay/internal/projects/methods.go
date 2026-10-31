@@ -197,16 +197,16 @@ func (s *Store) Update(p wire.ProjectUpdateParams) (wire.ProjectInfo, error) {
 	changed := false
 	if p.Name != nil {
 		name, _ := cleanName(*p.Name)
-		changed = r.Name.set(name, s.clock.tick()) || changed
+		changed = r.Name.Set(name, s.clock.Tick()) || changed
 	}
 	if p.Color != nil {
-		changed = r.Color.set(strings.ToLower(*p.Color), s.clock.tick()) || changed
+		changed = r.Color.Set(strings.ToLower(*p.Color), s.clock.Tick()) || changed
 	}
 	if p.Kind != nil {
-		changed = r.Kind.set(*p.Kind, s.clock.tick()) || changed
+		changed = r.Kind.Set(*p.Kind, s.clock.Tick()) || changed
 	}
 	if p.Defaults != nil {
-		changed = r.Defaults.set(*p.Defaults, s.clock.tick()) || changed
+		changed = r.Defaults.Set(*p.Defaults, s.clock.Tick()) || changed
 	}
 	if changed {
 		s.commitLocked(true, false)
@@ -345,12 +345,12 @@ func (s *Store) promoteLocal(p wire.ProjectPromoteParams) (string, error) {
 		return "", wire.Errorf(wire.CodeInvalid, "too many projects")
 	}
 	// Promoting always revives: a newer stamp than any tombstone seen.
-	r.Deleted = Field[bool]{V: false, S: s.clock.tick()}
+	r.Deleted = Field[bool]{V: false, S: s.clock.Tick()}
 	if name != "" {
-		r.Name.set(name, s.clock.tick())
+		r.Name.Set(name, s.clock.Tick())
 	}
 	if p.Kind != "" {
-		r.Kind.set(p.Kind, s.clock.tick())
+		r.Kind.Set(p.Kind, s.clock.Tick())
 	}
 	if gi.OK && real != gi.Top {
 		s.setPathLocked(r, filepath.Join(gi.Root, rel(gi.Top, real)), true)
@@ -375,7 +375,7 @@ func (s *Store) Remove(id string) error {
 	if err != nil {
 		return err
 	}
-	r.Deleted = Field[bool]{V: true, S: s.clock.tick()}
+	r.Deleted = Field[bool]{V: true, S: s.clock.Tick()}
 	s.commitLocked(true, true)
 	return nil
 }
@@ -443,12 +443,12 @@ func (s *Store) SaveGroup(g wire.Group) (wire.Group, error) {
 	}
 	changed := rec.Deleted.V || rec.Deleted.S == (Stamp{})
 	if changed {
-		rec.Deleted = Field[bool]{V: false, S: s.clock.tick()}
+		rec.Deleted = Field[bool]{V: false, S: s.clock.Tick()}
 	}
-	changed = rec.Name.set(name, s.clock.tick()) || changed
-	changed = rec.ProjectIDs.set(ids, s.clock.tick()) || changed
-	changed = rec.Order.set(g.Order, s.clock.tick()) || changed
-	changed = rec.Color.set(strings.ToLower(g.Color), s.clock.tick()) || changed
+	changed = rec.Name.Set(name, s.clock.Tick()) || changed
+	changed = rec.ProjectIDs.Set(ids, s.clock.Tick()) || changed
+	changed = rec.Order.Set(g.Order, s.clock.Tick()) || changed
+	changed = rec.Color.Set(strings.ToLower(g.Color), s.clock.Tick()) || changed
 	if changed {
 		s.commitLocked(true, false)
 	}
@@ -463,7 +463,7 @@ func (s *Store) RemoveGroup(id string) error {
 	if g == nil || g.Deleted.V {
 		return wire.Errorf(wire.CodeNotFound, "no group %s", id)
 	}
-	g.Deleted = Field[bool]{V: true, S: s.clock.tick()}
+	g.Deleted = Field[bool]{V: true, S: s.clock.Tick()}
 	s.commitLocked(true, false)
 	return nil
 }

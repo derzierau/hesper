@@ -241,7 +241,12 @@ func (r *Runner) serveLink(link *hostLink) {
 	var workers sync.WaitGroup
 	defer workers.Wait()
 	defer cancel()
-	workers.Add(5)
+	workers.Add(6)
+	go func() {
+		// loops: change hints (loops.go)
+		defer workers.Done()
+		r.Service.serveLoops(ctx, link)
+	}()
 	go func() {
 		// projects step 1: the shared project state (projects.go)
 		defer workers.Done()
@@ -266,7 +271,7 @@ func (r *Runner) serveLink(link *hostLink) {
 				list = append(list, a)
 			}
 		}
-		if link.conn.WriteEvent(ctx, agentlink.Event{Machine: reg.Machine(), List: list, Full: true}) != nil {
+		if link.conn.WriteEvent(ctx, agentlink.Event{Machine: reg.Machine(), Node: r.Service.node(), List: list, Full: true}) != nil {
 			return
 		}
 		for {

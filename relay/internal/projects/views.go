@@ -26,6 +26,40 @@ func (s *Store) nameOf(node string) string {
 	return node
 }
 
+// MachineOf is a node's machine name as this Mac calls it ("" unknown).
+func (s *Store) MachineOf(node string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n := s.nameOf(node); n != node {
+		return n
+	}
+	return ""
+}
+
+// NodeOf is the node of a machine as this Mac calls it ("" unknown): the
+// name this Mac's controller gives it, else the name it gives itself.
+func (s *Store) NodeOf(machine string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if machine == "" {
+		return ""
+	}
+	if machine == s.short {
+		return s.node
+	}
+	for node, n := range s.aliases {
+		if n == machine {
+			return node
+		}
+	}
+	for node, n := range s.nodes {
+		if n == machine && s.aliases[node] == "" {
+			return node
+		}
+	}
+	return ""
+}
+
 // viewLocked is a project as the wire shows it.
 func (s *Store) viewLocked(r *Record) wire.ProjectInfo {
 	info := wire.ProjectInfo{ID: r.ID, Name: r.Name.V, Kind: r.Kind.V, Identity: r.Identity, ParentID: r.ParentID,

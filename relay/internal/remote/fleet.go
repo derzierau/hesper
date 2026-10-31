@@ -41,6 +41,7 @@ import (
 
 	"github.com/derzierau/hesper/relay/internal/agents"
 	"github.com/derzierau/hesper/relay/internal/controlsock"
+	"github.com/derzierau/hesper/relay/internal/loops"
 	"github.com/derzierau/hesper/relay/internal/projects"
 	"github.com/derzierau/hesper/relay/pkg/client"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
@@ -79,6 +80,9 @@ type Options struct {
 	// Sessions (optional; shared history) hears of links and hints
 	// (sessions.go).
 	Sessions SessionsLinks
+	// Loops (optional) is this Mac's loops store, replicated with the
+	// machines that keep loops (loops.go).
+	Loops *loops.Store
 }
 
 // Fleet is the controller role. Run connects; the agents.Remote methods
@@ -94,6 +98,8 @@ type Fleet struct {
 	watchers map[*watcher]struct{}
 	changed  chan struct{} // closed when a link or connection changes
 	ready    chan struct{} // closed with the first inventory
+
+	loopPeers map[string]*loopPeer // by host node (loops.go)
 
 	files fileUploads // attachments being forwarded (files.go)
 	fwd   forwards    // port forwards (forward.go)
@@ -112,6 +118,10 @@ type machine struct {
 	lost            *time.Timer           // drops agents after the grace
 	rtts            []time.Duration
 	rttRoute        string
+	// node is the host's node (its full event's, else its loops hint's);
+	// loops: it keeps loops (a loops hint came on a link; loops.go).
+	node  string
+	loops bool
 }
 
 type watcher struct {
@@ -226,6 +236,7 @@ func (f *Fleet) serve(ctx context.Context, c *client.Controller, creds protocol.
 	pctx, pcancel := context.WithCancel(ctx)
 	defer pcancel()
 	go f.syncProjectsLoop(pctx, c) // projects step 1
+	go f.syncLoopsLoop(pctx, c)    // loops.go
 	pings := time.NewTicker(pingEvery)
 	defer pings.Stop()
 	tick := time.NewTicker(time.Second)
@@ -616,6 +627,10 @@ func (f *Fleet) Call(ctx context.Context, short, method string, params json.RawM
 		}
 	}
 	delete(fields, "machine")
+	var assign func(wire.Agent)
+	if method == "agents.spawn" {
+		assign = f.spawnFields(m, fields) // loops.go
+	}
 	raw, err := f.request(ctx, c, m, method, fields)
 	var we *wire.Error
 	if _, by := fields["by"]; by && method == "agents.rename" && errors.As(err, &we) && we.Code == wire.CodeInvalid {
@@ -631,8 +646,12 @@ func (f *Fleet) Call(ctx context.Context, short, method string, params json.RawM
 	case "agents.spawn", "agents.resume", "agents.rename":
 		var a wire.Agent
 		if json.Unmarshal(raw, &a) == nil && a.ID != "" {
+			a = f.namedNoLock(m, a)
+			if assign != nil {
+				assign(a)
+			}
 			f.mu.Lock()
-			a = m.named(a)
+			a.Loop = f.loopOfLocked(m, localID(a.ID))
 			// Shown at once; the link's event confirms it.
 			m.agents[localID(a.ID)] = a
 			f.emitChangedLocked(a)

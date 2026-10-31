@@ -5205,6 +5205,129 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   allowed or refused, is in `audit.log` (`agent.request` /
   `agent.refused`); reads are not.
 
+### As built — loops (data)
+
+Design: the loops concept (v2) and its technical plan, sections
+Identity, Data, Wire and sync. Code: `relay/internal/crdt` (the
+registers, shared with projects), `relay/internal/loops` (records,
+store, merge, views, rules, methods, hooks, sync), `relay/pkg/wire/loops.go`
+(wire types), `internal/host/loops.go`, `internal/remote/loops.go`,
+`internal/gateway/loops.go`, `pkg/agentlink` (`Event.loops`,
+`Event.node`), `pkg/devicekey` (rights). The registry's side (when it
+calls Assign, AgentSettled and AgentClosed, the dispatcher's policy) is
+`internal/agents/loophook.go` and `loopscall.go`.
+
+**Model.** A loop is a lasting record of one piece of work: its links
+(agents, sessions, projects, URLs, files, other loops, each with a
+relation: `member`, `started`, `continued`, `handoff`, `blocks`,
+`blockedBy`, `touches`) and its items (steps, loose ends, promises,
+questions, offers; each with an owner `you`/`agent`/`others`, a state,
+an order and the items it comes `after`). Goals and milestones belong to
+a product (a project or group id, `scope`); a milestone has "done when"
+conditions (items of kind `condition`) and the loops filed under it. One
+Steward configuration (`enabled`, `level`, `node`) and one set of loop
+settings (`loopLimit` 5, `stallDays` 7, `eveningAt` "18:00",
+`maxWakesPerDay` 40 by default) are shared by every Mac. **The store is
+the only source of truth for membership:** `LoopOf(ref)` is derived from
+the loops' live member links (agent or session links with rel `member`,
+`started` or `continued`; the newest wins; `mergedInto` chains are
+followed, at most 16 steps). Links hold settled facts only: the agent's
+name, how its last turn ended (`ending`, `summary`), how it was closed
+(`closedReason`, `closed`, the first KiB of its final message as
+`result`, dropped after 90 days by a stamped write). Live state (`agent`,
+`state`) is joined from the agent list when views are built.
+
+**Ids and refs.** Loops `lp-`, goals `gl-`, milestones `ms-` + 12 hex,
+items `it-` + 8 hex (random). A link's key is `ln-` + 16 hex of the
+SHA-256 of kind, rel, ref and from, so one link added on two Macs at once
+is one entry; a move rewrites the link's `ref` register and keeps its
+key. Agent ref: `<node>/<local id>`, `node` the projects store's node of
+the Mac the agent runs on (`Store.Node`); a host names its node in its
+full link event (`Event.node`), and `projects.Store.NodeOf/MachineOf`
+map machine names both ways. Session ref: `<sessions node>:<kind>:<id>`.
+
+**Hooks** (called with the registry's lock held; the store never calls
+out while holding its own). `Assign`: the loop the spawn named; else a
+new loop under its milestone; else the parent's loop; else the source
+session's; else a new loop titled after the agent's name (or its task's
+first line); the agent's member link says `started` from the parent or
+`continued` from the session; a `touches` link for its project (not
+scratch) and a member link for its own session. An agent that already
+has a loop keeps it; service agents get none. `AgentSettled`: `ending`
+(the classifier the gateway sets, `internal/endings`; the default calls
+every turn `done`) and `summary` on the link; the sentences of an
+`asks`/`yourStep` ending become items for the person (question, step),
+`waits` loose ends for others, `offer` offers of the agent (dimmed, never
+counted), at most 5, each text once per loop. `AgentClosed`: reason, time
+and excerpt; reason `moved` with `to` rewrites the ref instead (the
+imported agent's own link, when Assign ran first, goes).
+
+**Wire** (`relay/docs/protocol.md`, "Shared state" and "Loops on the
+local socket"): `loops.list/get/save/link/item/merge/split`,
+`loops.settings.get/set`, `goals.list/save/remove/item/file/accept`; the
+`steward.*` methods are the Steward's (`internal/steward`), which uses
+`Store.SetStewardConfig` and `StewardChanges`. Results: `[Loop]`, the
+changed `Loop` (split: the new one), `LoopSettings`, `GoalsList`,
+`{goal}`/`{milestone}`, the changed `Milestone`, `{}`, `{accepted: N}`.
+The store enforces one rule itself: an agent caller that is not a
+service may read everything and change only the items and links of its
+own loop. Notifications: `loops.changed`/`loops.removed`,
+`goals.changed`/`goals.removed`, rebuilt ≤ 50 ms after a change of the
+records or of any agent, sent only when a view's JSON changed, coalesced
+per id. Who acts next (`next`, `nextText`, `looksDone`), counts, projects,
+items' `ready` and milestones' loops, progress, next text and `stalled`
+are computed in `rules.go`. Caps (64 links, 100 items a loop, 2,000
+loops) apply to views, never to merges.
+
+**Persistence:** `$HESPER_STATE_DIR/loops.json` (0600, temp file + fsync
++ rename, ≤ 50 ms after a change): `{version: 1, node, epoch, clock, seq,
+seqs, loops, goals, milestones, steward, settings}`. A file that does not
+decode moves to `loops.json.broken`. Every change bumps the record's
+sequence number (`seqs`, by `l:`/`g:`/`m:` + id, `steward`,
+`settings`); a new file (or a new projects node) gets a new `epoch`.
+
+**Sync between Macs** (`sync.go`, `internal/host/loops.go`,
+`internal/remote/loops.go`), as the shared history's: the host's hint
+`{node, epoch, seq}` on every link when it opens and ≤ 100 ms after each
+change (it is also the host's `loops` capability: inside the channel,
+never in the relay-visible snapshot); the controller pulls (`loops.pull
+{since, epoch, from}`) until `more` is false, then pushes its changes
+since what that host has (`loops.sync {from, records}`), one exchange per
+link at a time, again ≤ 150 ms after each local change, 5 s after a
+failure. Batches ≤ 512 KiB; a record whose every stamp is the asking
+Mac's is not sent; each record merges by itself (per field last writer
+wins, tombstones stay, records that fail validation are dropped whole).
+Rights: `loops.pull` `observe`, `loops.sync` `transfer` (empty records
+`observe`). Separate from `projects.sync`, which older hosts decode
+strictly. A spawn to a host without `loops` loses `loop`, `milestone`
+and `reportToParent`, and the controller records the new agent's loop.
+Remote agents carry `Agent.loop` (`LoopOf(<host node>/<local id>)`),
+refreshed when the loops change.
+
+**Tests:** `internal/projects` `TestStateGolden` (the projects wire
+shape, before and after the `crdt` move), `TestNodeOfMachineOf`;
+`internal/crdt` (clock, ties); `internal/loops`: persistence (0600,
+reload, epoch and sequence numbers), broken file, convergence (concurrent
+item adds, tombstone vs an older copy, LWW, idempotent merge), insane
+records dropped, `LoopOf` through merge chains and cycles, pruning
+replicates, view caps and the live join without the store's lock, Watch
+(open loops first, then changes), the next rules (table), ready, counts,
+projects, milestone rules, Assign's five ways, settled items and their
+dedup, closed and moved links, the agent caller rule, merge, split,
+list filters, goals and milestones, settings, Steward configuration,
+pull batches, echo and epochs, sync both ways. `internal/transport`
+`TestLoopsSharedBetweenMacs`: a loop made on L reaches M, items added on
+both survive, a removal on M reaches L, a merge on L shows on M, a goal
+from M and the Steward's configuration from L reach the other, the tap
+never saw a title, item text, URL or id or a `loops.`/`goals.` method,
+`loops.json` on both. `pkg/devicekey`: the rights.
+
+**Not done here:** the endings classifier (`internal/endings`), the
+registry calling the hooks and filling `Agent.loop` for local agents,
+the dispatcher's person-only rules, the Steward, hesperctl, the app.
+Tombstones are never collected; a Mac reinstalled gets a new node, so
+its old agents' refs no longer resolve to a machine name.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
