@@ -4985,6 +4985,30 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   agents are listed, fetched or notified; it is never kept in the
   registry nor written to `agents.json` (the store's links are the
   truth).
+- **Endings.** When a turn ends (from `working`, `approval` or
+  `question` to `done` or `idle`), `Agent.ending` (persisted) is set from
+  `internal/endings`: phrases over the last three paragraphs of the final
+  message (at most its last 2 KiB), English and German, in the order
+  `asks` > `yourStep` > `waits` > `offer` > `done`; `asks` also for a
+  final question to the reader. A hook's message (Claude's `Stop`,
+  Codex's `notify`) is classified in `HookResult` before the registry's
+  lock; a Codex notify that arrives after the screen showed it idle
+  classifies the turn again. A turn that ends without a hook (Codex's
+  screen, a tracked shell) uses the last message only when it came during
+  that turn, else ends `done`.
+- **Events.** Each settled turn and each removal (`removeLocked`, the
+  single exit) is queued for `Loops.AgentSettled` / `AgentClosed` and
+  `Steward.AgentSettled` / `AgentClosed`, delivered in order by one
+  goroutine the registry owns (stopped and drained by `Close`). The
+  queue holds 256 events; over that the oldest is dropped and counted
+  (logged at 1, 2, 4, … drops). Hooks and the lock never wait on the
+  store. A settled event carries the agent (with its loop), the ending
+  and the turn's final message (at most 64 KiB; empty when the turn had
+  none).
+- **Closed-work record.** `AgentClosed` carries the reason (`closed`,
+  `finished-in-background`, `removed`, `moved` with `To`, the agent it
+  became), the agent (its summary), its last ending and its final
+  message; the store keeps an excerpt.
 
 ## Wire names kept from Ghosty
 

@@ -241,3 +241,124 @@ func TestSpawnServiceStaysInBackground(t *testing.T) {
 		t.Fatalf("after restart %+v %v", got, err)
 	}
 }
+
+// fakeSteward records the events it hears.
+type fakeSteward struct {
+	mu      sync.Mutex
+	settled []AgentEvent
+	closed  []AgentEvent
+}
+
+func (f *fakeSteward) Call(string, json.RawMessage, Caller) (any, error, bool) {
+	return struct{}{}, nil, true
+}
+func (f *fakeSteward) Watch(done <-chan struct{}, _ func(string, any) error) { <-done }
+func (f *fakeSteward) AgentSettled(e AgentEvent) {
+	f.mu.Lock()
+	f.settled = append(f.settled, e)
+	f.mu.Unlock()
+}
+func (f *fakeSteward) AgentClosed(e AgentEvent) {
+	f.mu.Lock()
+	f.closed = append(f.closed, e)
+	f.mu.Unlock()
+}
+
+func TestEndingsOnTurnEnd(t *testing.T) {
+	h := newHarness(t)
+	h.close()
+	l, st := newFakeLoops(), &fakeSteward{}
+	h.opt.Loops, h.opt.Steward = l, st
+	h.open()
+	a := h.spawn(wire.SpawnParams{Task: "Should I push it?"})
+	ref := "n1/" + strings.TrimPrefix(a.ID, "L/")
+	eventuallyTrue(t, "settled", func() bool { return len(l.events(ref, false)) == 1 })
+	e := l.events(ref, false)[0]
+	if e.Ending != wire.EndingAsks || e.Message != "Done: Should I push it?" || e.Agent.Ending != wire.EndingAsks || e.Agent.Loop == "" {
+		t.Fatalf("settled %+v", e)
+	}
+	if got, _ := h.reg.Get(a.ID); got.Ending != wire.EndingAsks {
+		t.Fatalf("ending %q", got.Ending)
+	}
+	eventuallyTrue(t, "the Steward heard it", func() bool { st.mu.Lock(); defer st.mu.Unlock(); return len(st.settled) == 1 })
+	// The next turn ends done.
+	h.call("agents.input", wire.InputParams{ID: a.ID, Text: "tidy up", Submit: true}, nil)
+	eventuallyTrue(t, "second turn", func() bool { return len(l.events(ref, false)) == 2 })
+	if e := l.events(ref, false)[1]; e.Ending != wire.EndingDone {
+		t.Fatalf("second turn %+v", e)
+	}
+	// Persisted.
+	h.close()
+	h.open()
+	if got, _ := h.reg.Get(a.ID); got.Ending != wire.EndingDone {
+		t.Fatalf("after restart: %q", got.Ending)
+	}
+}
+
+// TestEndingWithoutHooks: a shell's turn (no hook, no message) ends done,
+// and an old message is not classified again.
+func TestEndingWithoutHooks(t *testing.T) {
+	h, l := newLoopsHarness(t)
+	a := h.spawn(wire.SpawnParams{Kind: wire.KindShell, Profile: "real-shell", Track: true})
+	ref := "n1/" + strings.TrimPrefix(a.ID, "L/")
+	h.waitState(a.ID, wire.StateIdle)
+	h.reg.mu.Lock()
+	h.reg.agents[strings.TrimPrefix(a.ID, "L/")].lastMessage = "Should I go on?"
+	h.reg.agents[strings.TrimPrefix(a.ID, "L/")].lastMessageAt = time.Now().Add(-time.Hour)
+	h.reg.mu.Unlock()
+	if err := h.call("agents.input", wire.InputParams{ID: a.ID, Text: "sleep 0.3", Submit: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	eventuallyTrue(t, "settled", func() bool { return len(l.events(ref, false)) >= 1 })
+	if e := l.events(ref, false)[0]; e.Ending != wire.EndingDone || e.Message != "" {
+		t.Fatalf("settled %+v", e)
+	}
+}
+
+func TestClosedWorkRecord(t *testing.T) {
+	h, l := newLoopsHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "Want me to add tests?"})
+	ref := "n1/" + strings.TrimPrefix(a.ID, "L/")
+	h.waitState(a.ID, wire.StateDone)
+	if err := h.call("agents.close", wire.IDParams{ID: a.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	eventuallyTrue(t, "closed", func() bool { return len(l.events(ref, true)) == 1 })
+	e := l.events(ref, true)[0]
+	if e.Reason != wire.ReasonClosed || e.Ending != wire.EndingAsks || e.Message != "Done: Want me to add tests?" || e.Agent.Summary == "" || e.To != "" {
+		t.Fatalf("closed %+v", e)
+	}
+}
+
+// blockingLoops blocks AgentSettled until release closes.
+type blockingLoops struct {
+	*fakeLoops
+	release chan struct{}
+}
+
+func (b *blockingLoops) AgentSettled(e AgentEvent) {
+	<-b.release
+	b.fakeLoops.AgentSettled(e)
+}
+
+// TestLoopEventsDropOldest: a slow store never blocks the pusher; the
+// queue keeps the newest maxLoopEvents and counts what it dropped.
+func TestLoopEventsDropOldest(t *testing.T) {
+	b := &blockingLoops{fakeLoops: newFakeLoops(), release: make(chan struct{})}
+	q := newLoopEvents(b, nil, t.Logf)
+	q.push(loopEvent{AgentEvent: AgentEvent{Ref: "first"}}) // taken by the goroutine, which blocks
+	eventuallyTrue(t, "taken", func() bool { q.mu.Lock(); defer q.mu.Unlock(); return len(q.q) == 0 })
+	for i := range maxLoopEvents + 10 {
+		q.push(loopEvent{AgentEvent: AgentEvent{Ref: fmt.Sprint(i)}})
+	}
+	if d := q.Dropped(); d != 10 {
+		t.Fatalf("dropped %d", d)
+	}
+	close(b.release)
+	q.stop()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.settled) != maxLoopEvents+1 || b.settled[1].Ref != "10" || b.settled[len(b.settled)-1].Ref != fmt.Sprint(maxLoopEvents+9) {
+		t.Fatalf("%d delivered, first queued %q", len(b.settled), b.settled[1].Ref)
+	}
+}

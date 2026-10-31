@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/derzierau/hesper/relay/internal/endings"
 	"github.com/derzierau/hesper/relay/internal/lockwatch"
 	"github.com/derzierau/hesper/relay/internal/ptyhost"
 	"github.com/derzierau/hesper/relay/internal/vt"
@@ -182,6 +183,12 @@ type Registry struct {
 	cpRun   sync.Mutex
 	cpFile  sync.Mutex
 
+	// loops (loopwork.go): the settled and closed events for the loops
+	// store and the Steward; hooking, the agent whose hook runs now (the
+	// lock is held).
+	events  *loopEvents
+	hooking *agent
+
 	// review (review.go): the agents' review logs (reviewlog.go); one
 	// accept, reject or send-back at a time.
 	reviewOnce sync.Once
@@ -246,6 +253,10 @@ type agent struct {
 	// hooks counts the agent's hook events: its review scan is out of
 	// date once it changed (reviewcache.go).
 	hooks uint64
+	// loopwork.go: when its current turn started; settleDue, the turn
+	// ended during a hook (HookResult settles it once the message is in).
+	turnStart time.Time
+	settleDue bool
 }
 
 // Open loads the registry from the state directory and respawns the agents
@@ -283,6 +294,7 @@ func Open(opt Options) (*Registry, error) {
 		return nil, err
 	}
 	go r.saver()
+	r.events = newLoopEvents(opt.Loops, opt.Steward, opt.Logf) // loopwork.go
 	for _, rec := range records {
 		r.restore(rec)
 	}
@@ -425,7 +437,11 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 	if a.State != state {
 		a.StateSince = time.Now().UTC()
 	}
-	finished := a.Background && turnEnded(a.State, state)
+	ended := turnEnded(a.State, state)
+	if turnBegins(a.State, state) {
+		a.turnStart = time.Now()
+	}
+	finished := a.Background && ended
 	if state == wire.StateDone && a.State != state {
 		r.turnCheckpoint(a) // checkpoint.go
 	}
@@ -434,6 +450,9 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 	}
 	a.State, a.Attention = state, att
 	r.changed(a)
+	if ended {
+		r.turnSettled(a) // loopwork.go
+	}
 	if finished {
 		r.finishedInBackground(a) // close.go
 	}
@@ -1189,10 +1208,13 @@ func (r *Registry) HookResult(p wire.HookParams) (wire.HookResult, error) {
 	if p.Source != wire.KindClaude && p.Source != wire.KindCodex {
 		return wire.HookResult{}, wire.Errorf(wire.CodeInvalid, "source must be claude or codex")
 	}
-	summary, message := "", ""
+	summary, message, ending := "", "", ""
 	if event == "Stop" || (event == "notify" && str(data, "type") == "agent-turn-complete") {
 		message = lastMessage(data)
 		summary = summarize(message)
+		if strings.TrimSpace(message) != "" {
+			ending, _ = endings.Classify(message) // loops, before the lock
+		}
 	}
 	evidenceOf := "" // review: recorded once the lock is released
 	defer func() {
@@ -1215,9 +1237,14 @@ func (r *Registry) HookResult(p wire.HookParams) (wire.HookResult, error) {
 			a.sessionSeen = true
 		}
 	}
+	r.hooking = a // a turn that ends here settles below, with its message
 	r.hookEvent(a, p.Source, event, data, summary)
+	r.hooking = nil
 	if message = strings.TrimSpace(message); message != "" {
 		r.setLastMessage(a, message) // agent tree: agents.result
+	}
+	if a.settleDue || message != "" && (a.State == wire.StateDone || a.State == wire.StateIdle) {
+		r.settle(a, ending) // loopwork.go
 	}
 	if event == "SessionStart" {
 		return wire.HookResult{Context: TileNaming}, nil
@@ -1316,6 +1343,7 @@ func (r *Registry) Close() {
 		case <-deadline:
 		}
 	}
+	r.events.stop() // after quit: what is queued goes out first
 	close(r.saveCh)
 	<-r.saverEnd
 	r.writeState()

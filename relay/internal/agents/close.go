@@ -150,6 +150,15 @@ func (r *Registry) SetBackground(id string, background bool) error {
 	return nil
 }
 
+// turnBegins: a state change that starts a turn (into working, an
+// approval or a question from anything else).
+func turnBegins(from, to string) bool {
+	busy := func(s string) bool {
+		return s == wire.StateWorking || s == wire.StateApproval || s == wire.StateQuestion
+	}
+	return busy(to) && !busy(from)
+}
+
 // turnEnded: a state change that finishes an agent's work (a turn ended:
 // from working, an approval or a question to done or idle). A start that
 // comes up idle (a resume, a respawn) is not one.
@@ -189,6 +198,7 @@ func (r *Registry) removeLocked(a *agent, reason string) {
 	for s := range r.subs {
 		s.pushRemovedTo(a.ID, reason, to)
 	}
+	r.closedWork(a, reason, to) // loopwork.go: the closed-work record
 	r.scheduleSave()
 	r.reviews().forget(a.local) // reviewlog.go
 }
