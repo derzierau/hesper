@@ -41,11 +41,11 @@ type ScratchRecord struct {
 }
 
 func (x *ScratchRecord) merge(o *ScratchRecord) bool {
-	changed := x.Home.merge(o.Home)
-	changed = x.Keep.merge(o.Keep) || changed
-	changed = x.ArchivedAt.merge(o.ArchivedAt) || changed
-	changed = x.Git.merge(o.Git) || changed
-	changed = x.AdoptedAt.merge(o.AdoptedAt) || changed
+	changed := x.Home.Merge(o.Home)
+	changed = x.Keep.Merge(o.Keep) || changed
+	changed = x.ArchivedAt.Merge(o.ArchivedAt) || changed
+	changed = x.Git.Merge(o.Git) || changed
+	changed = x.AdoptedAt.Merge(o.AdoptedAt) || changed
 	return changed
 }
 
@@ -579,10 +579,10 @@ func (s *Store) CreateScratch(name, task string) (id, path string, err error) {
 		return "", "", wire.Errorf(wire.CodeInvalid, "too many projects")
 	}
 	ident := wire.ProjectIdentity{Local: newLocalIdentity()}
-	r := &Record{ID: ProjectID(ident), Identity: ident, Name: Field[string]{V: display, S: s.clock.tick()},
-		Kind: Field[string]{V: wire.ProjectScratch, S: s.clock.tick()}, Paths: map[string]Field[string]{},
+	r := &Record{ID: ProjectID(ident), Identity: ident, Name: Field[string]{V: display, S: s.clock.Tick()},
+		Kind: Field[string]{V: wire.ProjectScratch, S: s.clock.Tick()}, Paths: map[string]Field[string]{},
 		Created: now.UTC(), LastUsed: now.UTC(),
-		Scratch: &ScratchRecord{Home: Field[string]{V: s.node, S: s.clock.tick()}, Git: Field[bool]{V: true, S: s.clock.tick()}}}
+		Scratch: &ScratchRecord{Home: Field[string]{V: s.node, S: s.clock.Tick()}, Git: Field[bool]{V: true, S: s.clock.Tick()}}}
 	s.projects[r.ID] = r
 	s.setPathLocked(r, dir, true)
 	s.commitLocked(true, true)
@@ -644,7 +644,7 @@ func (s *Store) KeepScratch(id string, keep bool) (wire.ProjectInfo, error) {
 	if err != nil {
 		return wire.ProjectInfo{}, err
 	}
-	if r.Scratch.Keep.set(keep, s.clock.tick()) {
+	if r.Scratch.Keep.Set(keep, s.clock.Tick()) {
 		s.commitLocked(true, false)
 	}
 	return s.viewLocked(r), nil
@@ -742,7 +742,7 @@ func (s *Store) archiveLocal(id string, now time.Time, manual bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.setPathLocked(r, dst, true)
-	r.Scratch.ArchivedAt.set(now.UnixMilli(), s.clock.tick())
+	r.Scratch.ArchivedAt.Set(now.UnixMilli(), s.clock.Tick())
 	s.commitLocked(true, true)
 	if !manual {
 		s.opt.Logf("hesperd: archived the scratch project %s (%s)", r.Name.V, dst)
@@ -779,7 +779,7 @@ func (s *Store) restoreLocal(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.setPathLocked(r, dst, true)
-	r.Scratch.ArchivedAt.set(0, s.clock.tick())
+	r.Scratch.ArchivedAt.Set(0, s.clock.Tick())
 	if now := s.opt.Now().UTC(); now.After(r.LastUsed) {
 		r.LastUsed = now
 	}
@@ -808,7 +808,7 @@ func (s *Store) deleteLocal(id string, manual bool) error {
 	s.det.forget(dir)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	r.Deleted = Field[bool]{V: true, S: s.clock.tick()}
+	r.Deleted = Field[bool]{V: true, S: s.clock.Tick()}
 	delete(s.live, id)
 	s.commitLocked(true, true)
 	if !manual {
@@ -888,9 +888,9 @@ func (s *Store) promoteScratch(p wire.ProjectPromoteParams) (string, error) {
 	if git {
 		kind = wire.ProjectRepo
 	}
-	r.Kind.set(kind, s.clock.tick())
-	r.Name.set(name, s.clock.tick())
-	r.Scratch.ArchivedAt.set(0, s.clock.tick())
+	r.Kind.Set(kind, s.clock.Tick())
+	r.Name.Set(name, s.clock.Tick())
+	r.Scratch.ArchivedAt.Set(0, s.clock.Tick())
 	s.setPathLocked(r, dst, true)
 	if now := s.opt.Now().UTC(); now.After(r.LastUsed) {
 		r.LastUsed = now
@@ -1083,9 +1083,9 @@ func (s *Store) adoptScratch(now time.Time) {
 			continue
 		case r != nil:
 			if r.Kind.V != wire.ProjectScratch && r.Kind.V != wire.ProjectReference {
-				r.Kind.set(wire.ProjectScratch, s.clock.tick())
+				r.Kind.Set(wire.ProjectScratch, s.clock.Tick())
 				if r.Name.V == filepath.Base(f.path) {
-					r.Name.set(f.name, s.clock.tick())
+					r.Name.Set(f.name, s.clock.Tick())
 				}
 				changed = true
 			}
@@ -1094,8 +1094,8 @@ func (s *Store) adoptScratch(now time.Time) {
 				continue
 			}
 			ident := wire.ProjectIdentity{Local: newLocalIdentity()}
-			r = &Record{ID: ProjectID(ident), Identity: ident, Name: Field[string]{V: f.name, S: s.clock.tick()},
-				Kind: Field[string]{V: wire.ProjectScratch, S: s.clock.tick()}, Paths: map[string]Field[string]{}, Created: f.created.UTC()}
+			r = &Record{ID: ProjectID(ident), Identity: ident, Name: Field[string]{V: f.name, S: s.clock.Tick()},
+				Kind: Field[string]{V: wire.ProjectScratch, S: s.clock.Tick()}, Paths: map[string]Field[string]{}, Created: f.created.UTC()}
 			if f.mtime.After(f.created) {
 				r.LastUsed = f.mtime.UTC()
 			} else {
@@ -1109,11 +1109,11 @@ func (s *Store) adoptScratch(now time.Time) {
 			r.Created, changed = f.created.UTC(), true
 		}
 		if r.Kind.V == wire.ProjectScratch && r.Scratch == nil {
-			r.Scratch = &ScratchRecord{Home: Field[string]{V: s.node, S: s.clock.tick()}, Git: Field[bool]{V: f.git, S: s.clock.tick()},
-				AdoptedAt: Field[int64]{V: now.UnixMilli(), S: s.clock.tick()}}
+			r.Scratch = &ScratchRecord{Home: Field[string]{V: s.node, S: s.clock.Tick()}, Git: Field[bool]{V: f.git, S: s.clock.Tick()},
+				AdoptedAt: Field[int64]{V: now.UnixMilli(), S: s.clock.Tick()}}
 			changed = true
 		} else if r.Kind.V == wire.ProjectScratch && r.Scratch.Git.V != f.git && r.Scratch.Home.V == s.node {
-			r.Scratch.Git.set(f.git, s.clock.tick())
+			r.Scratch.Git.Set(f.git, s.clock.Tick())
 			changed = true
 		}
 	}
@@ -1127,8 +1127,8 @@ func (s *Store) adoptScratch(now time.Time) {
 			continue
 		}
 		_, err := os.Lstat(filepath.Join(p, ".git"))
-		r.Scratch = &ScratchRecord{Home: Field[string]{V: s.node, S: s.clock.tick()}, Git: Field[bool]{V: err == nil, S: s.clock.tick()},
-			AdoptedAt: Field[int64]{V: now.UnixMilli(), S: s.clock.tick()}}
+		r.Scratch = &ScratchRecord{Home: Field[string]{V: s.node, S: s.clock.Tick()}, Git: Field[bool]{V: err == nil, S: s.clock.Tick()},
+			AdoptedAt: Field[int64]{V: now.UnixMilli(), S: s.clock.Tick()}}
 		if r.Created.IsZero() {
 			r.Created = now.UTC()
 		}
@@ -1192,17 +1192,17 @@ func (s *Store) ScratchArrived(local, name string, created time.Time, path strin
 		s.projects[id] = r
 	}
 	if r.Deleted.V {
-		r.Deleted = Field[bool]{V: false, S: s.clock.tick()}
+		r.Deleted = Field[bool]{V: false, S: s.clock.Tick()}
 	}
-	r.Kind.set(wire.ProjectScratch, s.clock.tick())
+	r.Kind.Set(wire.ProjectScratch, s.clock.Tick())
 	if r.Scratch == nil {
 		r.Scratch = &ScratchRecord{}
 	}
 	if home {
-		r.Scratch.Home.set(s.node, s.clock.tick())
-		r.Scratch.ArchivedAt.set(0, s.clock.tick())
+		r.Scratch.Home.Set(s.node, s.clock.Tick())
+		r.Scratch.ArchivedAt.Set(0, s.clock.Tick())
 	}
-	r.Scratch.Git.set(true, s.clock.tick())
+	r.Scratch.Git.Set(true, s.clock.Tick())
 	s.setPathLocked(r, path, true)
 	if now := s.opt.Now().UTC(); now.After(r.LastUsed) {
 		r.LastUsed = now
