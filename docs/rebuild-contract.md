@@ -1637,7 +1637,9 @@ menu in `AppDelegate`.
 
 - **Selected**: highlight ring (blue, 2 pt; a tile that needs you keeps
   its rose / amber / red ring at 3 pt), no cursor (read-only tiles live
-  in the tile engine app, whose config has `cursor-opacity = 0`; the
+  in the tile engine app, whose config has `cursor-opacity = 0` and
+  `cursor-text = cell-foreground`, so the character under the hidden
+  cursor keeps its color instead of turning background-colored; the
   active tile and focus views are in the read-write app and keep theirs),
   read-only view attach; keys go to the wall. Its footer shows
   `←→↑↓ move · ⏎ type · ⇧-click window` (narrow: `←→↑↓ · ⏎ type`; shelf

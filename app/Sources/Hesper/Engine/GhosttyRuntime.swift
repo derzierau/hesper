@@ -1,4 +1,5 @@
 import AppKit
+import HesperCore
 import libghostty
 import os
 
@@ -37,7 +38,7 @@ final class GhosttyRuntime {
         // Read-only tiles (this app) draw no cursor: a cursor means "keys go
         // here", which only the active tile and the focus view (the second
         // app below, read-write) are.
-        try? (configText + "cursor-opacity = 0\n").write(to: configPath, atomically: true, encoding: .utf8)
+        try? TerminalConfigText.readOnly(configText).write(to: configPath, atomically: true, encoding: .utf8)
 
         let cfg = ghostty_config_new()
         ghostty_config_load_file(cfg, configPath.path)
