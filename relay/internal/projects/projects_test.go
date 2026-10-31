@@ -61,7 +61,8 @@ func TestNormalizeRemote(t *testing.T) {
 
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	// Unsigned: a global commit.gpgsign would sign (and fail) here.
+	cmd := exec.Command("git", append([]string{"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", "-C", dir}, args...)...)
 	cmd.Env = append(gitEnv(os.Environ()), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@x", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@x")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
