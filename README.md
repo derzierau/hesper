@@ -270,6 +270,11 @@ brew upgrade --cask derzierau/hesper/hesper
 ```
 
 Run setup after each update to restart the daemon with the new binary.
+Setup keeps the daemon's flags (`hesperd serve --allow-shell`,
+`--allow-forward PORTS`): to change them, edit `ProgramArguments` in
+`~/Library/LaunchAgents/de.olezierau.hesperd.plist` and run setup again.
+It saves them in `~/.local/state/hesper/serve-flags`, because the upgrade
+deletes the plist.
 
 ### Homebrew tap and official catalog
 
