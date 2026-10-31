@@ -162,6 +162,12 @@ final class LayoutProbe {
                 model.exitFocus()
                 await Harness.sleep(3)
             }
+        case "wall-scroll":
+            // Halfway sideways (columns): a wide band's title stays in view.
+            let wall = root.wall, clip = wall.scrollView.contentView
+            clip.setBoundsOrigin(NSPoint(x: max(0, (wall.frame.width - clip.bounds.width) / 2), y: clip.bounds.minY))
+            wall.scrollView.reflectScrolledClipView(clip)
+            await Harness.sleep(0.8)
         case let value? where value == "settings" || value.hasPrefix("settings:"):
             (NSApp.delegate as? AppDelegate)?.showSettings()
             await Harness.sleep(1)

@@ -410,7 +410,8 @@ that, `kill -QUIT` the daemon: it writes every goroutine to the log.
   header: state dot, name, machine + kind mark. Tiles in `approval` / `question`
   / `error` get a ring and inline actions (Allow / Always / Deny for approvals).
 - **Focus**: ⌘↩ opens a tile full window as `rw --owner` (resizes the PTY to the
-  view); ⌘↩ again or ⌘Esc returns (Esc is the agent's). ⌥⌘← / ⌥⌘→ step through agents in wall order.
+  view); ⌘↩ again, ⌘Esc or a double click on the focus header returns (Esc is
+  the agent's). ⌥⌘← / ⌥⌘→ step through agents in wall order.
 - **Attention**: ⌘J jumps to the next agent needing you (approval, then
   question, then error; oldest first). Menu bar item with counts; a macOS
   notification on entering approval/question/error (not while focused on it).
@@ -948,7 +949,8 @@ agents).
 **Deviations / needs:**
 
 - Esc is never taken from the agent (Claude and Codex use it to interrupt;
-  Claude's double-Esc rewinds). Focus is left with ⌘↩ or ⌘Esc.
+  Claude's double-Esc rewinds). Focus is left with ⌘↩, ⌘Esc or a double
+  click on the focus header.
 - **Need (part D):** cloning has no method. The sheet calls
   `projects.clone {url, machine?}` → `{path}` and, on `-32601`, tells the
   user to clone and choose the folder. Proposed: hesperd clones into
@@ -1156,9 +1158,13 @@ branch suggested from the first line (`Fix the flaky badge test` →
 `fix/flaky-badge-test`), ⌥⌘B toggles (⇧⌘W tidies up, as everywhere). ⌘↩ starts: the spawn's agent takes
 the draft's place (`placements`, remembered in UserDefaults; the agent's
 tile is created in the draft tile's frame — no movement), the first line
-names it, the draft leaves hesperd. ⌥↩ starts and opens the next draft
-right of it. Esc parks the draft (quiet: the shelf in grid + shelf); an
-empty draft is discarded. ⌘W discards with undo. Saving is continuous
+names it, the draft leaves hesperd. The draft stays selected while it is
+written: daemon events (agents' states, the draft's own save echo) keep
+a selected card that is still on the wall, draft or ghost included
+(`WallSelection.kept`; before, any event moved the selection to the
+first agent, and ⌘↩ then scrolled Columns back to the first card). ⌥↩
+starts and opens the next draft right of it. Esc parks the draft (quiet:
+the shelf in grid + shelf); an empty draft is discarded. ⌘W discards with undo. Saving is continuous
 (300 ms after typing stops, at least every 2 s; quit flushes ≤ 2 s);
 local edits win over late echoes until saved. Files and screenshots
 dropped or pasted on a draft insert their paths; images without a file
@@ -1649,7 +1655,9 @@ menu in `AppDelegate`.
 
 - **Selected**: highlight ring (blue, 2 pt; a tile that needs you keeps
   its rose / amber / red ring at 3 pt), no cursor (read-only tiles live
-  in the tile engine app, whose config has `cursor-opacity = 0`; the
+  in the tile engine app, whose config has `cursor-opacity = 0` and
+  `cursor-text = cell-foreground`, so the character under the hidden
+  cursor keeps its color instead of turning background-colored; the
   active tile and focus views are in the read-write app and keep theirs),
   read-only view attach; keys go to the wall. Its footer shows
   `←→↑↓ move · ⏎ type · ⇧-click window` (narrow: `←→↑↓ · ⏎ type`; shelf
@@ -1854,7 +1862,12 @@ state · elapsed, machine · tool. Right: the "typing ⌘esc" chip
 (`focus.typing`; ⌘esc has no pointer equivalent other than the wall), a
 "need you" Pill with the count of agents on the wall that need the user
 (`focus.needsYou`, ⌘J; none: no Pill) and ⋯ (`focus.menu`) with the
-agent's menu (the tile menu without "Open Full Size").
+agent's menu (the tile menu without "Open Full Size"). A double click on
+the header outside its buttons does what "‹ Wall" does, so a double click
+toggles wall and focus as ⌘↩ does. Only the header counts: the terminal
+body keeps its double clicks (word selection, and mouse reporting for
+vim, tmux and the like), and a double click on a button presses it
+twice.
 
 **Tests.** HesperCore: `TileActionsTests` (verbs per state, what folds at
 a width, identifiers), `DraftStartControlTests` (the split button's
@@ -2077,6 +2090,14 @@ the Tokyo Night palette by FNV of the id. `identity` objects are decoded
   between lanes), the wall scrolls sideways as one (deviation from "per
   lane": nested scroll views per lane would fight the wall's own
   scrolling and the edge fades; one sideways scroll keeps today's B).
+  A lane wider than the window keeps its heading's title in view: while
+  the lane is on screen the title follows the visible left edge, clear of
+  the edge fade (its floor grows with the scroll, so it never jumps), and
+  stops where title and ＋ ↗ ⋯ just fit before the lane's end, so it leaves
+  with the lane; the buttons stay at the lane's end (`StickyHeading`,
+  HesperCore, tests `StickyHeadingTests`; an offset update per scroll, no
+  re-layout of the wall). `make -C app layout SHOW=wall-scroll` scrolls
+  the wall halfway sideways before the dump.
 - **C treemap**: **nested** — bands by the sum of their agents' weights
   (4/2/1 as before), then the agents inside each band's rect below its
   header.

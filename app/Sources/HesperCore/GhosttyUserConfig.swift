@@ -107,6 +107,15 @@ public enum TerminalConfigText {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// The read-only tiles' config: `base` without a cursor (a cursor
+    /// means "keys go here"). libghostty paints the cell under a block
+    /// cursor in `cursor-text` (the background by default) even when the
+    /// block itself is transparent, which made that character vanish
+    /// (a prompt suggestion's first letter): it keeps its own color.
+    public static func readOnly(_ base: String) -> String {
+        base + "cursor-opacity = 0\ncursor-text = cell-foreground\n"
+    }
+
     static func format(_ d: Double) -> String {
         d == d.rounded() ? String(Int(d)) : String(d)
     }

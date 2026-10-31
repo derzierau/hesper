@@ -101,6 +101,17 @@ extension WallLayout {
     }
 }
 
+/// The wall's selection after a daemon event.
+public enum WallSelection {
+    /// A selected card still on the wall (an agent, a draft, a ghost card)
+    /// keeps the selection; else (gone, or nothing selected) the first
+    /// agent. `cards`: the wall's card ids.
+    public static func kept(_ selected: String?, cards: [String], firstAgent: String?) -> String? {
+        if let selected, cards.contains(selected) { return selected }
+        return firstAgent
+    }
+}
+
 /// What a key sends to an agent's terminal when the app forwards it itself
 /// (the moment between "start typing" on a selected tile and its read-write
 /// terminal taking the keyboard). Plain text, ⏎, ⌫, esc, ⇥, arrows and
