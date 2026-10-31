@@ -148,7 +148,7 @@ func (r *Registry) Pack(ctx context.Context, id string, have []string, dir strin
 	}
 	var snap wire.Agent
 	if err == nil {
-		snap = a.Agent
+		snap = r.view(a) // its loop travels (handoff AgentInfo.Loop)
 	}
 	r.mu.Unlock()
 	if err != nil {
@@ -472,9 +472,12 @@ func (r *Registry) Import(ctx context.Context, dir string) (wire.Agent, error) {
 	if m.Move != nil && m.Move.Note && resume {
 		go r.deliverNote(local, a.gen, handoverNote(m, placed, r.machine))
 	}
+	// It stays in its loop (the manifest's; a source without loops has
+	// none: a new one).
+	r.assign(a, AssignInfo{Loop: m.Agent.Loop}) // loopwork.go
 	r.touchProject(placed.Project, now)
 	r.changed(a)
-	return a.Agent, nil
+	return r.view(a), nil
 }
 
 // handoverNote is the first message a moved agent gets.

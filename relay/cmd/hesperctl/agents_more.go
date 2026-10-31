@@ -297,7 +297,8 @@ func backgroundCommand(ctx context.Context, f *flag.FlagSet, args []string) erro
 	})
 }
 
-// finished: what tidy closes (the app's CloseRules.finishedStates).
+// finished: what tidy closes (the app's CloseRules.finishedStates). Never
+// a background or a service agent (the Steward, its planners).
 func finished(state string) bool {
 	return state == wire.StateDone || state == wire.StateIdle || state == wire.StateExited
 }
@@ -333,7 +334,7 @@ func tidyCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 		var out []closed
 		var first error
 		for _, a := range list {
-			if !finished(a.State) || a.Background || dir != "" && !within(a.Dir(), dir) && !within(a.Project, dir) {
+			if !finished(a.State) || a.Background || a.Service != "" || dir != "" && !within(a.Dir(), dir) && !within(a.Project, dir) {
 				continue
 			}
 			rec := closed{ID: a.ID, Name: a.Name, State: a.State}

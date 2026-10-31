@@ -5111,6 +5111,100 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
 **Status: built and unit-tested headless only** (HesperCoreTests,
 `go test` in the fake). Not run against a real hesperd with loops yet.
 
+### As built — loops (agents)
+
+Code: `internal/agents/loopwork.go` (the registry's side),
+`loophook.go` (the `Loops` and `Steward` interfaces), `loopscall.go`
+(policy), `internal/endings` (the classifier). The loops store
+(`internal/loops`) and the Steward (`internal/steward`) plug in through
+`Options.Loops` and `Options.Steward`; either may be nil.
+
+- **Service agents.** `Registry.SpawnService(p, service)` starts an agent
+  with `Agent.service` (`steward`, `planner`; persisted) set before its
+  process starts. A service agent is exempt from closing when it finishes
+  in the background (its turn ends, or its process ends on its own: it
+  stays, exited, for the Steward to restart) and from `hesperctl tidy`.
+- **Assign.** An agent is put in a loop where it is inserted, not on each
+  spawn path: `Spawn` (and `SpawnFrom`, `SpawnService`), `SpawnSession`
+  and `Import`. That covers spawns, resume, fork, continue-as, bring,
+  `Handoff.Spawn` and gateway imports. `Loops.Assign` gets the agent's ref
+  (`<loops node>/<local id>`), the agent, its parent's ref (a parent on
+  this Mac only; one on another Mac is the controller's to link), the
+  source session's ref for resume, fork and continue-as (the session
+  record's key, `<sessions node>:<kind>:<session id>`), and the spawn's
+  `loop` and `milestone`, which win. A move carries the loop in the
+  manifest (`AgentInfo.loop`; an older source sends none and the agent
+  gets a new loop). Service agents are never assigned.
+- **`Agent.loop`** is filled from `Loops.LoopOf(ref)` whenever this Mac's
+  agents are listed, fetched or notified; it is never kept in the
+  registry nor written to `agents.json` (the store's links are the
+  truth).
+- **Endings.** When a turn ends (from `working`, `approval` or
+  `question` to `done` or `idle`), `Agent.ending` (persisted) is set from
+  `internal/endings`: phrases over the last three paragraphs of the final
+  message (at most its last 2 KiB), English and German, in the order
+  `asks` > `yourStep` > `waits` > `offer` > `done`; `asks` also for a
+  final question to the reader. A hook's message (Claude's `Stop`,
+  Codex's `notify`) is classified in `HookResult` before the registry's
+  lock; a Codex notify that arrives after the screen showed it idle
+  classifies the turn again. A turn that ends without a hook (Codex's
+  screen, a tracked shell) uses the last message only when it came during
+  that turn, else ends `done`.
+- **Events.** Each settled turn and each removal (`removeLocked`, the
+  single exit) is queued for `Loops.AgentSettled` / `AgentClosed` and
+  `Steward.AgentSettled` / `AgentClosed`, delivered in order by one
+  goroutine the registry owns (stopped and drained by `Close`). The
+  queue holds 256 events; over that the oldest is dropped and counted
+  (logged at 1, 2, 4, … drops). Hooks and the lock never wait on the
+  store. A settled event carries the agent (with its loop), the ending
+  and the turn's final message (at most 64 KiB; empty when the turn had
+  none).
+- **Closed-work record.** `AgentClosed` carries the reason (`closed`,
+  `finished-in-background`, `removed`, `moved` with `To`, the agent it
+  became), the agent (its summary), its last ending and its final
+  message; the store keeps an excerpt.
+- **Report to parent.** `SpawnParams.reportToParent` on a spawn with a
+  parent sets `Agent.reportToParent` (persisted; ignored without a
+  parent). When such a child's turn ends, its parent is told one fixed
+  line, never free text from the child:
+  `[hesper] child <id> settled: <ending>; run hesperctl result <id>`.
+  The line is typed into the parent (hesperd's own input, no dispatch;
+  pasted, then Enter) only once the parent is `done` or `idle` and no
+  read-write attach typed into it in the last 30 s
+  (`ptyhost.Term.LastInput`); until then it waits, one per child with the
+  latest ending, at most 32 per parent (the oldest dropped), and goes out
+  at the parent's next quiet state or when the 30 s are up. Several
+  waiting lines go out as one paste. Only Claude and Codex parents (a
+  shell would run the line), only on the same Mac: a parent on another
+  Mac is not told (not done in v1). Waiting reports are not persisted and
+  go with a removed parent.
+- **Policy** (`loopscall.go`; a person may do everything). The calling
+  agent is found as for the agent tree (`callerOf`); the store and the
+  Steward get `Caller{agent, ref, loop, service}` and the params without
+  `caller`. `pkg/wire` sends `caller` with `loops.*`, `goals.*`,
+  `steward.*` and `drafts.save`. For an agent caller:
+  - reads (`loops.list`, `loops.get`, `loops.settings.get`, `goals.list`,
+    `steward.status`): anything;
+  - a person's only: `steward.set`, `goals.accept`, `goals.remove`,
+    `loops.settings.set`, and any `loops.save` or `goals.save` that sets a
+    loop's, goal's or milestone's status to `done` or `dropped`;
+  - `loops.merge`, `loops.split`: only the Steward (service `steward`) at
+    level act;
+  - other writes (`loops.save`, `loops.link`, `loops.item`, `goals.save`,
+    `goals.item`, `goals.file`, `steward.plan`, `steward.inbox`): a service
+    agent may; any other agent only `loops.item` and `loops.link` of its
+    own loop;
+  - `drafts.save` by the Steward: refused at level watch;
+  - a service agent starting agents (`agents.spawn`, `sessions.resume`,
+    `fork`, `continueAs`): refused, except the Steward at level act
+    starting a draft (`SpawnParams.draft`), never with `letParentAnswer`.
+    Planners are started in hesperd (`SpawnService`), not through the
+    socket.
+
+  Refusals are `forbidden` and name the rule. Every write by an agent,
+  allowed or refused, is in `audit.log` (`agent.request` /
+  `agent.refused`); reads are not.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

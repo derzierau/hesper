@@ -37,6 +37,9 @@ type SessionSpawn struct {
 	// resumes or forks a session (its child), or by a controller.
 	Parent string
 	Depth  int
+	// Source (loops): the session's ref, "<sessions node>:<kind>:<session
+	// id>": the new agent joins that session's loop.
+	Source string
 }
 
 // SpawnSession starts an agent that resumes (or forks) a conversation.
@@ -113,9 +116,10 @@ func (r *Registry) SpawnSession(p SessionSpawn) (wire.Agent, error) {
 		delete(r.agents, local)
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "cannot start %s: %v", profile.Argv[0], err)
 	}
+	r.assign(a, AssignInfo{SourceSession: p.Source}) // loopwork.go
 	r.touchProject(dir, now)
 	r.changed(a)
-	return a.Agent, nil
+	return r.view(a), nil
 }
 
 // forkArgv is the command line of a fork (argv: the profile's, filled).

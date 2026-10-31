@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/derzierau/hesper/relay/internal/endings"
 	"github.com/derzierau/hesper/relay/internal/lockwatch"
 	"github.com/derzierau/hesper/relay/internal/ptyhost"
 	"github.com/derzierau/hesper/relay/internal/vt"
@@ -182,6 +183,14 @@ type Registry struct {
 	cpRun   sync.Mutex
 	cpFile  sync.Mutex
 
+	// loops (loopwork.go): the settled and closed events for the loops
+	// store and the Steward; hooking, the agent whose hook runs now (the
+	// lock is held).
+	events  *loopEvents
+	hooking *agent
+	// reports to parents waiting for them, by the parent's local id.
+	reports map[string]*parentReports
+
 	// review (review.go): the agents' review logs (reviewlog.go); one
 	// accept, reject or send-back at a time.
 	reviewOnce sync.Once
@@ -250,6 +259,10 @@ type agent struct {
 	// daemon restart (restore); kept until it settles after starting.
 	before      string
 	beforeSince time.Time
+	// loopwork.go: when its current turn started; settleDue, the turn
+	// ended during a hook (HookResult settles it once the message is in).
+	turnStart time.Time
+	settleDue bool
 }
 
 // since is when an agent entered state, now: an agent the daemon
@@ -306,6 +319,7 @@ func Open(opt Options) (*Registry, error) {
 		return nil, err
 	}
 	go r.saver()
+	r.events = newLoopEvents(opt.Loops, opt.Steward, opt.Logf) // loopwork.go
 	for _, rec := range records {
 		r.restore(rec)
 	}
@@ -391,7 +405,7 @@ func (r *Registry) Working() bool {
 func (r *Registry) listLocked() []wire.Agent {
 	out := make([]wire.Agent, 0, len(r.agents))
 	for _, a := range r.agents {
-		out = append(out, a.Agent)
+		out = append(out, r.view(a))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].Created.Equal(out[j].Created) {
@@ -410,7 +424,7 @@ func (r *Registry) Get(id string) (wire.Agent, error) {
 	if err != nil {
 		return wire.Agent{}, err
 	}
-	return a.Agent, nil
+	return r.view(a), nil
 }
 
 // Term is an agent's terminal (for attach).
@@ -448,7 +462,11 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 	if a.State != state {
 		a.StateSince = a.since(state)
 	}
-	finished := a.Background && turnEnded(a.State, state)
+	ended := turnEnded(a.State, state)
+	if turnBegins(a.State, state) {
+		a.turnStart = time.Now()
+	}
+	finished := a.Background && ended
 	if state == wire.StateDone && a.State != state {
 		r.turnCheckpoint(a) // checkpoint.go
 	}
@@ -457,6 +475,12 @@ func (r *Registry) setState(a *agent, state string, att *wire.Attention) {
 	}
 	a.State, a.Attention = state, att
 	r.changed(a)
+	if ended {
+		r.turnSettled(a) // loopwork.go
+	}
+	if state == wire.StateDone || state == wire.StateIdle {
+		r.deliverReports(a) // loopwork.go: its children's, now it is quiet
+	}
 	if finished {
 		r.finishedInBackground(a) // close.go
 	}
@@ -471,7 +495,7 @@ func attentionEqual(x, y *wire.Attention) bool {
 
 // changed tells subscribers and schedules a save (the lock is held).
 func (r *Registry) changed(a *agent) {
-	snap := a.Agent
+	snap := r.view(a)
 	for s := range r.subs {
 		s.push(snap.ID, &snap)
 	}
@@ -480,6 +504,20 @@ func (r *Registry) changed(a *agent) {
 
 // Spawn starts a new agent.
 func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
+	return r.spawn(p, "", nil)
+}
+
+// SpawnFrom starts a new agent that continues the session source (a
+// session ref, "<sessions node>:<kind>:<session id>"; sessions.continueAs):
+// it joins that session's loop unless p names one.
+func (r *Registry) SpawnFrom(p wire.SpawnParams, source string) (wire.Agent, error) {
+	return r.spawn(p, source, nil)
+}
+
+// spawn starts a new agent from source (a session ref, or ""); prepare
+// (optional) changes it before its process starts (the lock is held): a
+// service agent's role.
+func (r *Registry) spawn(p wire.SpawnParams, source string, prepare func(*agent)) (wire.Agent, error) {
 	if p.Machine != "" && p.Machine != r.machine {
 		return wire.Agent{}, wire.Errorf(wire.CodeUnavailable, "machine %s is not connected", p.Machine)
 	}
@@ -565,6 +603,8 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 		Parent: p.Parent, Depth: p.Depth, LetParentAnswer: p.LetParentAnswer && p.Parent != "",
 		Track:      p.Track && profile.Kind == wire.KindShell, // shell.go
 		ReviewBase: reviewBase,                                // review.go
+		// loopwork.go: its parent hears when its turns end
+		ReportToParent: p.ReportToParent && p.Parent != "",
 	}}
 	if a.Parent == "" {
 		a.Depth = 0
@@ -578,14 +618,18 @@ func (r *Registry) Spawn(p wire.SpawnParams) (wire.Agent, error) {
 	if a.Kind == wire.KindShell {
 		a.shellTask = task // typed once the prompt is ready (shell.go)
 	}
+	if prepare != nil {
+		prepare(a)
+	}
 	r.agents[local] = a
 	if err := r.start(a, profile, false); err != nil {
 		delete(r.agents, local)
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "cannot start %s: %v", profile.Argv[0], err)
 	}
+	r.assign(a, AssignInfo{SourceSession: source, Loop: p.Loop, Milestone: p.Milestone}) // loopwork.go
 	r.touchProject(project, now)
 	r.changed(a)
-	return a.Agent, nil
+	return r.view(a), nil
 }
 
 // argv is the command line of a profile for an agent: placeholders
@@ -753,9 +797,10 @@ func (r *Registry) exited(local string, gen int, e *wire.Exit) {
 		}
 		r.setState(a, wire.StateError, &wire.Attention{Kind: "error", Title: title, Detail: detail})
 	} else {
-		if a.Background && a.Ended == "" {
+		if a.Background && a.Ended == "" && a.Service == "" {
 			// A background agent that ended on its own (or was stopped)
-			// has finished: closed (close.go).
+			// has finished: closed (close.go). Not a service agent:
+			// hesperd runs it and restarts it (loopwork.go).
 			r.removeLocked(a, wire.ReasonFinishedInBackground)
 			return
 		}
@@ -999,7 +1044,7 @@ func (r *Registry) Resume(id string) (wire.Agent, error) {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "cannot start %s: %v", profile.Argv[0], err)
 	}
 	r.changed(a)
-	return a.Agent, nil
+	return r.view(a), nil
 }
 
 // notResumed: an agent that could not be started again is an error with
@@ -1193,10 +1238,13 @@ func (r *Registry) HookResult(p wire.HookParams) (wire.HookResult, error) {
 	if p.Source != wire.KindClaude && p.Source != wire.KindCodex {
 		return wire.HookResult{}, wire.Errorf(wire.CodeInvalid, "source must be claude or codex")
 	}
-	summary, message := "", ""
+	summary, message, ending := "", "", ""
 	if event == "Stop" || (event == "notify" && str(data, "type") == "agent-turn-complete") {
 		message = lastMessage(data)
 		summary = summarize(message)
+		if strings.TrimSpace(message) != "" {
+			ending, _ = endings.Classify(message) // loops, before the lock
+		}
 	}
 	evidenceOf := "" // review: recorded once the lock is released
 	defer func() {
@@ -1219,9 +1267,14 @@ func (r *Registry) HookResult(p wire.HookParams) (wire.HookResult, error) {
 			a.sessionSeen = true
 		}
 	}
+	r.hooking = a // a turn that ends here settles below, with its message
 	r.hookEvent(a, p.Source, event, data, summary)
+	r.hooking = nil
 	if message = strings.TrimSpace(message); message != "" {
 		r.setLastMessage(a, message) // agent tree: agents.result
+	}
+	if a.settleDue || message != "" && (a.State == wire.StateDone || a.State == wire.StateIdle) {
+		r.settle(a, ending) // loopwork.go
 	}
 	if event == "SessionStart" {
 		return wire.HookResult{Context: TileNaming}, nil
@@ -1309,6 +1362,7 @@ func (r *Registry) Close() {
 			a.term.Stop(2 * time.Second)
 		}
 	}
+	r.stopReports() // loopwork.go
 	for s := range r.subs {
 		s.close()
 	}
@@ -1320,6 +1374,7 @@ func (r *Registry) Close() {
 		case <-deadline:
 		}
 	}
+	r.events.stop() // after quit: what is queued goes out first
 	close(r.saveCh)
 	<-r.saverEnd
 	r.writeState()

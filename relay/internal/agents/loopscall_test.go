@@ -1,0 +1,137 @@
+package agents
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/derzierau/hesper/relay/pkg/wire"
+)
+
+// The loops policy (loopscall.go): what agents may call.
+
+func ptr[T any](v T) *T { return &v }
+
+// newStewardHarness is a harness with a fakeLoops and a fakeSteward.
+func newStewardHarness(t *testing.T) (*harness, *fakeLoops) {
+	h := newHarness(t)
+	h.close()
+	l := newFakeLoops()
+	h.opt.Loops, h.opt.Steward = l, &fakeSteward{}
+	h.open()
+	return h, l
+}
+
+func TestLoopsPolicyPerson(t *testing.T) {
+	h, l := newStewardHarness(t)
+	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet, wire.MethodLoopsMerge} {
+		allowed(t, m, h.call(m, map[string]any{}, nil))
+	}
+	allowed(t, "close a loop", h.call(wire.MethodLoopsSave, wire.LoopSaveParams{ID: "lp-1", Status: ptr(wire.LoopDone)}, nil))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, c := range l.calls {
+		if c != (Caller{}) {
+			t.Fatalf("a person's call as %+v", c)
+		}
+	}
+}
+
+func TestLoopsPolicyAgent(t *testing.T) {
+	h, l := newStewardHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	loop := a.Loop
+	// Reads: anything; the store learns who calls.
+	allowed(t, "list", h.callAs(a.ID, wire.MethodLoopsList, wire.LoopsListParams{}, nil))
+	l.mu.Lock()
+	got := l.calls[len(l.calls)-1]
+	l.mu.Unlock()
+	if got != (Caller{Agent: a.ID, Ref: "n1/" + strings.TrimPrefix(a.ID, "L/"), Loop: loop}) {
+		t.Fatalf("caller %+v", got)
+	}
+	allowed(t, "goals.list", h.callAs(a.ID, wire.MethodGoalsList, wire.GoalsListParams{}, nil))
+	// Its own loop's items and links.
+	allowed(t, "own item", h.callAs(a.ID, wire.MethodLoopsItem, wire.LoopItemParams{ID: loop, Item: wire.LoopItem{Text: "push"}}, nil))
+	allowed(t, "own link", h.callAs(a.ID, wire.MethodLoopsLink, wire.LoopLinkParams{ID: loop}, nil))
+	forbidden(t, "another loop's item", h.callAs(a.ID, wire.MethodLoopsItem, wire.LoopItemParams{ID: "lp-other"}, nil))
+	forbidden(t, "another loop's link", h.callAs(a.ID, wire.MethodLoopsLink, wire.LoopLinkParams{ID: "lp-other"}, nil))
+	// A person's only, and what only the Steward does.
+	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet,
+		wire.MethodLoopsMerge, wire.MethodLoopsSplit, wire.MethodLoopsSave, wire.MethodGoalsSave, wire.MethodGoalsItem, wire.MethodGoalsFile,
+		wire.MethodStewardPlan, wire.MethodStewardInbox} {
+		forbidden(t, m, h.callAs(a.ID, m, map[string]any{"id": loop}, nil))
+	}
+	err := h.callAs(a.ID, wire.MethodLoopsSave, wire.LoopSaveParams{ID: loop, Status: ptr(wire.LoopDone)}, nil)
+	forbidden(t, "close its loop", err)
+	if !strings.Contains(err.Error(), "a person does") {
+		t.Fatalf("message %q", err)
+	}
+	// Audited.
+	var refused, ok int
+	for _, line := range auditLines(t, h) {
+		if !strings.HasPrefix(line["method"].(string), "loops.") && !strings.HasPrefix(line["method"].(string), "goals.") && !strings.HasPrefix(line["method"].(string), "steward.") {
+			continue
+		}
+		switch line["event"] {
+		case "agent.refused":
+			refused++
+		case "agent.request":
+			ok++
+		}
+	}
+	if refused != 15 || ok != 2 {
+		t.Fatalf("audit: %d refused, %d requests (reads are not audited)", refused, ok)
+	}
+}
+
+func TestLoopsPolicySteward(t *testing.T) {
+	h, l := newStewardHarness(t)
+	s, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServiceSteward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServicePlanner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Writes, but nothing a person's only.
+	allowed(t, "save a loop", h.callAs(s.ID, wire.MethodLoopsSave, wire.LoopSaveParams{ID: "lp-1", Title: ptr("Ship it")}, nil))
+	allowed(t, "an item anywhere", h.callAs(s.ID, wire.MethodLoopsItem, wire.LoopItemParams{ID: "lp-7"}, nil))
+	allowed(t, "a milestone", h.callAs(p.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Title: ptr("Beta"), Status: ptr(wire.MilestoneProposed)}}, nil))
+	allowed(t, "its inbox", h.callAs(s.ID, wire.MethodStewardInbox, nil, nil))
+	forbidden(t, "close a loop", h.callAs(s.ID, wire.MethodLoopsSave, wire.LoopSaveParams{ID: "lp-1", Status: ptr(wire.LoopDropped)}, nil))
+	forbidden(t, "finish a goal", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Goal: &wire.GoalPatch{ID: "gl-1", Status: ptr(wire.LoopDone)}}, nil))
+	forbidden(t, "finish a milestone", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{ID: "ms-1", Status: ptr(wire.LoopDone)}}, nil))
+	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet} {
+		forbidden(t, m, h.callAs(s.ID, m, map[string]any{}, nil))
+	}
+	// Merge and split: the Steward at level act only.
+	forbidden(t, "merge at suggest", h.callAs(s.ID, wire.MethodLoopsMerge, wire.LoopMergeParams{Into: "lp-1", From: "lp-2"}, nil))
+	l.setLevel(wire.StewardAct)
+	allowed(t, "merge at act", h.callAs(s.ID, wire.MethodLoopsMerge, wire.LoopMergeParams{Into: "lp-1", From: "lp-2"}, nil))
+	allowed(t, "split at act", h.callAs(s.ID, wire.MethodLoopsSplit, wire.LoopSplitParams{ID: "lp-1", Ref: "n1/x"}, nil))
+	forbidden(t, "a planner merges", h.callAs(p.ID, wire.MethodLoopsMerge, wire.LoopMergeParams{Into: "lp-1", From: "lp-2"}, nil))
+	// Drafts: from level suggest on.
+	l.setLevel(wire.StewardWatch)
+	forbidden(t, "a draft at watch", h.callAs(s.ID, "drafts.save", wire.DraftSaveParams{Draft: wire.Draft{Text: "follow up"}}, nil))
+	l.setLevel(wire.StewardSuggest)
+	allowed(t, "a draft at suggest", h.callAs(s.ID, "drafts.save", wire.DraftSaveParams{Draft: wire.Draft{Text: "follow up"}}, nil))
+	allowed(t, "a person's draft", h.call("drafts.save", wire.DraftSaveParams{Draft: wire.Draft{Text: "mine"}}, nil))
+	// Starting agents: only drafts, only at act, never let-parent-answer.
+	_, err = h.spawnAs(s.ID, wire.SpawnParams{Task: "small job"})
+	forbidden(t, "a spawn", err)
+	_, err = h.spawnAs(s.ID, wire.SpawnParams{Task: "small job", Draft: "d-abc"})
+	forbidden(t, "a draft start at suggest", err)
+	l.setLevel(wire.StewardAct)
+	_, err = h.spawnAs(s.ID, wire.SpawnParams{Task: "small job", Draft: "d-abc", LetParentAnswer: true})
+	forbidden(t, "let-parent-answer", err)
+	child, err := h.spawnAs(s.ID, wire.SpawnParams{Task: "small job", Draft: "d-abc"})
+	allowed(t, "a draft start at act", err)
+	if child.Parent != s.ID || child.LetParentAnswer {
+		t.Fatalf("draft start %+v", child)
+	}
+	_, err = h.spawnAs(p.ID, wire.SpawnParams{Task: "small job", Draft: "d-abc"})
+	forbidden(t, "a planner starts a draft", err)
+	forbidden(t, "a resume", h.callAs(s.ID, "sessions.resume", map[string]any{"id": "x"}, nil))
+	// The Steward's own calls reach it as the Steward.
+	allowed(t, "steward.plan", h.callAs(s.ID, wire.MethodStewardPlan, wire.StewardPlanParams{Scope: "p-1"}, nil))
+}

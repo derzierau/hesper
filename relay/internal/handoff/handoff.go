@@ -116,6 +116,9 @@ type AgentInfo struct {
 	// ReviewBase (review): the agent's review base on the source; the
 	// target keeps it when the bundle brought that commit.
 	ReviewBase string `json:"reviewBase,omitempty"`
+	// Loop (loops): the loop the agent works in; the moved agent stays
+	// in it. Absent from older sources: the target puts it in a new one.
+	Loop string `json:"loop,omitempty"`
 }
 
 // ProjectInfo is where its code is.
@@ -273,7 +276,7 @@ func PackCheckpoint(ctx context.Context, a wire.Agent, machine string, have []st
 	m := &Manifest{Version: Version, ID: newID(), Created: time.Now().Unix()}
 	m.Source.Machine, m.Source.Home = machine, p.Home
 	m.Agent = AgentInfo{LocalID: localPart(a.ID), Kind: a.Kind, Profile: a.Profile, Name: a.Name, NameBy: a.NameBy, Task: a.Task, Created: a.Created,
-		Parent: a.Parent, Depth: a.Depth, LetParentAnswer: a.LetParentAnswer, Track: a.Track, ReviewBase: a.ReviewBase}
+		Parent: a.Parent, Depth: a.Depth, LetParentAnswer: a.LetParentAnswer, Track: a.Track, ReviewBase: a.ReviewBase, Loop: a.Loop}
 	m.Project = ProjectInfo{Path: a.Project, Worktree: a.Worktree, Branch: a.Branch}
 	if r := g.repoInfo(a.Dir()); r != nil && r.base != "" {
 		m.Project = ProjectInfo{Path: r.path, Worktree: r.worktree, Branch: r.branch, MainBranch: r.mainBranch, Base: r.base, Remote: r.remote,
