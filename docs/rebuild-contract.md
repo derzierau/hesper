@@ -5090,6 +5090,28 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
 **Status: built and unit-tested headless only** (HesperCoreTests,
 `go test` in the fake). Not run against a real hesperd with loops yet.
 
+### As built — loops (app sheets)
+
+Code: `app/Sources/Hesper/Loops/` (the Hesper target) on the app core
+above.
+
+- **LoopHub** (`Loops/LoopHub.swift`), one per daemon connection like
+  ReviewHub (`model.loopHub`). On every connect (`AppModel.loopSaw`) it
+  lists `loops.list`, `goals.list`, `steward.status` and
+  `loops.settings.get` at once, off the main actor; an older hesperd
+  (-32601) leaves `available` false. Notifications are decoded on the
+  reader thread (`LoopsEvent.decode`) into a bounded queue (4,096, the
+  oldest dropped), and applied to `store` on the main actor once per
+  120 ms batch; events that arrive while a list is out are replayed on
+  top of it. After each batch it rebuilds `chips` (loop id →
+  `LoopChip`: the title cut to 28 characters, who acts next, looks
+  done, the next text, open items on the person) and `onYouCount` (the
+  board's "your move"). `chip(for: agent)` reads `Agent.loop`. Writes go
+  through `run { client in … }` (off the main actor; a returned loop is
+  applied at once) and `stewardSet`; both return nil or the inline
+  error text (`LoopsErrorText`: forbidden says only a person can do it,
+  -32601 says to update hesperd).
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
