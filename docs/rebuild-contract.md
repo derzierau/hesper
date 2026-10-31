@@ -410,7 +410,8 @@ that, `kill -QUIT` the daemon: it writes every goroutine to the log.
   header: state dot, name, machine + kind mark. Tiles in `approval` / `question`
   / `error` get a ring and inline actions (Allow / Always / Deny for approvals).
 - **Focus**: ⌘↩ opens a tile full window as `rw --owner` (resizes the PTY to the
-  view); ⌘↩ again or ⌘Esc returns (Esc is the agent's). ⌥⌘← / ⌥⌘→ step through agents in wall order.
+  view); ⌘↩ again, ⌘Esc or a double click on the focus header returns (Esc is
+  the agent's). ⌥⌘← / ⌥⌘→ step through agents in wall order.
 - **Attention**: ⌘J jumps to the next agent needing you (approval, then
   question, then error; oldest first). Menu bar item with counts; a macOS
   notification on entering approval/question/error (not while focused on it).
@@ -947,7 +948,8 @@ agents).
 **Deviations / needs:**
 
 - Esc is never taken from the agent (Claude and Codex use it to interrupt;
-  Claude's double-Esc rewinds). Focus is left with ⌘↩ or ⌘Esc.
+  Claude's double-Esc rewinds). Focus is left with ⌘↩, ⌘Esc or a double
+  click on the focus header.
 - **Need (part D):** cloning has no method. The sheet calls
   `projects.clone {url, machine?}` → `{path}` and, on `-32601`, tells the
   user to clone and choose the folder. Proposed: hesperd clones into
@@ -1842,7 +1844,12 @@ state · elapsed, machine · tool. Right: the "typing ⌘esc" chip
 (`focus.typing`; ⌘esc has no pointer equivalent other than the wall), a
 "need you" Pill with the count of agents on the wall that need the user
 (`focus.needsYou`, ⌘J; none: no Pill) and ⋯ (`focus.menu`) with the
-agent's menu (the tile menu without "Open Full Size").
+agent's menu (the tile menu without "Open Full Size"). A double click on
+the header outside its buttons does what "‹ Wall" does, so a double click
+toggles wall and focus as ⌘↩ does. Only the header counts: the terminal
+body keeps its double clicks (word selection, and mouse reporting for
+vim, tmux and the like), and a double click on a button presses it
+twice.
 
 **Tests.** HesperCore: `TileActionsTests` (verbs per state, what folds at
 a width, identifiers), `DraftStartControlTests` (the split button's
