@@ -54,9 +54,18 @@ with tempfile.TemporaryDirectory(prefix='hesper-release-test-') as temporary:
             (tools/tool).chmod(0o755)
         stubs = temp/'stubs'
         stubs.mkdir()
-        for tool in ('codesign', 'launchctl'):
-            (stubs/tool).write_text(stub)
-            (stubs/tool).chmod(0o755)
+        (stubs/'codesign').write_text(stub)
+        (stubs/'codesign').chmod(0o755)
+        # launchctl bootout returns before the old daemon is gone: print still
+        # finds it twice, and bootstrap fails meanwhile, as launchd does.
+        (stubs/'launchctl').write_text(stub + '''state="$HESPER_TEST_LOG.loaded"
+case "$1" in
+  bootout) echo 2 > "$state" ;;
+  print) n=$(cat "$state" 2>/dev/null || echo 0); [ "$n" -gt 0 ] || exit 113; echo $((n - 1)) > "$state" ;;
+  bootstrap) [ "$(cat "$state" 2>/dev/null || echo 0)" -eq 0 ] || { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; } ;;
+esac
+''')
+        (stubs/'launchctl').chmod(0o755)
         home = temp/'home & space'
         home.mkdir()
         env = dict(os.environ, HOME=str(home), PATH=f'{stubs}:/usr/bin:/bin', HESPER_TEST_LOG=str(temp/'calls'))

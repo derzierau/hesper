@@ -40,6 +40,13 @@ for target in "$HOME/.claude/skills/hesper" "$HOME/.agents/skills/hesper"; do
 done
 domain="gui/$(id -u)"
 launchctl bootout "$domain/de.olezierau.hesperd" 2>/dev/null || true
+# bootout returns before the old daemon is gone, and bootstrapping meanwhile
+# fails with "Input/output error": wait for it, at most 10 s.
+tries=0
+while [ "$tries" -lt 50 ] && launchctl print "$domain/de.olezierau.hesperd" >/dev/null 2>&1; do
+  sleep 0.2
+  tries=$((tries + 1))
+done
 launchctl bootstrap "$domain" "$plist"
 launchctl kickstart "$domain/de.olezierau.hesperd"
 echo 'Hesper is ready. In Codex, enable hooks once using /hooks.'
