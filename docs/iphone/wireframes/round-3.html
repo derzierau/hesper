@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hesper iPhone wireframes, round 3</title>
+<style>
+  /* Round 3: refined. Theme tokens from app/Sources/Hesper/UI/Theme.swift, Dusk by default, .day for Daylight. */
+  :root {
+    --bg: #0F1020; --surface: #171A2E; --tile: #13152A; --line: #272B48; --text: #D7DBF5; --text2: #B3B6CF; --dim: #7A80A8; --dim2: #505578;
+    --signal: #FF6F91; --working: #8F9CFF; --question: #FFCF5C; --done: #7FE0A8; --error: #FF5D5D; --horizon: #FFB36B;
+    --term: #1A1B26; --tt: #A9B1D6; --tb: #C0CAF5; --ty: #E0AF68; --tg: #9ECE6A; --tbl: #7AA2F7; --tr: #F7768E;
+    --glass: rgba(30, 33, 58, .72); --glassedge: rgba(255,255,255,.10); --onaccent: #0F1020;
+    --page: #f4f4f8; --pageink: #1b1d33; --pagedim: #61668c;
+  }
+  .day {
+    --bg: #F6F5FA; --surface: #ECEBF3; --tile: #FFFFFF; --line: #DFDEEA; --text: #1B1D33; --text2: #424457; --dim: #61668C; --dim2: #A0A2BB;
+    --signal: #C9305C; --working: #4B55D6; --question: #8C6300; --done: #17804F; --error: #D93636;
+    --glass: rgba(255,255,255,.72); --glassedge: rgba(0,0,0,.06); --onaccent: #FFFFFF;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px 48px; font: 13px/1.35 -apple-system, "SF Pro Text", system-ui, sans-serif; color: var(--pageink); background: var(--page); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lede { color: var(--pagedim); margin: 0 0 24px; max-width: 70ch; }
+  .strip { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  figure { margin: 0; width: 300px; }
+  figure.wide { width: 650px; max-width: 100%; }
+  figcaption { font-size: 12px; color: var(--pagedim); margin-top: 8px; }
+  figcaption b { color: var(--pageink); }
+
+  .phone { width: 300px; height: 650px; border-radius: 44px; border: 6px solid #0b0b10; position: relative; background: var(--bg); color: var(--text); overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(20,20,40,.18); }
+  .phone::before { content: ""; position: absolute; top: 9px; left: 50%; width: 82px; height: 24px; margin-left: -41px; border-radius: 12px; background: #000; z-index: 5; }
+  .phone.land { width: 650px; height: 300px; max-width: 100%; }
+  .phone.land::before { top: 50%; left: 9px; width: 24px; height: 82px; margin: -41px 0 0; }
+  .sb { height: 40px; flex: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 26px 0; font-size: 11px; font-weight: 600; }
+  .content { flex: 1; min-height: 0; padding: 0 14px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .large { font-size: 26px; font-weight: 700; letter-spacing: -.3px; margin: 0 0 2px; }
+  .sec { font-size: 11px; font-weight: 600; color: var(--dim); margin: 8px 2px 0; display: flex; gap: 6px; align-items: center; text-transform: uppercase; letter-spacing: .05em; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .grow { flex: 1; min-width: 0; }
+  .t { font-weight: 600; }
+  .s { color: var(--dim); font-size: 11px; }
+  .s2 { color: var(--text2); }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+  .card { background: var(--tile); border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .list { background: var(--tile); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .li { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); }
+  .li:first-child { border-top: 0; }
+  .off { opacity: .45; }
+
+  .m { width: 8px; height: 8px; flex: none; border-radius: 1.5px; }
+  .m.signal { background: var(--signal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 22%, transparent); }
+  .m.question { background: var(--question); } .m.working { background: var(--working); } .m.done { background: var(--done); } .m.error { background: var(--error); }
+  .m.idle { border: 1.5px solid var(--dim); } .m.start { border: 1.5px solid var(--working); }
+  .m.exited { border: 1.5px solid var(--dim); background: linear-gradient(135deg, transparent 43%, var(--dim) 43% 57%, transparent 57%); }
+
+  .btn { border-radius: 99px; padding: 6px 10px; font-size: 12px; font-weight: 500; text-align: center; background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); white-space: nowrap; }
+  .btn.p { background: var(--working); color: var(--onaccent); font-weight: 600; }
+  .btn.q { background: color-mix(in srgb, var(--question) 18%, transparent); color: var(--question); }
+  .btn.sm { padding: 4px 9px; font-size: 11px; }
+  .pill { font-size: 10px; border-radius: 99px; padding: 2px 7px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text2); white-space: nowrap; }
+  .pill.sig { background: color-mix(in srgb, var(--signal) 16%, transparent); color: var(--signal); }
+  .pill.ok { background: color-mix(in srgb, var(--done) 16%, transparent); color: var(--done); }
+  .pill.warn { background: color-mix(in srgb, var(--question) 16%, transparent); color: var(--question); }
+
+  /* iOS 26 tab bar: floating glass capsule, search as its own circle, accessory above */
+  .chrome { flex: none; padding: 6px 12px 14px; display: flex; flex-direction: column; gap: 8px; background: linear-gradient(transparent, var(--bg) 40%); }
+  .acc, .tabs, .searchc, .dockg { background: var(--glass); border: 1px solid var(--glassedge); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .acc { border-radius: 99px; padding: 7px 8px 7px 14px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .acc .mic { width: 30px; height: 30px; border-radius: 50%; background: var(--working); display: grid; place-items: center; }
+  .tabrow { display: flex; gap: 8px; align-items: center; }
+  .tabs { flex: 1; border-radius: 99px; display: flex; padding: 5px; }
+  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1px; font-size: 9.5px; color: var(--text2); padding: 4px 0; border-radius: 99px; position: relative; }
+  .tab.on { color: var(--working); background: color-mix(in srgb, var(--text) 8%, transparent); }
+  .tab svg, .searchc svg { width: 19px; height: 19px; }
+  .badge { position: absolute; top: 0; left: 54%; background: var(--signal); color: #fff; font-size: 9px; font-weight: 700; border-radius: 99px; padding: 0 4px; line-height: 13px; }
+  .searchc { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: var(--text2); flex: none; }
+
+  .nav { display: flex; align-items: center; gap: 8px; padding: 0 10px 8px; }
+  .nav .c { flex: 1; text-align: center; min-width: 0; }
+  .circle { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--glass); border: 1px solid var(--glassedge); color: var(--text); font-size: 15px; flex: none; }
+
+  .term { flex: 1; min-height: 0; background: var(--term); color: var(--tt); font: 7px/1.32 ui-monospace, "SF Mono", Menlo, monospace; padding: 6px 0 8px 8px; white-space: pre; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; position: relative; }
+  .term b { color: var(--tb); font-weight: 600; } .term i { color: var(--ty); font-style: normal; } .term u { color: var(--tg); text-decoration: none; } .term em { color: var(--tbl); font-style: normal; } .term s { color: var(--tr); text-decoration: none; }
+  .tx { min-width: 0; }
+  .content > * { flex: none; }
+  .term::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 26px; background: linear-gradient(90deg, transparent, var(--term)); }
+  .cols { position: absolute; top: 8px; right: 8px; z-index: 2; font: 600 9px/1 -apple-system, system-ui; color: var(--tt); background: rgba(255,255,255,.08); border-radius: 99px; padding: 4px 7px; }
+  .dockg { flex: none; margin: 0; border-radius: 26px 26px 0 0; border-bottom: 0; padding: 12px 12px 22px; display: flex; flex-direction: column; gap: 9px; }
+  .field { flex: 1; background: color-mix(in srgb, var(--text) 7%, transparent); border-radius: 99px; padding: 8px 12px; color: var(--dim); }
+  .key { font: 500 11px ui-monospace, Menlo, monospace; border-radius: 8px; padding: 5px 0; flex: 1; text-align: center; background: color-mix(in srgb, var(--text) 8%, transparent); }
+
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 3; }
+  .sheet { position: absolute; left: 6px; right: 6px; bottom: 6px; top: 64px; background: var(--surface); border-radius: 32px; z-index: 4; padding: 10px 14px 16px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--glassedge); }
+  .grab { width: 36px; height: 5px; border-radius: 3px; background: var(--dim2); margin: 0 auto 2px; }
+
+  .lock { background: radial-gradient(120% 70% at 30% 10%, #3a3f7a, #12142a 70%); color: #fff; }
+  .clock { font-size: 64px; font-weight: 600; text-align: center; letter-spacing: -1px; line-height: 1; }
+  .date { text-align: center; font-size: 14px; font-weight: 500; opacity: .9; margin-top: 2px; }
+  .lglass { background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.12); border-radius: 22px; padding: 11px 12px; display: flex; flex-direction: column; gap: 6px; backdrop-filter: blur(10px); }
+  .lglass .s { color: rgba(255,255,255,.7); }
+  .lglass .btn { background: rgba(255,255,255,.2); color: #fff; }
+  .appicon { width: 20px; height: 20px; border-radius: 5px; background: linear-gradient(135deg, #4B55D6, #8F9CFF); flex: none; }
+  .island { background: #000; color: #fff; border-radius: 99px; display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 12px; }
+  .wsq { width: 70px; height: 70px; border-radius: 50%; background: rgba(255,255,255,.16); display: grid; place-items: center; text-align: center; font-size: 10px; line-height: 1.1; }
+</style>
+</head>
+<body>
+<h1>Round 3: refined</h1>
+<p class="lede">Applies the round 2 critique. Mac design system tokens (Dusk, with one Daylight screen), square state marks, signal red only on marks and the badge, the accent for primary actions, iOS 26 floating tab bar with search as its own circle and New agent as the bottom accessory. The terminal is bottom-anchored in Readable mode. Adds the missing states and the system surfaces.</p>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13l2.5-7.5A2 2 0 0 1 7.4 4h9.2a2 2 0 0 1 1.9 1.5L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5zm0 0h5l1.5 2.5h5L16 13h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-agents" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" fill="currentColor"/></symbol>
+  <symbol id="i-macs" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="10.5" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2 18.5h20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 15l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="strip">
+
+<!-- 1 Inbox -->
+<figure>
+  <div class="phone">
+    <div class="sb"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="content">
+      <div class="large">Inbox</div>
+      <div class="sec"><span class="m signal"></span>Needs you · 3</div>
+      <div class="card">
+        <div class="row"><span class="m signal"></span><span class="t grow">relay-tests</span><span class="s">studio · 4m</span></div>
+        <div class="s2">Edit <span class="mono">internal/relay/hub.go</span></div>
+        <div class="row"><span class="btn p grow">Allow</span><span class="btn grow">Always</span><span class="btn grow">Deny…</span></div>
+      </div>
+      <div class="card">
+        <div class="row"><span class="m signal"></span><span class="t grow">migrations</span><span class="s">mini · 6m</span></div>
+        <div class="s2">Run <span class="mono">npm run db:migrate</span></div>
+        <div class="row"><span class="pill sig">Changes the database</span><span class="grow"></span><span class="btn sm">Open ›</span></div>
+      </div>
+      <div class="card">
+        <div class="row"><span class="m question"></span><span class="t grow">api-docs</span><span class="s">studio · 9m</span></div>
+        <div class="s2">Which format should the API docs use?</div>
+        <div class="row"><span class="btn q grow">1 OpenAPI</span><span class="btn q grow">2 Markdown</span></div>
+      </div>
+      <div class="sec"><span class="m done"></span>Ready to review · 2</div>
+      <div class="list">
+        <div class="li"><span class="m done"></span><div class="grow"><div class="t">fix-login</div><div class="s">mini · 4 files · tests fresh</div></div><span class="s">›</span></div>
+        <div class="li"><span class="m done"></span><div class="grow"><div class="t">pricing-copy</div><div class="s">air · 2 files · no tests ran</div></div><span class="s">›</span></div>
+      </div>
+    </div>
+    <div class="chrome">
+      <div class="acc"><svg width="16" height="16"><use href="#i-plus"/></svg><span class="grow">New agent</span><span class="mic"><svg width="15" height="15" style="color:var(--onaccent)"><use href="#i-mic"/></svg></span></div>
+      <div class="tabrow">
+        <div class="tabs"><div class="tab on"><svg><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></div><div class="tab"><svg><use href="#i-agents"/></svg>Agents</div><div class="tab"><svg><use href="#i-macs"/></svg>Macs</div></div>
+        <div class="searchc"><svg><use href="#i-search"/></svg></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>1 · Inbox.</b> Answers inline; the risky one says why and only opens. Allow is the accent, red stays on the marks.</figcaption>
+</figure>
+
+<!-- 2 Inbox empty, Daylight -->
+<figure>
+  <div class="phone day">
+    <div class="sb"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="content">
+      <div class="large">Inbox</div>
+      <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center">
+        <svg width="40" height="40" style="color:var(--dim2)"><use href="#i-inbox"/></svg>
+        <div class="t" style="font-size:17px">Nothing needs you</div>
+        <div class="s" style="font-size:13px; max-width:210px">5 agents are working on 2 Macs. You'll get a notification when one asks for you.</div>
+        <div class="btn sm" style="margin-top:6px">Show working agents</div>
+      </div>
+      <div class="sec">Earlier today</div>
+      <div class="list" style="margin-bottom:6px">
+        <div class="li"><span class="m done"></span><div class="grow"><div class="t">fix-login</div><div class="s">Accepted · committed to fix/login</div></div><span class="s">11:02</span></div>
+        <div class="li"><span class="m done"></span><div class="grow"><div class="t">api-docs</div><div class="s">Answered: Markdown</div></div><span class="s">10:47</span></div>
+      </div>
+    </div>
+    <div class="chrome">
+      <div class="acc"><svg width="16" height="16"><use href="#i-plus"/></svg><span class="grow">New agent</span><span class="mic"><svg width="15" height="15" style="color:var(--onaccent)"><use href="#i-mic"/></svg></span></div>
+      <div class="tabrow">
+        <div class="tabs"><div class="tab on"><svg><use href="#i-inbox"/></svg>Inbox</div><div class="tab"><svg><use href="#i-agents"/></svg>Agents</div><div class="tab"><svg><use href="#i-macs"/></svg>Macs</div></div>
+        <div class="searchc"><svg><use href="#i-search"/></svg></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>2 · Inbox, empty (Daylight).</b> Empty is the goal; it says what is still running and what you did.</figcaption>
+</figure>
+
+<!-- 3 Agents -->
+<figure>
+  <div class="phone">
+    <div class="sb"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="content">
+      <div class="large">Agents</div>
+      <div class="sec">hesper</div>
+      <div class="list">
+        <div class="li"><span class="m signal"></span><div class="grow"><div class="t">relay-tests</div><div class="s">Needs you · studio</div></div><span class="s">4m</span></div>
+        <div class="li"><span class="m working"></span><div class="grow"><div class="t">search-index</div><div class="s">Wiring index into search · mini</div></div><span class="s">12m</span></div>
+        <div class="li"><span class="m start"></span><div class="grow"><div class="t">history-bench</div><div class="s">Starting · mini</div></div><span class="s">now</span></div>
+        <div class="li"><span class="m done"></span><div class="grow"><div class="t">fix-login</div><div class="s">Done · 4 files · mini</div></div><span class="s">1h</span></div>
+      </div>
+      <div class="sec">website</div>
+      <div class="list">
+        <div class="li off"><span class="m working"></span><div class="grow"><div class="t">hero-image</div><div class="s">air unreachable since 18:40</div></div><span class="s">—</span></div>
+        <div class="li"><span class="m done"></span><div class="grow"><div class="t">pricing-copy</div><div class="s">Done · 2 files · air</div></div><span class="s">40m</span></div>
+      </div>
+      <div class="sec">scratch</div>
+      <div class="list">
+        <div class="li"><span class="m idle"></span><div class="grow"><div class="t">regex-help</div><div class="s">Idle · mini</div></div><span class="s">2h</span></div>
+        <div class="li"><span class="m exited"></span><div class="grow"><div class="t">bench-notes</div><div class="s">Exited 5h ago · mini</div></div><span class="s">Resume</span></div>
+      </div>
+    </div>
+    <div class="chrome">
+      <div class="acc"><svg width="16" height="16"><use href="#i-plus"/></svg><span class="grow">New agent</span><span class="mic"><svg width="15" height="15" style="color:var(--onaccent)"><use href="#i-mic"/></svg></span></div>
+      <div class="tabrow">
+        <div class="tabs"><div class="tab"><svg><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></div><div class="tab on"><svg><use href="#i-agents"/></svg>Agents</div><div class="tab"><svg><use href="#i-macs"/></svg>Macs</div></div>
+        <div class="searchc"><svg><use href="#i-search"/></svg></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>3 · Agents.</b> Grouped by project like the Mac's bands; the agent's own activity line; an unreachable Mac dims its rows and says since when.</figcaption>
+</figure>
+
+<!-- 4 Agent needs you -->
+<figure>
+  <div class="phone">
+    <div class="sb"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="nav"><span class="circle">‹</span><div class="c"><div class="t">relay-tests</div><div class="s">studio · hesper · fix/hub</div></div><span class="circle">⋯</span></div>
+    <div class="term"><span class="cols">120 cols →</span><div class="tx"><b>⏺</b> The hub test races on the reconnect path: the second dial can win before the first connection
+  closes. I'll make the test wait for the first close, then fix the hub to replace cleanly.
+
+<b>⏺</b> <em>Update</em>(internal/relay/hub_test.go)
+  ⎿  Updated internal/relay/hub_test.go with 6 additions and 2 removals
+      88    func TestHubReplace(t *testing.T) {
+      89 <u>+      first := dial(t, h)</u>
+      90 <u>+      &lt;-first.closed</u>
+      91        second := dial(t, h)
+
+<b>⏺</b> <em>Edit</em>(internal/relay/hub.go)
+
+╭────────────────────────────────────────────────────────────────────────────────────────╮
+│ Edit file                                                                              │
+│ internal/relay/hub.go                                                                  │
+│ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ │
+│ 141      if old, ok := h.conns[id]; ok {                                               │
+│ 142 <s>-        old.Close()</s>                                                               │
+│ 142 <u>+        old.CloseAndWait(ctx)</u>                                                     │
+│ 143      }                                                                             │
+│ <i>Do you want to make this edit to hub.go?</i>                                               │
+│ ❯ 1. Yes                                                                               │
+│   2. Yes, allow all edits during this session (shift+tab)                              │
+│   3. No, and tell Claude what to do differently (esc)                                  │
+╰────────────────────────────────────────────────────────────────────────────────────────╯</div></div>
+    <div class="dockg">
+      <div class="row"><span class="m signal"></span><span class="grow">Edit <span class="mono">internal/relay/hub.go</span></span><span class="s">4m</span></div>
+      <div class="row"><span class="btn p grow">Allow</span><span class="btn grow">Always</span><span class="btn grow">Deny…</span></div>
+      <div class="row s"><span class="grow">Next: migrations on mini</span><span>›</span></div>
+    </div>
+  </div>
+  <figcaption><b>4 · Agent, needs you.</b> Real terminal, Readable mode, newest line just above the dock. The dock quotes the target so it matches the TUI.</figcaption>
+</figure>
+
+<!-- 5 Agent working -->
+<figure>
+  <div class="phone">
+    <div class="sb"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="nav"><span class="circle">‹</span><div class="c"><div class="t">search-index</div><div class="s">mini · hesper · main</div></div><span class="circle">⋯</span></div>
+    <div class="term"><span class="cols">96 cols →</span><div class="tx"><b>⏺</b> <em>Bash</em>(go test ./internal/index/...)
+  ⎿  ok   hesper/relay/internal/index       2.41s
+     ok   hesper/relay/internal/index/fts   0.88s
+
+<b>⏺</b> Both packages pass. Next I'll wire the index into history search and
+  add a benchmark for 10k sessions.
+
+<b>⏺</b> <em>Read</em>(internal/history/search.go)
+  ⎿  Read 214 lines
+
+<b>⏺</b> <em>Update</em>(internal/history/search.go)
+  ⎿  Updated internal/history/search.go with 31 additions and 12 removals
+
+<i>✻ Wiring index into search… (2m 14s · ↓ 3.1k tokens · esc to interrupt)</i>
+
+╭──────────────────────────────────────────────────────────────────────────────────────╮
+│ &gt;                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────╯
+  ⏵⏵ accept edits on (shift+tab to cycle)</div></div>
+    <div class="dockg">
+      <div class="row"><span class="field">Message search-index</span><span class="circle" style="background:var(--working); color:var(--onaccent)"><svg width="15" height="15"><use href="#i-mic"/></svg></span></div>
+      <div class="row" style="gap:5px"><span class="key">esc</span><span class="key">⇥</span><span class="key">↑</span><span class="key">↓</span><span class="key">⏎</span><span class="key">^C</span><span class="key">1–9</span></div>
+    </div>
+  </div>
+  <figcaption><b>5 · Agent, working.</b> Reply goes in with agents.input; keys for what TUIs need. The Mac's terminal keeps its size.</figcaption>
+</figure>
+
+<!-- 6 New agent -->
+<figure>
+  <div class="phone">
+    <div class="sb"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="content"><div class="large">Agents</div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="row"><span class="circle">✕</span><span class="t grow" style="text-align:center; font-size:15px">New agent</span><span class="btn p">Start</span></div>
+      <div style="font-size:18px; line-height:1.3; min-height:96px; padding:6px 2px">Add a benchmark for history search with 10k sessions and keep p95 under 50 ms<span style="color:var(--working)">▏</span></div>
+      <div class="list">
+        <div class="li"><span class="m" style="background:#7AA2F7"></span><div class="grow"><div class="t">hesper</div><div class="s">on mini · online · last used</div></div><span class="s">Change</span></div>
+        <div class="li"><span class="mono" style="width:8px; text-align:center">✻</span><div class="grow"><div>Claude</div><div class="s">profile default · new worktree</div></div><span class="s">Options</span></div>
+      </div>
+      <div style="flex:1"></div>
+      <div class="row"><span class="grow s">Speak instead</span><span class="circle" style="background:var(--working); color:var(--onaccent)"><svg width="15" height="15"><use href="#i-mic"/></svg></span></div>
+      <div style="background:color-mix(in srgb, var(--text) 6%, transparent); border-radius:18px; height:140px; display:grid; place-items:center; color:var(--dim)">keyboard</div>
+    </div>
+  </div>
+  <figcaption><b>6 · New agent.</b> Task first. Where and how sit in two rows with good defaults; the mic is always there.</figcaption>
+</figure>
+
+<!-- 7 Review -->
+<figure>
+  <div class="phone">
+    <div class="sb"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="content"><div class="large">Inbox</div></div>
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="row"><span class="m done"></span><div class="grow"><div class="t" style="font-size:15px">fix-login</div><div class="s">mini · hesper · fix/login · done 18m ago</div></div><span class="circle">✕</span></div>
+      <div class="card"><div class="s2">Fixed the token refresh race: the second refresh now waits for the first. Added a test for the expired-token path and updated docs/auth.md.</div></div>
+      <div class="sec">Evidence</div>
+      <div class="list">
+        <div class="li"><span class="m done"></span><span class="grow mono">go test ./auth/...</span><span class="pill ok">fresh</span></div>
+        <div class="li"><span class="m done"></span><span class="grow mono">go build ./...</span><span class="pill ok">fresh</span></div>
+      </div>
+      <div class="sec">4 files · +86 −12</div>
+      <div class="list">
+        <div class="li"><span class="grow mono">auth/refresh.go</span><span class="s">+40 −9 ›</span></div>
+        <div class="li"><span class="grow mono">auth/refresh_test.go</span><span class="s">+38 ›</span></div>
+        <div class="li"><span class="grow mono">docs/auth.md</span><span class="s">+8 −3 ›</span></div>
+      </div>
+      <div style="flex:1"></div>
+      <div class="row"><span class="btn grow">Send back…</span><span class="btn p grow">Accept &amp; commit</span></div>
+      <div class="s" style="text-align:center">Commits to fix/login on mini · Review on Mac in ⋯</div>
+    </div>
+  </div>
+  <figcaption><b>7 · Review.</b> Triage: last message, evidence, files, verdict. Fresh evidence and no risky files make Accept the primary action.</figcaption>
+</figure>
+
+<!-- 8 Macs -->
+<figure>
+  <div class="phone">
+    <div class="sb"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="content">
+      <div class="row"><div class="large grow">Macs</div><span class="circle" style="font-size:18px">+</span></div>
+      <div class="list">
+        <div class="li"><span class="m done"></span><div class="grow"><div class="t">mini</div><div class="s">Online · same network · 3 ms</div></div><span class="pill sig">1 needs you</span></div>
+        <div class="li"><span class="m done"></span><div class="grow"><div class="t">studio</div><div class="s">Online · via relay · 48 ms</div></div><span class="pill sig">2 need you</span></div>
+        <div class="li"><span class="m idle"></span><div class="grow"><div class="t">air</div><div class="s">Unreachable since 18:40 · was on battery 41%</div></div><span class="s">2</span></div>
+      </div>
+      <div class="sec">mini</div>
+      <div class="list">
+        <div class="li"><span class="grow">Agents</span><span class="s">6 · 1 needs you</span></div>
+        <div class="li"><span class="grow">Recent projects</span><span class="s">hesper, scratch</span></div>
+        <div class="li"><span class="grow">This iPhone may</span><span class="s">observe, answer, type, start</span></div>
+      </div>
+      <div class="sec">This iPhone</div>
+      <div class="list">
+        <div class="li"><span class="grow">Notifications</span><span class="s">Approvals, questions ›</span></div>
+        <div class="li"><span class="grow">Relay</span><span class="s">relay.example.org ›</span></div>
+      </div>
+    </div>
+    <div class="chrome">
+      <div class="acc"><svg width="16" height="16"><use href="#i-plus"/></svg><span class="grow">New agent</span><span class="mic"><svg width="15" height="15" style="color:var(--onaccent)"><use href="#i-mic"/></svg></span></div>
+      <div class="tabrow">
+        <div class="tabs"><div class="tab"><svg><use href="#i-inbox"/></svg>Inbox<span class="badge">3</span></div><div class="tab"><svg><use href="#i-agents"/></svg>Agents</div><div class="tab on"><svg><use href="#i-macs"/></svg>Macs</div></div>
+        <div class="searchc"><svg><use href="#i-search"/></svg></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>8 · Macs.</b> What you act on: who needs you, who is unreachable and since when, what this iPhone may do there.</figcaption>
+</figure>
+
+<!-- 9 Lock screen -->
+<figure>
+  <div class="phone lock">
+    <div class="sb"><span></span><span>●●● ▮</span></div>
+    <div class="date">Friday 31 October</div>
+    <div class="clock">9:41</div>
+    <div class="row" style="justify-content:center; gap:10px; margin-top:10px">
+      <div class="wsq"><div><b style="font-size:16px">3</b><br>need you</div></div>
+      <div class="wsq"><div><b style="font-size:16px">5</b><br>working</div></div>
+    </div>
+    <div style="padding:0 10px; display:flex; flex-direction:column; gap:8px; margin-top:16px">
+      <div class="lglass">
+        <div class="row"><span class="appicon"></span><span class="t grow">5 working · 3 need you</span><span class="s">Hesper</span></div>
+        <div class="row" style="gap:3px"><span style="flex:5; height:5px; border-radius:3px; background:#8F9CFF"></span><span style="flex:3; height:5px; border-radius:3px; background:#FF6F91"></span><span style="flex:2; height:5px; border-radius:3px; background:#7FE0A8"></span></div>
+        <div class="row"><span class="s grow">Oldest waiting: migrations · 6 min</span><span class="btn sm">Open next</span></div>
+      </div>
+      <div class="lglass">
+        <div class="row"><span class="appicon"></span><span class="t grow">relay-tests on studio</span><span class="s">now</span></div>
+        <div>Wants to edit internal/relay/hub.go</div>
+        <div class="row"><span class="btn grow">Allow</span><span class="btn grow">Deny</span><span class="btn grow">Reply</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>9 · Lock screen.</b> Widgets with the two counts; one Live Activity that leads with progress and updates silently; one notification per prompt.</figcaption>
+</figure>
+
+<!-- 10 Dynamic Island -->
+<figure>
+  <div class="phone lock" style="background:#1b1d33">
+    <div class="sb"><span></span><span></span></div>
+    <div style="padding:6px 14px; display:flex; flex-direction:column; gap:16px">
+      <div class="s" style="color:#B3B6CF">Compact: something needs you</div>
+      <div class="island" style="align-self:center; width:200px"><span class="m signal"></span><b>3</b><span class="grow"></span><span style="color:#8F9CFF">5 ▸</span></div>
+      <div class="s" style="color:#B3B6CF">Compact: only working</div>
+      <div class="island" style="align-self:center; width:200px"><span class="m working"></span><span class="grow"></span><span style="color:#8F9CFF">5 working</span></div>
+      <div class="s" style="color:#B3B6CF">Minimal, shared with another activity</div>
+      <div class="island" style="align-self:center; width:34px; height:34px; padding:0; justify-content:center"><span class="m signal"></span></div>
+      <div class="s" style="color:#B3B6CF">Expanded (long press)</div>
+      <div class="island" style="border-radius:34px; flex-direction:column; align-items:stretch; padding:12px 14px; gap:8px">
+        <div class="row"><span class="appicon"></span><span class="t grow">3 need you</span><span style="color:#8F9CFF">5 working</span></div>
+        <div style="color:#B3B6CF; font-size:11px">migrations · mini · waiting 6 min</div>
+        <div class="row"><span class="btn sm grow" style="background:#272B48; color:#fff">Open next</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>10 · Dynamic Island.</b> Counts only, so the relay can update it without seeing names. One button: Open next.</figcaption>
+</figure>
+
+<!-- 11 Landscape -->
+<figure class="wide">
+  <div class="phone land">
+    <div class="row" style="flex:1; min-height:0; align-items:stretch">
+      <div class="term" style="padding-left:40px; font-size:6.4px"><div class="tx"><b>⏺</b> <em>Bash</em>(go test ./internal/index/...)
+  ⎿  ok   hesper/relay/internal/index       2.41s
+     ok   hesper/relay/internal/index/fts   0.88s
+
+<b>⏺</b> Both packages pass. Next I'll wire the index into history search and add a benchmark for 10k sessions.
+
+<b>⏺</b> <em>Update</em>(internal/history/search.go)
+  ⎿  Updated internal/history/search.go with 31 additions and 12 removals
+
+<i>✻ Wiring index into search… (2m 14s · ↓ 3.1k tokens · esc to interrupt)</i>
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ &gt;                                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  ⏵⏵ accept edits on (shift+tab to cycle)</div></div>
+      <div style="width:150px; flex:none; background:var(--surface); padding:12px 10px; display:flex; flex-direction:column; gap:8px">
+        <div class="t">search-index</div><div class="s">mini · 120 × 32 · full width</div>
+        <div style="flex:1"></div>
+        <div class="field" style="flex:none">Message…</div>
+        <div class="row" style="gap:4px"><span class="key">esc</span><span class="key">⏎</span><span class="key">^C</span></div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>11 · Landscape.</b> Rotate to see the whole 120-column terminal; the dock moves to the side.</figcaption>
+</figure>
+
+</div>
+</body>
+</html>
