@@ -1,8 +1,9 @@
 # Hesper for iPhone: concept
 
-Status: concept, 31 Oct 2026. Wireframes in [`wireframes/`](wireframes/),
-critique between rounds in [`critique.md`](critique.md), the writable
-terminal researched in [`writable-terminal.md`](writable-terminal.md).
+Status: concept, 31 Oct 2026. Wireframes in [`wireframes/`](wireframes/)
+(round 4 draws the writable terminal and iPad), critique between rounds
+in [`critique.md`](critique.md), the writable terminal researched in
+[`writable-terminal.md`](writable-terminal.md).
 
 This concept starts from core Hesper as it is on `main`: hesperd on each
 Mac, the relay, the wire protocol and the Mac app's features. It does not

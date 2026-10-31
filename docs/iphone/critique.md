@@ -121,3 +121,60 @@ for another paper round:
    described but not drawn.
 6. **Swipe actions** (Stop, Close, Resume) on Agents rows are described,
    not drawn.
+
+## Round 3 → round 4
+
+After round 3, the [writable-terminal research](writable-terminal.md)
+changed the agent view: the phone types into the live terminal at the
+Mac's size (Mirror), takes the size only on an explicit Fit to iPhone tap,
+rotates the agent view, may type into shells behind Face ID once per
+attach, and comes to iPad. [Round 4](wireframes/round-4.html) draws that,
+and the round 3 leftovers that a paper round can still settle.
+
+1. **Round 3 had no way into the terminal.** The dock's key strip sent keys
+   through `agents.input`, which is fine for esc and ^C and wrong for
+   anything longer. Now a tap on the terminal, or ⌨ in the dock, puts the
+   focus in it; the key strip moves above the keyboard as a key bar with a
+   sticky ctrl and paste, and leaves the dock.
+2. **Fit to iPhone must be visible, not in ⋯.** It is the one action that
+   changes something on the Mac, so it sits on the terminal next to the
+   grid size ("Mac's size · 120 × 32"). When fitted, it turns into the
+   accent and the way back ("Mac's size") sits in the same place.
+3. **The Mac's side was missing.** Fit to iPhone resizes a tile on another
+   screen. Round 4 draws that tile: the phone's grid centred, marked On
+   iPhone, with how to take it back. And the phone's side when the Mac does
+   take it back: one banner, then Mirror.
+4. **Shells needed a gate.** Typing into a shell is a stronger right than
+   answering Claude. A sheet asks once per attach and keeps "Just watch"
+   as a full answer.
+5. **Landscape with the keyboard up is cramped.** All 120 columns fit but
+   about eight rows remain. That is acceptable for a short command; the
+   caption says long text belongs in the reply field. Not worth a special
+   layout.
+6. **Empty terminal tops (round 3, item 2) are gone**: a read-write attach
+   brings the scrollback, so the view is full from the first frame.
+7. **Drawn from the round 3 list**: the risky review (Review on Mac leads,
+   the reason under it), swipe actions on Agents rows, and one count per
+   moment on the lock screen (the Live Activity while agents run, the
+   widget otherwise).
+8. **iPad** gets a sidebar with the tabs and the agents, and the agent view
+   as the detail column at 120 columns. Windows show the one rule that is
+   new on iPad: one size owner per agent.
+
+## Round 4: what is still open
+
+1. **Two ways to type.** The reply field and the terminal both take text.
+   The rule (whole messages in the field, keys in the terminal) is clear on
+   paper; a device test must show whether people pick the right one or
+   find the field redundant once the terminal is writable.
+2. **Fit to iPhone while the keyboard toggles.** The grid changes from about
+   46 × 19 to 46 × 40 when the keyboard hides. Debounced, that is still a
+   redraw on the Mac each time. Maybe the grid should keep the keyboard-up
+   size for the whole attach.
+3. **Who sees "On iPhone"?** If someone else sits at the Mac, a tile that
+   suddenly shrinks is surprising. The banner on the tile may need the
+   phone's device name and a time.
+4. **iPad without a hardware keyboard** falls back to the iPhone key bar;
+   not drawn.
+5. Still open from round 3: Readable size on a device (item 1), New agent's
+   dead space (item 4).
