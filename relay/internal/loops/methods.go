@@ -745,47 +745,57 @@ func (s *Store) MilestoneItem(p wire.LoopItemParams) (wire.Milestone, error) {
 	if err != nil {
 		return wire.Milestone{}, err
 	}
-	g, err := s.goal(p.ID)
-	if err != nil || g.Milestone == nil {
-		return wire.Milestone{}, err
-	}
-	return *g.Milestone, nil
+	return s.milestone(p.ID)
 }
 
-// File is goals.file: file a loop under a milestone, or unfile it.
-func (s *Store) File(p wire.GoalFileParams) (wire.Loop, error) {
+// File is goals.file: file a loop under a milestone, or unfile it. The
+// result is the milestone.
+func (s *Store) File(p wire.GoalFileParams) (wire.Milestone, error) {
 	s.mu.Lock()
 	l, err := s.loopLocked(p.Loop)
-	if err == nil && !p.Remove {
+	if err == nil {
 		if m := s.milestones[p.Milestone]; m == nil || m.Deleted.V {
 			err = wire.Errorf(wire.CodeNotFound, "no milestone %s", p.Milestone)
+		} else if p.Remove && l.Milestone.V != p.Milestone {
+			err = wire.Errorf(wire.CodeNotFound, "loop %s is not filed under %s", l.ID, p.Milestone)
 		}
 	}
 	if err != nil {
 		s.mu.Unlock()
-		return wire.Loop{}, err
+		return wire.Milestone{}, err
 	}
 	v := p.Milestone
 	if p.Remove {
-		if l.Milestone.V != p.Milestone && p.Milestone != "" {
-			s.mu.Unlock()
-			return wire.Loop{}, wire.Errorf(wire.CodeNotFound, "loop %s is not filed under %s", l.ID, p.Milestone)
-		}
 		v = ""
 	}
 	if l.Milestone.Set(v, s.clock.Tick()) {
 		s.commitLocked("l:" + l.ID)
 	}
-	id := l.ID
 	s.mu.Unlock()
-	return s.Get(id)
+	return s.milestone(p.Milestone)
+}
+
+func (s *Store) milestone(id string) (wire.Milestone, error) {
+	g, err := s.goal(id)
+	if err != nil {
+		return wire.Milestone{}, err
+	}
+	if g.Milestone == nil {
+		return wire.Milestone{}, wire.Errorf(wire.CodeNotFound, "no milestone %s", id)
+	}
+	return *g.Milestone, nil
+}
+
+// Accepted is goals.accept's result: how many milestones it opened.
+type Accepted struct {
+	Accepted int `json:"accepted"`
 }
 
 // Accept is goals.accept: the proposed milestones of a scope (or only
-// IDs) open. The result is the scope's goals and milestones.
-func (s *Store) Accept(p wire.GoalAcceptParams) (wire.GoalsList, error) {
+// IDs) open.
+func (s *Store) Accept(p wire.GoalAcceptParams) (Accepted, error) {
 	if p.Scope == "" {
-		return wire.GoalsList{}, wire.Errorf(wire.CodeInvalid, "goals.accept needs a scope")
+		return Accepted{}, wire.Errorf(wire.CodeInvalid, "goals.accept needs a scope")
 	}
 	only := map[string]bool{}
 	for _, id := range p.IDs {
@@ -800,8 +810,7 @@ func (s *Store) Accept(p wire.GoalAcceptParams) (wire.GoalsList, error) {
 		m.Status.Set(wire.LoopOpen, s.clock.Tick())
 		keys = append(keys, "m:"+id)
 	}
-	sort.Strings(keys)
 	s.commitLocked(keys...)
 	s.mu.Unlock()
-	return s.Goals(p.Scope), nil
+	return Accepted{Accepted: len(keys)}, nil
 }

@@ -243,12 +243,23 @@ func TestGoalsAndMilestones(t *testing.T) {
 		t.Fatalf("milestone %+v", ms)
 	}
 	loop := newLoop(s, "work")
-	if l := must[wire.Loop](t, s, wire.MethodGoalsFile, wire.GoalFileParams{Milestone: m.ID, Loop: loop}); l.Milestone != m.ID {
-		t.Fatal("not filed")
+	if got := must[wire.Milestone](t, s, wire.MethodGoalsFile, wire.GoalFileParams{Milestone: m.ID, Loop: loop}); len(got.Loops) != 1 || got.Loops[0] != loop {
+		t.Fatalf("not filed: %+v", got)
 	}
-	list := must[wire.GoalsList](t, s, wire.MethodGoalsAccept, wire.GoalAcceptParams{Scope: "g-tools"})
+	if got := must[Accepted](t, s, wire.MethodGoalsAccept, wire.GoalAcceptParams{Scope: "g-tools"}); got.Accepted != 1 {
+		t.Fatalf("accepted %+v", got)
+	}
+	list := must[wire.GoalsList](t, s, wire.MethodGoalsList, wire.GoalsListParams{Scope: "g-tools"})
 	if len(list.Goals) != 1 || len(list.Milestones) != 1 || list.Milestones[0].Status != wire.LoopOpen || len(list.Milestones[0].Loops) != 1 {
-		t.Fatalf("accepted %+v", list)
+		t.Fatalf("after accept %+v", list)
+	}
+	if got := must[Accepted](t, s, wire.MethodGoalsAccept, wire.GoalAcceptParams{Scope: "g-tools"}); got.Accepted != 0 {
+		t.Fatalf("accepted twice %+v", got)
+	}
+	unfiled := must[wire.Milestone](t, s, wire.MethodGoalsFile, wire.GoalFileParams{Milestone: m.ID, Loop: loop, Remove: true})
+	must[wire.Milestone](t, s, wire.MethodGoalsFile, wire.GoalFileParams{Milestone: m.ID, Loop: loop})
+	if len(unfiled.Loops) != 0 {
+		t.Fatalf("unfile %+v", unfiled)
 	}
 	must[struct{}](t, s, wire.MethodGoalsRemove, wire.IDParams{ID: m.ID})
 	if l := view(t, s, loop); l.Milestone != "" {
