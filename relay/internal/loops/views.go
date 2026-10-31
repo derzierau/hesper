@@ -202,8 +202,8 @@ func (j *joined) linkView(k *LinkRecord) wire.LoopLink {
 	return v
 }
 
-// loopView is a loop as the wire shows it (rules.go fills who acts
-// next).
+// loopView is a loop as the wire shows it (rules.go fills in who acts
+// next, counts and projects).
 func (j *joined) loopView(l *LoopRecord) wire.Loop {
 	v := wire.Loop{ID: l.ID, Title: l.Title.V, Goal: l.Goal.V, DoneWhen: l.DoneWhen.V, Status: l.Status.V, NextText: l.NextText.V,
 		Milestone: l.Milestone.V, ParkedUntil: l.ParkedUntil.V, MergedInto: l.MergedInto.V, Created: l.Created.V,
@@ -288,6 +288,7 @@ func (sn *snapshot) build() *built {
 			b.milestones[id] = milestoneView(m)
 		}
 	}
+	applyRules(b, sn.settings, sn.now) // rules.go
 	return b
 }
 
