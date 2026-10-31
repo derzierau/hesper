@@ -66,10 +66,24 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
     public var ended: String?
     /// Its worktree's last checkpoint (hesperd, on done / close / move).
     public var checkpoint: Checkpoint?
+    /// The agent that started it (agent tree: its full id).
+    public var parent: String?
+    /// The loop it works in (Loops.swift; from hesperd's loops store).
+    public var loop: String?
+    /// An agent hesperd runs itself ("steward", "planner"): never in a
+    /// loop, never tidied.
+    public var service: String?
+    /// hesperd tells its parent when its turn ends.
+    public var reportToParent = false
+    /// How its last turn ended (nil: not yet, or a newer value).
+    public var ending: LoopEnding?
 
     /// A person named it (the app, hesperctl outside an agent): the agent
     /// no longer renames it until "Let the Agent Name It".
     public var isNamedByPerson: Bool { nameBy == "person" }
+
+    /// hesperd runs it itself (the Steward, a planner).
+    public var isService: Bool { service != nil }
 
     /// The agent's process is alive (attach shows it live).
     public var isRunning: Bool { exit == nil && state != .exited }
@@ -94,7 +108,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, machine, kind, profile, name, nameBy, task, project, projectId, worktree, branch, state, stateSince, attention, summary, activity, sessionId, size, created, pid, exit
-        case background, ended, checkpoint
+        case background, ended, checkpoint, parent, loop, service, reportToParent, ending
     }
 
     public init(from decoder: any Decoder) throws {
@@ -123,6 +137,11 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
         background = (try? c.decodeIfPresent(Bool.self, forKey: .background)) ?? false
         ended = (try? c.decodeIfPresent(String.self, forKey: .ended)).flatMap { $0.isEmpty ? nil : $0 }
         checkpoint = (try? c.decodeIfPresent(Checkpoint.self, forKey: .checkpoint)).flatMap { $0 }.flatMap { $0.ref.isEmpty && $0.commit.isEmpty ? nil : $0 }
+        parent = (try? c.decodeIfPresent(String.self, forKey: .parent)).flatMap { $0 }.flatMap { $0.isEmpty ? nil : $0 }
+        loop = (try? c.decodeIfPresent(String.self, forKey: .loop)).flatMap { $0 }.flatMap { $0.isEmpty ? nil : $0 }
+        service = (try? c.decodeIfPresent(String.self, forKey: .service)).flatMap { $0 }.flatMap { $0.isEmpty ? nil : $0 }
+        reportToParent = (try? c.decodeIfPresent(Bool.self, forKey: .reportToParent)) ?? false
+        ending = (try? c.decodeIfPresent(String.self, forKey: .ending)).flatMap { $0 }.flatMap(LoopEnding.init(rawValue:))
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -151,6 +170,11 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
         if background { try c.encode(true, forKey: .background) }
         try c.encodeIfPresent(ended, forKey: .ended)
         try c.encodeIfPresent(checkpoint, forKey: .checkpoint)
+        try c.encodeIfPresent(parent, forKey: .parent)
+        try c.encodeIfPresent(loop, forKey: .loop)
+        try c.encodeIfPresent(service, forKey: .service)
+        if reportToParent { try c.encode(true, forKey: .reportToParent) }
+        try c.encodeIfPresent(ending?.rawValue, forKey: .ending)
     }
 
     static func date(_ s: String?) -> Date? {

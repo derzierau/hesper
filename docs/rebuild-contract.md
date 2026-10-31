@@ -4957,6 +4957,44 @@ Code: `pkg/agentlink/pipe.go` (`Pipe`, the `W` window),
 - **Not done:** reverse forwards (a port of the server reaching this Mac),
   UDP, half-close, a Hesper.app view.
 
+### As built — loops (app core)
+
+Plan: loops, goals, milestones and the Steward (wire:
+`relay/pkg/wire/loops.go`). Code: `HesperCore/Loops.swift` (wire types,
+store, calls) and the pure view models below; the sheets and inbox
+sections that draw them live in the `Hesper` target. hesperd computes
+who acts next (`Loop.next`); the app only sorts, filters and lays out.
+
+- **Wire types** (`Loop`, `LoopItem`, `LoopLink`, `LoopCounts`, `Goal`,
+  `Milestone`, `GoalsList`, `StewardStatus`, `StewardEvent`,
+  `LoopSettings`) decode leniently like `Projects.swift`: unknown fields
+  are ignored, missing ones defaulted, Go's zero time and empty strings
+  are nil, a bad entry in a list is skipped. Unknown enum values take
+  their safest case: status open, next others (never "needs you" by
+  accident), owner agent, item state open, kind step, relation member,
+  Steward level watch (a missing level is the default, suggest); an
+  unknown ending is nil and an unknown link kind keeps its raw value.
+  Items arrive sorted by `order`; an item with no `after` is ready.
+  Settings of 0 or a time that is not "HH:MM" are hesperd's defaults
+  (limit 5, stall 7 days, evening 18:00, 40 wakes).
+- **Agent** gains `parent`, `loop`, `service` (`isService`),
+  `reportToParent` and `ending`.
+- **Calls** (`DaemonClient`): `loopsList` (an array or `{loops}`),
+  `loopGet`, `loopSave(LoopPatch)`, `loopLink`, `loopItem(ItemPatch)`,
+  `loopMerge`, `loopSplit`, `loopSettings`/`setLoopSettings`,
+  `goalsList`, `goalSave(GoalPatch)`, `milestoneSave(MilestonePatch)`,
+  `goalRemove`, `milestoneItem`, `goalFile`, `goalsAccept`,
+  `stewardStatus`, `stewardSet(StewardPatch)`, `stewardInbox`,
+  `stewardPlan`. Patches send only the fields given. An older hesperd
+  answers -32601: `LoopsRPC.missing`.
+- **Notifications.** `DaemonClient.onLoopsNotification` gets every
+  `loops.*`, `goals.*` and `steward.*` notification on the reader
+  thread; `LoopsEvent.decode` turns one into `loopChanged`,
+  `loopRemoved`, `goalChanged`, `milestoneChanged` (goals.changed with a
+  milestone), `goalRemoved` (a goal's or a milestone's id) or
+  `stewardChanged`. `LoopStore` applies them and counts a `version` on
+  every change; derived models rebuild only when it moved.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
