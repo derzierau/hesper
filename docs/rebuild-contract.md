@@ -5195,6 +5195,11 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   `shelves`); one that needs the person (approval, question, error)
   comes off it like any other agent.
 
+**Status: built and unit-tested headless only** (HesperCoreTests,
+`swift build --product Hesper`). Not run in the app or against a real
+hesperd with loops yet; the inbox's Open waits on the Loops sheet
+setting `LoopHub.openLoop`.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
