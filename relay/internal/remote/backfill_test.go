@@ -25,9 +25,11 @@ func TestBackfillLoopsOfOlderHost(t *testing.T) {
 	if got := f.opt.Loops.LoopOf("dev-dev1/root01"); got != "" {
 		t.Fatalf("assigned before the host had time to say it keeps loops: %q", got)
 	}
-	f.mu.Lock()
-	f.startBackfillLocked(m)
-	f.mu.Unlock()
+	// The direct path replaces the link meanwhile: the wait still ends
+	// in a backfill (keeping loops is the machine's, not the link's).
+	m.link = &link{m: m}
+	l = m.link
+	f.backfillDue(m)
 	root, child := f.opt.Loops.LoopOf("dev-dev1/root01"), f.opt.Loops.LoopOf("dev-dev1/child1")
 	if root == "" || child != root {
 		t.Fatalf("root %q child %q", root, child)

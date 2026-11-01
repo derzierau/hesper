@@ -220,9 +220,11 @@ const loopsBackfillDelay = time.Minute
 
 // armBackfillLocked follows an inventory of m: a host that has not said
 // it keeps loops within loopsBackfillDelay of it is an older hesperd,
-// whose agents this Mac puts in loops (startBackfillLocked). A link that
-// ends during the wait leaves it to the next link's inventory.
-func (f *Fleet) armBackfillLocked(m *machine, l *link) {
+// whose agents this Mac puts in loops (startBackfillLocked). Keeping
+// loops is the machine's, not the link's: a link replaced meanwhile (the
+// direct path taking over from the relay) still counts; a machine with no
+// link when the wait ends is left to its next inventory.
+func (f *Fleet) armBackfillLocked(m *machine) {
 	if f.opt.Loops == nil || m.loops {
 		return
 	}
@@ -231,14 +233,17 @@ func (f *Fleet) armBackfillLocked(m *machine, l *link) {
 		return
 	}
 	m.backfillWait = true
-	time.AfterFunc(loopsBackfillDelay, func() {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		m.backfillWait = false
-		if m.link == l {
-			f.startBackfillLocked(m)
-		}
-	})
+	time.AfterFunc(loopsBackfillDelay, func() { f.backfillDue(m) })
+}
+
+// backfillDue ends m's wait (armBackfillLocked's timer).
+func (f *Fleet) backfillDue(m *machine) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m.backfillWait = false
+	if m.link != nil {
+		f.startBackfillLocked(m)
+	}
 }
 
 // startBackfillLocked: m keeps no loops (unless a hint said otherwise):

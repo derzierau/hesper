@@ -296,7 +296,7 @@ func (f *Fleet) event(l *link, e agentlink.Event) {
 		for _, a := range e.List {
 			f.emitChangedLocked(fresh[localID(a.ID)])
 		}
-		f.armBackfillLocked(m, l) // loops.go
+		f.armBackfillLocked(m) // loops.go
 	case e.Changed != nil:
 		a := m.named(*e.Changed)
 		a.Loop = f.loopOfLocked(m, localID(a.ID)) // loops.go
