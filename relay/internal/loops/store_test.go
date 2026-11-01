@@ -471,3 +471,31 @@ func TestMoveLinkedOnBothMacsKeepsOne(t *testing.T) {
 		}
 	}
 }
+
+// A host known by a stand-in node (it named none) that names its real one
+// later: its agents' refs move over, membership included.
+func TestRenameNode(t *testing.T) {
+	s := openTest(t, "", "n-here", nil)
+	parent := s.Assign(agents.AssignInfo{Ref: "dev-abc/root01", Agent: wire.Agent{ID: "L2/root01"}})
+	child := s.Assign(agents.AssignInfo{Ref: "dev-abc/kid001", ParentRef: "dev-abc/root01", Agent: wire.Agent{ID: "L2/kid001"}})
+	other := s.Assign(agents.AssignInfo{Ref: "n-else/x00001", Agent: wire.Agent{ID: "L3/x00001"}})
+	if child != parent {
+		t.Fatalf("child in %s, parent in %s", child, parent)
+	}
+	s.RenameNode("dev-abc", "n-real")
+	if s.LoopOf("n-real/root01") != parent || s.LoopOf("n-real/kid001") != parent || s.LoopOf("dev-abc/root01") != "" {
+		t.Fatalf("after the rename: root %q kid %q old %q", s.LoopOf("n-real/root01"), s.LoopOf("n-real/kid001"), s.LoopOf("dev-abc/root01"))
+	}
+	if s.LoopOf("n-else/x00001") != other {
+		t.Fatal("another node's agent moved")
+	}
+	l, err := s.Get(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range l.Links {
+		if strings.HasPrefix(k.Ref, "dev-abc/") || strings.HasPrefix(k.From, "dev-abc/") {
+			t.Fatalf("a link still names the stand-in node: %+v", k)
+		}
+	}
+}

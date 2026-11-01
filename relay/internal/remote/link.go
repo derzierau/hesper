@@ -270,7 +270,10 @@ func (f *Fleet) event(l *link, e agentlink.Event) {
 	switch {
 	case e.Full:
 		m.hostShort = e.Machine
-		if e.Node != "" {
+		if e.Node != "" && e.Node != m.node {
+			if m.backfill {
+				f.renameStandInLocked(m, e.Node) // loops.go
+			}
 			m.node = e.Node
 		}
 		listed := map[string]bool{}

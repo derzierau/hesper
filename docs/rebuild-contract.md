@@ -5157,10 +5157,11 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   of an inventory keeps no loops (an older hesperd). From then on the
   controller assigns its agents itself (`internal/remote/loops.go`,
   `backfillLoopsLocked`): every agent without a loop, parents first, and
-  each new one as it appears, with refs `<host node>/<local id>`. The
-  host's node comes from its link, else from the shared project registry
-  (`projects.Store.NodeOf`). A host that later sends a hint keeps its
-  loops itself from then on.
+  each new one as it appears, with refs `<host node>/<local id>`. Such a
+  host names no node on its link, so it is known by a stand-in,
+  `dev-<relay device id>` (stable; real nodes start `n-`). When it names
+  its node later (an upgrade), the refs move over (`Store.RenameNode`),
+  and a host that sends a loops hint keeps its loops itself from then on.
 - **`Agent.loop`** is filled from `Loops.LoopOf(ref)` whenever this Mac's
   agents are listed, fetched or notified; it is never kept in the
   registry nor written to `agents.json` (the store's links are the

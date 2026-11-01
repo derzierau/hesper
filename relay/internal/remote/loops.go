@@ -188,13 +188,30 @@ func (f *Fleet) loopOfLocked(m *machine, local string) string {
 	return f.opt.Loops.LoopOf(node + "/" + local)
 }
 
-// nodeLocked is m's node: from its link, else from the project registry
-// every Mac shares (a host from before loops names none on its link).
+// nodeLocked is m's node: the one it names on its link; a host from
+// before loops names none, and once this Mac keeps its loops it is known
+// by a stand-in made from its relay device id (stable, and never a node a
+// Mac names: nodes start "n-"). When it names its node later, its refs
+// move over (renameStandInLocked).
 func (f *Fleet) nodeLocked(m *machine) string {
-	if m.node != "" || f.opt.Projects == nil {
+	if m.node != "" {
 		return m.node
 	}
-	return f.opt.Projects.NodeOf(m.short)
+	if m.backfill && m.id != "" {
+		return standInNode(m.id)
+	}
+	return ""
+}
+
+func standInNode(device string) string { return "dev-" + device }
+
+// renameStandInLocked: m named its node (an upgraded host); the refs this
+// Mac kept under its stand-in move to it.
+func (f *Fleet) renameStandInLocked(m *machine, node string) {
+	if f.opt.Loops == nil || m.id == "" || node == "" {
+		return
+	}
+	f.opt.Loops.RenameNode(standInNode(m.id), node)
 }
 
 // loopsBackfillDelay is how long a host has, after its first inventory,

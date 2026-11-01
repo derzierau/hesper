@@ -244,6 +244,47 @@ func (s *Store) AgentClosed(e agents.AgentEvent) {
 	s.commitLocked("l:" + id)
 }
 
+// RenameNode moves the refs of node from over to node to: a host that
+// named no node was known by a stand-in (internal/remote) until it named
+// its real one. Agent links (their ref and from) and item sources change;
+// the commit reindexes the loops, so LoopOf follows at once.
+func (s *Store) RenameNode(from, to string) {
+	if from == "" || to == "" || from == to {
+		return
+	}
+	prefix := from + "/"
+	moved := func(f *field[string]) bool {
+		if !strings.HasPrefix(f.V, prefix) {
+			return false
+		}
+		f.Set(to+"/"+f.V[len(prefix):], s.clock.Tick())
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var keys []string
+	for id, l := range s.loops {
+		changed := false
+		for _, k := range l.Links {
+			if k.Kind.V == wire.LinkAgent && moved(&k.Ref) {
+				changed = true
+			}
+			if moved(&k.From) {
+				changed = true
+			}
+		}
+		for _, it := range l.Items {
+			if moved(&it.Source) {
+				changed = true
+			}
+		}
+		if changed {
+			keys = append(keys, "l:"+id)
+		}
+	}
+	s.commitLocked(keys...)
+}
+
 // StewardConfig is the Steward's shared configuration (Level defaults to
 // suggest; Machine is Node's name here).
 func (s *Store) StewardConfig() wire.StewardConfig {
