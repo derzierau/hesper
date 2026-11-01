@@ -36,6 +36,13 @@ final class LoopHub {
     private(set) var chips: [String: LoopChip] = [:]
     /// Active loops that need the person (looks done and parked left out).
     private(set) var onYouCount = 0
+    /// The inbox's "Your move" entries without the attention queue's
+    /// agents: the toolbar's quiet pill. Stored: the bar reads it per
+    /// redraw.
+    private(set) var yourMoveCount = 0
+    /// The agents in the attention queue (approval, question, error), kept
+    /// from the daemon events (`AppModel.loopSaw`).
+    private(set) var queue: Set<String> = []
     /// The sidebar's loop counts per project (ProjectLoops).
     private(set) var projectLoops = ProjectLoops()
     /// The first list arrived, or a list failed after the notifications'
@@ -165,6 +172,26 @@ final class LoopHub {
         if n != onYouCount { onYouCount = n }
         let p = ProjectLoops(loops: store.loops.values)
         if p != projectLoops { projectLoops = p }
+        recount()
+    }
+
+    private func recount() {
+        let n = yourMove(excluding: queue).count
+        if n != yourMoveCount { yourMoveCount = n }
+    }
+
+    /// An agent's state changed (nil: it is gone): the queue follows.
+    func queueSaw(_ id: String, needsYou: Bool) {
+        guard queue.contains(id) != needsYou else { return }
+        if needsYou { queue.insert(id) } else { queue.remove(id) }
+        recount()
+    }
+
+    /// Every agent again (a resubscribe).
+    func queueListed(_ ids: Set<String>) {
+        guard ids != queue else { return }
+        queue = ids
+        recount()
     }
 
     // MARK: Inbox
@@ -202,6 +229,7 @@ final class LoopHub {
     /// Hides a loop's entry until the loop changes (nil: shows it again).
     func markActed(_ loop: Loop, _ on: Bool) {
         inboxActed[loop.id] = on ? loop.lastChange : nil
+        recount()
     }
 
     // MARK: Drafts started in a loop
@@ -286,8 +314,20 @@ extension AppModel {
     var loopHub: LoopHub { LoopHub.shared(for: self) }
 
     /// Every daemon event (marked integration point in `handle`): a
-    /// connect lists the loops again.
+    /// connect lists the loops again; agent changes keep the hub's copy of
+    /// the attention queue (one agent per change, all on a resubscribe).
     func loopSaw(_ e: DaemonEvent) {
-        if case .connected = e { loopHub.connected() }
+        switch e {
+        case .connected:
+            loopHub.connected()
+        case .changed(let a):
+            loopHub.queueSaw(a.id, needsYou: registry.agents[a.id]?.state.needsAttention ?? false)
+        case .removed(let id, _):
+            loopHub.queueSaw(id, needsYou: registry.agents[id]?.state.needsAttention ?? false)
+        case .reconciled, .moved:
+            loopHub.queueListed(Set(registry.agents.values.lazy.filter(\.state.needsAttention).map(\.id)))
+        default:
+            break
+        }
     }
 }

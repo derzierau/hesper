@@ -5466,7 +5466,9 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   either section has entries (else the "Nothing needs you." toast) and
   closes itself a second after both are empty. With an empty queue the
   toolbar shows a quiet "n your move" pill (never red) as the inbox's
-  anchor. Offers never appear. The menu bar, the red pill and
+  anchor; its count (`LoopHub.yourMoveCount`) is stored, recounted
+  only when the loops, the acted-on entries or the queue change (the
+  hub keeps the queue's ids from each agent event). Offers never appear. The menu bar, the red pill and
   notifications still count approval, question and error only.
 
 - **Tile loop tag** (`UI/TileParts.swift` `LoopTagView`, built in
