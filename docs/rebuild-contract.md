@@ -5361,7 +5361,18 @@ and the MCP tool is `hesper_loops_item_add`.
   other files as root nodes; then `blocks` and `blockedBy` loops with
   their titles. Text: two spaces per level, `rel kind label (ref)
   machine/agent state · ending`.
-- **Tests:** `TestLoopsCommands` against `fullDaemon`, which now wires a
+- **Goals** (`goals.go`). SCOPE: a project or group by id, a folder (a
+  project), or a name unique among both (scratch projects left out).
+  ID (goals save, rm): a goal or milestone by id, title or a unique
+  beginning of it. `goals ls [SCOPE]` (per product: goals, then
+  milestones with status, done/total, due, loop count, next), `new SCOPE
+  TITLE` (a goal; `--milestone` with `--goal`, `--due`, `--auto-file`
+  and `--when` conditions, added by `goals.item` after the save),
+  `save` (the flags given; `--due ""` clears, `--status proposed` sends a
+  milestone back to planning), `rm`, `check MILESTONE ITEM` (`--drop`,
+  `--undo`), `file MILESTONE LOOP` (`--remove`), `plan SCOPE [PROMPT]`
+  (`steward.plan`, prints the agent), `accept SCOPE [MILESTONE…]`.
+- **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, which now wires a
   loops store (no Steward) like the gateway does.
 
 ## Wire names kept from Ghosty
