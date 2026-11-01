@@ -5419,7 +5419,9 @@ above.
 
 - **LoopHub** (`Loops/LoopHub.swift`), one per daemon connection like
   ReviewHub (`model.loopHub`). On every connect (`AppModel.loopSaw`) it
-  lists `loops.list`, `goals.list`, `steward.status` and
+  lists `loops.list` (status `all`: the store keeps done and dropped
+  loops for the wrap-up's tallies; boards, chips and counts show active
+  loops only), `goals.list`, `steward.status` and
   `loops.settings.get` at once, off the main actor; an older hesperd
   (-32601) leaves `available` false. One list at a time
   (`LoopListGate`): a connect while one is out lists again after it; a

@@ -853,6 +853,11 @@ public struct LoopStore: Equatable, Sendable {
     public private(set) var supported = true
     public private(set) var version = 0
 
+    /// The status LoopHub lists: every one. The store keeps done and
+    /// dropped loops (the wrap-up's tallies, a milestone's finished loops);
+    /// boards, chips, counts and the start check show active loops only.
+    public static let listStatus = "all"
+
     public init(loops: [Loop] = [], goals: [Goal] = [], milestones: [Milestone] = [], steward: StewardStatus = StewardStatus(),
                 settings: LoopSettings = LoopSettings()) {
         for l in loops { self.loops[l.id] = l }
@@ -880,7 +885,8 @@ public struct LoopStore: Equatable, Sendable {
         version += 1
     }
 
-    /// A fresh `loops.list` (nil: hesperd has no loops).
+    /// A fresh `loops.list` (nil: hesperd has no loops); it replaces every
+    /// loop (a loop it lacks is gone).
     public mutating func listed(loops list: [Loop]?) {
         guard let list else { supported = false; loops = [:]; version += 1; return }
         supported = true

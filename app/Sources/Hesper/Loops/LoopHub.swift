@@ -105,7 +105,7 @@ final class LoopHub {
     }
 
     private nonisolated static func list(_ client: DaemonClient) async -> Listing {
-        async let l: Result<[Loop], any Error> = { do { return .success(try await client.loopsList()) } catch { return .failure(error) } }()
+        async let l: Result<[Loop], any Error> = { do { return .success(try await client.loopsList(status: LoopStore.listStatus)) } catch { return .failure(error) } }()
         async let g = try? client.goalsList()
         async let s = try? client.stewardStatus()
         async let t = try? client.loopSettings()
