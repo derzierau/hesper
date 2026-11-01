@@ -356,6 +356,7 @@ func (s *Store) Link(p wire.LoopLinkParams) (wire.Loop, error) {
 		}
 	}
 	var changed bool
+	var others []string // loops the agent leaves (newest membership wins)
 	if p.Remove {
 		rel := p.Link.Rel // empty: every relation to the ref
 		changed = s.removeLinksLocked(l, v.Kind, v.Ref, rel)
@@ -364,11 +365,15 @@ func (s *Store) Link(p wire.LoopLinkParams) (wire.Loop, error) {
 			return wire.Loop{}, wire.Errorf(wire.CodeNotFound, "loop %s has no such link", l.ID)
 		}
 	} else {
-		_, changed = s.addLinkLocked(l, v)
+		var k *LinkRecord
+		k, changed = s.addLinkLocked(l, v)
+		if member(k) {
+			others = s.leaveOthersLocked(l, v.Ref)
+		}
 	}
 	id := l.ID
-	if changed {
-		s.commitLocked("l:" + id)
+	if changed || len(others) > 0 {
+		s.commitLocked(append([]string{"l:" + id}, others...)...)
 	}
 	s.mu.Unlock()
 	return s.Get(id)

@@ -20,7 +20,8 @@ import (
 //   - loops.merge and loops.split: only the Steward at level act;
 //   - steward.plan: only the Steward, from level suggest on;
 //   - other writes: a service agent (the Steward, a planner) may; any
-//     other agent only loops.item and loops.link of its own loop.
+//     other agent only loops.item and loops.link of its own loop, and
+//     agent links only for itself and its descendants.
 //
 // Every write by an agent, allowed or refused, goes to the audit log.
 func (s *Server) loopsDispatch(c *ctrl, method string, params json.RawMessage) (any, error) {
@@ -33,7 +34,7 @@ func (s *Server) loopsDispatch(c *ctrl, method string, params json.RawMessage) (
 	reg := s.reg
 	write := !loopReads[method]
 	if caller != "" && write {
-		if refused := s.loopsAllowed(who, method, params); refused != nil {
+		if refused := s.loopsAllowed(who, method, params, t); refused != nil {
 			s.auditCall(caller, method, "", refused, nil)
 			return nil, refused
 		}
@@ -99,7 +100,7 @@ func (s *Server) stewardLevel() string {
 
 // loopsAllowed is nil when agent who may run the write method, else the
 // refusal, naming the rule.
-func (s *Server) loopsAllowed(who Caller, method string, params json.RawMessage) error {
+func (s *Server) loopsAllowed(who Caller, method string, params json.RawMessage, t treeView) error {
 	caller := who.Agent
 	if how, ok := loopPerson[method]; ok {
 		return wire.Errorf(wire.CodeForbidden, "agent %s may not %s: a person does (%s)", caller, method, how)
@@ -133,12 +134,44 @@ func (s *Server) loopsAllowed(who Caller, method string, params json.RawMessage)
 			ID string `json:"id"`
 		}
 		json.Unmarshal(params, &p)
-		if who.Loop != "" && p.ID == who.Loop {
-			return nil
+		if who.Loop == "" || p.ID != who.Loop {
+			return wire.Errorf(wire.CodeForbidden, "agent %s may only change items and links of its own loop (%s); %s is not it", caller, orDefault(who.Loop, "none"), orDefault(p.ID, "no loop"))
 		}
-		return wire.Errorf(wire.CodeForbidden, "agent %s may only change items and links of its own loop (%s); %s is not it", caller, orDefault(who.Loop, "none"), orDefault(p.ID, "no loop"))
+		if method == wire.MethodLoopsLink {
+			return s.linkAgentAllowed(who, params, t)
+		}
+		return nil
 	}
 	return wire.Errorf(wire.CodeForbidden, "agent %s may not %s: a person or the Steward does; agents change items and links of their own loop only", caller, method)
+}
+
+// linkAgentAllowed: an ordinary agent adds or removes agent links only
+// for itself and the agents it started (descendants; by ref only those
+// on this Mac, others by their id), so it cannot pull another agent into
+// its loop nor take one out.
+func (s *Server) linkAgentAllowed(who Caller, params json.RawMessage, t treeView) error {
+	var p wire.LoopLinkParams
+	if json.Unmarshal(params, &p) != nil || p.Link.Kind != wire.LinkAgent {
+		return nil
+	}
+	ours := func(id string) bool { return id == who.Agent || t.descends(id, who.Agent) }
+	if p.Link.Ref == "" {
+		if id := s.fullID(p.Link.Agent); id != "" && ours(id) {
+			return nil
+		}
+	} else if p.Link.Ref == who.Ref && who.Ref != "" {
+		return nil
+	} else {
+		for id := range t {
+			if !s.reg.IsRemote(id) && ours(id) {
+				if _, local := s.reg.split(id); s.reg.ref(local) == p.Link.Ref {
+					return nil
+				}
+			}
+		}
+	}
+	return wire.Errorf(wire.CodeForbidden, "agent %s may link only itself and the agents it started to its loop; %s is not one of them",
+		who.Agent, orDefault(p.Link.Agent, p.Link.Ref))
 }
 
 // closes is what a loops.save or goals.save marks done or dropped ("loop",

@@ -210,3 +210,24 @@ func TestHistoryAndDraftsPolicy(t *testing.T) {
 	allowed(t, "remove its own draft", h.callAs(a.ID, "drafts.remove", wire.IDParams{ID: "d-mine"}, nil))
 	allowed(t, "a person removes", h.call("drafts.remove", wire.IDParams{ID: "d-person"}, nil))
 }
+
+// TestLinkAgentsPolicy: an ordinary agent links only itself and the
+// agents it started (descendants) to its loop.
+func TestLinkAgentsPolicy(t *testing.T) {
+	h, _ := newStewardHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	other := h.spawn(wire.SpawnParams{Task: "small job"})
+	child, err := h.spawnAs(a.ID, wire.SpawnParams{Task: "small job"})
+	allowed(t, "child", err)
+	refOf := func(id string) string { return "n1/" + strings.TrimPrefix(id, "L/") }
+	link := func(v wire.LoopLink, remove bool) error {
+		return h.callAs(a.ID, wire.MethodLoopsLink, wire.LoopLinkParams{ID: a.Loop, Link: v, Remove: remove}, nil)
+	}
+	allowed(t, "itself", link(wire.LoopLink{Kind: wire.LinkAgent, Agent: a.ID}, false))
+	allowed(t, "its child by id", link(wire.LoopLink{Kind: wire.LinkAgent, Agent: child.ID}, false))
+	allowed(t, "its child by ref", link(wire.LoopLink{Kind: wire.LinkAgent, Ref: refOf(child.ID)}, false))
+	forbidden(t, "another agent by id", link(wire.LoopLink{Kind: wire.LinkAgent, Agent: other.ID}, false))
+	forbidden(t, "another agent by ref", link(wire.LoopLink{Kind: wire.LinkAgent, Ref: refOf(other.ID)}, false))
+	forbidden(t, "another agent's link removed", link(wire.LoopLink{Kind: wire.LinkAgent, Ref: refOf(other.ID)}, true))
+	allowed(t, "a URL", link(wire.LoopLink{Kind: wire.LinkURL, Ref: "https://example.com/pr/1"}, false))
+}

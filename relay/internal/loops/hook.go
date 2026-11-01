@@ -99,13 +99,14 @@ func (s *Store) Assign(a agents.AssignInfo) string {
 	if memberLink(l, a.Ref) == nil {
 		s.addLinkLocked(l, link)
 	}
+	keys := append([]string{"l:" + l.ID}, s.leaveOthersLocked(l, a.Ref)...)
 	if sess != "" && sess != a.SourceSession {
 		s.addLinkLocked(l, wire.LoopLink{Kind: wire.LinkSession, Ref: sess, Rel: wire.RelMember})
 	}
 	if p := a.Agent.ProjectID; p != "" && !strings.HasPrefix(p, wire.ScratchPrefix) {
 		s.addLinkLocked(l, wire.LoopLink{Kind: wire.LinkProject, Ref: p, Rel: wire.RelTouches})
 	}
-	s.commitLocked("l:" + l.ID)
+	s.commitLocked(keys...)
 	return l.ID
 }
 

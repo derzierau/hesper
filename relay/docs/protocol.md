@@ -569,8 +569,10 @@ status to `done` or `dropped` and any change of a goal's or milestone's
 status to `open` (accepting, reopening) are a person's only (a milestone
 an agent creates is `proposed`); below Steward level `act`, so are
 `loops.merge` and `loops.split`; an agent that is not a service reads
-everything and changes only the items and links of its own loop
-(`forbidden` otherwise); the Steward (a service agent) writes the rest.
+everything and changes only the items and links of its own loop, and
+agent links only for itself and the agents it started (`forbidden`
+otherwise); a member link added for an agent or session (`loops.link`,
+or a spawn into another loop) removes its member links in other loops; the Steward (a service agent) writes the rest.
 
 | Method | Params | Result |
 | --- | --- | --- |

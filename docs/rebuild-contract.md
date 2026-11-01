@@ -5209,7 +5209,9 @@ Code: `internal/agents/loopwork.go` (the registry's side),
     or any other agent never);
   - other writes (`loops.save`, `loops.link`, `loops.item`, `goals.save`,
     `goals.item`, `goals.file`, `steward.inbox`): a service agent may; any
-    other agent only `loops.item` and `loops.link` of its own loop;
+    other agent only `loops.item` and `loops.link` of its own loop, and
+    agent links (added or removed) only for itself and the agents it
+    started (its descendants: by id, or by ref when on this Mac);
   - `drafts.save` by the Steward: refused at level watch; an agent
     replaces or removes (`drafts.remove`) only drafts it saved;
   - `sessions.delete`, `sessions.archive`: never (tree.go's
@@ -5250,7 +5252,10 @@ settings (`loopLimit` 5, `stallDays` 7, `eveningAt` "18:00",
 `maxWakesPerDay` 40 by default) are shared by every Mac. **The store is
 the only source of truth for membership:** `LoopOf(ref)` is derived from
 the loops' live member links (agent or session links with rel `member`,
-`started` or `continued`; the newest wins; `mergedInto` chains are
+`started` or `continued`; the newest wins, and on this Mac joining a
+loop (`Assign` with another loop, `loops.link` adding a member link)
+removes the agent's or session's member links in its other loops, so it
+counts in one; `mergedInto` chains are
 followed, at most 16 steps). A `mergedInto` cycle (A merged into B on
 one Mac and B into A on another at once) is broken the same way on
 every Mac when the records merge (and on load): its lowest id is

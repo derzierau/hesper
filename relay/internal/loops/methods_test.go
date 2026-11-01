@@ -99,6 +99,30 @@ func TestAssign(t *testing.T) {
 	}
 }
 
+// TestNewestMembershipWins: an agent joining another loop (Assign with a
+// loop, loops.link) leaves the one it was in: it counts in one loop.
+func TestNewestMembershipWins(t *testing.T) {
+	s := openTest(t, "", "n-a", nil)
+	first := s.Assign(agents.AssignInfo{Ref: "n-a/r1", Agent: wire.Agent{Name: "parser"}})
+	second := newLoop(s, "second")
+	if got := s.Assign(agents.AssignInfo{Ref: "n-a/r1", Loop: second, Agent: wire.Agent{Name: "parser"}}); got != second {
+		t.Fatalf("assigned to %s", got)
+	}
+	if _, ok := linkOf(view(t, s, first), "n-a/r1"); ok {
+		t.Fatal("still a member of its first loop")
+	}
+	third := newLoop(s, "third")
+	must[wire.Loop](t, s, wire.MethodLoopsLink, wire.LoopLinkParams{ID: third, Link: wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/r1"}})
+	if _, ok := linkOf(view(t, s, second), "n-a/r1"); ok || s.LoopOf("n-a/r1") != third {
+		t.Fatalf("in %s; the second loop kept its link", s.LoopOf("n-a/r1"))
+	}
+	// A touches link is not membership: it stays.
+	must[wire.Loop](t, s, wire.MethodLoopsLink, wire.LoopLinkParams{ID: second, Link: wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/r1", Rel: wire.RelTouches}})
+	if s.LoopOf("n-a/r1") != third {
+		t.Fatal("a touches link moved the agent")
+	}
+}
+
 func TestSettledAndClosed(t *testing.T) {
 	s := openTest(t, "", "n-a", nil)
 	s.SetClassify(func(msg string) (string, []string) {

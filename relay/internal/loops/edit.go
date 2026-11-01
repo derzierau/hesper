@@ -50,6 +50,29 @@ func (s *Store) addLinkLocked(l *LoopRecord, v wire.LoopLink) (*LinkRecord, bool
 	return k, changed
 }
 
+// leaveOthersLocked tombstones ref's member links in every loop but l:
+// the newest membership wins, an agent (or session) counts in one loop.
+// It returns the keys of the loops it changed (to commit).
+func (s *Store) leaveOthersLocked(l *LoopRecord, ref string) []string {
+	var keys []string
+	for id := range s.indexLocked().members[ref] {
+		o := s.loops[id]
+		if id == l.ID || o == nil {
+			continue
+		}
+		changed := false
+		for _, k := range o.Links {
+			if member(k) && k.Ref.V == ref {
+				changed = k.Deleted.Set(true, s.clock.Tick()) || changed
+			}
+		}
+		if changed {
+			keys = append(keys, "l:"+id)
+		}
+	}
+	return keys
+}
+
 // removeLinksLocked tombstones the links of a loop with this kind and
 // ref (and rel, when given).
 func (s *Store) removeLinksLocked(l *LoopRecord, kind, ref, rel string) bool {
