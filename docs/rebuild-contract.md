@@ -5521,10 +5521,14 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   ticks the loose end off (`loops.item` done); ⌘D "Draft in loop" files
   the task's first line as the agents' step with `draft` set to this
   draft and parks it (draft tiles only: the quick launch panel keeps
-  no drafts). Both chords are unbound in the composer (the window's
-  router passes them to the text view, `ComposerTextView
-  .performKeyEquivalent`), and are the strip's own keys, not registry
-  commands. The chip row's measured height allows one more row.
+  no drafts). Both are registry commands on the composer surface
+  (`composerAddToLoop` on both composers, `composerDraftInLoop` on the
+  draft tile's only), so Settings › Shortcuts can rebind them; they map
+  to no AppCommand, so the window's router passes them to the text view
+  (`ComposerTextView.performKeyEquivalent`), which asks
+  `StartStrip.choice`, and the strip's buttons read their caps
+  (`StartStrip.addKey` / `draftKey`). The chip row's measured height
+  allows one more row.
 
 - **Service agents** (`Agent.service`: the Steward, the planner).
   Tidy Up (⇧⌘W) and auto-tidy (`TidyUp.select`, `AutoTidy`) never

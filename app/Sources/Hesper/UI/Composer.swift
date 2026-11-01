@@ -188,12 +188,11 @@ final class ComposerTextView: NSTextView {
 
     // MARK: Keys
 
-    /// The start strip's ⇧⌘⏎ and ⌘D (StartStrip.choice): unbound in the
-    /// composer, so the window hands them to the text view.
+    /// The start strip's keys (⇧⌘⏎ and ⌘D by default, StartStrip.choice):
+    /// the window's router passes them to the text view.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, window?.firstResponder === self, let c = composer, c.completion == nil,
-           let s = c.startStrip, let choice = s.choice(for: KeyChord(event: event)) {
-            if case .draftInLoop = choice, c.quick { return super.performKeyEquivalent(with: event) }
+           let s = c.startStrip, let choice = s.choice(for: KeyChord(event: event), in: c.quick ? .quickLaunch : .composer) {
             c.perform(choice)
             return true
         }
@@ -529,11 +528,11 @@ struct DraftChips: View {
                         .frame(minHeight: Pill.height)
                 }
                 if let add = s.add {
-                    fixButton("Add to loop", id: "draft.loop.add", key: compact ? nil : StartStrip.addKey) { composer.perform(add) }
+                    fixButton("Add to loop", id: "draft.loop.add", key: compact ? nil : StartStrip.addKey(in: composer.quick ? .quickLaunch : .composer)) { composer.perform(add) }
                         .help("Start the agent in this loop" + (s.looseEnd == nil ? "" : " and tick the loose end off"))
                 }
                 if let d = s.draft, !composer.quick {
-                    fixButton("Draft in loop", id: "draft.loop.draft", key: compact ? nil : StartStrip.draftKey) { composer.perform(d) }
+                    fixButton("Draft in loop", id: "draft.loop.draft", key: compact ? nil : StartStrip.draftKey(in: composer.quick ? .quickLaunch : .composer)) { composer.perform(d) }
                         .help("Save this as a step of the loop and leave it as a draft")
                 }
                 if s.add != nil, !compact, let start = CommandRegistry.cap(.startDraft) {
