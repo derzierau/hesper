@@ -229,7 +229,8 @@ func TestMCPHandshakeAndTools(t *testing.T) {
 			t.Errorf("%s: listed %v, NoMCP %v", cmd.Name, listed, cmd.NoMCP)
 		}
 	}
-	for _, name := range []string{"hesper_agents_new", "hesper_agents_ls", "hesper_agents_wait", "hesper_history_search", "hesper_projects_ls", "hesper_reference", "hesper_open_review", "hesper_open_palette"} {
+	for _, name := range []string{"hesper_agents_new", "hesper_agents_ls", "hesper_agents_wait", "hesper_history_search", "hesper_projects_ls", "hesper_reference", "hesper_open_review", "hesper_open_palette",
+		"hesper_loops_ls", "hesper_loops_show", "hesper_loops_item_add", "hesper_loops_item_check", "hesper_loops_graph", "hesper_goals_ls", "hesper_goals_check", "hesper_steward_status"} {
 		if tools[name] == nil {
 			t.Errorf("no tool %s", name)
 		}
@@ -249,6 +250,9 @@ func TestMCPHandshakeAndTools(t *testing.T) {
 	if ann("hesper_agents_screen", "readOnlyHint") != true || ann("hesper_history_search", "readOnlyHint") != true {
 		t.Error("screen and history search are read-only")
 	}
+	if ann("hesper_loops_ls", "readOnlyHint") != true || ann("hesper_loops_close", "destructiveHint") != true || ann("hesper_loops_item_add", "destructiveHint") != false {
+		t.Error("loops ls is read-only, loops close destructive, loops item add neither")
+	}
 	if ann("hesper_agents_kill", "destructiveHint") != true || ann("hesper_agents_close", "destructiveHint") != true || ann("hesper_agents_send", "destructiveHint") != false {
 		t.Error("kill and close are destructive, send is not")
 	}
@@ -257,6 +261,9 @@ func TestMCPHandshakeAndTools(t *testing.T) {
 	}
 	if p := props("hesper_agents_send"); p["id"] == nil || p["text"].(map[string]any)["type"] != "array" || p["key"].(map[string]any)["type"] != "array" || p["daemon-socket"] != nil || p["json"] != nil {
 		t.Errorf("send's schema: %v", p)
+	}
+	if p := props("hesper_loops_item_add"); p["loop"] == nil || p["text"].(map[string]any)["type"] != "array" || p["after"].(map[string]any)["type"] != "array" {
+		t.Errorf("loops item add's schema: %v", p)
 	}
 	if p := props("hesper_agents_wait"); p["timeout"].(map[string]any)["type"] != "string" || p["until"] == nil || p["next"].(map[string]any)["type"] != "boolean" {
 		t.Errorf("wait's schema: %v", p)

@@ -5389,6 +5389,12 @@ and the MCP tool is `hesper_loops_item_add`.
   are usage errors.
 - **`events --kinds`** gains `loops`, `goals` and `steward` (a
   notification's method prefix, as before).
+- **MCP and reference.** The tools come from the registry
+  (`hesper_loops_item_add`, `hesper_goals_ls`, `hesper_steward_status`,
+  …), with argument hints for LOOP, INTO, FROM, ITEM, MILESTONE, SCOPE
+  and LEVEL; the server's instructions tell an agent to put follow-ups
+  in its own loop. `hesperctl reference` explains loops, goals and
+  milestones and the Steward under Concepts.
 - **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, `TestStewardCommands` with a fake `agents.Steward` (`fullDaemon(t, steward)`), `TestStewardUnavailable`, `TestNewInLoop`, `TestNewInLoopOnOlderDaemon`, `TestEventsLoops`; `fullDaemon` now wires a
   loops store (no Steward) like the gateway does.
 

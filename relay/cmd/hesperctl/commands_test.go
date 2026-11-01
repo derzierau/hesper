@@ -108,7 +108,7 @@ func TestReference(t *testing.T) {
 			t.Errorf("reference lacks %s", c.Name)
 		}
 	}
-	for _, want := range []string{wire.StateApproval, wire.StateExited, `"attention": {`, "HESPER_AGENT_ID", "| 3 | not_found |", "| 7 | exists |", "`--no-submit`"} {
+	for _, want := range []string{wire.StateApproval, wire.StateExited, `"attention": {`, "HESPER_AGENT_ID", "| 3 | not_found |", "| 7 | exists |", "`--no-submit`", "**Loops**", "**Goals and milestones**", "**Steward**", "loops item add self"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("reference lacks %q", want)
 		}

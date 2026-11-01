@@ -64,7 +64,7 @@ func init() {
 			Help:   loopRefHelp + " " + linkFlagsHelp + " Without --rel every relation to it goes.",
 			Output: "Loop", Run: loopsLinkRun(true)},
 		{Name: "loops item add", Summary: "Add a step, loose end, promise, question or offer to a loop", Usage: "loops item add LOOP TEXT… [--owner O] [--kind K] [--after ITEM]… [--json]",
-			Help: loopRefHelp + " --owner says who does it: you (the person, the default), agent or others; --kind is step (the default), looseEnd, promise, question or offer. --after names items that must be done first (" + itemRefHelp + "). " +
+			Help: loopRefHelp + " --owner says who does it: you (the person, the default), agent or others; --kind is step (the default), looseEnd, promise, question or offer. --after names items that must be done first: " + itemRefHelp + " " +
 				"An agent puts its follow-ups here: hesperctl loops item add self --owner agent ….",
 			Output: "Loop", Examples: []string{"hesperctl loops item add self --owner you merge PR #482 once CI is green", "hesperctl loops item add self --owner agent --kind promise update the changelog after the merge"},
 			Run: loopsItemAdd},
