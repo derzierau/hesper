@@ -17,7 +17,7 @@ const maxSentences = 5
 // SetMachine sets this Mac's short name (views).
 func (s *Store) SetMachine(short string) {
 	s.mu.Lock()
-	s.opt.Machine = short
+	s.opt.Machine, s.allDirty = short, true
 	s.mu.Unlock()
 	s.kickViews()
 }

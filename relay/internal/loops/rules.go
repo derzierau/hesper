@@ -12,21 +12,32 @@ import (
 // Rules: what views compute from the records and the live agents, in one
 // place (the app only sorts and draws). Pure functions of a built view.
 
-// applyRules fills every view's computed fields.
+// applyRules fills every view's computed fields. A loop that was not
+// built (b.brief) still counts as a blocker and under its milestone.
 func applyRules(b *built, settings wire.LoopSettings, now time.Time) {
+	others := b.loops
+	if len(b.brief) > 0 {
+		others = make(map[string]wire.Loop, len(b.loops)+len(b.brief))
+		for id, l := range b.brief {
+			others[id] = l
+		}
+		for id, l := range b.loops {
+			others[id] = l
+		}
+	}
 	for id, l := range b.loops {
 		markReady(l.Items)
 		l.Counts = counts(&l)
 		l.Projects = projectsOf(&l)
-		l.Next, l.NextText, l.LooksDone = next(&l, blockers(b.loops, &l))
+		l.Next, l.NextText, l.LooksDone = next(&l, blockers(others, &l))
 		b.loops[id] = l
 	}
 	for id, m := range b.milestones {
 		markReady(m.Items)
-		m.Loops = milestoneLoops(b.loops, id)
+		m.Loops = milestoneLoops(others, id)
 		m.Done, m.Total = progress(m.Items)
 		m.NextText = milestoneNext(&m)
-		m.Stalled = stalled(&m, b.loops, settings.StallDays, now)
+		m.Stalled = stalled(&m, others, settings.StallDays, now)
 		b.milestones[id] = m
 	}
 }

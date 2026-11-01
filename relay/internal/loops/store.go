@@ -83,9 +83,11 @@ type Store struct {
 	settings   SettingsRecord
 	seq        int64            // the newest change's sequence number
 	seqs       map[string]int64 // record key → its last change's
-	index      map[string]string
-	shared     chan struct{} // closed at the next change (sync)
-	stewardCh  chan struct{} // closed at the next Steward config change
+	idx        *index           // index.go (nil: built on first use)
+	dirty      map[string]bool  // loops changed since the last view build
+	allDirty   bool             // every view (names, agents source)
+	shared     chan struct{}    // closed at the next change (sync)
+	stewardCh  chan struct{}    // closed at the next Steward config change
 
 	// Joined in when views are built (views.go), each called without
 	// the lock held.
@@ -98,6 +100,7 @@ type Store struct {
 	created func(id, service string)
 
 	views    map[string]json.RawMessage // what watchers last got
+	live     map[string]liveFact        // the live agents views last joined, by ref
 	watchers map[*watcher]struct{}
 	viewsCh  chan struct{}
 	vmu      sync.Mutex // one view build at a time
@@ -133,7 +136,7 @@ func Open(opt Options) *Store {
 		opt.Now = time.Now
 	}
 	s := &Store{opt: opt, node: opt.Node, loops: map[string]*LoopRecord{}, goals: map[string]*GoalRecord{},
-		milestones: map[string]*MilestoneRecord{}, seqs: map[string]int64{}, shared: make(chan struct{}),
+		milestones: map[string]*MilestoneRecord{}, seqs: map[string]int64{}, dirty: map[string]bool{}, shared: make(chan struct{}),
 		stewardCh: make(chan struct{}), views: map[string]json.RawMessage{}, watchers: map[*watcher]struct{}{},
 		viewsCh: make(chan struct{}, 1), saveCh: make(chan struct{}, 1), done: make(chan struct{})}
 	s.classify = func(string) (string, []string) { return wire.EndingDone, nil }
@@ -257,7 +260,7 @@ func (s *Store) Node() string {
 // state views join in. It is called without the store's lock held.
 func (s *Store) SetAgents(fn func() []wire.Agent) {
 	s.mu.Lock()
-	s.agents = fn
+	s.agents, s.allDirty = fn, true
 	s.mu.Unlock()
 	s.kickViews()
 }
@@ -266,8 +269,9 @@ func (s *Store) SetAgents(fn func() []wire.Agent) {
 // for agent refs and views. Called without the store's lock held.
 func (s *Store) SetNames(nodeOf func(machine string) string, machineOf func(node string) string) {
 	s.mu.Lock()
-	s.nodeOf, s.machineOf = nodeOf, machineOf
+	s.nodeOf, s.machineOf, s.allDirty = nodeOf, machineOf, true
 	s.mu.Unlock()
+	s.kickViews()
 }
 
 // SetSessionsNode gives the shared history's node (session refs
@@ -363,8 +367,13 @@ func (s *Store) commitLocked(keys ...string) {
 			close(s.stewardCh)
 			s.stewardCh = make(chan struct{})
 		}
+		if len(k) > 2 && k[0] == 'l' {
+			s.dirty[k[2:]] = true
+			if s.idx != nil {
+				s.reindexLocked(k[2:])
+			}
+		}
 	}
-	s.index = nil
 	close(s.shared)
 	s.shared = make(chan struct{})
 	s.scheduleSave()
@@ -593,29 +602,7 @@ func (s *Store) loopOfLocked(ref string) string {
 	if ref == "" {
 		return ""
 	}
-	if s.index == nil {
-		type hit struct {
-			loop string
-			at   stamp
-		}
-		best := map[string]hit{}
-		for id, l := range s.loops {
-			for _, k := range l.Links {
-				if !member(k) {
-					continue
-				}
-				h, ok := best[k.Ref.V]
-				if !ok || h.at.Less(k.Ref.S) {
-					best[k.Ref.V] = hit{id, k.Ref.S}
-				}
-			}
-		}
-		s.index = make(map[string]string, len(best))
-		for ref, h := range best {
-			s.index[ref] = h.loop
-		}
-	}
-	return s.resolveLocked(s.index[ref])
+	return s.resolveLocked(s.indexLocked().of[ref])
 }
 
 // LoopOf is the loop an agent or session ref belongs to ("" none).

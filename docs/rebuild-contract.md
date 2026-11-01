@@ -5295,7 +5295,20 @@ service may read everything and change only the items and links of its
 own loop. Notifications: `loops.changed`/`loops.removed`,
 `goals.changed`/`goals.removed`, rebuilt ≤ 50 ms after a change of the
 records or of any agent, sent only when a view's JSON changed, coalesced
-per id. Who acts next (`next`, `nextText`, `looksDone`), counts, projects,
+per id. A rebuild copies only the loops it rebuilds: those whose records
+changed, those linking an agent whose live state (id, state, name,
+ending) changed, those waiting (`blockedBy`, merges followed) for a
+changed loop and those new to the list; every goal and milestone is
+rebuilt (from brief stand-ins of their loops). `loops.get` and the
+answers of `loops.save/link/item/merge/split` build only the loop they
+return, `goals.*` no loop. An index (`index.go`: ref → loop, agent ref →
+loops, each loop's filing and blockedBy links) is updated per committed
+loop, so `LoopOf` (the registry calls it with its lock held) is a map
+lookup and a merge chain, never a scan. `loops.pull` copies records in
+chunks of 32 under the lock and marshals them without it. Benchmarks at
+2,000 loops (`internal/loops/bench_test.go`): `LoopOf` right after a
+change 3.4 µs (was 2.6 ms), a view rebuild after one loop changed 1.0 ms
+(was 44 ms), `loops.get` 0.05 ms (was 16 ms). Who acts next (`next`, `nextText`, `looksDone`), counts, projects,
 items' `ready` and milestones' loops, progress, next text and `stalled`
 are computed in `rules.go`. Caps (64 links, 100 items a loop, 2,000
 loops) apply to views, never to merges.

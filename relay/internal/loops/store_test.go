@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -366,5 +368,74 @@ func TestWatchFirstOpenLoopsThenChanges(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no change note")
+	}
+}
+
+// TestViewsRebuildWhatChanged: a view build rebuilds the loops that
+// changed, those linking an agent whose live state changed and those
+// waiting for a changed loop; the others keep their views; milestones
+// follow their loops.
+func TestViewsRebuildWhatChanged(t *testing.T) {
+	s := openTest(t, "", "n-a", nil)
+	a, b, c := newLoop(s, "a"), newLoop(s, "b"), newLoop(s, "c")
+	addLink(s, a, wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/x1", Rel: wire.RelMember})
+	addLink(s, a, wire.LoopLink{Kind: wire.LinkLoop, Ref: b, Rel: wire.RelBlockedBy})
+	state := wire.StateIdle
+	var mu sync.Mutex
+	s.SetAgents(func() []wire.Agent {
+		mu.Lock()
+		defer mu.Unlock()
+		return []wire.Agent{{ID: "x1", State: state}}
+	})
+	ms := must[wire.GoalChanged](t, s, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Scope: ptr("p-app"), Title: ptr("Beta")}}).Milestone
+	s.emit()
+	note := func(id string) wire.Loop {
+		t.Helper()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		var n wire.LoopChanged
+		if err := json.Unmarshal(s.views["l:"+id], &n); err != nil {
+			t.Fatalf("no view of %s", id)
+		}
+		return n.Loop
+	}
+	if l := note(a); l.NextText != "Waits for b" {
+		t.Fatalf("a: %q", l.NextText)
+	}
+	s.mu.Lock()
+	cView := string(s.views["l:"+c])
+	s.mu.Unlock()
+	// A live change rebuilds the loop linking the agent.
+	mu.Lock()
+	state = wire.StateWorking
+	mu.Unlock()
+	s.emit()
+	if l := note(a); l.Next != wire.NextAgents {
+		t.Fatalf("a after its agent works: %+v", l.Next)
+	}
+	// Its blocker closing rebuilds it.
+	mu.Lock()
+	state = wire.StateIdle
+	mu.Unlock()
+	must[wire.Loop](t, s, wire.MethodLoopsSave, wire.LoopSaveParams{ID: b, Status: ptr(wire.LoopDone)})
+	s.emit()
+	if l := note(a); strings.Contains(l.NextText, "Waits for") {
+		t.Fatalf("a still waits: %q", l.NextText)
+	}
+	// Filing c rebuilds it and its milestone.
+	must[wire.Milestone](t, s, wire.MethodGoalsFile, wire.GoalFileParams{Milestone: ms.ID, Loop: c})
+	s.emit()
+	s.mu.Lock()
+	same := string(s.views["l:"+c]) == cView
+	s.mu.Unlock()
+	if l := note(c); l.Milestone != ms.ID || same {
+		t.Fatalf("c: %+v", l)
+	}
+	s.mu.Lock()
+	var g wire.GoalChanged
+	json.Unmarshal(s.views["m:"+ms.ID], &g)
+	s.mu.Unlock()
+	if g.Milestone == nil || len(g.Milestone.Loops) != 1 || g.Milestone.Loops[0] != c {
+		t.Fatalf("milestone %+v", g.Milestone)
 	}
 }
