@@ -24,7 +24,8 @@ func newStewardHarness(t *testing.T) (*harness, *fakeLoops) {
 
 func TestLoopsPolicyPerson(t *testing.T) {
 	h, l := newStewardHarness(t)
-	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet, wire.MethodLoopsMerge} {
+	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet, wire.MethodLoopsMerge,
+		wire.MethodStewardInbox} {
 		allowed(t, m, h.call(m, map[string]any{}, nil))
 	}
 	allowed(t, "close a loop", h.call(wire.MethodLoopsSave, wire.LoopSaveParams{ID: "lp-1", Status: ptr(wire.LoopDone)}, nil))

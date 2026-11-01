@@ -562,17 +562,26 @@ controller records the new agent's loop itself.
 
 ### Loops on the local socket
 
-Types in `relay/pkg/wire/loops.go`. Agent callers follow the agent tree's
-policy: `steward.set`, `goals.accept`, `goals.remove`,
-`loops.settings.set`, any change of a loop's, goal's or milestone's
-status to `done` or `dropped` and any change of a goal's or milestone's
-status to `open` (accepting, reopening) are a person's only (a milestone
-an agent creates is `proposed`); below Steward level `act`, so are
-`loops.merge` and `loops.split`; an agent that is not a service reads
-everything and changes only the items and links of its own loop, and
-agent links only for itself and the agents it started (`forbidden`
-otherwise); a member link added for an agent or session (`loops.link`,
-or a spawn into another loop) removes its member links in other loops; the Steward (a service agent) writes the rest.
+Types in `relay/pkg/wire/loops.go`. A person may call every method.
+Agent callers follow the agent tree's policy:
+
+- a person's only: `steward.set`, `goals.accept`, `goals.remove`,
+  `loops.settings.set`; the status rule covers loops, goals and
+  milestones alike: no agent sets a loop's, goal's or milestone's
+  status to `done` or `dropped`, nor a goal's or milestone's to `open`
+  (accepting, reopening); a milestone an agent creates is `proposed`;
+- `loops.merge` and `loops.split`: the Steward at level `act`;
+- `steward.plan`: the Steward at level `suggest` or `act` (never a
+  planner);
+- `steward.inbox` and the other writes: service agents (the Steward, its
+  planners);
+- any other agent reads everything and changes only the items and links
+  of its own loop, agent links only for itself and the agents it
+  started.
+
+Refusals are `forbidden`. A member link added for an agent or session
+(`loops.link`, or a spawn into another loop) removes its member links in
+other loops.
 
 | Method | Params | Result |
 | --- | --- | --- |
@@ -593,7 +602,7 @@ or a spawn into another loop) removes its member links in other loops; the Stewa
 | `goals.accept` | `{scope, ids?}` | `{accepted: N}`: proposed milestones opened |
 | `steward.status` | `{}` | `StewardStatus`: the shared `{enabled, level, node, machine}`, and on the Mac that runs it `agent`, `session`, `queued`, today's `wakes`, `lastWake`, `dropped` (events the full queue dropped) and `stopped` (why it does not run although it is on: it ended 3 times within an hour) |
 | `steward.set` | `{enabled?, level?, machine?}` (`enabled` without a machine: this Mac, unless one is set; `enabled: true` again clears `stopped`) | `StewardStatus` |
-| `steward.inbox` | `{}` (service agents only) | `[StewardEvent]`: the waiting events, oldest first, one per agent (or loop); the queue is emptied |
+| `steward.inbox` | `{}` (a person or a service agent; never another agent) | `[StewardEvent]`: the waiting events, oldest first, one per agent (or loop); the queue is emptied |
 | `steward.plan` | `{scope, prompt?}` (a project or group id; a person, or the Steward at level `suggest` or `act`) | `Agent`: the planning session (service `planner`, a child of the Steward when it runs here); while the scope's planner runs, that one (one per scope) |
 
 Ids: loops `lp-`, goals `gl-`, milestones `ms-` + 12 hex; items `it-` + 8
