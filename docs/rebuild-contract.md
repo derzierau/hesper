@@ -5507,7 +5507,9 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   loose end the task would tick off, and the on-you meter "n / limit
   on you" (the error tone at `loopLimit` or over, a hint only). Keys:
   ⌘⏎ Start is unchanged and starts a new loop; ⇧⌘⏎ "Add to loop" starts
-  with `SpawnRequest.loop` (sent as `loop`) and, once the agent runs,
+  with `SpawnRequest.loop` (sent as `loop`; in the quick launch panel
+  through the panel's own start, which clears and hides it, like ⌘⏎)
+  and, once the agent runs,
   ticks the loose end off (`loops.item` done); ⌘D "Draft in loop" files
   the task's first line as the agents' step with `draft` set to this
   draft and parks it (draft tiles only: the quick launch panel keeps
