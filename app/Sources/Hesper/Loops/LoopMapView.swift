@@ -61,7 +61,7 @@ struct LoopMapView: View {
         for region in map.regions {
             let r = rect(region.frame)
             ctx.stroke(DS.Radius.shape(DS.Radius.control).path(in: r), with: .color(Theme.color(.dim2)),
-                       style: StrokeStyle(lineWidth: 1, dash: Self.dash))
+                       style: StrokeStyle(lineWidth: DS.hairline, dash: Self.dash))
             ctx.draw(Text(region.title).font(DS.font(.meta)).foregroundStyle(Theme.dim),
                      at: CGPoint(x: r.minX + DS.Spacing.s, y: r.minY + DS.Spacing.m), anchor: .leading)
         }
@@ -108,9 +108,9 @@ struct LoopMapView: View {
         let shape = DS.Radius.shape(DS.Radius.control).path(in: r)
         let missing = n.kind == .missing
         ctx.fill(shape, with: .color(Theme.color(.tile)))
-        ctx.fill(shape, with: .color(Color(nsColor: Theme.ns(missing ? .error : tint, alpha: 0.14))))
-        ctx.stroke(shape, with: .color(Color(nsColor: Theme.ns(missing ? .error : tint, alpha: 0.7))),
-                   style: StrokeStyle(lineWidth: 1, dash: missing || n.kind == .loop ? Self.dash : []))
+        ctx.fill(shape, with: .color(Color(nsColor: Theme.ns(missing ? .error : tint, alpha: DS.Alpha.tint))))
+        ctx.stroke(shape, with: .color(Color(nsColor: Theme.ns(missing ? .error : tint, alpha: DS.Alpha.edge))),
+                   style: StrokeStyle(lineWidth: DS.hairline, dash: missing || n.kind == .loop ? Self.dash : []))
         // The state square (a step is the person's: question; a file plain).
         let side = CGFloat(StateMarkKind.side)
         let sq = CGRect(x: r.minX + DS.Spacing.m, y: r.midY - side / 2 - (n.detail == nil ? 0 : DS.Spacing.s), width: side, height: side)

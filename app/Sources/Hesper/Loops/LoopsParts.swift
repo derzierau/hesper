@@ -14,7 +14,7 @@ struct LoopsErrorLine: View {
         }
         .padding(.horizontal, DS.Spacing.l)
         .padding(.vertical, DS.Spacing.s)
-        .background(Color(nsColor: Theme.ns(.error, alpha: 0.1)))
+        .background(Color(nsColor: Theme.ns(.error, alpha: DS.Alpha.banner)))
         .accessibilityIdentifier("loops.error")
     }
 }
@@ -74,7 +74,7 @@ struct LoopsField: View {
             .padding(.horizontal, DS.Spacing.m)
             .frame(height: IconButton.side)
             .background(DS.Radius.shape(DS.Radius.control).fill(Theme.color(.background)))
-            .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(Theme.accent, lineWidth: 1))
+            .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(Theme.accent, lineWidth: DS.hairline))
             .onAppear { focused = true }
             .accessibilityIdentifier("loops.field")
     }

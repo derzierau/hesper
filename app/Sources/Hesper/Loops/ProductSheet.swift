@@ -306,7 +306,7 @@ struct ProductSheetView: View {
         }
         .padding(.horizontal, DS.Spacing.l)
         .padding(.vertical, DS.Spacing.s)
-        .background(Color(nsColor: Theme.ns(.question, alpha: 0.1)))
+        .background(Color(nsColor: Theme.ns(.question, alpha: DS.Alpha.banner)))
         .accessibilityIdentifier("product.duplicate")
     }
 }
@@ -378,7 +378,7 @@ struct ProductPageView: View {
         }
         .padding(DS.Spacing.m)
         .background(DS.Radius.shape(DS.Radius.control).fill(Theme.color(.tile)))
-        .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(selected ? Theme.accent : Theme.stroke, lineWidth: 1))
+        .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(selected ? Theme.accent : Theme.stroke, lineWidth: DS.hairline))
         .id(m.id)
         .onTapGesture { model.selected = m.id }
         .accessibilityIdentifier("product.milestone.\(m.id)")
