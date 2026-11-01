@@ -5244,7 +5244,8 @@ calls Assign, AgentSettled and AgentClosed, the dispatcher's policy) is
 relation: `member`, `started`, `continued`, `handoff`, `blocks`,
 `blockedBy`, `touches`) and its items (steps, loose ends, promises,
 questions, offers; each with an owner `you`/`agent`/`others`, a state,
-an order and the items it comes `after`). Goals and milestones belong to
+an order and the items it comes `after`; an item may carry a `check`,
+which `loops.item`/`goals.item` with `check: {kind: ""}` clears). Goals and milestones belong to
 a product (a project or group id, `scope`); a milestone has "done when"
 conditions (items of kind `condition`) and the loops filed under it. One
 Steward configuration (`enabled`, `level`, `node`) and one set of loop

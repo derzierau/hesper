@@ -178,6 +178,39 @@ func TestSettledAndClosed(t *testing.T) {
 	}
 }
 
+// TestItemCheckCleared: an item's check is set, then cleared with an
+// empty kind (loops.item and goals.item alike).
+func TestItemCheckCleared(t *testing.T) {
+	s := openTest(t, "", "n-a", nil)
+	loop := newLoop(s, "ship")
+	it := addItem(t, s, loop, "PR merged")
+	check := func(l []wire.LoopItem) *wire.ItemCheck {
+		for _, v := range l {
+			if v.ID == it {
+				return v.Check
+			}
+		}
+		t.Fatalf("no item %s", it)
+		return nil
+	}
+	l := must[wire.Loop](t, s, wire.MethodLoopsItem, wire.LoopItemParams{ID: loop, Item: wire.LoopItem{ID: it,
+		Check: &wire.ItemCheck{Kind: wire.CheckPR, Ref: "https://example.com/pr/1"}}})
+	if c := check(l.Items); c == nil || c.Kind != wire.CheckPR {
+		t.Fatalf("check %+v", c)
+	}
+	l = must[wire.Loop](t, s, wire.MethodLoopsItem, wire.LoopItemParams{ID: loop, Item: wire.LoopItem{ID: it, Check: &wire.ItemCheck{}}})
+	if c := check(l.Items); c != nil {
+		t.Fatalf("check not cleared: %+v", c)
+	}
+	ms := must[wire.GoalChanged](t, s, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Scope: ptr("p-app"), Title: ptr("Beta")}}).Milestone
+	m := must[wire.Milestone](t, s, wire.MethodGoalsItem, wire.LoopItemParams{ID: ms.ID, Item: wire.LoopItem{Text: "Tagged",
+		Check: &wire.ItemCheck{Kind: wire.CheckTag, Ref: "https://example.com/app@v1"}}})
+	m = must[wire.Milestone](t, s, wire.MethodGoalsItem, wire.LoopItemParams{ID: ms.ID, Item: wire.LoopItem{ID: m.Items[0].ID, Check: &wire.ItemCheck{}}})
+	if m.Items[0].Check != nil {
+		t.Fatalf("condition's check not cleared: %+v", m.Items[0].Check)
+	}
+}
+
 func TestAgentCallerRule(t *testing.T) {
 	s := openTest(t, "", "n-a", nil)
 	own := s.Assign(agents.AssignInfo{Ref: "n-a/a1", Agent: wire.Agent{Name: "a"}})

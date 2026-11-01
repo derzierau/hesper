@@ -580,7 +580,7 @@ or a spawn into another loop) removes its member links in other loops; the Stewa
 | `loops.get` | `{id}` | `Loop` (merged loops too, with `mergedInto`) |
 | `loops.save` | `LoopSaveParams` (no `id`: a new loop; else the fields given) | the `Loop` |
 | `loops.link` | `{id, link, remove?}`: an agent link may name the agent by its id here (`link.agent`); `rel` defaults to `member` (`touches` for projects, `blockedBy` for loops) | the `Loop` |
-| `loops.item` | `{id, item, remove?}` (`item.id` empty: a new item; else its non-empty fields change) | the `Loop` |
+| `loops.item` | `{id, item, remove?}` (`item.id` empty: a new item; else its non-empty fields change; `"check": {"kind": ""}` clears the item's check) | the `Loop` |
 | `loops.merge` | `{into, from}` | the `Loop` `into` (`from`'s links and items moved, `from.mergedInto` set) |
 | `loops.split` | `{id, ref, title?}` | the new `Loop` (the link `ref`, the agents it started or that continued it, and their items) |
 | `loops.settings.get` | `{}` | `LoopSettings` |
@@ -588,7 +588,7 @@ or a spawn into another loop) removes its member links in other loops; the Stewa
 | `goals.list` | `{scope?}` | `{goals: [Goal], milestones: [Milestone]}` by order |
 | `goals.save` | `{goal}` or `{milestone}` (patches; no `id`: new) | `{goal: Goal}` or `{milestone: Milestone}` |
 | `goals.remove` | `{id}` (a goal or a milestone; a milestone's loops are unfiled) | `{}` |
-| `goals.item` | `{id, item, remove?}`: a milestone's "done when" condition | the `Milestone` |
+| `goals.item` | `{id, item, remove?}`: a milestone's "done when" condition (as `loops.item`; `"check": {"kind": ""}` clears its check) | the `Milestone` |
 | `goals.file` | `{milestone, loop, remove?}` | the `Milestone` |
 | `goals.accept` | `{scope, ids?}` | `{accepted: N}`: proposed milestones opened |
 | `steward.status` | `{}` | `StewardStatus`: the shared `{enabled, level, node, machine}`, and on the Mac that runs it `agent`, `session`, `queued`, today's `wakes`, `lastWake`, `dropped` (events the full queue dropped) and `stopped` (why it does not run although it is on: it ended 3 times within an hour) |

@@ -97,7 +97,8 @@ func memberLink(l *LoopRecord, ref string) *LinkRecord {
 }
 
 // itemLocked adds (v.ID empty) or changes an item of items: only the
-// fields given (non-zero) change. It returns the item's id.
+// fields given (non-zero) change; a check with an empty kind clears the
+// item's check. It returns the item's id.
 func (s *Store) itemLocked(items map[string]*ItemRecord, v wire.LoopItem, defKind string) (string, bool, error) {
 	if len(v.Text) > maxText || len(v.After) > maxAfter {
 		return "", false, wire.Errorf(wire.CodeInvalid, "item too long")
@@ -106,7 +107,7 @@ func (s *Store) itemLocked(items map[string]*ItemRecord, v wire.LoopItem, defKin
 		!oneOf(v.Kind, "", wire.ItemStep, wire.ItemLooseEnd, wire.ItemPromise, wire.ItemQuestion, wire.ItemOffer, wire.ItemCondition) {
 		return "", false, wire.Errorf(wire.CodeInvalid, "unknown item owner, state or kind")
 	}
-	if c := v.Check; c != nil && !oneOf(c.Kind, wire.CheckPR, wire.CheckTag, wire.CheckURL, wire.CheckReview, wire.CheckLoop) {
+	if c := v.Check; c != nil && !oneOf(c.Kind, "", wire.CheckPR, wire.CheckTag, wire.CheckURL, wire.CheckReview, wire.CheckLoop) {
 		return "", false, wire.Errorf(wire.CodeInvalid, "unknown check kind %q", c.Kind)
 	}
 	now := s.opt.Now().UTC()
@@ -174,7 +175,10 @@ func (s *Store) itemLocked(items map[string]*ItemRecord, v wire.LoopItem, defKin
 	if v.Source != "" {
 		changed = it.Source.Set(v.Source, s.clock.Tick()) || changed
 	}
-	if v.Check != nil {
+	switch {
+	case v.Check != nil && v.Check.Kind == "":
+		changed = it.Check.Set(nil, s.clock.Tick()) || changed
+	case v.Check != nil:
 		c := *v.Check
 		changed = it.Check.Set(&c, s.clock.Tick()) || changed
 	}
