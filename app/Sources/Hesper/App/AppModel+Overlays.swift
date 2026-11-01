@@ -622,17 +622,10 @@ extension AppModel {
         }
     }
 
-    /// The loop's detail in the Loops sheet when it is there
-    /// (`LoopHub.openLoop`); else the tile of the agent the entry comes
-    /// from.
+    /// The loop's detail in this window's Loops sheet (⌘L), selected.
     private func openLoop(_ id: String, from e: YourMoveEntry) {
-        if let open = loopHub.openLoop { closePopover(); open(id); return }
-        let ref: String?
-        switch e.reason {
-        case .asks(let k), .yourStep(let k): ref = k.agent
-        case .item(let it): ref = it.source.flatMap { s in e.loop.links.first { $0.ref == s }?.agent }
-        }
-        if let a = ref.flatMap({ agent($0) }) { openFromQueue(a) } else { closePopover() }
+        closePopover()
+        openLoopsSheet(.loops(select: id))
     }
 
     /// Drops answered marks of agents that left the queue (or asked again).

@@ -176,10 +176,6 @@ final class LoopHub {
         return ix
     }
 
-    /// Opens a loop's detail (set by the Loops sheet; nil: the inbox's
-    /// Open goes to the asking agent's tile instead).
-    @ObservationIgnored var openLoop: ((String) -> Void)?
-
     /// Hides a loop's entry until the loop changes (nil: shows it again).
     func markActed(_ loop: Loop, _ on: Bool) {
         inboxActed[loop.id] = on ? loop.lastChange : nil

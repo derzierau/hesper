@@ -5454,8 +5454,7 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   submit it (`agents.input` with submit), Did it on an item ticks it
   off, Copy command copies, Later files an agent's ask or step as the
   person's item (question or step) and parks the loop until tomorrow
-  09:00, Open calls `LoopHub.openLoop` (the Loops sheet) or else opens
-  the asking agent's tile. An acted-on entry hides until its loop
+  09:00, Open opens the loop selected in this window's Loops sheet. An acted-on entry hides until its loop
   changes and comes back with a toast when a call fails. ⌘J opens when
   either section has entries (else the "Nothing needs you." toast) and
   closes itself a second after both are empty. With an empty queue the
@@ -5518,8 +5517,7 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
 
 **Status: built and unit-tested headless only** (HesperCoreTests,
 `swift build --product Hesper`). Not run in the app or against a real
-hesperd with loops yet; the inbox's Open waits on the Loops sheet
-setting `LoopHub.openLoop`.
+hesperd with loops yet.
 
 - **Commands** (`HesperCore/Commands.swift`, `LoopsKeys.swift`). View ▸
   Loops ⌘L, Product ⇧⌘L, Wrap-up ⇧⌘E (palette rows too; hidden while
