@@ -386,7 +386,7 @@ func TestQueueCoalesceSkipInbox(t *testing.T) {
 	w.st.AgentSettled(settled("L/a2", wire.EndingDone))
 	w.st.AgentSettled(settled("L/a1", wire.EndingWaits)) // coalesced: a1's latest
 	w.st.AgentClosed(agents.AgentEvent{Agent: wire.Agent{ID: "L/a2"}, Reason: wire.ReasonClosed})
-	w.st.LoopCreated("lp-2")
+	w.st.LoopCreated("lp-2", "")
 	w.st.ReviewChanged("L/a1", "lp-1")
 	// The Steward's own work and its planners never queue.
 	w.st.AgentSettled(agents.AgentEvent{Agent: wire.Agent{ID: "L/st0001", Service: wire.ServiceSteward}, Ending: wire.EndingDone})
@@ -406,7 +406,7 @@ func TestQueueCoalesceSkipInbox(t *testing.T) {
 	}
 	// Bounded: the oldest dropped, counted.
 	for i := range maxEvents + 44 {
-		w.st.LoopCreated(fmt.Sprintf("lp-%d", i))
+		w.st.LoopCreated(fmt.Sprintf("lp-%d", i), "")
 	}
 	if st := w.st.Status(); st.Queued != maxEvents || st.Dropped != 44 {
 		t.Fatalf("status %+v", st)
@@ -555,5 +555,36 @@ func TestPromptMirrored(t *testing.T) {
 	}
 	if !strings.HasSuffix(string(data), "\n---\n\n"+Prompt) {
 		t.Fatal("skills/hesper/references/steward.md does not end with prompt.md: copy it again")
+	}
+}
+
+// TestLoopCreatedByServiceSkipped: a loop the Steward or a planner made
+// never wakes the Steward, not even when the store's notification for it
+// comes later; another loop queues once.
+func TestLoopCreatedByServiceSkipped(t *testing.T) {
+	w := newWorld(t)
+	w.running()
+	w.st.LoopCreated("lp-st", wire.ServiceSteward)
+	w.st.LoopCreated("lp-pl", wire.ServicePlanner)
+	w.st.LoopCreated("lp-st", "") // the store's notification, after the hook
+	w.st.LoopCreated("lp-pl", "")
+	if q := w.st.Status().Queued; q != 0 {
+		t.Fatalf("%d queued for the Steward's own loops", q)
+	}
+	w.st.LoopCreated("lp-new", "")
+	w.st.LoopCreated("lp-new", "")
+	if got := w.st.Inbox(); len(got) != 1 || got[0].Loop != "lp-new" {
+		t.Fatalf("inbox %+v", got)
+	}
+	w.st.LoopCreated("lp-new", "") // seen: never again
+	if q := w.st.Status().Queued; q != 0 {
+		t.Fatal("a loop created twice")
+	}
+	// The notification first, the hook after it (a loaded Mac): the hook
+	// takes the event back.
+	w.st.LoopCreated("lp-late", "")
+	w.st.LoopCreated("lp-late", wire.ServiceSteward)
+	if q := w.st.Status().Queued; q != 0 {
+		t.Fatalf("%d queued for a loop the Steward made", q)
 	}
 }

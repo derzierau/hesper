@@ -5360,7 +5360,11 @@ keeps the copy identical).
   {enabled: true}`.
 - **Wake queue.** Events: `settled` and `closed` (the registry's, never
   for agents with a `service`), `loopCreated` (a loop created after
-  hesperd started, from the store's notifications), `review` (the
+  hesperd started, once per loop: `loops.save` without an id and
+  `loops.split` tell `Store.SetCreated`'s hook the calling agent's
+  service, and a loop the Steward or a planner made never queues, even
+  when the store's notification for it comes first; loops from `Assign`
+  or another Mac come from the store's notifications), `review` (the
   registry's review notes) and `evening` (once a day at
   `LoopSettings.eveningAt`, local time; not on the day it was turned on
   after that time). One event per agent or loop (the latest wins, in the

@@ -17,11 +17,14 @@ func (d *Daemon) newSteward(stateDir string, logf func(string, ...any)) *steward
 
 // wireSteward starts the Steward and feeds it what wakes it besides the
 // registry's settled and closed events: its own agent's changes, reviews
-// (the registry's review notes) and loops created after it started (the
-// store's notifications).
+// (the registry's review notes) and loops created after it started: from
+// the store's creation hook with the calling agent's service (the
+// Steward's own loops never wake it), and from its notifications (loops
+// made by Assign or on another Mac; the Steward counts each loop once).
 func (d *Daemon) wireSteward(ctx context.Context) {
 	st, reg, store := d.Steward, d.Registry, d.Loops
 	st.Start(ctx, reg)
+	store.SetCreated(st.LoopCreated)
 	sub := reg.SubscribeMoves() // review notes come only to these
 	d.wg.Add(1)
 	go func() {
@@ -48,17 +51,12 @@ func (d *Daemon) wireSteward(ctx context.Context) {
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		seen := map[string]bool{}
 		store.Watch(ctx.Done(), func(method string, params any) error {
 			if method != wire.NoteLoopChanged {
 				return nil
 			}
-			id, created := loopOf(params)
-			if id != "" && !seen[id] {
-				seen[id] = true
-				if created.After(started) {
-					st.LoopCreated(id)
-				}
+			if id, created := loopOf(params); id != "" && created.After(started) {
+				st.LoopCreated(id, "")
 			}
 			return nil
 		})

@@ -93,6 +93,8 @@ type Store struct {
 	machineOf func(node string) string
 	sessNode  func() string
 	classify  func(message string) (ending string, sentences []string)
+	// created (SetCreated): told of each loop a method call made here
+	created func(id, service string)
 
 	views    map[string]json.RawMessage // what watchers last got
 	watchers map[*watcher]struct{}
@@ -284,6 +286,26 @@ func (s *Store) SetClassify(fn func(message string) (ending string, sentences []
 	s.mu.Lock()
 	s.classify = fn
 	s.mu.Unlock()
+}
+
+// SetCreated sets who is told when loops.save (without an id) or
+// loops.split makes a loop on this Mac: its id and the calling agent's
+// service ("" a person or an ordinary agent), so the Steward never wakes
+// on its own loops. Called without the store's lock held; fn is too.
+func (s *Store) SetCreated(fn func(id, service string)) {
+	s.mu.Lock()
+	s.created = fn
+	s.mu.Unlock()
+}
+
+// loopCreated tells SetCreated's fn (the lock is not held).
+func (s *Store) loopCreated(id, service string) {
+	s.mu.Lock()
+	fn := s.created
+	s.mu.Unlock()
+	if fn != nil && id != "" {
+		fn(id, service)
+	}
 }
 
 // AgentsChanged tells the store an agent's live state changed: views are

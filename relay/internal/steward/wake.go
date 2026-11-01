@@ -41,10 +41,46 @@ func (s *Steward) AgentClosed(e agents.AgentEvent) {
 		Ending: e.Ending, Summary: e.Agent.Summary, Reason: e.Reason})
 }
 
-// LoopCreated queues a new loop (the gateway watches the store).
-func (s *Steward) LoopCreated(loop string) {
+// LoopCreated queues a new loop, once per loop: service is the service
+// of the agent that made it (the store's creation hook), "" for a person,
+// an ordinary agent, an Assign or another Mac (the store's
+// notifications, which come after the hook). A loop the Steward or a
+// planner made never queues: the Steward never wakes itself.
+func (s *Steward) LoopCreated(loop, service string) {
+	s.mu.Lock()
+	if s.seenLoops[loop] {
+		if service != "" {
+			s.unqueueLocked("loop:" + loop) // its notification came first
+		}
+		s.mu.Unlock()
+		return
+	}
+	if s.seenLoops == nil || len(s.seenLoops) >= maxSeenLoops {
+		s.seenLoops = map[string]bool{} // ids are random: a rare repeat at worst
+	}
+	s.seenLoops[loop] = true
+	s.mu.Unlock()
+	if service != "" {
+		return
+	}
 	s.queueEvent("loop:"+loop, wire.StewardEvent{Kind: wire.StewardLoopCreated, Loop: loop})
 }
+
+// unqueueLocked drops the waiting event of key, if any (the lock is
+// held).
+func (s *Steward) unqueueLocked(key string) {
+	for i, k := range s.keys {
+		if k == key {
+			s.queue = append(s.queue[:i:i], s.queue[i+1:]...)
+			s.keys = append(s.keys[:i:i], s.keys[i+1:]...)
+			s.notifyLocked()
+			return
+		}
+	}
+}
+
+// maxSeenLoops bounds LoopCreated's memory of loops it saw.
+const maxSeenLoops = 4096
 
 // ReviewChanged queues a review change of an agent's work (agent its id,
 // loop its loop if known).

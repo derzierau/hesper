@@ -131,6 +131,7 @@ type Steward struct {
 	wakeDay    string
 	lastWake   time.Time
 	eveningDay string
+	seenLoops  map[string]bool // LoopCreated
 
 	kick    chan struct{}
 	changed chan struct{} // closed at the next status change (Watch)
