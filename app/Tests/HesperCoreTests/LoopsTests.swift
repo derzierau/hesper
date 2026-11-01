@@ -164,6 +164,17 @@ struct LoopsTests {
         #expect(s.supported && s.loops["lp-3"]?.title == "again")
     }
 
+    @Test func eventsDuringAListAreReplayedOnTopOfIt() {
+        // LoopHub's order: events apply as they come; the list (taken
+        // before them) replaces the loops, then the same events again.
+        var s = LoopStore(loops: [F.loop("lp-old")])
+        let during: [LoopsEvent] = [.loopChanged(F.loop("lp-1", "renamed")), .loopRemoved("lp-gone"), .loopChanged(F.loop("lp-new"))]
+        for e in during { s.apply(e) }
+        s.listed(loops: [F.loop("lp-1", "listed"), F.loop("lp-gone")])
+        for e in during { s.apply(e) }
+        #expect(s.loops.keys.sorted() == ["lp-1", "lp-new"] && s.loops["lp-1"]?.title == "renamed")
+    }
+
     @Test func listResultsDecodeBothShapes() throws {
         #expect(DaemonClient.loopList(try F.value("[\(F.wireLoop),{\"bad\":1}]")).map(\.id) == ["lp-0a1b2c3d4e5f"])
         #expect(DaemonClient.loopList(try F.value("{\"loops\":[\(F.wireLoop)]}")).count == 1)
