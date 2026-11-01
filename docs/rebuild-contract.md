@@ -5328,6 +5328,88 @@ the dispatcher's person-only rules, the Steward, hesperctl, the app.
 Tombstones are never collected; a Mac reinstalled gets a new node, so
 its old agents' refs no longer resolve to a machine name.
 
+### As built — loops (hesperctl)
+
+Code: `relay/cmd/hesperctl/loops.go`; group "Loops and goals". Command
+names may have three words now (`loops item add`): `lookup` tries the
+longest name first, `hesperctl loops item` lists that parent's commands,
+and the MCP tool is `hesper_loops_item_add`.
+
+- **Names.** LOOP: an id (`lp-…`, merged loops too), `self` (the loop of
+  the agent the command runs in: `loops.list {agent}` with
+  `HESPER_AGENT_ID`), the title (exactly, then case ignored) or a unique
+  beginning of it, among every loop including closed ones; more than
+  one is `ambiguous` (exit 2) and names the ids. MILESTONE the same over
+  every product's milestones. ITEM: its number in `loops show` (items by
+  `order`, from 1) or its id.
+- **Commands.** `loops ls` (`--status`, `--milestone`, `--project`; a
+  table ID, TITLE, NEXT (who and what, "parked until …", the status once
+  closed), AGENTS working/all, UPDATED), `show`, `new` (`--goal`,
+  `--done-when`, `--milestone`), `rename`, `park` (`--until` tomorrow,
+  12h/3d/2w or a date, 09:00 local that day; `--unpark` opens it),
+  `close --done|--drop`, `link`/`unlink` (exactly one of `--agent`,
+  `--session`, `--project`, `--url`, `--file [MACHINE:]PATH` (no machine:
+  this Mac, made absolute), `--loop`; `--blocks`, `--rel`, `--label`),
+  `item add` (`--owner` you by default, `--kind` step, `--after`), `item
+  check` (`--drop`, `--undo`), `item rm`, `merge INTO FROM`, `split LOOP
+  REF` (a link ref, or a member agent's id or name), `graph`, `settings`
+  (no flags: get; else set the flags given). Writes print the loop's id,
+  `--json` the `Loop`.
+- **Graph.** One node per agent or session ref, the facts of all its
+  links joined; children by `started`/`continued` links (`from` → `ref`),
+  a parent cycle cut; handoff files under the agent named in `from`,
+  other files as root nodes; then `blocks` and `blockedBy` loops with
+  their titles. Text: two spaces per level, `rel kind label (ref)
+  machine/agent state · ending`.
+- **Goals** (`goals.go`). SCOPE: a project or group by id, a folder (a
+  project), or a name unique among both (scratch projects left out).
+  ID (goals save, rm): a goal or milestone by id, title or a unique
+  beginning of it. `goals ls [SCOPE]` (per product: goals, then
+  milestones with status, done/total, due, loop count, next), `new SCOPE
+  TITLE` (a goal; `--milestone` with `--goal`, `--due`, `--auto-file`
+  and `--when` conditions, added by `goals.item` after the save),
+  `save` (the flags given; `--due ""` clears, `--status proposed` sends a
+  milestone back to planning), `rm`, `check MILESTONE ITEM` (`--drop`,
+  `--undo`), `file MILESTONE LOOP` (`--remove`), `plan SCOPE [PROMPT]`
+  (`steward.plan`, prints the agent), `accept SCOPE [MILESTONE…]`.
+- **Steward** (`steward.go`). `steward status` (`StewardStatus`: on or
+  off, level, machine, agent, queued, wakes today), `on` (`--machine`,
+  `--level`; without `--machine` this Mac when no Mac runs it yet:
+  `node` empty), `off`, `level watch|suggest|act`, `inbox` (the
+  Steward's own call: it drains the queue). All one `steward.set` and
+  print the status. `unavailable` (exit 4) while hesperd has no
+  Steward.
+- **`new --loop L --milestone M --report-to-parent`** fill
+  `SpawnParams.loop` (L resolved to an id), `milestone` (an id) and
+  `reportToParent`. `hello` carries no capabilities and the local socket
+  decodes spawn params leniently, so an older hesperd would drop them:
+  hesperctl first calls `loops.settings.get`; "no method" (`not_found`)
+  refuses with exit 2 and nothing is started. `--loop` with
+  `--milestone` and `--report-to-parent` outside an agent (no parent)
+  are usage errors.
+- **`events --kinds`** gains `loops`, `goals` and `steward` (a
+  notification's method prefix, as before).
+- **MCP and reference.** The tools come from the registry
+  (`hesper_loops_item_add`, `hesper_goals_ls`, `hesper_steward_status`,
+  …), with argument hints for LOOP, INTO, FROM, ITEM, MILESTONE, SCOPE
+  and LEVEL; the server's instructions tell an agent to put follow-ups
+  in its own loop. `hesperctl reference` explains loops, goals and
+  milestones and the Steward under Concepts.
+- **Tests** against `fullDaemon`, which now wires a loops store like the
+  gateway does and takes an optional Steward: `TestLoopsCommands`,
+  `TestGoalsCommands`, `TestStewardCommands` (a fake `agents.Steward`),
+  `TestStewardUnavailable`, `TestNewInLoop`, `TestNewInLoopOnOlderDaemon`
+  (a socket that knows no method), `TestEventsLoops`; `TestMCP` and
+  `TestReference` cover the new tools and Concepts.
+- **User docs:** `docs/loops.md`, the README's "Keep track of what you
+  started", the skill (`skills/hesper/SKILL.md` Concepts and "Keep track
+  of your work", `references/recipes.md` "Loops and milestones").
+
+**Status: built and tested headless** (`go test` of `cmd/hesperctl`
+against an in-process hesperd with the real loops store); the Steward
+commands only against a fake until `internal/steward` lands.
+`hesperctl open loops|wrapup|product` is the app slice's.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
