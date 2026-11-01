@@ -179,3 +179,65 @@ and `forwards ls` shows why in `error`. Forwards persist across restarts;
 open connections reset when the link to the machine drops. Only a person
 adds or removes them: an agent gets exit 5. Tell the user the command
 instead.
+
+## Loops and milestones
+
+A loop is the record of one piece of work; hesperd keeps it as agents
+start, settle and close. Names: a loop's id (`lp-…`), its title or a
+unique beginning of it, or `self` (yours, inside an agent). Items are
+numbered as `loops show` prints them.
+
+```sh
+hesperctl loops ls --json                       # open and parked; --status all|done|dropped
+hesperctl loops ls --project app --milestone 1.4
+hesperctl loops show self --json                # next, items, links
+hesperctl loops graph self                      # who started or continued whom, files, blocks
+```
+
+**Who acts next** (`next`): `you` (an item of the user's is open, a member
+waits in approval or question, a quiet member asked or named a step, or
+the loop looks done: `looksDone`), `agents` (a member works), `others` (an
+item of others is open, or a loop it waits for is open), `parked`,
+`closed`. `nextText` says what.
+
+**Items** (`loops item add LOOP TEXT --owner you|agent|others --kind
+step|looseEnd|promise|question|offer --after N`):
+
+```sh
+hesperctl loops item add self --owner you --json review the migration before merging
+hesperctl loops item add self --owner agent --kind promise --after 1 --json update the changelog
+hesperctl loops item check self 1 --json        # --drop, --undo
+hesperctl loops item rm self 2 --json
+```
+
+**Links** (exactly one target; an agent changes only its own loop):
+
+```sh
+hesperctl loops link self --url https://github.com/me/app/pull/482 --label "PR 482" --json
+hesperctl loops link self --file docs/brief.md --rel handoff --json   # a file on this Mac
+hesperctl loops link "release 1.4" --loop "login fix" --json           # 1.4 waits for login fix
+```
+
+**Children that report back.** `new --report-to-parent` (inside an agent)
+types one line into you when the child's turn ends, once you are quiet:
+`[hesper] child ID settled: ENDING; run hesperctl result ID`. Endings:
+`asks` (it asks the user something), `yourStep` (it names a step of the
+user's), `offer`, `waits`, `done`. The child is in your loop; `--loop L`
+puts it in another, `--milestone M` in a new loop under that milestone. A
+hesperd without loops refuses these flags (exit 2): start without them.
+
+**Goals and milestones** of a product (a project or group):
+
+```sh
+hesperctl goals ls app --json
+hesperctl goals new app "1.4" --milestone --due 2026-12-01 --when "login fix merged" --when "tag pushed" --json
+hesperctl goals check 1.4 1 --json              # a "done when" condition by number
+hesperctl goals file 1.4 "login fix" --json     # --remove unfiles
+hesperctl goals plan app "plan the 1.4 release" --json   # a planning agent proposes milestones
+```
+
+**The user's only** (an agent gets exit 5, `forbidden`): `loops close
+--done|--drop`, `goals rm`, `goals accept`, `goals save --status
+done|dropped`, `loops settings` changes, `loops merge` and `split`, and
+every `steward` change (`on`, `off`, `level`). Suggest the command to the
+user instead. `steward status` and `loops settings` (no flags) only read.
