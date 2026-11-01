@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/derzierau/hesper/relay/internal/agents"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
@@ -437,5 +438,36 @@ func TestViewsRebuildWhatChanged(t *testing.T) {
 	s.mu.Unlock()
 	if g.Milestone == nil || len(g.Milestone.Loops) != 1 || g.Milestone.Loops[0] != c {
 		t.Fatalf("milestone %+v", g.Milestone)
+	}
+}
+
+// A move seen from both ends: the source rewrites its link to the new
+// agent while the target, not having seen that yet, links the imported
+// agent itself. Once they sync, both Macs keep one membership link (the
+// older one, with the history), not two.
+func TestMoveLinkedOnBothMacsKeepsOne(t *testing.T) {
+	src, dst := openTest(t, "", "n-src", nil), openTest(t, "", "n-dst", nil)
+	loop := src.Assign(agents.AssignInfo{Ref: "n-src/old001", Agent: wire.Agent{ID: "L/old001", Name: "job"}})
+	exchange(t, src, dst)
+	src.AgentClosed(agents.AgentEvent{Ref: "n-src/old001", Reason: wire.ReasonMoved, ToRef: "n-dst/new001"})
+	if got := dst.Assign(agents.AssignInfo{Ref: "n-dst/new001", Agent: wire.Agent{ID: "L/new001", Name: "job"}, Loop: loop}); got != loop {
+		t.Fatalf("imported into %s, want %s", got, loop)
+	}
+	exchange(t, src, dst)
+	exchange(t, src, dst)
+	for _, s := range []*Store{src, dst} {
+		l, err := s.Get(loop)
+		if err != nil {
+			t.Fatalf("%s: %v", s.node, err)
+		}
+		n := 0
+		for _, k := range l.Links {
+			if k.Kind == wire.LinkAgent && k.Ref == "n-dst/new001" {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Fatalf("%s: %d links for the moved agent, want 1: %+v", s.node, n, l.Links)
+		}
 	}
 }

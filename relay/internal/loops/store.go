@@ -162,7 +162,8 @@ func Open(opt Options) *Store {
 	s.clock.Node, s.clock.Now = s.node, opt.Now
 	s.loadPeers()
 	s.pruneLocked()
-	s.commitLocked(s.breakCyclesLocked()...) // a file from before cycles were broken
+	s.commitLocked(s.breakCyclesLocked()...)                 // a file from before cycles were broken
+	s.commitLocked(s.dedupeMembersLocked(s.keysLocked())...) // a file from before moves were deduplicated
 	s.wg.Add(2)
 	go s.saver()
 	go s.viewer()

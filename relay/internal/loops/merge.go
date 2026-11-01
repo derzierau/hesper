@@ -1,6 +1,10 @@
 package loops
 
-import "github.com/derzierau/hesper/relay/pkg/wire"
+import (
+	"sort"
+
+	"github.com/derzierau/hesper/relay/pkg/wire"
+)
 
 // Merging another Mac's records (sync.go): per record, per field the
 // newer write wins; tombstones stay. Records that are not sane are
@@ -23,8 +27,53 @@ func (s *Store) Merge(recs []Record) bool {
 		}
 	}
 	keys = append(keys, s.breakCyclesLocked()...)
+	keys = append(keys, s.dedupeMembersLocked(keys)...)
 	s.commitLocked(keys...)
 	return len(keys) > 0
+}
+
+// dedupeMembersLocked keeps one membership link per agent in each loop of
+// keys: a move links the moved agent twice when its source rewrites the
+// old link while its target, not having seen that, links the imported
+// agent. The oldest link (the history: when the work started) stays; the
+// others are tombstoned. Every Mac picks the same one, so they agree. It
+// returns the keys it changed.
+func (s *Store) dedupeMembersLocked(keys []string) []string {
+	var changed []string
+	for _, key := range keys {
+		if len(key) < 3 || key[0] != 'l' {
+			continue
+		}
+		l := s.loops[key[2:]]
+		if l == nil {
+			continue
+		}
+		keep := map[string]string{} // agent ref → key of the link kept
+		ids := make([]string, 0, len(l.Links))
+		for id := range l.Links {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			k := l.Links[id]
+			if !member(k) || k.Kind.V != wire.LinkAgent {
+				continue
+			}
+			cur, ok := keep[k.Ref.V]
+			if !ok {
+				keep[k.Ref.V] = id
+				continue
+			}
+			kept := l.Links[cur]
+			drop := k
+			if k.Added.V.Before(kept.Added.V) {
+				drop, keep[k.Ref.V] = kept, id
+			}
+			drop.Deleted.Set(true, s.clock.Tick())
+			changed = append(changed, key)
+		}
+	}
+	return changed
 }
 
 func (s *Store) mergeLocked(r *Record) (string, bool) {

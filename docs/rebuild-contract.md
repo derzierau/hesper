@@ -5289,7 +5289,10 @@ name, how its last turn ended (`ending`, `summary`), how it was closed
 items `it-` + 8 hex (random). A link's key is `ln-` + 16 hex of the
 SHA-256 of kind, rel, ref and from, so one link added on two Macs at once
 is one entry; a move rewrites the link's `ref` register and keeps its
-key. Agent ref: `<node>/<local id>`, `node` the projects store's node of
+key. When the move's target linked the imported agent before it saw that
+rewrite, the loop holds two membership links for one agent after a sync:
+every merge (and loading the file) keeps the oldest live one per agent
+ref and tombstones the others, so every Mac keeps the same one. Agent ref: `<node>/<local id>`, `node` the projects store's node of
 the Mac the agent runs on (`Store.Node`); a host names its node in its
 full link event (`Event.node`), and `projects.Store.NodeOf/MachineOf`
 map machine names both ways. Session ref: `<sessions node>:<kind>:<id>`.
