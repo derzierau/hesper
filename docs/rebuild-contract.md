@@ -5395,8 +5395,20 @@ and the MCP tool is `hesper_loops_item_add`.
   and LEVEL; the server's instructions tell an agent to put follow-ups
   in its own loop. `hesperctl reference` explains loops, goals and
   milestones and the Steward under Concepts.
-- **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, `TestStewardCommands` with a fake `agents.Steward` (`fullDaemon(t, steward)`), `TestStewardUnavailable`, `TestNewInLoop`, `TestNewInLoopOnOlderDaemon`, `TestEventsLoops`; `fullDaemon` now wires a
-  loops store (no Steward) like the gateway does.
+- **Tests** against `fullDaemon`, which now wires a loops store like the
+  gateway does and takes an optional Steward: `TestLoopsCommands`,
+  `TestGoalsCommands`, `TestStewardCommands` (a fake `agents.Steward`),
+  `TestStewardUnavailable`, `TestNewInLoop`, `TestNewInLoopOnOlderDaemon`
+  (a socket that knows no method), `TestEventsLoops`; `TestMCP` and
+  `TestReference` cover the new tools and Concepts.
+- **User docs:** `docs/loops.md`, the README's "Keep track of what you
+  started", the skill (`skills/hesper/SKILL.md` Concepts and "Keep track
+  of your work", `references/recipes.md` "Loops and milestones").
+
+**Status: built and tested headless** (`go test` of `cmd/hesperctl`
+against an in-process hesperd with the real loops store); the Steward
+commands only against a fake until `internal/steward` lands.
+`hesperctl open loops|wrapup|product` is the app slice's.
 
 ## Wire names kept from Ghosty
 
