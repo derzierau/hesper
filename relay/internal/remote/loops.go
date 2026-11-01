@@ -375,7 +375,7 @@ func (f *Fleet) NodeOf(short string) string {
 	defer f.mu.Unlock()
 	for _, m := range f.machines {
 		if m.short == short {
-			return m.node
+			return f.nodeLocked(m)
 		}
 	}
 	return ""
@@ -387,7 +387,7 @@ func (f *Fleet) MachineOf(node string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, m := range f.machines {
-		if node != "" && m.node == node {
+		if node != "" && f.nodeLocked(m) == node {
 			return m.short
 		}
 	}

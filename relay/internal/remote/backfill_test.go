@@ -37,6 +37,13 @@ func TestBackfillLoopsOfOlderHost(t *testing.T) {
 	if a := m.agents["child1"]; a.Loop != root {
 		t.Fatalf("child's Agent.Loop %q, want %q", a.Loop, root)
 	}
+	// Views name the stand-in's machine, so the agents show live.
+	if got := f.MachineOf("dev-dev1"); got != "L2" {
+		t.Fatalf("MachineOf(stand-in) %q, want L2", got)
+	}
+	if got := f.NodeOf("L2"); got != "dev-dev1" {
+		t.Fatalf("NodeOf(L2) %q, want the stand-in", got)
+	}
 	// A new agent on that host gets a loop when it shows up.
 	f.event(l, agentlink.Event{Changed: &wire.Agent{ID: "L/later1"}})
 	if f.opt.Loops.LoopOf("dev-dev1/later1") == "" {
