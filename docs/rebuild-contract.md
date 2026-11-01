@@ -5595,7 +5595,10 @@ hesperd with loops yet.
   open milestones, `goals.file`). A project with `duplicateOf` (the
   same folder listed twice) shows a banner with "Remove this entry"
   (`projects.remove`). P calls `steward.plan` and shows the planning
-  view: the planner agent's terminal embedded as a tile-role
+  view; while a call is out, or a planner for the scope runs or starts
+  (`ProductPage.runningPlanner`: the one this app started, else
+  hesperd's "Plan <scope>"), P shows that one instead of starting
+  another: the planner agent's terminal embedded as a tile-role
   `AgentTerminal` (a read-only `--fit` view, like a wall tile; "Talk to
   the planner" opens it full size) and the proposed milestones,
   updating from goals.changed; ⌘↩ is `goals.accept` for all of them, X

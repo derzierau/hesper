@@ -151,17 +151,28 @@ final class ProductSheetModel {
         run { try await $0.goalFile(milestone: ms, loop: l.id) }
     }
 
-    /// P: a planning session with the Steward's planner agent.
+    /// P: a planning session with the Steward's planner agent. One that
+    /// runs or starts for the scope is shown instead (hesperd starts a new
+    /// planner on every steward.plan).
     private func plan() {
         guard let scope else { NSSound.beep(); return }
         error = nil
-        busy = true
         mode = .planning
+        if busy { return }
+        let agents = app.map { Array($0.registry.agents.values) } ?? []
+        if let running = ProductPage.runningPlanner(scope: scope, remembered: planner ?? hub.planners[scope], agents: agents) {
+            planner = running.id
+            return
+        }
+        busy = true
         Task {
             let (id, e) = await hub.value { try await $0.stewardPlan(scope: scope) }
             busy = false
             if let e { error = e; if page?.proposed.isEmpty ?? true { mode = .page } }
-            planner = id ?? nil
+            if let id = id ?? nil {
+                hub.planners[scope] = id
+                if self.scope == scope { planner = id }
+            }
         }
     }
 

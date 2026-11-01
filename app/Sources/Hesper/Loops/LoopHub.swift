@@ -219,6 +219,10 @@ final class LoopHub {
 
     func draftStarted(_ draft: String) { draftLoops.removeValue(forKey: draft) }
 
+    /// The planner agent the product sheet started per scope (in memory:
+    /// P shows it again instead of starting another).
+    @ObservationIgnored var planners: [String: String] = [:]
+
     // MARK: Writes
 
     /// Runs a loops call off the main actor. A returned loop is applied at
