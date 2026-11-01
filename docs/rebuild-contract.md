@@ -5064,7 +5064,8 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
   ends, steps and promises. A loop matches when at least 40 % of the
   task's words are in it and two words are shared or it is in the
   task's project (a package counts for its repository), or when 60 % of
-  one loose end's words (at least two) are in the task. Best: same
+  one loose end's words (at least two; a one-word loose end only in the
+  task's project) are in the task. Best: same
   project, then score, then a loose end, then the task's machine, then
   the most recent. `onYou` (looks done left out) and `atLimit`
   (≥ `loopLimit`) drive the red strip; a hint only.
@@ -5091,12 +5092,17 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
 - **Settings › Steward** (`StewardSettings.swift`): the switch (on pins
   it to this Mac when none is set), the three levels with their texts,
   the machine choices (this Mac first, offline ones kept), a summary
-  line ("Runs on this Mac · 12 wakes today · 2 waiting") and the
-  `steward.set` patches (nil when nothing changes).
+  line ("Runs on this Mac · 12 wakes today · 2 waiting", "· stopped",
+  "· 3 events dropped" from `StewardStatus.stopped` / `dropped`), the
+  stopped note ("Stopped: <why>. Turn it off and on again to retry.",
+  shown in the error tone under the switch) and the `steward.set`
+  patches (nil when nothing changes).
 
 - **Fake hesperd** (`app/Tools/fake-hesperd/loops.go`, TEST-ONLY): every
   `loops.*`, `goals.*` and `steward.*` method on an in-memory store,
-  results shaped like the wire (`loops.list` an array, `loops.get` /
+  results shaped like the wire (a merge sends `loops.changed` for the
+  merged loop with `mergedInto`, as hesperd does, never
+  `loops.removed`; `loops.list` an array, `loops.get` /
   `save` / `link` / `item` / `merge` / `split` / `goals.file` the loop,
   `goals.save` `{goal}` or `{milestone}`, `goals.item` the milestone,
   `goals.accept` `{accepted}`, `steward.plan` `{id}` plus two proposed
@@ -5418,9 +5424,15 @@ above.
 
 - **LoopHub** (`Loops/LoopHub.swift`), one per daemon connection like
   ReviewHub (`model.loopHub`). On every connect (`AppModel.loopSaw`) it
-  lists `loops.list`, `goals.list`, `steward.status` and
+  lists `loops.list` (status `all`: the store keeps done and dropped
+  loops for the wrap-up's tallies; boards, chips and counts show active
+  loops only), `goals.list`, `steward.status` and
   `loops.settings.get` at once, off the main actor; an older hesperd
-  (-32601) leaves `available` false. Notifications are decoded on the
+  (-32601) leaves `available` false. One list at a time
+  (`LoopListGate`): a connect while one is out lists again after it; a
+  failed list retries after 1, 2, 4, 8 and 16 s, then waits for the
+  next connect. `loaded` turns on with the first list, or once a list
+  failed and notifications arrived (the subscribe snapshot). Notifications are decoded on the
   reader thread (`LoopsEvent.decode`) into a bounded queue (4,096, the
   oldest dropped), and applied to `store` on the main actor once per
   120 ms batch; events that arrive while a list is out are replayed on
@@ -5448,18 +5460,23 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   filter work as before (the filter also matches a loop's title, the
   entry's text and its sender). The panel's height comes from
   `InboxList.height` (rows, headers, gaps) before layout. An entry's
-  quick actions are buttons (the first ⏎, Open ⌘⏎; letters stay the
+  quick actions are buttons (the first ⏎, never Later: with no
+  answer or Did it, the agent gone, it is Open; Open ⌘⏎; letters stay the
   filter's, so no keystroke answers by accident) and become
   `YourMoveCall`s: Yes / No / Did it to a live agent type the text and
   submit it (`agents.input` with submit), Did it on an item ticks it
   off, Copy command copies, Later files an agent's ask or step as the
-  person's item (question or step) and parks the loop until tomorrow
-  09:00, Open opens the loop selected in this window's Loops sheet. An acted-on entry hides until its loop
+  person's item (question or step, with the agent's link as `source`,
+  so the entry shows that item afterwards) and parks the loop until tomorrow
+  09:00, Open opens the loop's detail in this window's Loops sheet
+  (`LoopsSheetKind.loop`; the product page's ⏎ too). An acted-on entry hides until its loop
   changes and comes back with a toast when a call fails. ⌘J opens when
   either section has entries (else the "Nothing needs you." toast) and
   closes itself a second after both are empty. With an empty queue the
   toolbar shows a quiet "n your move" pill (never red) as the inbox's
-  anchor. Offers never appear. The menu bar, the red pill and
+  anchor; its count (`LoopHub.yourMoveCount`) is stored, recounted
+  only when the loops, the acted-on entries or the queue change (the
+  hub keeps the queue's ids from each agent event). Offers never appear. The menu bar, the red pill and
   notifications still count approval, question and error only.
 
 - **Tile loop tag** (`UI/TileParts.swift` `LoopTagView`, built in
@@ -5498,14 +5515,20 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   loose end the task would tick off, and the on-you meter "n / limit
   on you" (the error tone at `loopLimit` or over, a hint only). Keys:
   ⌘⏎ Start is unchanged and starts a new loop; ⇧⌘⏎ "Add to loop" starts
-  with `SpawnRequest.loop` (sent as `loop`) and, once the agent runs,
+  with `SpawnRequest.loop` (sent as `loop`; in the quick launch panel
+  through the panel's own start, which clears and hides it, like ⌘⏎)
+  and, once the agent runs,
   ticks the loose end off (`loops.item` done); ⌘D "Draft in loop" files
   the task's first line as the agents' step with `draft` set to this
   draft and parks it (draft tiles only: the quick launch panel keeps
-  no drafts). Both chords are unbound in the composer (the window's
-  router passes them to the text view, `ComposerTextView
-  .performKeyEquivalent`), and are the strip's own keys, not registry
-  commands. The chip row's measured height allows one more row.
+  no drafts). Both are registry commands on the composer surface
+  (`composerAddToLoop` on both composers, `composerDraftInLoop` on the
+  draft tile's only), so Settings › Shortcuts can rebind them; they map
+  to no AppCommand, so the window's router passes them to the text view
+  (`ComposerTextView.performKeyEquivalent`), which asks
+  `StartStrip.choice`, and the strip's buttons read their caps
+  (`StartStrip.addKey` / `draftKey`). The chip row's measured height
+  allows one more row.
 
 - **Service agents** (`Agent.service`: the Steward, the planner).
   Tidy Up (⇧⌘W) and auto-tidy (`TidyUp.select`, `AutoTidy`) never
@@ -5562,7 +5585,9 @@ hesperd with loops yet.
   (`LoopActions.step`): "@agent …" or "@others …" names the owner, else
   the person's. Triggers (`LoopActions.trigger`): "after 2 3", "pr
   <url>", "url <url>", "tag <name>", "review <id>", "loop <id>", a bare
-  URL, "none". M opens a picker of the other open loops filtered as
+  URL, "none" (clears the steps it waits on and its check:
+  `ItemPatch.check` is `ItemCheckChange` keep / set / clear, clear sent
+  as `"check": {"kind": ""}`; the fake hesperd honours it). M opens a picker of the other open loops filtered as
   typed. N opens a draft in the loop's project and ⌘↩ starts the
   drafted one: `LoopHub.noteDraft` remembers the draft's loop (in
   memory) and `startDraft` sends `SpawnRequest.loop` (only when hesperd
@@ -5588,9 +5613,14 @@ hesperd with loops yet.
   open milestones, `goals.file`). A project with `duplicateOf` (the
   same folder listed twice) shows a banner with "Remove this entry"
   (`projects.remove`). P calls `steward.plan` and shows the planning
-  view: the planner agent's terminal embedded as a tile-role
+  view; while a call is out, or a planner for the scope runs or starts
+  (`ProductPage.runningPlanner`: the one this app started, else
+  hesperd's "Plan <scope>"), P shows that one instead of starting
+  another: the planner agent's terminal embedded as a tile-role
   `AgentTerminal` (a read-only `--fit` view, like a wall tile; "Talk to
-  the planner" opens it full size) and the proposed milestones,
+  the planner" opens it full size; detached while the sheet is hidden,
+  attached again when it shows: the product sheet's model is kept
+  across a close) and the proposed milestones,
   updating from goals.changed; ⌘↩ is `goals.accept` for all of them, X
   `goals.remove` for one.
 - **Settings › Steward** (the seventh pane, ⌘7): the switch, the level
@@ -5602,7 +5632,11 @@ hesperd with loops yet.
   {loop}}`, `{wrapup: true}`, `{product: true | {scope}}`; the app
   answers `{wall, selected}`, `{wall, loops}` (today's count) and
   `{wall, scope}`; an unknown scope is `not_found`, a hesperd without
-  loops `unavailable`. hesperctl `open loops [--loop ID]`, `open
+  loops `unavailable`. `{loops: {loop}}` opens that loop's detail; before
+  the hub's first list (hesperctl launching the app) the app waits for
+  it up to 6 s so `selected` is true exactly when the loop is open, and
+  if it is still not there answers `unavailable` ("still loading") and
+  the sheet shows the loop once the list comes. hesperctl `open loops [--loop ID]`, `open
   wrapup`, `open product [SCOPE]` (MCP: `hesper_open_loops`,
   `hesper_open_wrapup`, `hesper_open_product`).
 - **Self-test** `test-ui-loops` (`Loops/LoopsSelfTest.swift`,

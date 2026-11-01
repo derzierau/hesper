@@ -121,11 +121,15 @@ func TestLoopsMethodsNotify(t *testing.T) {
 	call(t, d, "loops.merge", map[string]any{"into": "lp-00000badges", "from": l.ID})
 	got := drain(sub)
 	// save, item, item, link; file (the milestone, the loop); park (the
-	// loop, its milestone); merge (the merged one goes, the other changes).
+	// loop, its milestone); merge (as hesperd: the merged one changes with
+	// mergedInto, then its milestone and the other loop).
 	want := []string{"loops.changed", "loops.changed", "loops.changed", "loops.changed", "goals.changed", "loops.changed",
-		"loops.changed", "goals.changed", "loops.removed", "loops.changed"}
+		"loops.changed", "goals.changed", "loops.changed", "goals.changed", "loops.changed"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("notes:\n got %v\nwant %v", got, want)
+	}
+	if merged := asLoop(call(t, d, "loops.get", map[string]any{"id": l.ID})); merged.MergedInto != "lp-00000badges" {
+		t.Errorf("merged loop: %+v", merged)
 	}
 	var split Loop
 	_ = json.Unmarshal(call(t, d, "loops.split", map[string]any{"id": "lp-0000000push", "ref": "n-l/push01", "title": "Brief"}), &split)
@@ -182,5 +186,24 @@ func TestLoopsSnapshot(t *testing.T) {
 	// milestone, the Steward last.
 	if n["loops.changed"] != len(d.loops.loops)-1 || n["goals.changed"] != len(d.loops.goals)+len(d.loops.milestones) || methods[len(methods)-1] != "steward.changed" {
 		t.Errorf("snapshot %v", n)
+	}
+}
+
+func TestItemCheckClears(t *testing.T) {
+	d, _ := newLoopsDaemon(t)
+	asLoop := func(raw json.RawMessage) (l Loop) { _ = json.Unmarshal(raw, &l); return l }
+	l := asLoop(call(t, d, "loops.save", map[string]any{"title": "Checked"}))
+	l = asLoop(call(t, d, "loops.item", map[string]any{"id": l.ID, "item": map[string]any{"text": "Ship it", "check": map[string]any{"kind": "tag", "ref": "v1"}}}))
+	if len(l.Items) != 1 || l.Items[0].Check == nil {
+		t.Fatalf("set: %+v", l.Items)
+	}
+	id := l.Items[0].ID
+	l = asLoop(call(t, d, "loops.item", map[string]any{"id": l.ID, "item": map[string]any{"id": id, "text": "Ship it now"}}))
+	if l.Items[0].Check == nil {
+		t.Fatalf("a patch without check dropped it: %+v", l.Items[0])
+	}
+	l = asLoop(call(t, d, "loops.item", map[string]any{"id": l.ID, "item": map[string]any{"id": id, "check": map[string]any{"kind": ""}}}))
+	if l.Items[0].Check != nil {
+		t.Errorf("an empty kind kept the check: %+v", l.Items[0].Check)
 	}
 }

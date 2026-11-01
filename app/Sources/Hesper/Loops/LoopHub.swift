@@ -36,14 +36,23 @@ final class LoopHub {
     private(set) var chips: [String: LoopChip] = [:]
     /// Active loops that need the person (looks done and parked left out).
     private(set) var onYouCount = 0
+    /// The inbox's "Your move" entries without the attention queue's
+    /// agents: the toolbar's quiet pill. Stored: the bar reads it per
+    /// redraw.
+    private(set) var yourMoveCount = 0
+    /// The agents in the attention queue (approval, question, error), kept
+    /// from the daemon events (`AppModel.loopSaw`).
+    private(set) var queue: Set<String> = []
     /// The sidebar's loop counts per project (ProjectLoops).
     private(set) var projectLoops = ProjectLoops()
-    /// The first list arrived (false: still connecting; empty states wait).
+    /// The first list arrived, or a list failed after the notifications'
+    /// snapshot came (false: still connecting; empty states wait).
     private(set) var loaded = false
 
     @ObservationIgnored private let inbox = LoopsInbox()
     @ObservationIgnored private var flushTask: Task<Void, Never>?
-    @ObservationIgnored private var listTask: Task<Void, Never>?
+    @ObservationIgnored private var gate = LoopListGate()
+    @ObservationIgnored private var retryTask: Task<Void, Never>?
     /// Events applied while a list is out: replayed on top of it.
     @ObservationIgnored private var replay: [LoopsEvent]?
 
@@ -68,19 +77,30 @@ final class LoopHub {
 
     // MARK: Refresh
 
-    /// A connect: list everything again.
-    func connected() { refresh() }
+    /// A connect: list everything again (LoopListGate: one list at a time,
+    /// a connect during one lists again after it, failures retry).
+    func connected() {
+        retryTask?.cancel()
+        retryTask = nil
+        if gate.connect() { startList() }
+    }
 
-    /// One list of every record (debounced: a list already out is kept).
-    func refresh() {
-        guard listTask == nil else { return }
+    private func startList() {
         replay = []
         let client = client
-        listTask = Task { [weak self] in
+        Task { [weak self] in
             let r = await Task.detached { await Self.list(client) }.value
-            guard let self else { return }
-            self.listTask = nil
-            self.listed(r)
+            self?.listed(r)
+        }
+    }
+
+    private func retry(after seconds: TimeInterval) {
+        retryTask?.cancel()
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.retryTask = nil
+            if self.gate.retry() { self.startList() }
         }
     }
 
@@ -92,7 +112,7 @@ final class LoopHub {
     }
 
     private nonisolated static func list(_ client: DaemonClient) async -> Listing {
-        async let l: Result<[Loop], any Error> = { do { return .success(try await client.loopsList()) } catch { return .failure(error) } }()
+        async let l: Result<[Loop], any Error> = { do { return .success(try await client.loopsList(status: LoopStore.listStatus)) } catch { return .failure(error) } }()
         async let g = try? client.goalsList()
         async let s = try? client.stewardStatus()
         async let t = try? client.loopSettings()
@@ -102,16 +122,24 @@ final class LoopHub {
     private func listed(_ r: Listing) {
         let events = replay ?? []
         replay = nil
+        let ok: Bool
         switch r.loops {
-        case .success(let list): store.listed(loops: list)
-        case .failure(let e as RPCError) where LoopsRPC.missing(e): store.listed(loops: nil)
-        case .failure: return // not connected, a timeout: keep what we have
+        case .success(let list): store.listed(loops: list); ok = true
+        case .failure(let e as RPCError) where LoopsRPC.missing(e): store.listed(loops: nil); ok = true
+        case .failure: ok = false // not connected, a timeout: keep what we have
         }
-        if let g = r.goals { store.listed(goals: g) }
-        if let s = r.steward { store.apply(.stewardChanged(s)) }
-        if let t = r.settings { store.setSettings(t) }
-        for e in events { store.apply(e) } // newer than the list
-        loaded = true
+        if ok {
+            if let g = r.goals { store.listed(goals: g) }
+            if let s = r.steward { store.apply(.stewardChanged(s)) }
+            if let t = r.settings { store.setSettings(t) }
+            for e in events { store.apply(e) } // newer than the list
+        }
+        switch gate.finished(ok: ok) {
+        case .idle: break
+        case .list: startList()
+        case .retry(let after): retry(after: after)
+        }
+        if gate.loaded != loaded { loaded = gate.loaded }
         derive()
     }
 
@@ -130,6 +158,8 @@ final class LoopHub {
         guard !events.isEmpty else { return }
         for e in events { store.apply(e) }
         replay?.append(contentsOf: events)
+        gate.sawEvents()
+        if gate.loaded != loaded { loaded = gate.loaded }
         derive()
     }
 
@@ -142,6 +172,26 @@ final class LoopHub {
         if n != onYouCount { onYouCount = n }
         let p = ProjectLoops(loops: store.loops.values)
         if p != projectLoops { projectLoops = p }
+        recount()
+    }
+
+    private func recount() {
+        let n = yourMove(excluding: queue).count
+        if n != yourMoveCount { yourMoveCount = n }
+    }
+
+    /// An agent's state changed (nil: it is gone): the queue follows.
+    func queueSaw(_ id: String, needsYou: Bool) {
+        guard queue.contains(id) != needsYou else { return }
+        if needsYou { queue.insert(id) } else { queue.remove(id) }
+        recount()
+    }
+
+    /// Every agent again (a resubscribe).
+    func queueListed(_ ids: Set<String>) {
+        guard ids != queue else { return }
+        queue = ids
+        recount()
     }
 
     // MARK: Inbox
@@ -179,6 +229,7 @@ final class LoopHub {
     /// Hides a loop's entry until the loop changes (nil: shows it again).
     func markActed(_ loop: Loop, _ on: Bool) {
         inboxActed[loop.id] = on ? loop.lastChange : nil
+        recount()
     }
 
     // MARK: Drafts started in a loop
@@ -195,6 +246,10 @@ final class LoopHub {
     func loop(forDraft draft: String) -> String? { store.supported ? draftLoops[draft] : nil }
 
     func draftStarted(_ draft: String) { draftLoops.removeValue(forKey: draft) }
+
+    /// The planner agent the product sheet started per scope (in memory:
+    /// P shows it again instead of starting another).
+    @ObservationIgnored var planners: [String: String] = [:]
 
     // MARK: Writes
 
@@ -253,39 +308,26 @@ final class LoopHub {
     }
 }
 
-/// Decoded notifications between the reader thread and the main actor.
-/// `push` is true when the queue was empty (the caller schedules one
-/// flush); the queue is bounded, the oldest events go first (a list on
-/// the next connect repairs the gap).
-// @unchecked Sendable: every access to `queue` holds `lock`.
-final class LoopsInbox: @unchecked Sendable {
-    static let limit = 4096
-    private let lock = NSLock()
-    private var queue: [LoopsEvent] = []
-
-    func push(_ e: LoopsEvent) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        queue.append(e)
-        if queue.count > Self.limit { queue.removeFirst(queue.count - Self.limit) }
-        return queue.count == 1
-    }
-
-    func drain() -> [LoopsEvent] {
-        lock.lock(); defer { lock.unlock() }
-        let q = queue
-        queue = []
-        return q
-    }
-}
-
 // MARK: The wall model's hooks
 
 extension AppModel {
     var loopHub: LoopHub { LoopHub.shared(for: self) }
 
     /// Every daemon event (marked integration point in `handle`): a
-    /// connect lists the loops again.
+    /// connect lists the loops again; agent changes keep the hub's copy of
+    /// the attention queue (one agent per change, all on a resubscribe).
     func loopSaw(_ e: DaemonEvent) {
-        if case .connected = e { loopHub.connected() }
+        switch e {
+        case .connected:
+            loopHub.connected()
+        case .changed(let a):
+            loopHub.queueSaw(a.id, needsYou: registry.agents[a.id]?.state.needsAttention ?? false)
+        case .removed(let id, _):
+            loopHub.queueSaw(id, needsYou: registry.agents[id]?.state.needsAttention ?? false)
+        case .reconciled, .moved:
+            loopHub.queueListed(Set(registry.agents.values.lazy.filter(\.state.needsAttention).map(\.id)))
+        default:
+            break
+        }
     }
 }

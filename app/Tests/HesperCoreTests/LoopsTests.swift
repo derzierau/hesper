@@ -81,6 +81,10 @@ struct LoopsTests {
         // Missing level: the default (suggest); unknown: watch.
         #expect(try F.decode(StewardStatus.self, "{}") == StewardStatus())
         #expect(try F.decode(StewardStatus.self, #"{"level":"overlord"}"#).level == .watch)
+        // Why it stopped and the events its full queue dropped.
+        let st = try F.decode(StewardStatus.self, #"{"enabled":true,"stopped":"it failed 5 times in 10 minutes","dropped":7}"#)
+        #expect(st.stopped == "it failed 5 times in 10 minutes" && st.dropped == 7)
+        #expect(s.stopped == nil && s.dropped == 0)
 
         let set = try F.decode(LoopSettings.self, F.wireSettings)
         #expect(set == LoopSettings(loopLimit: 4, stallDays: 10, eveningAt: "19:30", maxWakesPerDay: 20))
@@ -160,6 +164,17 @@ struct LoopsTests {
         #expect(s.supported && s.loops["lp-3"]?.title == "again")
     }
 
+    @Test func eventsDuringAListAreReplayedOnTopOfIt() {
+        // LoopHub's order: events apply as they come; the list (taken
+        // before them) replaces the loops, then the same events again.
+        var s = LoopStore(loops: [F.loop("lp-old")])
+        let during: [LoopsEvent] = [.loopChanged(F.loop("lp-1", "renamed")), .loopRemoved("lp-gone"), .loopChanged(F.loop("lp-new"))]
+        for e in during { s.apply(e) }
+        s.listed(loops: [F.loop("lp-1", "listed"), F.loop("lp-gone")])
+        for e in during { s.apply(e) }
+        #expect(s.loops.keys.sorted() == ["lp-1", "lp-new"] && s.loops["lp-1"]?.title == "renamed")
+    }
+
     @Test func listResultsDecodeBothShapes() throws {
         #expect(DaemonClient.loopList(try F.value("[\(F.wireLoop),{\"bad\":1}]")).map(\.id) == ["lp-0a1b2c3d4e5f"])
         #expect(DaemonClient.loopList(try F.value("{\"loops\":[\(F.wireLoop)]}")).count == 1)
@@ -173,9 +188,12 @@ struct LoopsTests {
         let p = LoopPatch(title: "New", milestone: "", parkedUntil: F.t0).params
         #expect(p["title"] == "New" && p["milestone"] == "" && p["parkedUntil"]?.stringValue?.hasSuffix("Z") == true && p["id"] == nil)
         #expect(ItemPatch.done("it-1").json == ["id": "it-1", "state": "done"])
-        let item = ItemPatch(text: "x", owner: .others, kind: .looseEnd, order: 1.5, after: ["a"], check: ItemCheck(kind: "url", ref: "https://example.com")).json
+        let item = ItemPatch(text: "x", owner: .others, kind: .looseEnd, order: 1.5, after: ["a"], check: .set(ItemCheck(kind: "url", ref: "https://example.com"))).json
         #expect(item == ["text": "x", "owner": "others", "kind": "looseEnd", "order": .number(1.5), "after": ["a"],
                          "check": ["kind": "url", "ref": "https://example.com"]])
+        // Clearing a check sends an empty kind; keeping it sends nothing.
+        #expect(ItemPatch(id: "it-1", check: .clear).json == ["id": "it-1", "check": ["kind": ""]])
+        #expect(ItemPatch(id: "it-1").json == ["id": "it-1"])
         #expect(GoalPatch(scope: "g", title: "T").params == ["goal": ["scope": "g", "title": "T"]])
         #expect(MilestonePatch(id: "ms-1", status: .done, autoFile: false).params == ["milestone": ["id": "ms-1", "status": "done", "autoFile": false]])
         #expect(StewardPatch(enabled: true, level: .watch).params == ["enabled": true, "level": "watch"])

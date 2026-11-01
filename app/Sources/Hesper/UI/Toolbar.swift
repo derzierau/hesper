@@ -452,7 +452,7 @@ struct AttentionPill: View {
                     Text("\(data.yourMove) your move").font(.ds(.chrome, .medium)).foregroundStyle(Theme.fg)
                 }
                 .padding(.horizontal, DS.Spacing.m).frame(height: Pill.height)
-                .background(DS.Radius.shape(DS.Radius.control).fill(Theme.chipBG.opacity(open ? 1 : 0.6)))
+                .background(DS.Radius.shape(DS.Radius.control).fill(Theme.chipBG.opacity(open ? 1 : DS.Alpha.quiet)))
                 .contentShape(DS.Radius.shape(DS.Radius.control))
             }
             .buttonStyle(.plain)

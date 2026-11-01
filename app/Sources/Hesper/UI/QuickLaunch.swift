@@ -99,6 +99,7 @@ final class QuickLaunchController {
         panel.onKey = { [weak self] cmd in self?.handle(cmd) ?? false }
         header.rootView = QuickHeader(onClose: { [weak self] in self?.hide() })
         composer.onReplaceText = { [weak tv] text, caret in tv?.replaceAll(with: text, caret: caret) }
+        composer.onQuickStart = { [weak self] loop, tickOff in self?.start(loop: loop, tickOff: tickOff) }
         footer.rootView = DraftFooter(composer: composer, quick: true, onStart: { [weak self] in self?.start() }, onLeave: { [weak self] in self?.hide() })
         observeChanges { [weak self] in self?.refresh() }
     }
@@ -160,9 +161,10 @@ final class QuickLaunchController {
         }
     }
 
-    private func start() {
+    /// ⌘⏎, or ⇧⌘⏎ "Add to loop" from the start check (`loop`).
+    private func start(loop: String? = nil, tickOff: String? = nil) {
         Task { @MainActor in
-            if await model.startQuick() == nil {
+            if await model.startQuick(loop: loop, tickOff: tickOff) == nil {
                 editor.textView.show("")
                 hide()
             }

@@ -190,6 +190,8 @@ public enum CommandID: Hashable, Sendable {
     case select(WallMove), activate(WallMove), activateTile
     // Composer.
     case startDraft, startDraftAndNew, toggleWorktree, leaveDraft
+    // The composer's start strip (a task that looks like an open loop).
+    case composerAddToLoop, composerDraftInLoop
     // The overlay family (palette, popovers, inbox, History, Review).
     case moveUp, moveDown, closeOverlay
     case overlayActivate, overlayAlternate, overlayActOn, overlayBack, overlayDeleteBackward, closeTrayItem
@@ -619,6 +621,11 @@ public enum CommandRegistry {
         Command(.startDraftAndNew, "Start and write the next one", chord: .plain(.enter, option: true), surfaces: composers),
         Command(.toggleWorktree, "Worktree on / off", chord: .cmd("b", option: true), surfaces: composers),
         Command(.leaveDraft, "Leave the draft", chord: .plain(.escape), surfaces: composers),
+        // The start strip's keys; the router passes them to the composer's
+        // text view (no AppCommand), which asks StartStrip.choice. The
+        // quick launch panel keeps no drafts: no Draft in loop there.
+        Command(.composerAddToLoop, "Start in the matching loop", chord: .cmd(.enter, shift: true), surfaces: composers),
+        Command(.composerDraftInLoop, "Save as a draft in the matching loop", chord: .cmd("d"), surfaces: [.composer]),
     ]
 
     private static let overlays: [Command] = [

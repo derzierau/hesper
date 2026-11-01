@@ -393,6 +393,10 @@ struct SettingsView: View {
                             .accessibilityIdentifier("settings.steward.enabled")
                         Text(st.summary).font(DS.font(.chrome)).foregroundStyle(Theme.dim)
                             .accessibilityIdentifier("settings.steward.summary")
+                        if let note = st.stoppedNote {
+                            Text(note).font(DS.font(.chrome)).foregroundStyle(Theme.color(.error))
+                                .accessibilityIdentifier("settings.steward.stopped")
+                        }
                     }
                 }
                 SettingsLine("Level") {

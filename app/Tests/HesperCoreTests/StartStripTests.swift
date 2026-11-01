@@ -47,6 +47,22 @@ struct StartStripTests {
         #expect(KeyRouter.route(KeyChord(.char("d"), command: true), mode: .compose, selectedState: nil) == .passThrough)
         // No match: no keys.
         #expect(StartStrip(StartCheckResult(match: nil, onYou: 3, loopLimit: 5)).choice(for: KeyChord(.char("d"), command: true)) == nil)
+        // The quick launch panel keeps no drafts: ⌘D is not its.
+        #expect(s.choice(for: KeyChord(.char("d"), command: true), in: .quickLaunch) == nil)
+        #expect(s.choice(for: KeyChord(.enter, command: true, shift: true), in: .quickLaunch) == .addToLoop(loop: "lp-push", looseEnd: "le1"))
+        #expect(StartStrip.addKey() == "⇧⌘⏎" && StartStrip.draftKey() == "⌘D" && StartStrip.draftKey(in: .quickLaunch) == nil)
+    }
+
+    @Test func keysFollowTheUsersShortcuts() {
+        let s = StartStrip(StartCheckIndex(loops: Self.loops).check(task: "write the provider brief", project: "p-demo"))
+        var o = ShortcutOverrides()
+        o.set(.composerAddToLoop, to: .chord(KeyChord(.char("g"), command: true, control: true)))
+        o.set(.composerDraftInLoop, to: .unbound)
+        let table = CommandTable(CommandRegistry.resolved(with: o))
+        #expect(s.choice(for: KeyChord(.char("g"), command: true, control: true), table: table) == .addToLoop(loop: "lp-push", looseEnd: "le1"))
+        #expect(s.choice(for: KeyChord(.enter, command: true, shift: true), table: table) == nil)
+        #expect(s.choice(for: KeyChord(.char("d"), command: true), table: table) == nil)
+        #expect(StartStrip.addKey(table: table) == "⌃⌘G" && StartStrip.draftKey(table: table) == nil)
     }
 
     @Test func draftItemAndSpawnLoop() {

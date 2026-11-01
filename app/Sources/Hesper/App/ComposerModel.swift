@@ -28,6 +28,9 @@ final class ComposerModel {
     @ObservationIgnored private var checkTask: Task<Void, Never>?
     /// The text view: replace its text (a completion, a chip choice).
     @ObservationIgnored var onReplaceText: ((String, Int) -> Void)?
+    /// The quick launch panel's start (a loop to start in, the loose end to
+    /// tick off): it clears the prompt and hides the panel once it runs.
+    @ObservationIgnored var onQuickStart: ((_ loop: String?, _ tickOff: String?) -> Void)?
     /// The text view: where the caret is (root/panel coordinates).
     @ObservationIgnored var caretRect: (() -> CGRect?)?
     /// Completion closed with esc at this token: stays closed until the
@@ -108,7 +111,7 @@ final class ComposerModel {
         switch c {
         case .addToLoop(let loop, let looseEnd):
             if quick {
-                Task { _ = await app.startQuick(loop: loop, tickOff: looseEnd) }
+                onQuickStart?(loop, looseEnd)
             } else {
                 app.startDraft(id, loop: loop, tickOff: looseEnd)
             }

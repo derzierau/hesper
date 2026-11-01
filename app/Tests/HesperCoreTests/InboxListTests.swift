@@ -54,16 +54,29 @@ struct InboxListTests {
         // Later files an agent's ask or step as the person's item, then parks.
         let park = LoopPatch(id: "lp-ask", status: .parked, parkedUntil: until)
         #expect(YourMoveCall.calls(.later(loop: "lp-ask"), entry: e[0], parkUntil: until) == [
-            .item(loop: "lp-ask", ItemPatch(text: "Use the new key?", owner: .you, kind: .question)), .save(park),
+            .item(loop: "lp-ask", ItemPatch(text: "Use the new key?", owner: .you, kind: .question, source: "n/x")), .save(park),
         ])
         #expect(YourMoveCall.calls(.later(loop: "lp-step"), entry: e[1], parkUntil: until) == [
-            .item(loop: "lp-step", ItemPatch(text: "Run `make deploy`", owner: .you, kind: .step)),
+            .item(loop: "lp-step", ItemPatch(text: "Run `make deploy`", owner: .you, kind: .step, source: "n/s")),
             .save(LoopPatch(id: "lp-step", status: .parked, parkedUntil: until)),
         ])
         // An item is already in the loop: only the park.
         #expect(YourMoveCall.calls(.later(loop: "lp-item"), entry: e[2], parkUntil: until) == [
             .save(LoopPatch(id: "lp-item", status: .parked, parkedUntil: until)),
         ])
+    }
+
+    @Test func laterDeduplicatesAgainstItsFiledItem() throws {
+        // Later files the ask with its source; once back from the park the
+        // loop shows that item, not the agent's ask again.
+        let calls = YourMoveCall.calls(.later(loop: "lp-ask"), entry: entries[0], parkUntil: F.date(24))
+        guard case .item(_, let filed) = calls.first else { Issue.record("no item filed"); return }
+        #expect(filed.json["source"] == "n/x")
+        var back = ask
+        back.items = [F.item("it-new", filed.text ?? "", kind: filed.kind ?? .step, source: filed.source)]
+        let e = try #require(YourMove.entries(loops: [back]).first)
+        guard case .item(let it) = e.reason else { Issue.record("the ask came back: \(e.reason)"); return }
+        #expect(it.id == "it-new" && e.from == "api")
     }
 
     @Test func laterEndsTomorrowMorning() throws {

@@ -83,4 +83,24 @@ struct ProductsTests {
         // Only dropped records: not a product.
         #expect(ProductPage.scopes(goals: [Goal(id: "g", scope: "x", title: "t", status: .dropped)], milestones: []).isEmpty)
     }
+
+    @Test func aRunningPlannerIsShownNotStartedAgain() {
+        func planner(_ id: String, _ name: String, _ state: AgentState = .working) -> Agent {
+            var a = Agent(id: id, name: name, state: state)
+            a.service = "planner"
+            return a
+        }
+        let mine = planner("L/p1", "Renamed by the planner", .starting)
+        let named = planner("L/p2", "Plan g-demo", .idle)
+        let other = planner("L/p3", "Plan p-ios")
+        var plain = Agent(id: "L/x", name: "Plan g-demo")
+        plain.service = nil
+        // The one this app started wins while it runs, whatever its name.
+        #expect(ProductPage.runningPlanner(scope: "g-demo", remembered: "L/p1", agents: [named, mine, other, plain])?.id == "L/p1")
+        // Else hesperd's planner for the scope, by the name it gives it.
+        #expect(ProductPage.runningPlanner(scope: "g-demo", remembered: nil, agents: [plain, other, named])?.id == "L/p2")
+        // Exited or failed ones do not count; a plain agent never does.
+        let gone = planner("L/p1", "Plan g-demo", .exited), failed = planner("L/p2", "Plan g-demo", .error)
+        #expect(ProductPage.runningPlanner(scope: "g-demo", remembered: "L/p1", agents: [gone, failed, plain]) == nil)
+    }
 }

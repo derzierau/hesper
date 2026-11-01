@@ -139,6 +139,16 @@ public struct ProductPage: Equatable, Sendable {
     public func accept(_ id: String) -> PlanningIntent { .accept(scope: scope, ids: [id]) }
     public func drop(_ id: String) -> PlanningIntent { .drop(milestone: id) }
 
+    /// The planner already running or starting for `scope` (P shows it
+    /// instead of starting another: hesperd starts one per call): the one
+    /// this app started (`remembered`) while it runs, else hesperd's
+    /// planner for the scope by the name it gives it ("Plan <scope>").
+    public static func runningPlanner(scope: String, remembered: String?, agents: some Sequence<Agent>) -> Agent? {
+        let live = agents.filter { $0.service == "planner" && $0.isRunning && $0.state != .error }
+        if let id = remembered, let a = live.first(where: { $0.id == id }) { return a }
+        return live.filter { $0.name == "Plan \(scope)" }.min { $0.id < $1.id }
+    }
+
     /// Every product: the scopes with a goal or a milestone that is not
     /// dropped, groups first, then by name.
     public static func scopes(goals: [Goal], milestones: [Milestone], catalog: ProjectCatalog = ProjectCatalog()) -> [String] {

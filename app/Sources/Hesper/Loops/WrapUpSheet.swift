@@ -281,7 +281,7 @@ struct WrapUpCard: View {
             .padding(DS.Spacing.m)
             .frame(maxWidth: .infinity, minHeight: LoopsLook.verdictHeight, alignment: .topLeading)
             .background(DS.Radius.shape(DS.Radius.control).fill(chosen ? Theme.selection : Theme.color(.tile)))
-            .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(suggested || chosen ? Theme.accent : Theme.stroke, lineWidth: 1))
+            .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(suggested || chosen ? Theme.accent : Theme.stroke, lineWidth: DS.hairline))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -76,6 +76,27 @@ struct WrapUpTests {
         #expect(cal.component(.hour, from: w.parkUntil) == 9 && cal.dateComponents([.day], from: midnight, to: w.parkUntil).day == 1)
     }
 
+    @Test func talliesFromAnAllStatusList() throws {
+        // LoopHub lists every status: done and dropped loops stay in the store.
+        #expect(LoopStore.listStatus == "all")
+        let at = Agent.format(morning), before = Agent.format(days(2))
+        let list = DaemonClient.loopList(try F.value("""
+        [{"id": "open", "title": "Open", "status": "open", "next": "you", "created": "\(at)", "updated": "\(at)"},
+         {"id": "done", "title": "Done", "status": "done", "next": "closed", "created": "\(at)", "updated": "\(at)", "closed": "\(at)"},
+         {"id": "dropped", "title": "Dropped", "status": "dropped", "next": "closed", "created": "\(before)", "updated": "\(before)", "closed": "\(before)"}]
+        """))
+        var store = LoopStore()
+        store.listed(loops: list)
+        let w = WrapUp(loops: store.loops.values, now: evening, calendar: cal)
+        #expect(w.tallies.startedToday == 2 && w.tallies.finishedToday == 1 && w.tallies.onYou == 1)
+        #expect(w.entries.map(\.loop.id) == ["open"])
+        // Boards and chips still leave closed loops out.
+        #expect(Set(LoopChip.all(store).keys) == ["open"] && LoopBoard(loops: store.loops.values).columns.values.flatMap { $0 }.map(\.id) == ["open"])
+        // A newer list replaces the old one: a loop it lacks goes.
+        store.listed(loops: list.filter { $0.id != "dropped" })
+        #expect(Set(store.loops.keys) == ["open", "done"])
+    }
+
     @Test func progressAndPatches() {
         var w = WrapUp(loops: sample(), now: evening, calendar: cal)
         #expect(w.progress == 0 && w.nextUndecided?.id == "step" && !w.isFinished)

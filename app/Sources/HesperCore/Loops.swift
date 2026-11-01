@@ -571,15 +571,21 @@ public struct StewardStatus: Equatable, Sendable, Decodable {
     public var wakes: Int
     public var lastWake: Date?
     public var session: String?
+    /// Events its full queue dropped (the oldest first).
+    public var dropped: Int
+    /// Why it does not run although it is on here (it failed too often;
+    /// turning it off and on again retries).
+    public var stopped: String?
 
     /// Off at level suggest: hesperd's default (decision 3, off by default).
     public init(enabled: Bool = false, level: StewardLevel = .suggest, node: String? = nil, machine: String? = nil, agent: String? = nil,
-                queued: Int = 0, wakes: Int = 0, lastWake: Date? = nil, session: String? = nil) {
+                queued: Int = 0, wakes: Int = 0, lastWake: Date? = nil, session: String? = nil, dropped: Int = 0, stopped: String? = nil) {
         self.enabled = enabled; self.level = level; self.node = node; self.machine = machine; self.agent = agent
         self.queued = queued; self.wakes = wakes; self.lastWake = lastWake; self.session = session
+        self.dropped = dropped; self.stopped = stopped
     }
 
-    enum CodingKeys: String, CodingKey { case enabled, level, node, machine, agent, queued, wakes, lastWake, session }
+    enum CodingKeys: String, CodingKey { case enabled, level, node, machine, agent, queued, wakes, lastWake, session, dropped, stopped }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         enabled = c.bool(.enabled)
@@ -587,6 +593,7 @@ public struct StewardStatus: Equatable, Sendable, Decodable {
         level = c.opt(.level).map { StewardLevel(rawValue: $0) ?? .watch } ?? .suggest
         node = c.opt(.node); machine = c.opt(.machine); agent = c.opt(.agent)
         queued = c.int(.queued); wakes = c.int(.wakes); lastWake = c.date(.lastWake); session = c.opt(.session)
+        dropped = c.int(.dropped); stopped = c.opt(.stopped)
     }
 }
 
@@ -694,6 +701,25 @@ public struct LoopPatch: Equatable, Sendable {
     }
 }
 
+/// What an `ItemPatch` does to an item's check: leave it, set it, or
+/// clear it (sent as `"check": {"kind": ""}`).
+public enum ItemCheckChange: Equatable, Sendable {
+    case keep
+    case set(ItemCheck)
+    case clear
+
+    /// The check it sets (nil: keep or clear).
+    public var value: ItemCheck? { if case .set(let c) = self { return c } else { return nil } }
+
+    var json: JSONValue? {
+        switch self {
+        case .keep: return nil
+        case .set(let c): return c.json
+        case .clear: return ["kind": ""]
+        }
+    }
+}
+
 /// `loops.item` / `goals.item`: add (no id), change or remove an item; only
 /// the fields given change.
 public struct ItemPatch: Equatable, Sendable {
@@ -705,12 +731,14 @@ public struct ItemPatch: Equatable, Sendable {
     public var order: Double?
     public var after: [String]?
     public var draft: String?
-    public var check: ItemCheck?
+    public var check: ItemCheckChange
+    /// The link (an agent or session ref) the item comes from.
+    public var source: String?
 
     public init(id: String? = nil, text: String? = nil, owner: ItemOwner? = nil, state: ItemState? = nil, kind: ItemKind? = nil,
-                order: Double? = nil, after: [String]? = nil, draft: String? = nil, check: ItemCheck? = nil) {
+                order: Double? = nil, after: [String]? = nil, draft: String? = nil, check: ItemCheckChange = .keep, source: String? = nil) {
         self.id = id; self.text = text; self.owner = owner; self.state = state; self.kind = kind
-        self.order = order; self.after = after; self.draft = draft; self.check = check
+        self.order = order; self.after = after; self.draft = draft; self.check = check; self.source = source
     }
 
     /// Tick an item off.
@@ -726,7 +754,8 @@ public struct ItemPatch: Equatable, Sendable {
         if let order { o["order"] = .number(order) }
         if let after { o["after"] = .array(after.map(JSONValue.string)) }
         if let draft { o["draft"] = .string(draft) }
-        if let check { o["check"] = check.json }
+        if let check = check.json { o["check"] = check }
+        if let source { o["source"] = .string(source) }
         return .object(o)
     }
 }
@@ -853,6 +882,11 @@ public struct LoopStore: Equatable, Sendable {
     public private(set) var supported = true
     public private(set) var version = 0
 
+    /// The status LoopHub lists: every one. The store keeps done and
+    /// dropped loops (the wrap-up's tallies, a milestone's finished loops);
+    /// boards, chips, counts and the start check show active loops only.
+    public static let listStatus = "all"
+
     public init(loops: [Loop] = [], goals: [Goal] = [], milestones: [Milestone] = [], steward: StewardStatus = StewardStatus(),
                 settings: LoopSettings = LoopSettings()) {
         for l in loops { self.loops[l.id] = l }
@@ -880,7 +914,8 @@ public struct LoopStore: Equatable, Sendable {
         version += 1
     }
 
-    /// A fresh `loops.list` (nil: hesperd has no loops).
+    /// A fresh `loops.list` (nil: hesperd has no loops); it replaces every
+    /// loop (a loop it lacks is gone).
     public mutating func listed(loops list: [Loop]?) {
         guard let list else { supported = false; loops = [:]; version += 1; return }
         supported = true

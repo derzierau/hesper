@@ -39,18 +39,27 @@ public struct StartStrip: Equatable, Sendable {
     public var add: Choice? { result.match.map { .addToLoop(loop: $0.loop, looseEnd: $0.looseEnd) } }
     public var draft: Choice? { result.match.map { .draftInLoop(loop: $0.loop) } }
 
-    /// The strip's key caps (not registry commands: the strip's own keys,
-    /// like a close strip's ⏎ esc).
-    public static let addKey = "⇧⌘⏎"
-    public static let draftKey = "⌘D"
+    /// The strip's key caps, from the registry (the person's shortcuts
+    /// applied; nil: unbound there).
+    public static func addKey(in surface: Surface = .composer, table: CommandTable = CommandRegistry.active) -> String? {
+        cap(.composerAddToLoop, surface, table)
+    }
 
-    /// The strip's keys: ⇧⌘⏎ add to the loop, ⌘D save as a draft in it
-    /// (nil: not the strip's; the composer's own keys go on).
-    public func choice(for k: KeyChord) -> Choice? {
-        guard k.command, !k.option, !k.control else { return nil }
-        switch k.key {
-        case .enter where k.shift: return add
-        case .char("d") where !k.shift: return draft
+    public static func draftKey(in surface: Surface = .composer, table: CommandTable = CommandRegistry.active) -> String? {
+        cap(.composerDraftInLoop, surface, table)
+    }
+
+    private static func cap(_ id: CommandID, _ surface: Surface, _ table: CommandTable) -> String? {
+        table.command(id)?.chords(in: surface).first?.label
+    }
+
+    /// The strip's keys (registry commands, ⇧⌘⏎ and ⌘D by default): add to
+    /// the loop, save as a draft in it (nil: not the strip's; the
+    /// composer's own keys go on).
+    public func choice(for k: KeyChord, in surface: Surface = .composer, table: CommandTable = CommandRegistry.active) -> Choice? {
+        switch table.resolve(k, in: surface) {
+        case .composerAddToLoop: return add
+        case .composerDraftInLoop: return draft
         default: return nil
         }
     }

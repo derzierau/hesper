@@ -66,17 +66,27 @@ final class LoopsSheetModel {
 
     // MARK: Open, sync
 
-    func open(select: String?) {
+    /// The board with `select` selected, or (`detail`) its detail, when it
+    /// is an active loop. Before the hub's first list (hesperctl launching
+    /// the app) the selection waits for it (`sync`).
+    func open(select: String?, detail: Bool) {
         error = nil
         field = nil
         allScope = scopeFilter == nil
+        mode = .board
+        pending = hub.loaded ? nil : select.map { ($0, detail) }
         seen = -1
         sync()
-        if let select, hub.loop(select)?.isActive == true {
-            if !board.order.contains(select) { allScope = true; sync() }
-            board.select(select)
-        }
-        mode = .board
+        if let select, hub.loaded { reveal(select, detail: detail) }
+    }
+
+    /// A loop to select (or show) once the hub has loaded.
+    @ObservationIgnored private var pending: (id: String, detail: Bool)?
+
+    private func reveal(_ id: String, detail: Bool) {
+        guard hub.loop(id)?.isActive == true else { return }
+        if !board.order.contains(id) { allScope = true; sync() }
+        if detail { show(id) } else { board.select(id) }
     }
 
     func closed() { field = nil }
@@ -92,6 +102,10 @@ final class LoopsSheetModel {
                           loopLimit: store.settings.loopLimit, selected: board.selected)
         if mode == .map { rebuildMap() }
         if case .detail(let id) = mode, hub.loop(id) == nil { mode = back }
+        if hub.loaded, let p = pending {
+            pending = nil
+            reveal(p.id, detail: p.detail)
+        }
     }
 
     private func rebuildMap() {
@@ -504,7 +518,7 @@ struct LoopCard: View {
         .padding(DS.Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DS.Radius.shape(DS.Radius.control).fill(Theme.color(.tile)))
-        .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(selected ? Theme.accent : Theme.stroke, lineWidth: selected ? DS.focusRing + 1 : 1))
+        .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(selected ? Theme.accent : Theme.stroke, lineWidth: selected ? DS.focusRing + DS.hairline : DS.hairline))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("loops.card.\(loop.id)")
@@ -596,7 +610,7 @@ struct LoopDetailView: View {
         }
         .padding(DS.Spacing.m)
         .background(DS.Radius.shape(DS.Radius.control).fill(Theme.color(.tile)))
-        .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(Theme.stroke, lineWidth: 1))
+        .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(Theme.stroke, lineWidth: DS.hairline))
     }
 
     @ViewBuilder private func stepsSection(_ title: String, _ items: [LoopItem], all: [LoopItem]) -> some View {
@@ -664,7 +678,7 @@ struct LoopDetailView: View {
             }
             ForEach(loop.agentLinks) { k in
                 Row(title: k.title, subtitle: LoopWords.memberDetail(k), meta: k.machine,
-                    mark: k.isLive ? StateMarkKind(k.state ?? .idle) : .exited, kbd: model.row == k.id && k.isLive ? "⏎" : nil,
+                    mark: k.isLive ? StateMarkKind(k.state ?? .idle) : .exited, kbd: model.row == k.id && k.isLive ? CommandRegistry.cap(.loopsOpen, in: .loops) : nil,
                     selected: model.row == k.id)
                     .onTapGesture { model.row = k.id }
                     .accessibilityIdentifier("loops.member.\(k.ref)")

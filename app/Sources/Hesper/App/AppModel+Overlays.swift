@@ -437,8 +437,9 @@ extension AppModel {
         return InboxList.filter(loopHub.yourMove(excluding: queueIDs), query: q)
     }
 
-    /// The toolbar's quiet "n your move" pill (the queue's agents left out).
-    var yourMoveCount: Int { loopHub.yourMove(excluding: queueIDs).count }
+    /// The toolbar's quiet "n your move" pill (the queue's agents left
+    /// out), stored in the hub: it changes only with the loops or the queue.
+    var yourMoveCount: Int { loopHub.yourMoveCount }
 
     /// The agents in the attention queue (approval, question, error).
     private var queueIDs: Set<String> { Set(registry.agents.values.lazy.filter(\.state.needsAttention).map(\.id)) }
@@ -625,7 +626,7 @@ extension AppModel {
     /// The loop's detail in this window's Loops sheet (⌘L), selected.
     private func openLoop(_ id: String, from e: YourMoveEntry) {
         closePopover()
-        openLoopsSheet(.loops(select: id))
+        openLoopsSheet(.loop(id))
     }
 
     /// Drops answered marks of agents that left the queue (or asked again).

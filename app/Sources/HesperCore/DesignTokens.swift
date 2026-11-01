@@ -61,6 +61,24 @@ public enum DesignTokens {
         /// The ring a strip draws in its mark's tone while it has the
         /// keyboard (⏎ / esc go to it).
         public static let focusRing: Double = 1
+        /// A 1 pt border or divider (cards, map nodes, a selected card's
+        /// accent outline).
+        public static let hairline: Double = 1
+    }
+
+    /// A tone's opacity over a surface (`Theme.ns(token, alpha:)`,
+    /// `Color.opacity`), lightest first.
+    public enum Alpha {
+        /// An inline banner's wash behind a line of text (an error, a
+        /// warning).
+        public static let banner: Double = 0.1
+        /// A tone's fill: a pill with a mark, a chip, a map node.
+        public static let tint: Double = 0.14
+        /// A quiet control at rest or on hover: a row, the toolbar's quiet
+        /// pill.
+        public static let quiet: Double = 0.6
+        /// A tone's outline (a map node's border).
+        public static let edge: Double = 0.7
     }
 
     /// Wall density: one token set, two modes.

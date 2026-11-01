@@ -28,6 +28,9 @@ final class ProductSheetModel {
     private(set) var busy = false
     /// The planning session's agent (steward.plan's answer).
     private(set) var planner: String?
+    /// The sheet is up: the planner's terminal is attached only then (a
+    /// hidden sheet keeps no live view of it).
+    private(set) var visible = false
     @ObservationIgnored private var seen = -1
 
     init(hub: LoopHub, app: AppModel) {
@@ -38,6 +41,7 @@ final class ProductSheetModel {
     var catalog: ProjectCatalog { app?.catalog ?? ProjectCatalog() }
 
     func open(scope s: String?) {
+        visible = true
         error = nil
         filing = false
         seen = -1
@@ -50,7 +54,10 @@ final class ProductSheetModel {
         sync()
     }
 
-    func closed() { filing = false }
+    func closed() {
+        filing = false
+        visible = false
+    }
 
     func sync() {
         let store = hub.store
@@ -138,9 +145,9 @@ final class ProductSheetModel {
 
     private func openSelected() {
         guard let id = selected, let app else { return }
-        if hub.loop(id) != nil { LoopsSheetHost.show(app, .loops(select: id), toggle: false); return }
+        if hub.loop(id) != nil { LoopsSheetHost.show(app, .loop(id), toggle: false); return }
         if let first = page?.milestones.first(where: { $0.id == id })?.loops.first(where: \.isActive) {
-            LoopsSheetHost.show(app, .loops(select: first.id), toggle: false)
+            LoopsSheetHost.show(app, .loop(first.id), toggle: false)
         }
     }
 
@@ -151,17 +158,28 @@ final class ProductSheetModel {
         run { try await $0.goalFile(milestone: ms, loop: l.id) }
     }
 
-    /// P: a planning session with the Steward's planner agent.
+    /// P: a planning session with the Steward's planner agent. One that
+    /// runs or starts for the scope is shown instead (hesperd starts a new
+    /// planner on every steward.plan).
     private func plan() {
         guard let scope else { NSSound.beep(); return }
         error = nil
-        busy = true
         mode = .planning
+        if busy { return }
+        let agents = app.map { Array($0.registry.agents.values) } ?? []
+        if let running = ProductPage.runningPlanner(scope: scope, remembered: planner ?? hub.planners[scope], agents: agents) {
+            planner = running.id
+            return
+        }
+        busy = true
         Task {
             let (id, e) = await hub.value { try await $0.stewardPlan(scope: scope) }
             busy = false
             if let e { error = e; if page?.proposed.isEmpty ?? true { mode = .page } }
-            planner = id ?? nil
+            if let id = id ?? nil {
+                hub.planners[scope] = id
+                if self.scope == scope { planner = id }
+            }
         }
     }
 
@@ -288,7 +306,7 @@ struct ProductSheetView: View {
         }
         .padding(.horizontal, DS.Spacing.l)
         .padding(.vertical, DS.Spacing.s)
-        .background(Color(nsColor: Theme.ns(.question, alpha: 0.1)))
+        .background(Color(nsColor: Theme.ns(.question, alpha: DS.Alpha.banner)))
         .accessibilityIdentifier("product.duplicate")
     }
 }
@@ -360,7 +378,7 @@ struct ProductPageView: View {
         }
         .padding(DS.Spacing.m)
         .background(DS.Radius.shape(DS.Radius.control).fill(Theme.color(.tile)))
-        .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(selected ? Theme.accent : Theme.stroke, lineWidth: 1))
+        .overlay(DS.Radius.shape(DS.Radius.control).strokeBorder(selected ? Theme.accent : Theme.stroke, lineWidth: DS.hairline))
         .id(m.id)
         .onTapGesture { model.selected = m.id }
         .accessibilityIdentifier("product.milestone.\(m.id)")
@@ -457,8 +475,12 @@ struct PlanningView: View {
             .padding(.horizontal, DS.Spacing.m)
             .frame(height: DS.chromeMaxHeight)
             if let id = model.planner, let app = model.appModel, let agent = app.agent(id) {
-                PlannerTerminal(agent: agent, model: app)
-                    .background(Color(nsColor: DS.terminalBackground))
+                if model.visible {
+                    PlannerTerminal(agent: agent, model: app)
+                        .background(Color(nsColor: DS.terminalBackground))
+                } else {
+                    Color(nsColor: DS.terminalBackground) // hidden: detached until the sheet shows again
+                }
             } else {
                 LoopsEmpty(symbol: "text.bubble", title: model.busy ? "Starting the planner…" : "No planner running",
                            detail: model.busy ? "The Steward starts a planning agent for this product."

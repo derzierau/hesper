@@ -64,9 +64,11 @@ struct YourMoveTests {
         #expect(YourMove.entries(loops: [ask])[0].actions.map(\.intent) == [
             .answer(agent: "L/a", text: "Yes"), .answer(agent: "L/a", text: "No"), .later(loop: "lp-a"), .open(loop: "lp-a"),
         ])
-        // A gone agent can't be answered.
+        // A gone agent can't be answered; ⏎ (the first) opens, never parks.
         let gone = F.loop("lp-g", next: .you, links: [F.agent("n/a", ending: .asks, closed: F.t0)])
-        #expect(YourMove.entries(loops: [gone])[0].actions.map(\.title) == ["Later", "Open"])
+        #expect(YourMove.entries(loops: [gone])[0].actions.map(\.title) == ["Open", "Later"])
+        let goneStep = F.loop("lp-gs", next: .you, links: [F.agent("n/s", ending: .yourStep, summary: "Run `make check`", closed: F.t0)])
+        #expect(YourMove.entries(loops: [goneStep])[0].actions.map(\.title) == ["Open", "Copy command", "Later"])
         let item = F.loop("lp-i", next: .you, items: [F.item("i1", "Run:\n$ hesperctl loops ls")])
         #expect(YourMove.entries(loops: [item])[0].actions.map(\.intent) == [
             .checkOff(loop: "lp-i", item: "i1"), .copy("hesperctl loops ls"), .later(loop: "lp-i"), .open(loop: "lp-i"),

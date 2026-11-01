@@ -94,6 +94,8 @@ DS.Elevation.flat / .raised / .floating
 DS.chromeMaxHeight            // 28
 DS.bandGap                    // 16
 DS.focusRing                  // 1: the ring a strip draws in its mark's tone while it has the keyboard (⏎ / esc)
+DS.hairline                   // 1: a border or divider (cards, map nodes)
+DS.Alpha.banner / .tint / .quiet / .edge   // 0.1 · 0.14 · 0.6 · 0.7: a tone over a surface (banner wash, pill/chip/node fill, quiet control, outline)
 DS.density: DS.Density        // @MainActor; AppSettings.density keeps it in sync (persisted)
 DS.densityDidChange           // Notification posted when it changes
 DS.tileHeader                 // 26 Comfortable / 22 Compact
@@ -105,7 +107,7 @@ DS.terminalBackground: NSColor  // TokyoNight background, the same in both schem
 ```
 
 Pure equivalents for HesperCore and tests: `DesignTokens.Spacing/Radius/
-TextStyle/Weight/Chrome/Density/Motion`, `DesignTokens.pulsePeriod` (2 s).
+TextStyle/Weight/Chrome/Alpha/Density/Motion`, `DesignTokens.pulsePeriod` (2 s).
 
 ### State → mark
 
