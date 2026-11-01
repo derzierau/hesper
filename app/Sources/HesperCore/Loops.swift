@@ -725,11 +725,13 @@ public struct ItemPatch: Equatable, Sendable {
     public var after: [String]?
     public var draft: String?
     public var check: ItemCheckChange
+    /// The link (an agent or session ref) the item comes from.
+    public var source: String?
 
     public init(id: String? = nil, text: String? = nil, owner: ItemOwner? = nil, state: ItemState? = nil, kind: ItemKind? = nil,
-                order: Double? = nil, after: [String]? = nil, draft: String? = nil, check: ItemCheckChange = .keep) {
+                order: Double? = nil, after: [String]? = nil, draft: String? = nil, check: ItemCheckChange = .keep, source: String? = nil) {
         self.id = id; self.text = text; self.owner = owner; self.state = state; self.kind = kind
-        self.order = order; self.after = after; self.draft = draft; self.check = check
+        self.order = order; self.after = after; self.draft = draft; self.check = check; self.source = source
     }
 
     /// Tick an item off.
@@ -746,6 +748,7 @@ public struct ItemPatch: Equatable, Sendable {
         if let after { o["after"] = .array(after.map(JSONValue.string)) }
         if let draft { o["draft"] = .string(draft) }
         if let check = check.json { o["check"] = check }
+        if let source { o["source"] = .string(source) }
         return .object(o)
     }
 }

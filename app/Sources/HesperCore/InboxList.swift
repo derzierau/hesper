@@ -108,8 +108,9 @@ public enum YourMoveCall: Equatable, Sendable {
         case .later(let l):
             var out: [YourMoveCall] = []
             switch entry.reason {
-            case .asks: out.append(.item(loop: l, ItemPatch(text: entry.text, owner: .you, kind: .question)))
-            case .yourStep: out.append(.item(loop: l, ItemPatch(text: entry.text, owner: .you, kind: .step)))
+            // With its source: YourMove then shows the item, not the ask again.
+            case .asks(let k): out.append(.item(loop: l, ItemPatch(text: entry.text, owner: .you, kind: .question, source: k.ref)))
+            case .yourStep(let k): out.append(.item(loop: l, ItemPatch(text: entry.text, owner: .you, kind: .step, source: k.ref)))
             case .item: break
             }
             out.append(.save(LoopPatch(id: l, status: .parked, parkedUntil: parkUntil)))

@@ -5460,7 +5460,8 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   `YourMoveCall`s: Yes / No / Did it to a live agent type the text and
   submit it (`agents.input` with submit), Did it on an item ticks it
   off, Copy command copies, Later files an agent's ask or step as the
-  person's item (question or step) and parks the loop until tomorrow
+  person's item (question or step, with the agent's link as `source`,
+  so the entry shows that item afterwards) and parks the loop until tomorrow
   09:00, Open opens the loop's detail in this window's Loops sheet
   (`LoopsSheetKind.loop`; the product page's ⏎ too). An acted-on entry hides until its loop
   changes and comes back with a toast when a call fails. ⌘J opens when
