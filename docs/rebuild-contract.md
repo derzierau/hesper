@@ -5248,7 +5248,11 @@ settings (`loopLimit` 5, `stallDays` 7, `eveningAt` "18:00",
 the only source of truth for membership:** `LoopOf(ref)` is derived from
 the loops' live member links (agent or session links with rel `member`,
 `started` or `continued`; the newest wins; `mergedInto` chains are
-followed, at most 16 steps). Links hold settled facts only: the agent's
+followed, at most 16 steps). A `mergedInto` cycle (A merged into B on
+one Mac and B into A on another at once) is broken the same way on
+every Mac when the records merge (and on load): its lowest id is
+unmerged (`mergedInto` cleared) and takes the other loops' links and
+items; they stay merged and resolve to it. Links hold settled facts only: the agent's
 name, how its last turn ended (`ending`, `summary`), how it was closed
 (`closedReason`, `closed`, the first KiB of its final message as
 `result`, dropped after 90 days by a stamped write). Live state (`agent`,

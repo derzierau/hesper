@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -153,6 +154,7 @@ func Open(opt Options) *Store {
 	}
 	s.clock.Node, s.clock.Now = s.node, opt.Now
 	s.pruneLocked()
+	s.commitLocked(s.breakCyclesLocked()...) // a file from before cycles were broken
 	s.wg.Add(2)
 	go s.saver()
 	go s.viewer()
@@ -524,20 +526,65 @@ func member(k *LinkRecord) bool {
 	return false
 }
 
+// maxChain bounds a mergedInto chain.
+const maxChain = 16
+
 // resolveLocked follows a loop's mergedInto chain to the loop that holds
 // its work now ("" unknown).
 func (s *Store) resolveLocked(id string) string {
-	for range 16 {
-		l := s.loops[id]
-		if l == nil {
-			return ""
-		}
-		if l.MergedInto.V == "" || s.loops[l.MergedInto.V] == nil {
-			return id
-		}
-		id = l.MergedInto.V
+	end, _ := s.chainLocked(id)
+	return end
+}
+
+// chainLocked follows id's mergedInto chain: its end ("" id unknown) and,
+// when it runs into a cycle (two Macs merged both ways at once), the
+// cycle's loops. A cycle ends on its lowest id, on every Mac alike
+// (breakCyclesLocked makes that loop unmerged).
+func (s *Store) chainLocked(id string) (end string, cycle []string) {
+	if s.loops[id] == nil {
+		return "", nil
 	}
-	return id
+	path := []string{id}
+	for range maxChain {
+		into := s.loops[id].MergedInto.V
+		if into == "" || s.loops[into] == nil {
+			return id, nil
+		}
+		if i := slices.Index(path, into); i >= 0 {
+			cycle = path[i:]
+			return slices.Min(cycle), cycle
+		}
+		path = append(path, into)
+		id = into
+	}
+	return id, nil
+}
+
+// breakCyclesLocked undoes mergedInto cycles (a merge on each of two Macs
+// at once, A into B and B into A): the cycle's lowest id is unmerged and
+// takes the others' links and items, the others stay merged (into it,
+// through the chain). Every Mac does the same, so they agree. It returns
+// the keys it changed.
+func (s *Store) breakCyclesLocked() []string {
+	var keys []string
+	for id, l := range s.loops {
+		if l.MergedInto.V == "" {
+			continue
+		}
+		root, cycle := s.chainLocked(id)
+		if cycle == nil {
+			continue
+		}
+		to := s.loops[root]
+		to.MergedInto.Set("", s.clock.Tick())
+		for _, m := range cycle {
+			if m != root {
+				s.moveLocked(s.loops[m], to, func(*LinkRecord) bool { return true }, func(*ItemRecord) bool { return true })
+			}
+			keys = append(keys, "l:"+m)
+		}
+	}
+	return keys
 }
 
 // loopOfLocked is the loop a ref is a member of ("" none): the newest

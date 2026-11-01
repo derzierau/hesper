@@ -22,6 +22,7 @@ func (s *Store) Merge(recs []Record) bool {
 			keys = append(keys, key)
 		}
 	}
+	keys = append(keys, s.breakCyclesLocked()...)
 	s.commitLocked(keys...)
 	return len(keys) > 0
 }

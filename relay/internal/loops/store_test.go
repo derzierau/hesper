@@ -181,6 +181,49 @@ func TestMergeConverges(t *testing.T) {
 	}
 }
 
+// TestMergeCycleBreaks: A merged into B on one Mac and B into A on the
+// other at once: on both, the lower id stays (unmerged, listed), the
+// other resolves to it, and every link and item ends in it.
+func TestMergeCycleBreaks(t *testing.T) {
+	clock := &fakeClock{time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)}
+	a, b := openTest(t, "", "n-a", clock), openTest(t, "", "n-b", clock)
+	x, y := newLoop(a, "x"), newLoop(a, "y")
+	low, high := min(x, y), max(x, y)
+	addLink(a, x, wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/ax", Rel: wire.RelMember})
+	addLink(a, y, wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/ay", Rel: wire.RelMember})
+	addItem(t, a, x, "item x")
+	addItem(t, a, y, "item y")
+	exchange(t, a, b)
+	if _, err := a.MergeLoops(wire.LoopMergeParams{Into: y, From: x}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.MergeLoops(wire.LoopMergeParams{Into: x, From: y}); err != nil {
+		t.Fatal(err)
+	}
+	exchange(t, a, b)
+	exchange(t, a, b)
+	for _, s := range []*Store{a, b} {
+		for _, ref := range []string{"n-a/ax", "n-a/ay"} {
+			if got := s.LoopOf(ref); got != low {
+				t.Fatalf("%s: LoopOf(%s) = %s, want %s", s.node, ref, got, low)
+			}
+		}
+		listed := s.snapshot().build().listed()
+		if len(listed) != 1 || listed[0].ID != low || listed[0].MergedInto != "" {
+			t.Fatalf("%s: listed %+v", s.node, listed)
+		}
+		if l := listed[0]; len(l.Links) != 2 || len(l.Items) != 2 {
+			t.Fatalf("%s: %s holds %d links, %d items", s.node, low, len(l.Links), len(l.Items))
+		}
+		if v := view(t, s, high); v.MergedInto != low {
+			t.Fatalf("%s: %s merged into %q", s.node, high, v.MergedInto)
+		}
+	}
+	if a.Merge(roundTrip(t, all(b))) || b.Merge(roundTrip(t, all(a))) {
+		t.Fatal("the stores did not converge")
+	}
+}
+
 func TestMergeRejectsInsaneRecords(t *testing.T) {
 	s := openTest(t, "", "n-a", nil)
 	bad := []Record{
