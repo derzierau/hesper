@@ -596,7 +596,8 @@ func (d *daemon) loopsCallLocked(method string, params json.RawMessage, n *loopN
 		into.Links = append(into.Links, from.Links...)
 		into.Items = append(into.Items, from.Items...)
 		from.Links, from.Items, from.MergedInto, from.Updated, into.Updated = []LoopLink{}, []LoopItem{}, into.ID, now, now
-		n.add("loops.removed", map[string]any{"id": from.ID})
+		// As hesperd: the merged loop changes (mergedInto set), it is not removed.
+		d.loopChanged(n, from)
 		d.loopChanged(n, into)
 		return d.loopView(into), nil
 	case "loops.split":

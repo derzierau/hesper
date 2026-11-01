@@ -121,11 +121,15 @@ func TestLoopsMethodsNotify(t *testing.T) {
 	call(t, d, "loops.merge", map[string]any{"into": "lp-00000badges", "from": l.ID})
 	got := drain(sub)
 	// save, item, item, link; file (the milestone, the loop); park (the
-	// loop, its milestone); merge (the merged one goes, the other changes).
+	// loop, its milestone); merge (as hesperd: the merged one changes with
+	// mergedInto, then its milestone and the other loop).
 	want := []string{"loops.changed", "loops.changed", "loops.changed", "loops.changed", "goals.changed", "loops.changed",
-		"loops.changed", "goals.changed", "loops.removed", "loops.changed"}
+		"loops.changed", "goals.changed", "loops.changed", "goals.changed", "loops.changed"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("notes:\n got %v\nwant %v", got, want)
+	}
+	if merged := asLoop(call(t, d, "loops.get", map[string]any{"id": l.ID})); merged.MergedInto != "lp-00000badges" {
+		t.Errorf("merged loop: %+v", merged)
 	}
 	var split Loop
 	_ = json.Unmarshal(call(t, d, "loops.split", map[string]any{"id": "lp-0000000push", "ref": "n-l/push01", "title": "Brief"}), &split)

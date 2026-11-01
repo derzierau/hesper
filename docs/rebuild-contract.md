@@ -5100,7 +5100,9 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
 
 - **Fake hesperd** (`app/Tools/fake-hesperd/loops.go`, TEST-ONLY): every
   `loops.*`, `goals.*` and `steward.*` method on an in-memory store,
-  results shaped like the wire (`loops.list` an array, `loops.get` /
+  results shaped like the wire (a merge sends `loops.changed` for the
+  merged loop with `mergedInto`, as hesperd does, never
+  `loops.removed`; `loops.list` an array, `loops.get` /
   `save` / `link` / `item` / `merge` / `split` / `goals.file` the loop,
   `goals.save` `{goal}` or `{milestone}`, `goals.item` the milestone,
   `goals.accept` `{accepted}`, `steward.plan` `{id}` plus two proposed
