@@ -38,12 +38,14 @@ final class LoopHub {
     private(set) var onYouCount = 0
     /// The sidebar's loop counts per project (ProjectLoops).
     private(set) var projectLoops = ProjectLoops()
-    /// The first list arrived (false: still connecting; empty states wait).
+    /// The first list arrived, or a list failed after the notifications'
+    /// snapshot came (false: still connecting; empty states wait).
     private(set) var loaded = false
 
     @ObservationIgnored private let inbox = LoopsInbox()
     @ObservationIgnored private var flushTask: Task<Void, Never>?
-    @ObservationIgnored private var listTask: Task<Void, Never>?
+    @ObservationIgnored private var gate = LoopListGate()
+    @ObservationIgnored private var retryTask: Task<Void, Never>?
     /// Events applied while a list is out: replayed on top of it.
     @ObservationIgnored private var replay: [LoopsEvent]?
 
@@ -68,19 +70,30 @@ final class LoopHub {
 
     // MARK: Refresh
 
-    /// A connect: list everything again.
-    func connected() { refresh() }
+    /// A connect: list everything again (LoopListGate: one list at a time,
+    /// a connect during one lists again after it, failures retry).
+    func connected() {
+        retryTask?.cancel()
+        retryTask = nil
+        if gate.connect() { startList() }
+    }
 
-    /// One list of every record (debounced: a list already out is kept).
-    func refresh() {
-        guard listTask == nil else { return }
+    private func startList() {
         replay = []
         let client = client
-        listTask = Task { [weak self] in
+        Task { [weak self] in
             let r = await Task.detached { await Self.list(client) }.value
-            guard let self else { return }
-            self.listTask = nil
-            self.listed(r)
+            self?.listed(r)
+        }
+    }
+
+    private func retry(after seconds: TimeInterval) {
+        retryTask?.cancel()
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.retryTask = nil
+            if self.gate.retry() { self.startList() }
         }
     }
 
@@ -102,16 +115,24 @@ final class LoopHub {
     private func listed(_ r: Listing) {
         let events = replay ?? []
         replay = nil
+        let ok: Bool
         switch r.loops {
-        case .success(let list): store.listed(loops: list)
-        case .failure(let e as RPCError) where LoopsRPC.missing(e): store.listed(loops: nil)
-        case .failure: return // not connected, a timeout: keep what we have
+        case .success(let list): store.listed(loops: list); ok = true
+        case .failure(let e as RPCError) where LoopsRPC.missing(e): store.listed(loops: nil); ok = true
+        case .failure: ok = false // not connected, a timeout: keep what we have
         }
-        if let g = r.goals { store.listed(goals: g) }
-        if let s = r.steward { store.apply(.stewardChanged(s)) }
-        if let t = r.settings { store.setSettings(t) }
-        for e in events { store.apply(e) } // newer than the list
-        loaded = true
+        if ok {
+            if let g = r.goals { store.listed(goals: g) }
+            if let s = r.steward { store.apply(.stewardChanged(s)) }
+            if let t = r.settings { store.setSettings(t) }
+            for e in events { store.apply(e) } // newer than the list
+        }
+        switch gate.finished(ok: ok) {
+        case .idle: break
+        case .list: startList()
+        case .retry(let after): retry(after: after)
+        }
+        if gate.loaded != loaded { loaded = gate.loaded }
         derive()
     }
 
@@ -130,6 +151,8 @@ final class LoopHub {
         guard !events.isEmpty else { return }
         for e in events { store.apply(e) }
         replay?.append(contentsOf: events)
+        gate.sawEvents()
+        if gate.loaded != loaded { loaded = gate.loaded }
         derive()
     }
 

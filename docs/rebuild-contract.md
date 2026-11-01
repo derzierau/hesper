@@ -5421,7 +5421,11 @@ above.
   ReviewHub (`model.loopHub`). On every connect (`AppModel.loopSaw`) it
   lists `loops.list`, `goals.list`, `steward.status` and
   `loops.settings.get` at once, off the main actor; an older hesperd
-  (-32601) leaves `available` false. Notifications are decoded on the
+  (-32601) leaves `available` false. One list at a time
+  (`LoopListGate`): a connect while one is out lists again after it; a
+  failed list retries after 1, 2, 4, 8 and 16 s, then waits for the
+  next connect. `loaded` turns on with the first list, or once a list
+  failed and notifications arrived (the subscribe snapshot). Notifications are decoded on the
   reader thread (`LoopsEvent.decode`) into a bounded queue (4,096, the
   oldest dropped), and applied to `store` on the main actor once per
   120 ms batch; events that arrive while a list is out are replayed on
