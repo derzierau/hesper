@@ -24,9 +24,38 @@ func (r *Registry) SpawnService(p wire.SpawnParams, service string) (wire.Agent,
 	if service != wire.ServiceSteward && service != wire.ServicePlanner {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "service must be %s or %s", wire.ServiceSteward, wire.ServicePlanner)
 	}
+	if err := r.serviceTree(p); err != nil {
+		return wire.Agent{}, err
+	}
 	return r.spawn(p, "", func(a *agent) {
 		a.Service, a.Background = service, service == wire.ServiceSteward
 	})
+}
+
+// serviceTree keeps a service spawn with a parent (a planner of the
+// Steward) within the agent tree's limits, as an agent's spawn through
+// the socket (Server.spawnTree): at most maxAgentDepth deep, at most
+// maxAgentChildren live children. The Steward starts its planners one at
+// a time (Steward.Plan), so counting here is enough.
+func (r *Registry) serviceTree(p wire.SpawnParams) error {
+	if p.Parent == "" {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if limit := r.settings.maxAgentDepth(); p.Depth > limit {
+		return wire.Errorf(wire.CodeForbidden, "agent %s is at depth %d: agents may start agents at most %d deep (settings.json maxAgentDepth)", p.Parent, p.Depth-1, limit)
+	}
+	live := 0
+	for _, a := range r.agents {
+		if a.Parent == p.Parent && a.Exit == nil && a.State != wire.StateExited {
+			live++
+		}
+	}
+	if limit := r.settings.maxAgentChildren(); live >= limit {
+		return wire.Errorf(wire.CodeForbidden, "agent %s has %d live children: at most %d (settings.json maxAgentChildren); close one first", p.Parent, live, limit)
+	}
+	return nil
 }
 
 // view is an agent as the wire shows it (the lock is held): with the loop

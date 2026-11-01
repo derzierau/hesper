@@ -5191,16 +5191,18 @@ Code: `internal/agents/loopwork.go` (the registry's side),
     loop's, goal's or milestone's status to `done` or `dropped`;
   - `loops.merge`, `loops.split`: only the Steward (service `steward`) at
     level act;
+  - `steward.plan`: only the Steward, at level suggest or act (a planner
+    or any other agent never);
   - other writes (`loops.save`, `loops.link`, `loops.item`, `goals.save`,
-    `goals.item`, `goals.file`, `steward.plan`, `steward.inbox`): a service
-    agent may; any other agent only `loops.item` and `loops.link` of its
-    own loop;
+    `goals.item`, `goals.file`, `steward.inbox`): a service agent may; any
+    other agent only `loops.item` and `loops.link` of its own loop;
   - `drafts.save` by the Steward: refused at level watch;
   - a service agent starting agents (`agents.spawn`, `sessions.resume`,
     `fork`, `continueAs`): refused, except the Steward at level act
     starting a draft (`SpawnParams.draft`), never with `letParentAnswer`.
     Planners are started in hesperd (`SpawnService`), not through the
-    socket.
+    socket; a service spawn with a parent (a planner of the Steward) is
+    held to `maxAgentDepth` and `maxAgentChildren` like any agent's.
 
   Refusals are `forbidden` and name the rule. Every write by an agent,
   allowed or refused, is in `audit.log` (`agent.request` /
@@ -5675,7 +5677,11 @@ keeps the copy identical).
   project folder on this Mac, else `$STATE/steward/plans/<scope>`. Its
   options add `Bash(git branch:*)`, `Bash(git log:*)` and `Bash(gh pr
   list:*)` and use `plan.md`; it writes milestones with status `proposed`
-  and never accepts them (`goals.accept` is a person's).
+  and never accepts them (`goals.accept` is a person's). One planner per
+  scope at a time: while a planner runs in the scope's folder (not
+  exited), `steward.plan` returns it instead of starting another (the
+  app opens what it gets); plans start one at a time. A person may plan,
+  and the Steward at level suggest or act.
 - **Tests** (`internal/steward`, a fake store and registry): start and
   stop by node, adopting a restored agent, the restart backoff and cap,
   wake gating (quiet only, 60 s, the daily cap, the midnight reset with

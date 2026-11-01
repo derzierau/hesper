@@ -590,7 +590,7 @@ everything and changes only the items and links of its own loop
 | `steward.status` | `{}` | `StewardStatus`: the shared `{enabled, level, node, machine}`, and on the Mac that runs it `agent`, `session`, `queued`, today's `wakes`, `lastWake`, `dropped` (events the full queue dropped) and `stopped` (why it does not run although it is on: it ended 3 times within an hour) |
 | `steward.set` | `{enabled?, level?, machine?}` (`enabled` without a machine: this Mac, unless one is set; `enabled: true` again clears `stopped`) | `StewardStatus` |
 | `steward.inbox` | `{}` (service agents only) | `[StewardEvent]`: the waiting events, oldest first, one per agent (or loop); the queue is emptied |
-| `steward.plan` | `{scope, prompt?}` (a project or group id) | `Agent`: the planning session (service `planner`, a child of the Steward when it runs here) |
+| `steward.plan` | `{scope, prompt?}` (a project or group id; a person, or the Steward at level `suggest` or `act`) | `Agent`: the planning session (service `planner`, a child of the Steward when it runs here); while the scope's planner runs, that one (one per scope) |
 
 Ids: loops `lp-`, goals `gl-`, milestones `ms-` + 12 hex; items `it-` + 8
 hex. Refs: an agent `<node>/<local id>` (`node` is the projects store's

@@ -17,6 +17,7 @@ import (
 //   - a person's only (loopPerson), and any loops.save or goals.save that
 //     marks a loop, goal or milestone done or dropped: never;
 //   - loops.merge and loops.split: only the Steward at level act;
+//   - steward.plan: only the Steward, from level suggest on;
 //   - other writes: a service agent (the Steward, a planner) may; any
 //     other agent only loops.item and loops.link of its own loop.
 //
@@ -112,6 +113,13 @@ func (s *Server) loopsAllowed(who Caller, method string, params json.RawMessage)
 		}
 		return wire.Errorf(wire.CodeForbidden, "agent %s may not %s loops: a person does, or the Steward at level act (hesperctl loops %s)",
 			caller, strings.TrimPrefix(method, "loops."), strings.TrimPrefix(method, "loops."))
+	}
+	if method == wire.MethodStewardPlan {
+		// a planner starts agents: only the Steward, from level suggest on
+		if who.Service == wire.ServiceSteward && s.stewardLevel() != wire.StewardWatch {
+			return nil
+		}
+		return wire.Errorf(wire.CodeForbidden, "agent %s may not start planning sessions: a person does, or the Steward from level suggest on (hesperctl goals plan)", caller)
 	}
 	if who.Service != "" {
 		return nil

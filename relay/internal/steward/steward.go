@@ -110,7 +110,8 @@ type Steward struct {
 	opt Options
 	reg Registry
 
-	mu sync.Mutex
+	planMu sync.Mutex // Plan: one at a time
+	mu     sync.Mutex
 	// the running agent ("" none) and its last known state; day: the
 	// local date its session started (rotated at the first wake of a new
 	// day).

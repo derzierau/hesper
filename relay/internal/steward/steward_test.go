@@ -498,6 +498,33 @@ func TestPlan(t *testing.T) {
 	}
 }
 
+// TestPlanOnePerScope: a second steward.plan for a scope whose planner
+// still runs returns that planner; once it exited, a new one starts.
+func TestPlanOnePerScope(t *testing.T) {
+	w := newWorld(t)
+	w.running()
+	a, err := w.st.Plan(wire.StewardPlanParams{Scope: "p-app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := w.st.Plan(wire.StewardPlanParams{Scope: "p-app", Prompt: "and the docs"})
+	if err != nil || again.ID != a.ID {
+		t.Fatalf("second plan %+v %v, want %s", again, err, a.ID)
+	}
+	other, err := w.st.Plan(wire.StewardPlanParams{Scope: "p-web"})
+	if err != nil || other.ID == a.ID {
+		t.Fatalf("another scope %+v %v", other, err)
+	}
+	w.reg.set(a.ID, wire.StateExited, true)
+	next, err := w.st.Plan(wire.StewardPlanParams{Scope: "p-app"})
+	if err != nil || next.ID == a.ID {
+		t.Fatalf("after exit %+v %v", next, err)
+	}
+	if spawns, _, _, _ := w.reg.count(); spawns != 4 { // the Steward and three planners
+		t.Fatalf("%d spawns", spawns)
+	}
+}
+
 func TestArgv(t *testing.T) {
 	s, p := strings.Join(Argv(wire.ServiceSteward), " "), strings.Join(Argv(wire.ServicePlanner), " ")
 	for _, argv := range []string{s, p} {

@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -134,4 +135,53 @@ func TestLoopsPolicySteward(t *testing.T) {
 	forbidden(t, "a resume", h.callAs(s.ID, "sessions.resume", map[string]any{"id": "x"}, nil))
 	// The Steward's own calls reach it as the Steward.
 	allowed(t, "steward.plan", h.callAs(s.ID, wire.MethodStewardPlan, wire.StewardPlanParams{Scope: "p-1"}, nil))
+}
+
+// TestStewardPlanPolicy: a person plans, and the Steward from level
+// suggest on; never a planner nor any other agent.
+func TestStewardPlanPolicy(t *testing.T) {
+	h, l := newStewardHarness(t)
+	s, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServiceSteward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServicePlanner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	plan := wire.StewardPlanParams{Scope: "p-1"}
+	allowed(t, "a person", h.call(wire.MethodStewardPlan, plan, nil))
+	allowed(t, "the Steward at suggest", h.callAs(s.ID, wire.MethodStewardPlan, plan, nil))
+	forbidden(t, "a planner", h.callAs(p.ID, wire.MethodStewardPlan, plan, nil))
+	forbidden(t, "an agent", h.callAs(a.ID, wire.MethodStewardPlan, plan, nil))
+	l.setLevel(wire.StewardWatch)
+	forbidden(t, "the Steward at watch", h.callAs(s.ID, wire.MethodStewardPlan, plan, nil))
+	l.setLevel(wire.StewardAct)
+	allowed(t, "the Steward at act", h.callAs(s.ID, wire.MethodStewardPlan, plan, nil))
+}
+
+// TestSpawnServiceTreeLimits: a service agent's children count against
+// maxAgentChildren and maxAgentDepth like any agent's.
+func TestSpawnServiceTreeLimits(t *testing.T) {
+	h := newHarness(t)
+	h.close()
+	writeJSON(t, filepath.Join(h.config, "settings.json"), map[string]any{
+		"defaults":      map[string]any{"kind": "claude", "kinds": map[string]string{"claude": "fake-claude", "codex": "fake-codex", "shell": "fake-shell"}},
+		"maxAgentDepth": 1, "maxAgentChildren": 1,
+	})
+	h.open()
+	s, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServiceSteward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job", Parent: s.ID, Depth: 1}, wire.ServicePlanner)
+	allowed(t, "planner 1", err)
+	_, err = h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job", Parent: s.ID, Depth: 1}, wire.ServicePlanner)
+	forbidden(t, "planner 2", err)
+	if !strings.Contains(err.Error(), "maxAgentChildren") {
+		t.Fatalf("message %q", err)
+	}
+	_, err = h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job", Parent: p1.ID, Depth: 2}, wire.ServicePlanner)
+	forbidden(t, "depth 2", err)
 }
