@@ -185,6 +185,21 @@ final class LoopHub {
         inboxActed[loop.id] = on ? loop.lastChange : nil
     }
 
+    // MARK: Drafts started in a loop
+
+    /// Drafts the loops sheets opened for a loop (N, a drafted next
+    /// agent): their spawn names the loop. In memory only: a draft left
+    /// over a restart starts a loop of its own.
+    @ObservationIgnored private var draftLoops: [String: String] = [:]
+
+    func noteDraft(_ draft: String, loop: String) { draftLoops[draft] = loop }
+
+    /// The loop a draft starts in (nil: hesperd opens a new one, or an
+    /// older hesperd that has no loops).
+    func loop(forDraft draft: String) -> String? { store.supported ? draftLoops[draft] : nil }
+
+    func draftStarted(_ draft: String) { draftLoops.removeValue(forKey: draft) }
+
     // MARK: Writes
 
     /// Runs a loops call off the main actor. A returned loop is applied at
@@ -202,6 +217,18 @@ final class LoopHub {
             return nil
         case .failure(let e):
             return LoopsErrorText.of(e)
+        }
+    }
+
+    /// Any other call off the main actor: its value, or the error text.
+    func value<T: Sendable>(_ body: @escaping @Sendable (DaemonClient) async throws -> T) async -> (T?, String?) {
+        let client = client
+        let r: Result<T, any Error> = await Task.detached {
+            do { return .success(try await body(client)) } catch { return .failure(error) }
+        }.value
+        switch r {
+        case .success(let v): return (v, nil)
+        case .failure(let e): return (nil, LoopsErrorText.of(e))
         }
     }
 

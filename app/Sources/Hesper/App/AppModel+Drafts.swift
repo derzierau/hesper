@@ -316,7 +316,7 @@ extension AppModel {
             return
         }
         guard var req = c.spawnRequest() else { return }
-        req.loop = loop
+        req.loop = loop ?? loopHub.loop(forDraft: id) // the start check's loop, else the loop a loops sheet opened the draft in
         // A folder that isn't there yet (the note said so): created now.
         if c.missingFolder != nil {
             if c.createMissingFolder() != nil { onAgentsChanged?(); return }
@@ -374,6 +374,7 @@ extension AppModel {
             }
             do {
                 let a = try await client.spawn(req)
+                loopHub.draftStarted(id)
                 adopt(draftID: id, agent: a)
                 onDraftStarted?(a)
                 if let loop, let tickOff { self.tickOff(tickOff, in: loop) }

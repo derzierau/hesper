@@ -425,6 +425,7 @@ pick a profile per agent, per project or per kind:
 | ⌘K | Palette: agents, projects, machines, actions |
 | ⌘Y | History: every session on every Mac |
 | ⌘R | Review: finished work from every Mac, its diff, tests and where each change came from |
+| ⌘L / ⇧⌘L / ⇧⌘E | Loops: every piece of work by who acts next (G the map, D done, P park, X drop). The product page of the wall's project or group: milestones, unfiled loops, P plans with the Steward. The evening wrap-up, one loop at a time. |
 | ⌘W | Close the agent: it leaves the wall and stays in History (⌘Z brings it back); asks first when closing would lose something. In an agent window, closes the window and the agent keeps running. |
 | ⌥⌘W / ⌃⌘W / ⇧⌘W | Send the agent to the background / kill it / tidy up finished agents. ⇧⌘T reopens the last closed one. |
 | ⇧⌘M | Move the agent to another Mac |
@@ -450,6 +451,7 @@ hesperctl attach fix-the-login-redirect       # Ctrl-] detaches
 hesperctl send ID "yes, go ahead" ; hesperctl approve ID ; hesperctl deny ID
 hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl move ID --to mini
 hesperctl open review --agent ID ; hesperctl open palette --query TEXT   # the app's sheets
+hesperctl open loops --loop ID ; hesperctl open wrapup ; hesperctl open product SCOPE
 hesperctl rename ID "Release notes" ; hesperctl rename ID --auto   # your name stays; --auto hands it back
 ```
 

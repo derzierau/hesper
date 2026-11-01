@@ -233,6 +233,38 @@ final class AppControl {
             if let query { m.paletteList.query = query; m.paletteList.index = 0 } // as typed into it
             if !m.showPalette { m.togglePalette() } // ⌘K
             return ["wall": .string(w.id), "query": query.map { .string($0) } ?? .null]
+
+        case .loops(let loop):
+            let w = manager.activeWall
+            let hub = w.model.loopHub
+            guard hub.available else { throw AppControlError("unavailable", "Loops need a newer hesperd on this Mac") }
+            let selected = loop.map { hub.loop($0)?.isActive == true } ?? false
+            manager.bringForward(w.window)
+            w.model.openLoopsSheet(.loops(select: selected ? loop : nil)) // ⌘L
+            return ["wall": .string(w.id), "selected": .bool(selected)]
+
+        case .wrapUp:
+            let w = manager.activeWall
+            let hub = w.model.loopHub
+            guard hub.available else { throw AppControlError("unavailable", "The wrap-up needs a newer hesperd on this Mac") }
+            manager.bringForward(w.window)
+            w.model.openLoopsSheet(.wrapUp) // ⇧⌘E
+            let n = WrapUp(loops: hub.store.loops.values).entries.count
+            return ["wall": .string(w.id), "loops": .number(Double(n))]
+
+        case .product(let ref):
+            let w = manager.activeWall
+            let m = w.model
+            guard m.loopHub.available else { throw AppControlError("unavailable", "Products need a newer hesperd on this Mac") }
+            var scope = ref.flatMap { r in m.catalog.groups[r] != nil || m.catalog.project(r) != nil ? r : nil }
+            if let r = ref, scope == nil {
+                scope = m.catalog.groups.values.first { $0.name == r }?.id ?? m.catalog.projects.values.first { $0.name == r }?.id
+                guard scope != nil else { throw AppControlError.notFound("no project or group \(r)") }
+            }
+            manager.bringForward(w.window)
+            m.openLoopsSheet(.product(scope: scope ?? m.productScope)) // ⇧⌘L
+            let shown = LoopsSheetHost.panel(for: m)?.product?.scope
+            return ["wall": .string(w.id), "scope": shown.map { .string($0) } ?? .null]
         }
     }
 

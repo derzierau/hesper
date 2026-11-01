@@ -596,6 +596,12 @@ final class AppModel {
             toggleHistory()
         case .review: // review (⌘R)
             toggleReview()
+        case .loops: // loops (⌘L board)
+            toggleLoops()
+        case .product: // loops (⇧⌘L product page)
+            toggleProduct()
+        case .wrapUp: // loops (⇧⌘E wrap-up)
+            toggleWrapUp()
         case .passThrough, .none:
             break
         }

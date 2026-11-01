@@ -46,16 +46,16 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
     /// A scratch's lifecycle (`kind: "scratch"`, Scratch.swift); nil from
     /// an older hesperd.
     public var scratch: ScratchInfo?
-    /// The project this one duplicates (hesperd: the same folder listed
-    /// twice); nil from an older hesperd.
+    /// The project with a remote identity this one duplicates (the same
+    /// folder, listed before it had a remote); nil from an older hesperd.
     public var duplicateOf: String?
 
     public init(id: String, name: String, color: String? = nil, kind: ProjectKind = .repo, identity: String? = nil, parentId: String? = nil,
                 paths: [String: String] = [:], groups: [String] = [], defaults: ProjectDefaults? = nil, detectedPackages: [String] = [],
-                lastUsed: Date? = nil, synthesized: Bool = false, scratch: ScratchInfo? = nil) {
+                lastUsed: Date? = nil, synthesized: Bool = false, scratch: ScratchInfo? = nil, duplicateOf: String? = nil) {
         self.id = id; self.name = name; self.color = color; self.kind = kind; self.identity = identity; self.parentId = parentId
         self.paths = paths; self.groups = groups; self.defaults = defaults; self.detectedPackages = detectedPackages
-        self.lastUsed = lastUsed; self.synthesized = synthesized; self.scratch = scratch
+        self.lastUsed = lastUsed; self.synthesized = synthesized; self.scratch = scratch; self.duplicateOf = duplicateOf
     }
 
     enum CodingKeys: String, CodingKey { case id, name, color, colorSet, kind, identity, parentId, paths, groups, defaults, detectedPackages, lastUsed, scratch, duplicateOf }
@@ -86,7 +86,7 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
         }
         lastUsed = Agent.date(try? c.decodeIfPresent(String.self, forKey: .lastUsed)).flatMap { $0.timeIntervalSince1970 < 0 ? nil : $0 }
         scratch = try? c.decodeIfPresent(ScratchInfo.self, forKey: .scratch)
-        duplicateOf = (try? c.decodeIfPresent(String.self, forKey: .duplicateOf)).flatMap { $0 }.flatMap { $0.isEmpty ? nil : $0 }
+        duplicateOf = ((try? c.decodeIfPresent(String.self, forKey: .duplicateOf)) ?? nil).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     public func encode(to encoder: any Encoder) throws {

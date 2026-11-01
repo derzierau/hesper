@@ -23,6 +23,7 @@ import (
 // (--no-launch: exit 4 at once).
 //
 //	open agent | wall | new | history | inbox | review | palette   (open ID = open agent ID)
+//	open loops | wrapup | product
 //	wall show | set                                                (wall = wall show)
 //	desk ls | save | switch | rename | rm                          (desk = desk ls)
 
@@ -99,6 +100,21 @@ func init() {
 			Output:   "{wall, query}",
 			Examples: []string{"hesperctl open palette --query 'login'"},
 			Run:      openPalette},
+		{Name: "open loops", Summary: "Open the Loops board in Hesper.app (⌘L), on a loop with --loop", Usage: "open loops [--loop ID]",
+			Help: "The Loops sheet on the frontmost wall: every open loop by who acts next. --loop ID: that loop's detail when it is open; " +
+				"otherwise the board opens as it is and selected is false.\n\n" + noLaunchHelp,
+			Output:   "{wall, selected}",
+			Examples: []string{"hesperctl open loops", "hesperctl open loops --loop lp-0a1b2c3d4e5f"},
+			Run:      openLoops},
+		{Name: "open wrapup", Summary: "Open the evening wrap-up in Hesper.app (⇧⌘E)", Usage: "open wrapup",
+			Help:   "Today's loops one at a time, each with a suggestion (done, next step, park, drop); nothing changes until the user saves.\n\n" + noLaunchHelp,
+			Output: "{wall, loops}", Run: openWrapUp},
+		{Name: "open product", Summary: "Open a product's page in Hesper.app (⇧⌘L): goal, milestones, unfiled loops", Usage: "open product [SCOPE]",
+			Help: "SCOPE is a project or group (id or name); without it, the frontmost wall's project or group, else the first product. " +
+				"An unknown SCOPE changes nothing (exit 3).\n\n" + noLaunchHelp,
+			Output:   "{wall, scope}",
+			Examples: []string{"hesperctl open product", "hesperctl open product acme-apps"},
+			Run:      openProduct},
 		{Name: "wall show", Aliases: []string{"wall"}, ReadOnly: true, Summary: "Show the walls: scope, layout, grouping, density, bands, focus",
 			Usage: "wall show [--wall W] [--json]",
 			Help:  "Every wall in desk order (home first), the bands of walls that show bands, the current desk and what has the focus. --json prints the app's whole state (--wall W: that wall only). " + wallHelp + "\n\n" + noLaunchHelp,
@@ -365,6 +381,60 @@ func openPalette(ctx context.Context, f *flag.FlagSet, args []string) error {
 		}
 		return openSheet(ctx, c, *asJSON, *noLaunch, "palette", map[string]any{"palette": palette}, func(r map[string]any) string {
 			return fmt.Sprintf("palette on %v", r["wall"])
+		})
+	})
+}
+
+func openLoops(ctx context.Context, f *flag.FlagSet, args []string) error {
+	asJSON := jsonFlag(f)
+	noLaunch := noLaunchFlag(f)
+	loop := f.String("loop", "", "Open this loop's detail (its id)")
+	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, pos []string) error {
+		if len(pos) > 0 {
+			return usagef("open loops takes flags, not arguments (--loop ID opens a loop)")
+		}
+		var loops any = true
+		if *loop != "" {
+			loops = map[string]any{"loop": *loop}
+		}
+		return openSheet(ctx, c, *asJSON, *noLaunch, "loops", map[string]any{"loops": loops}, func(r map[string]any) string {
+			if *loop != "" && r["selected"] != true {
+				return fmt.Sprintf("loops on %v (%s is not an open loop)", r["wall"], *loop)
+			}
+			return fmt.Sprintf("loops on %v", r["wall"])
+		})
+	})
+}
+
+func openWrapUp(ctx context.Context, f *flag.FlagSet, args []string) error {
+	asJSON := jsonFlag(f)
+	noLaunch := noLaunchFlag(f)
+	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, pos []string) error {
+		if len(pos) > 0 {
+			return usagef("open wrapup takes no arguments")
+		}
+		return openSheet(ctx, c, *asJSON, *noLaunch, "wrapup", map[string]any{"wrapup": true}, func(r map[string]any) string {
+			return fmt.Sprintf("wrap-up on %v: %v loops", r["wall"], r["loops"])
+		})
+	})
+}
+
+func openProduct(ctx context.Context, f *flag.FlagSet, args []string) error {
+	asJSON := jsonFlag(f)
+	noLaunch := noLaunchFlag(f)
+	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, pos []string) error {
+		if len(pos) > 1 {
+			return usagef("open product [SCOPE]: one project or group")
+		}
+		var product any = true
+		if len(pos) == 1 {
+			product = map[string]any{"scope": pos[0]}
+		}
+		return openSheet(ctx, c, *asJSON, *noLaunch, "product", map[string]any{"product": product}, func(r map[string]any) string {
+			if r["scope"] == nil {
+				return fmt.Sprintf("product page on %v (no product yet)", r["wall"])
+			}
+			return fmt.Sprintf("product %v on %v", r["scope"], r["wall"])
 		})
 	})
 }

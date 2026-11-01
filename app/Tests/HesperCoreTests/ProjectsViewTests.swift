@@ -397,4 +397,14 @@ import Testing
         #expect(HomeWall.reservesStrip(scope: .all, collapsedBands: 1))
         #expect(HomeWall.reservesStrip(scope: .project("as"), collapsedBands: 0))
     }
+
+    /// duplicateOf (a project listed twice for one folder) decodes
+    /// leniently: missing or empty is nil, and it survives a round trip.
+    @Test func duplicateOfDecodes() throws {
+        let dup = try JSONDecoder().decode(Project.self, from: Data(#"{"id":"p-local","name":"app","duplicateOf":"p-remote"}"#.utf8))
+        #expect(dup.duplicateOf == "p-remote")
+        #expect(try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(dup)).duplicateOf == "p-remote")
+        #expect(try JSONDecoder().decode(Project.self, from: Data(#"{"id":"p","duplicateOf":""}"#.utf8)).duplicateOf == nil)
+        #expect(try JSONDecoder().decode(Project.self, from: Data(#"{"id":"p","duplicateOf":7}"#.utf8)).duplicateOf == nil)
+    }
 }
