@@ -5328,6 +5328,42 @@ the dispatcher's person-only rules, the Steward, hesperctl, the app.
 Tombstones are never collected; a Mac reinstalled gets a new node, so
 its old agents' refs no longer resolve to a machine name.
 
+### As built — loops (hesperctl)
+
+Code: `relay/cmd/hesperctl/loops.go`; group "Loops and goals". Command
+names may have three words now (`loops item add`): `lookup` tries the
+longest name first, `hesperctl loops item` lists that parent's commands,
+and the MCP tool is `hesper_loops_item_add`.
+
+- **Names.** LOOP: an id (`lp-…`, merged loops too), `self` (the loop of
+  the agent the command runs in: `loops.list {agent}` with
+  `HESPER_AGENT_ID`), the title (exactly, then case ignored) or a unique
+  beginning of it, among every loop including closed ones; more than
+  one is `ambiguous` (exit 2) and names the ids. MILESTONE the same over
+  every product's milestones. ITEM: its number in `loops show` (items by
+  `order`, from 1) or its id.
+- **Commands.** `loops ls` (`--status`, `--milestone`, `--project`; a
+  table ID, TITLE, NEXT (who and what, "parked until …", the status once
+  closed), AGENTS working/all, UPDATED), `show`, `new` (`--goal`,
+  `--done-when`, `--milestone`), `rename`, `park` (`--until` tomorrow,
+  12h/3d/2w or a date, 09:00 local that day; `--unpark` opens it),
+  `close --done|--drop`, `link`/`unlink` (exactly one of `--agent`,
+  `--session`, `--project`, `--url`, `--file [MACHINE:]PATH` (no machine:
+  this Mac, made absolute), `--loop`; `--blocks`, `--rel`, `--label`),
+  `item add` (`--owner` you by default, `--kind` step, `--after`), `item
+  check` (`--drop`, `--undo`), `item rm`, `merge INTO FROM`, `split LOOP
+  REF` (a link ref, or a member agent's id or name), `graph`, `settings`
+  (no flags: get; else set the flags given). Writes print the loop's id,
+  `--json` the `Loop`.
+- **Graph.** One node per agent or session ref, the facts of all its
+  links joined; children by `started`/`continued` links (`from` → `ref`),
+  a parent cycle cut; handoff files under the agent named in `from`,
+  other files as root nodes; then `blocks` and `blockedBy` loops with
+  their titles. Text: two spaces per level, `rel kind label (ref)
+  machine/agent state · ending`.
+- **Tests:** `TestLoopsCommands` against `fullDaemon`, which now wires a
+  loops store (no Steward) like the gateway does.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
