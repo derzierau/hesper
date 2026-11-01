@@ -5187,6 +5187,11 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   .performKeyEquivalent`), and are the strip's own keys, not registry
   commands. The chip row's measured height allows one more row.
 
+- **Service agents** (`Agent.service`: the Steward, the planner).
+  Tidy Up (⇧⌘W) and auto-tidy (`TidyUp.select`, `AutoTidy`) never
+  close them: hesperd runs them and they idle between wakes. Closing
+  one by hand (⌘W) still works.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
