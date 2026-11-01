@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -82,7 +83,12 @@ type Store struct {
 	settings   SettingsRecord
 	seq        int64            // the newest change's sequence number
 	seqs       map[string]int64 // record key → its last change's
-	index      map[string]string
+	idx        *index           // index.go (nil: built on first use)
+	dirty      map[string]bool  // loops changed since the last view build
+	allDirty   bool             // every view (names, agents source)
+	peers      map[string]*Peer // sync cursors (peers.go)
+	peersDirty bool
+	unsaved    bool          // records changed since loops.json was written
 	shared     chan struct{} // closed at the next change (sync)
 	stewardCh  chan struct{} // closed at the next Steward config change
 
@@ -97,6 +103,7 @@ type Store struct {
 	created func(id, service string)
 
 	views    map[string]json.RawMessage // what watchers last got
+	live     map[string]liveFact        // the live agents views last joined, by ref
 	watchers map[*watcher]struct{}
 	viewsCh  chan struct{}
 	vmu      sync.Mutex // one view build at a time
@@ -132,7 +139,7 @@ func Open(opt Options) *Store {
 		opt.Now = time.Now
 	}
 	s := &Store{opt: opt, node: opt.Node, loops: map[string]*LoopRecord{}, goals: map[string]*GoalRecord{},
-		milestones: map[string]*MilestoneRecord{}, seqs: map[string]int64{}, shared: make(chan struct{}),
+		milestones: map[string]*MilestoneRecord{}, seqs: map[string]int64{}, dirty: map[string]bool{}, shared: make(chan struct{}),
 		stewardCh: make(chan struct{}), views: map[string]json.RawMessage{}, watchers: map[*watcher]struct{}{},
 		viewsCh: make(chan struct{}, 1), saveCh: make(chan struct{}, 1), done: make(chan struct{})}
 	s.classify = func(string) (string, []string) { return wire.EndingDone, nil }
@@ -149,10 +156,13 @@ func Open(opt Options) *Store {
 		for _, k := range s.keysLocked() {
 			s.bumpLocked(k)
 		}
+		s.unsaved = true
 		s.scheduleSave()
 	}
 	s.clock.Node, s.clock.Now = s.node, opt.Now
+	s.loadPeers()
 	s.pruneLocked()
+	s.commitLocked(s.breakCyclesLocked()...) // a file from before cycles were broken
 	s.wg.Add(2)
 	go s.saver()
 	go s.viewer()
@@ -255,7 +265,7 @@ func (s *Store) Node() string {
 // state views join in. It is called without the store's lock held.
 func (s *Store) SetAgents(fn func() []wire.Agent) {
 	s.mu.Lock()
-	s.agents = fn
+	s.agents, s.allDirty = fn, true
 	s.mu.Unlock()
 	s.kickViews()
 }
@@ -264,8 +274,9 @@ func (s *Store) SetAgents(fn func() []wire.Agent) {
 // for agent refs and views. Called without the store's lock held.
 func (s *Store) SetNames(nodeOf func(machine string) string, machineOf func(node string) string) {
 	s.mu.Lock()
-	s.nodeOf, s.machineOf = nodeOf, machineOf
+	s.nodeOf, s.machineOf, s.allDirty = nodeOf, machineOf, true
 	s.mu.Unlock()
+	s.kickViews()
 }
 
 // SetSessionsNode gives the shared history's node (session refs
@@ -361,10 +372,16 @@ func (s *Store) commitLocked(keys ...string) {
 			close(s.stewardCh)
 			s.stewardCh = make(chan struct{})
 		}
+		if len(k) > 2 && k[0] == 'l' {
+			s.dirty[k[2:]] = true
+			if s.idx != nil {
+				s.reindexLocked(k[2:])
+			}
+		}
 	}
-	s.index = nil
 	close(s.shared)
 	s.shared = make(chan struct{})
+	s.unsaved = true
 	s.scheduleSave()
 	s.kickViews()
 }
@@ -409,6 +426,13 @@ func (s *Store) write() {
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
 	s.mu.Lock()
+	peers := s.peersLocked()
+	if !s.unsaved { // only the cursors changed
+		s.mu.Unlock()
+		s.writePeers(peers)
+		return
+	}
+	s.unsaved = false
 	f := storeFile{Version: 1, Node: s.node, Epoch: s.epoch, Clock: stamp{T: s.clock.Last.T, C: s.clock.Last.C}, Seq: s.seq,
 		Seqs: s.seqs, Steward: s.steward, Settings: s.settings, Loops: []*LoopRecord{}, Goals: []*GoalRecord{}, Milestones: []*MilestoneRecord{}}
 	for _, l := range s.loops {
@@ -430,7 +454,13 @@ func (s *Store) write() {
 	}
 	if err != nil {
 		s.opt.Logf("hesperd: saving loops.json: %v", err)
+		s.mu.Lock()
+		s.unsaved = true // the next change tries again
+		s.peersDirty = s.peersDirty || peers != nil
+		s.mu.Unlock()
+		return
 	}
+	s.writePeers(peers) // after loops.json: never cursors past what it holds
 }
 
 // atomicWrite replaces path with data (temp file, fsync, rename).
@@ -524,20 +554,65 @@ func member(k *LinkRecord) bool {
 	return false
 }
 
+// maxChain bounds a mergedInto chain.
+const maxChain = 16
+
 // resolveLocked follows a loop's mergedInto chain to the loop that holds
 // its work now ("" unknown).
 func (s *Store) resolveLocked(id string) string {
-	for range 16 {
-		l := s.loops[id]
-		if l == nil {
-			return ""
-		}
-		if l.MergedInto.V == "" || s.loops[l.MergedInto.V] == nil {
-			return id
-		}
-		id = l.MergedInto.V
+	end, _ := s.chainLocked(id)
+	return end
+}
+
+// chainLocked follows id's mergedInto chain: its end ("" id unknown) and,
+// when it runs into a cycle (two Macs merged both ways at once), the
+// cycle's loops. A cycle ends on its lowest id, on every Mac alike
+// (breakCyclesLocked makes that loop unmerged).
+func (s *Store) chainLocked(id string) (end string, cycle []string) {
+	if s.loops[id] == nil {
+		return "", nil
 	}
-	return id
+	path := []string{id}
+	for range maxChain {
+		into := s.loops[id].MergedInto.V
+		if into == "" || s.loops[into] == nil {
+			return id, nil
+		}
+		if i := slices.Index(path, into); i >= 0 {
+			cycle = path[i:]
+			return slices.Min(cycle), cycle
+		}
+		path = append(path, into)
+		id = into
+	}
+	return id, nil
+}
+
+// breakCyclesLocked undoes mergedInto cycles (a merge on each of two Macs
+// at once, A into B and B into A): the cycle's lowest id is unmerged and
+// takes the others' links and items, the others stay merged (into it,
+// through the chain). Every Mac does the same, so they agree. It returns
+// the keys it changed.
+func (s *Store) breakCyclesLocked() []string {
+	var keys []string
+	for id, l := range s.loops {
+		if l.MergedInto.V == "" {
+			continue
+		}
+		root, cycle := s.chainLocked(id)
+		if cycle == nil {
+			continue
+		}
+		to := s.loops[root]
+		to.MergedInto.Set("", s.clock.Tick())
+		for _, m := range cycle {
+			if m != root {
+				s.moveLocked(s.loops[m], to, func(*LinkRecord) bool { return true }, func(*ItemRecord) bool { return true })
+			}
+			keys = append(keys, "l:"+m)
+		}
+	}
+	return keys
 }
 
 // loopOfLocked is the loop a ref is a member of ("" none): the newest
@@ -546,29 +621,7 @@ func (s *Store) loopOfLocked(ref string) string {
 	if ref == "" {
 		return ""
 	}
-	if s.index == nil {
-		type hit struct {
-			loop string
-			at   stamp
-		}
-		best := map[string]hit{}
-		for id, l := range s.loops {
-			for _, k := range l.Links {
-				if !member(k) {
-					continue
-				}
-				h, ok := best[k.Ref.V]
-				if !ok || h.at.Less(k.Ref.S) {
-					best[k.Ref.V] = hit{id, k.Ref.S}
-				}
-			}
-		}
-		s.index = make(map[string]string, len(best))
-		for ref, h := range best {
-			s.index[ref] = h.loop
-		}
-	}
-	return s.resolveLocked(s.index[ref])
+	return s.resolveLocked(s.indexLocked().of[ref])
 }
 
 // LoopOf is the loop an agent or session ref belongs to ("" none).

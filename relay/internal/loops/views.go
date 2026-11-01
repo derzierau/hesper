@@ -16,10 +16,13 @@ import (
 // lock held: snapshot the records, unlock, list the agents, build. Caps
 // (64 links, 100 items a loop, 2,000 loops) apply here, never at merge.
 
-// snapshot is what a view build reads: copies of the records.
+// snapshot is what a view build reads: copies of the records. Only the
+// loops a build needs are copied (ids); of the others the rules see a
+// brief stand-in (rules.go: what blockedBy and milestones read).
 type snapshot struct {
 	node, machine string
 	loops         map[string]*LoopRecord
+	brief         map[string]wire.Loop
 	goals         map[string]*GoalRecord
 	milestones    map[string]*MilestoneRecord
 	settings      wire.LoopSettings
@@ -27,14 +30,53 @@ type snapshot struct {
 	nodeOf        func(string) string
 	machineOf     func(string) string
 	now           time.Time
+	// want are the agent refs the copied loops link (join keeps only
+	// those; nil: every one).
+	want map[string]bool
 }
 
-func (s *Store) snapshotLocked() *snapshot {
-	sn := &snapshot{node: s.node, machine: s.opt.Machine, loops: make(map[string]*LoopRecord, len(s.loops)),
+// snapshotLocked copies loops ids (nil: none), every goal and milestone,
+// and brief stand-ins of the loops the rules read besides: those filed
+// under a milestone and the ones the copied loops wait for (blockedBy,
+// their merge chains).
+func (s *Store) snapshotLocked(ids []string) *snapshot {
+	x := s.indexLocked()
+	sn := &snapshot{node: s.node, machine: s.opt.Machine, loops: make(map[string]*LoopRecord, len(ids)), brief: map[string]wire.Loop{},
 		goals: make(map[string]*GoalRecord, len(s.goals)), milestones: make(map[string]*MilestoneRecord, len(s.milestones)),
-		settings: settingsView(&s.settings), agents: s.agents, nodeOf: s.nodeOf, machineOf: s.machineOf, now: s.opt.Now()}
-	for id, l := range s.loops {
+		settings: settingsView(&s.settings), agents: s.agents, nodeOf: s.nodeOf, machineOf: s.machineOf, now: s.opt.Now(),
+		want: map[string]bool{}}
+	brief := func(id string) {
+		if l := s.loops[id]; l != nil {
+			if _, ok := sn.brief[id]; !ok {
+				sn.brief[id] = wire.Loop{ID: id, Title: l.Title.V, Status: l.Status.V, Milestone: l.Milestone.V,
+					MergedInto: l.MergedInto.V, Updated: x.loops[id].updated}
+			}
+		}
+	}
+	for _, id := range ids {
+		l := s.loops[id]
+		if l == nil {
+			continue
+		}
 		sn.loops[id] = l.clone()
+		for _, ref := range x.loops[id].agents {
+			sn.want[ref] = true
+		}
+		for _, target := range x.loops[id].blockedBy {
+			for range maxChain {
+				brief(target)
+				l := s.loops[target]
+				if l == nil || l.MergedInto.V == "" {
+					break
+				}
+				target = l.MergedInto.V
+			}
+		}
+	}
+	for id, m := range x.loops {
+		if m.milestone != "" {
+			brief(id)
+		}
 	}
 	for id, g := range s.goals {
 		c := *g
@@ -46,10 +88,22 @@ func (s *Store) snapshotLocked() *snapshot {
 	return sn
 }
 
+// snapshot copies every loop (lists, tests).
 func (s *Store) snapshot() *snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.snapshotLocked()
+	ids := make([]string, 0, len(s.loops))
+	for id := range s.loops {
+		ids = append(ids, id)
+	}
+	return s.snapshotLocked(ids)
+}
+
+// snapshotOf copies loops ids only.
+func (s *Store) snapshotOf(ids ...string) *snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.snapshotLocked(ids)
 }
 
 // joined is a snapshot with the live agents, keyed by ref.
@@ -59,16 +113,22 @@ type joined struct {
 }
 
 func (sn *snapshot) join() *joined {
-	j := &joined{snapshot: sn, live: map[string]wire.Agent{}}
+	return &joined{snapshot: sn, live: sn.liveAgents(sn.want)}
+}
+
+// liveAgents are the agents views join in, by ref (no lock held): those
+// in want (nil: every one).
+func (sn *snapshot) liveAgents(want map[string]bool) map[string]wire.Agent {
+	live := map[string]wire.Agent{}
 	if sn.agents == nil {
-		return j
+		return live
 	}
 	for _, a := range sn.agents() {
-		if ref := sn.refOf(a.ID); ref != "" {
-			j.live[ref] = a
+		if ref := sn.refOf(a.ID); ref != "" && (want == nil || want[ref]) {
+			live[ref] = a
 		}
 	}
-	return j
+	return live
 }
 
 // refOf is the ref of an agent id as this Mac names it ("<machine>/<local>"
@@ -267,14 +327,20 @@ func milestoneView(m *MilestoneRecord) wire.Milestone {
 // built is every view of a snapshot.
 type built struct {
 	loops      map[string]wire.Loop // merged loops included
+	brief      map[string]wire.Loop // stand-ins of loops not built (rules.go)
 	goals      map[string]wire.Goal
 	milestones map[string]wire.Milestone
 }
 
-// build makes every view (no lock held: it lists the agents).
+// build makes every view of the snapshot (no lock held: it lists the
+// agents).
 func (sn *snapshot) build() *built {
-	j := sn.join()
-	b := &built{loops: map[string]wire.Loop{}, goals: map[string]wire.Goal{}, milestones: map[string]wire.Milestone{}}
+	return sn.buildWith(sn.join())
+}
+
+// buildWith builds with the live agents of j.
+func (sn *snapshot) buildWith(j *joined) *built {
+	b := &built{loops: map[string]wire.Loop{}, brief: sn.brief, goals: map[string]wire.Goal{}, milestones: map[string]wire.Milestone{}}
 	for id, l := range sn.loops {
 		b.loops[id] = j.loopView(l)
 	}
@@ -292,7 +358,7 @@ func (sn *snapshot) build() *built {
 	return b
 }
 
-// listed are the loops a list shows: not merged, the newest 2,000.
+// listed are the built loops a list shows: not merged, the newest 2,000.
 func (b *built) listed() []wire.Loop {
 	out := make([]wire.Loop, 0, len(b.loops))
 	for _, l := range b.loops {
@@ -346,10 +412,66 @@ func (s *Store) viewer() {
 	}
 }
 
+// liveFact is what a view shows of a live agent (linkView): a change of
+// one rebuilds the loops that link the agent.
+type liveFact struct{ id, state, name, ending string }
+
+func factOf(a wire.Agent) liveFact { return liveFact{a.ID, a.State, a.Name, a.Ending} }
+
+// emit rebuilds the views that changed and tells watchers: the loops
+// whose records changed, those linking an agent whose live state changed,
+// those waiting for a changed loop, the loops that came into the list;
+// every goal and milestone (no loop is copied for them).
 func (s *Store) emit() {
 	s.vmu.Lock()
 	defer s.vmu.Unlock()
-	views := s.snapshot().build().notes()
+	s.mu.Lock()
+	probe := &snapshot{node: s.node, agents: s.agents, nodeOf: s.nodeOf}
+	s.mu.Unlock()
+	live := probe.liveAgents(nil)
+	s.mu.Lock()
+	x := s.indexLocked()
+	all := s.allDirty || len(s.views) == 0
+	dirty := s.dirty
+	s.dirty, s.allDirty = map[string]bool{}, false
+	facts := make(map[string]liveFact, len(live))
+	for ref, a := range live {
+		facts[ref] = factOf(a)
+		if s.live[ref] != facts[ref] {
+			for id := range x.agents[ref] {
+				dirty[id] = true
+			}
+		}
+	}
+	for ref := range s.live {
+		if _, ok := facts[ref]; !ok {
+			for id := range x.agents[ref] {
+				dirty[id] = true
+			}
+		}
+	}
+	s.live = facts
+	if len(dirty) > 0 {
+		for id, m := range x.loops {
+			for _, target := range m.blockedBy {
+				if s.chainTouchesLocked(target, dirty) {
+					dirty[id] = true
+				}
+			}
+		}
+	}
+	listed := s.listedLocked()
+	shown := make(map[string]bool, len(listed))
+	var ids []string
+	for _, id := range listed {
+		shown[id] = true
+		if _, had := s.views["l:"+id]; all || dirty[id] || !had {
+			ids = append(ids, id)
+		}
+	}
+	sn := s.snapshotLocked(ids)
+	s.mu.Unlock()
+	views := sn.buildWith(&joined{snapshot: sn, live: live}).notes()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, v := range views {
@@ -359,15 +481,33 @@ func (s *Store) emit() {
 		for w := range s.watchers {
 			w.push(key, v)
 		}
+		s.views[key] = v
 	}
 	for key := range s.views {
-		if _, ok := views[key]; !ok {
+		_, built := views[key]
+		gone := key[0] == 'l' && !shown[key[2:]] || key[0] != 'l' && !built
+		if gone {
 			for w := range s.watchers {
 				w.push(key, nil)
 			}
+			delete(s.views, key)
 		}
 	}
-	s.views = views
+}
+
+// chainTouchesLocked: a loop on id's merge chain is in set.
+func (s *Store) chainTouchesLocked(id string, set map[string]bool) bool {
+	for range maxChain {
+		if set[id] {
+			return true
+		}
+		l := s.loops[id]
+		if l == nil || l.MergedInto.V == "" {
+			return false
+		}
+		id = l.MergedInto.V
+	}
+	return false
 }
 
 // watcher is one subscribed connection: changes coalesce per key (the
@@ -409,13 +549,13 @@ func (w *watcher) close() {
 // goal and milestone, then the changes.
 func (s *Store) Watch(done <-chan struct{}, send func(method string, params any) error) {
 	w := &watcher{pending: map[string]json.RawMessage{}, wake: make(chan struct{}, 1)}
-	s.vmu.Lock() // no emit between the first views and registering
-	if len(s.views) == 0 {
-		views := s.snapshot().build().notes()
-		s.mu.Lock()
-		s.views = views
-		s.mu.Unlock()
+	s.mu.Lock()
+	first := len(s.views) == 0
+	s.mu.Unlock()
+	if first {
+		s.emit() // the first views
 	}
+	s.vmu.Lock() // no emit between the views and registering
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()

@@ -70,10 +70,13 @@ func (s *Store) HostHint() json.RawMessage {
 	return data
 }
 
+// pullChunk is how many records Pull copies per hold of the lock; it
+// marshals them (to size the batch) without the lock.
+const pullChunk = 32
+
 // Pull answers loops.pull (and makes a controller's pushes).
 func (s *Store) Pull(p PullParams) PullResult {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	res := PullResult{Node: s.node, Epoch: s.epoch, Records: []Record{}}
 	since := p.Since
 	if p.Epoch != s.epoch {
@@ -89,30 +92,39 @@ func (s *Store) Pull(p PullParams) PullResult {
 			changes = append(changes, change{k, q})
 		}
 	}
+	newest := s.seq
+	s.mu.Unlock()
 	sort.Slice(changes, func(i, j int) bool { return changes[i].seq < changes[j].seq })
+	// A record that changes after its copy here has a newer sequence
+	// number: the next pull sends it again.
 	res.Next = since
 	size := 0
-	for i, c := range changes {
-		r := s.recordLocked(c.key)
-		if r == nil {
+	for start := 0; start < len(changes) && !res.More; start += pullChunk {
+		chunk := changes[start:min(start+pullChunk, len(changes))]
+		recs := make([]*Record, len(chunk))
+		s.mu.Lock()
+		for i, c := range chunk {
+			recs[i] = s.recordLocked(c.key)
+		}
+		s.mu.Unlock()
+		for i, c := range chunk {
+			r := recs[i]
+			if r == nil || echo(r, p.From) {
+				res.Next = c.seq
+				continue
+			}
+			data, _ := json.Marshal(r)
+			if size > 0 && size+len(data) > maxBatch {
+				res.More = true
+				break
+			}
+			size += len(data)
+			res.Records = append(res.Records, *r)
 			res.Next = c.seq
-			continue
 		}
-		if echo(r, p.From) {
-			res.Next = c.seq
-			continue
-		}
-		data, _ := json.Marshal(r)
-		if size > 0 && size+len(data) > maxBatch {
-			res.More = i < len(changes)
-			break
-		}
-		size += len(data)
-		res.Records = append(res.Records, *r)
-		res.Next = c.seq
 	}
 	if !res.More {
-		res.Next = max(res.Next, s.seq)
+		res.Next = max(res.Next, newest)
 	}
 	return res
 }

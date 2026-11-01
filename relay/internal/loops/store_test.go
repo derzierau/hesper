@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -181,6 +183,49 @@ func TestMergeConverges(t *testing.T) {
 	}
 }
 
+// TestMergeCycleBreaks: A merged into B on one Mac and B into A on the
+// other at once: on both, the lower id stays (unmerged, listed), the
+// other resolves to it, and every link and item ends in it.
+func TestMergeCycleBreaks(t *testing.T) {
+	clock := &fakeClock{time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)}
+	a, b := openTest(t, "", "n-a", clock), openTest(t, "", "n-b", clock)
+	x, y := newLoop(a, "x"), newLoop(a, "y")
+	low, high := min(x, y), max(x, y)
+	addLink(a, x, wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/ax", Rel: wire.RelMember})
+	addLink(a, y, wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/ay", Rel: wire.RelMember})
+	addItem(t, a, x, "item x")
+	addItem(t, a, y, "item y")
+	exchange(t, a, b)
+	if _, err := a.MergeLoops(wire.LoopMergeParams{Into: y, From: x}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.MergeLoops(wire.LoopMergeParams{Into: x, From: y}); err != nil {
+		t.Fatal(err)
+	}
+	exchange(t, a, b)
+	exchange(t, a, b)
+	for _, s := range []*Store{a, b} {
+		for _, ref := range []string{"n-a/ax", "n-a/ay"} {
+			if got := s.LoopOf(ref); got != low {
+				t.Fatalf("%s: LoopOf(%s) = %s, want %s", s.node, ref, got, low)
+			}
+		}
+		listed := s.snapshot().build().listed()
+		if len(listed) != 1 || listed[0].ID != low || listed[0].MergedInto != "" {
+			t.Fatalf("%s: listed %+v", s.node, listed)
+		}
+		if l := listed[0]; len(l.Links) != 2 || len(l.Items) != 2 {
+			t.Fatalf("%s: %s holds %d links, %d items", s.node, low, len(l.Links), len(l.Items))
+		}
+		if v := view(t, s, high); v.MergedInto != low {
+			t.Fatalf("%s: %s merged into %q", s.node, high, v.MergedInto)
+		}
+	}
+	if a.Merge(roundTrip(t, all(b))) || b.Merge(roundTrip(t, all(a))) {
+		t.Fatal("the stores did not converge")
+	}
+}
+
 func TestMergeRejectsInsaneRecords(t *testing.T) {
 	s := openTest(t, "", "n-a", nil)
 	bad := []Record{
@@ -323,5 +368,74 @@ func TestWatchFirstOpenLoopsThenChanges(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no change note")
+	}
+}
+
+// TestViewsRebuildWhatChanged: a view build rebuilds the loops that
+// changed, those linking an agent whose live state changed and those
+// waiting for a changed loop; the others keep their views; milestones
+// follow their loops.
+func TestViewsRebuildWhatChanged(t *testing.T) {
+	s := openTest(t, "", "n-a", nil)
+	a, b, c := newLoop(s, "a"), newLoop(s, "b"), newLoop(s, "c")
+	addLink(s, a, wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/x1", Rel: wire.RelMember})
+	addLink(s, a, wire.LoopLink{Kind: wire.LinkLoop, Ref: b, Rel: wire.RelBlockedBy})
+	state := wire.StateIdle
+	var mu sync.Mutex
+	s.SetAgents(func() []wire.Agent {
+		mu.Lock()
+		defer mu.Unlock()
+		return []wire.Agent{{ID: "x1", State: state}}
+	})
+	ms := must[wire.GoalChanged](t, s, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Scope: ptr("p-app"), Title: ptr("Beta")}}).Milestone
+	s.emit()
+	note := func(id string) wire.Loop {
+		t.Helper()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		var n wire.LoopChanged
+		if err := json.Unmarshal(s.views["l:"+id], &n); err != nil {
+			t.Fatalf("no view of %s", id)
+		}
+		return n.Loop
+	}
+	if l := note(a); l.NextText != "Waits for b" {
+		t.Fatalf("a: %q", l.NextText)
+	}
+	s.mu.Lock()
+	cView := string(s.views["l:"+c])
+	s.mu.Unlock()
+	// A live change rebuilds the loop linking the agent.
+	mu.Lock()
+	state = wire.StateWorking
+	mu.Unlock()
+	s.emit()
+	if l := note(a); l.Next != wire.NextAgents {
+		t.Fatalf("a after its agent works: %+v", l.Next)
+	}
+	// Its blocker closing rebuilds it.
+	mu.Lock()
+	state = wire.StateIdle
+	mu.Unlock()
+	must[wire.Loop](t, s, wire.MethodLoopsSave, wire.LoopSaveParams{ID: b, Status: ptr(wire.LoopDone)})
+	s.emit()
+	if l := note(a); strings.Contains(l.NextText, "Waits for") {
+		t.Fatalf("a still waits: %q", l.NextText)
+	}
+	// Filing c rebuilds it and its milestone.
+	must[wire.Milestone](t, s, wire.MethodGoalsFile, wire.GoalFileParams{Milestone: ms.ID, Loop: c})
+	s.emit()
+	s.mu.Lock()
+	same := string(s.views["l:"+c]) == cView
+	s.mu.Unlock()
+	if l := note(c); l.Milestone != ms.ID || same {
+		t.Fatalf("c: %+v", l)
+	}
+	s.mu.Lock()
+	var g wire.GoalChanged
+	json.Unmarshal(s.views["m:"+ms.ID], &g)
+	s.mu.Unlock()
+	if g.Milestone == nil || len(g.Milestone.Loops) != 1 || g.Milestone.Loops[0] != c {
+		t.Fatalf("milestone %+v", g.Milestone)
 	}
 }

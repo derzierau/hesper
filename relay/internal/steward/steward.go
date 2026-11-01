@@ -32,15 +32,25 @@ var (
 )
 
 // Tools are the Steward's tool allowlist (Claude Code's --allowedTools);
-// PlanTools a planner's, on top of them. Anything else asks a person:
-// permissions are never skipped.
+// PlanTools a planner's. Only read subcommands where a command also
+// deletes (history, drafts: never history delete or archive, drafts rm).
+// Anything else asks a person: permissions are never skipped.
+// skills/hesper/references/steward.md names the Steward's.
 var (
 	Tools = []string{
 		"Bash(hesperctl loops:*)", "Bash(hesperctl goals:*)", "Bash(hesperctl steward:*)", "Bash(hesperctl ls:*)",
-		"Bash(hesperctl show:*)", "Bash(hesperctl result:*)", "Bash(hesperctl history:*)", "Bash(hesperctl review ls:*)",
-		"Bash(hesperctl drafts:*)", "Bash(gh pr view:*)", "Bash(gh release view:*)", "Read", "Grep", "Glob",
+		"Bash(hesperctl show:*)", "Bash(hesperctl result:*)", "Bash(hesperctl history search:*)",
+		"Bash(hesperctl history show:*)", "Bash(hesperctl history brief:*)", "Bash(hesperctl history stats:*)",
+		"Bash(hesperctl review ls:*)", "Bash(hesperctl drafts ls:*)", "Bash(hesperctl drafts save:*)",
+		"Bash(gh pr view:*)", "Bash(gh release view:*)", "Read", "Grep", "Glob",
 	}
-	PlanTools = []string{"Bash(git branch:*)", "Bash(git log:*)", "Bash(gh pr list:*)"}
+	PlanTools = []string{
+		"Bash(hesperctl goals ls:*)", "Bash(hesperctl goals new:*)", "Bash(hesperctl goals save:*)",
+		"Bash(hesperctl loops ls:*)", "Bash(hesperctl loops show:*)", "Bash(hesperctl ls:*)", "Bash(hesperctl show:*)",
+		"Bash(hesperctl history search:*)", "Bash(hesperctl history show:*)", "Bash(hesperctl history brief:*)",
+		"Bash(hesperctl steward status:*)", "Bash(git branch:*)", "Bash(git log:*)", "Bash(gh pr list:*)",
+		"Bash(gh pr view:*)", "Bash(gh release view:*)", "Read", "Grep", "Glob",
+	}
 )
 
 // Argv is a service agent's Claude options (agents.Options.ServiceArgv):
@@ -49,7 +59,7 @@ var (
 func Argv(service string) []string {
 	tools, prompt := Tools, Prompt
 	if service == wire.ServicePlanner {
-		tools, prompt = append(append([]string(nil), Tools...), PlanTools...), PlanPrompt
+		tools, prompt = PlanTools, PlanPrompt
 	}
 	return []string{"--permission-mode", "default", "--allowedTools", strings.Join(tools, ","), "--append-system-prompt", prompt}
 }
@@ -110,7 +120,8 @@ type Steward struct {
 	opt Options
 	reg Registry
 
-	mu sync.Mutex
+	planMu sync.Mutex // Plan: one at a time
+	mu     sync.Mutex
 	// the running agent ("" none) and its last known state; day: the
 	// local date its session started (rotated at the first wake of a new
 	// day).

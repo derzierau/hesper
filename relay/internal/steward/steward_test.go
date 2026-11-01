@@ -498,12 +498,53 @@ func TestPlan(t *testing.T) {
 	}
 }
 
+// TestPlanOnePerScope: a second steward.plan for a scope whose planner
+// still runs returns that planner; once it exited, a new one starts.
+func TestPlanOnePerScope(t *testing.T) {
+	w := newWorld(t)
+	w.running()
+	a, err := w.st.Plan(wire.StewardPlanParams{Scope: "p-app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := w.st.Plan(wire.StewardPlanParams{Scope: "p-app", Prompt: "and the docs"})
+	if err != nil || again.ID != a.ID {
+		t.Fatalf("second plan %+v %v, want %s", again, err, a.ID)
+	}
+	other, err := w.st.Plan(wire.StewardPlanParams{Scope: "p-web"})
+	if err != nil || other.ID == a.ID {
+		t.Fatalf("another scope %+v %v", other, err)
+	}
+	w.reg.set(a.ID, wire.StateExited, true)
+	next, err := w.st.Plan(wire.StewardPlanParams{Scope: "p-app"})
+	if err != nil || next.ID == a.ID {
+		t.Fatalf("after exit %+v %v", next, err)
+	}
+	if spawns, _, _, _ := w.reg.count(); spawns != 4 { // the Steward and three planners
+		t.Fatalf("%d spawns", spawns)
+	}
+}
+
 func TestArgv(t *testing.T) {
 	s, p := strings.Join(Argv(wire.ServiceSteward), " "), strings.Join(Argv(wire.ServicePlanner), " ")
 	for _, argv := range []string{s, p} {
-		if !strings.Contains(argv, "--permission-mode default") || strings.Contains(argv, "dangerously") || !strings.Contains(argv, "Bash(hesperctl steward:*)") {
+		if !strings.Contains(argv, "--permission-mode default") || strings.Contains(argv, "dangerously") {
 			t.Fatalf("argv %s", argv)
 		}
+		// Only read subcommands of history, never drafts rm.
+		for _, broad := range []string{"Bash(hesperctl history:*)", "Bash(hesperctl drafts:*)", "history delete", "history archive", "drafts rm"} {
+			if strings.Contains(argv, broad) {
+				t.Errorf("allows %s: %s", broad, argv)
+			}
+		}
+	}
+	if !strings.Contains(s, "Bash(hesperctl steward:*)") || !strings.Contains(s, "Bash(hesperctl drafts save:*)") || !strings.Contains(s, "Bash(hesperctl history search:*)") {
+		t.Fatalf("Steward argv %s", s)
+	}
+	// A planner: what planning needs, the Steward's status at most.
+	if strings.Contains(p, "Bash(hesperctl steward:*)") || !strings.Contains(p, "Bash(hesperctl steward status:*)") ||
+		strings.Contains(p, "drafts") || strings.Contains(p, "Bash(hesperctl loops:*)") || !strings.Contains(p, "Bash(hesperctl goals save:*)") {
+		t.Fatalf("planner argv %s", p)
 	}
 	if strings.Contains(s, "git log") || !strings.Contains(p, "Bash(git log:*)") || !strings.Contains(s, "You are the Steward") || !strings.Contains(p, "planning session") {
 		t.Fatal("planner and Steward options mixed up")
@@ -556,6 +597,18 @@ func TestPromptMirrored(t *testing.T) {
 	}
 	if !strings.HasSuffix(string(data), "\n---\n\n"+Prompt) {
 		t.Fatal("skills/hesper/references/steward.md does not end with prompt.md: copy it again")
+	}
+	// Its header names the allowlist (Tools): read subcommands only.
+	head := strings.Join(strings.Fields(string(data[:len(data)-len(Prompt)])), " ")
+	for _, want := range []string{"history search|show|brief|stats", "drafts ls|save", "review ls"} {
+		if !strings.Contains(head, want) || !slices.ContainsFunc(Tools, func(tool string) bool {
+			return strings.HasPrefix(tool, "Bash(hesperctl "+strings.SplitN(want, "|", 2)[0])
+		}) {
+			t.Errorf("steward.md's header and Tools disagree on %q", want)
+		}
+	}
+	if strings.Contains(head, "|history|") || strings.Contains(head, "|drafts`") {
+		t.Error("steward.md's header names all of history or drafts")
 	}
 }
 

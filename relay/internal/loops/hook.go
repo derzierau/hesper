@@ -17,7 +17,7 @@ const maxSentences = 5
 // SetMachine sets this Mac's short name (views).
 func (s *Store) SetMachine(short string) {
 	s.mu.Lock()
-	s.opt.Machine = short
+	s.opt.Machine, s.allDirty = short, true
 	s.mu.Unlock()
 	s.kickViews()
 }
@@ -99,13 +99,14 @@ func (s *Store) Assign(a agents.AssignInfo) string {
 	if memberLink(l, a.Ref) == nil {
 		s.addLinkLocked(l, link)
 	}
+	keys := append([]string{"l:" + l.ID}, s.leaveOthersLocked(l, a.Ref)...)
 	if sess != "" && sess != a.SourceSession {
 		s.addLinkLocked(l, wire.LoopLink{Kind: wire.LinkSession, Ref: sess, Rel: wire.RelMember})
 	}
 	if p := a.Agent.ProjectID; p != "" && !strings.HasPrefix(p, wire.ScratchPrefix) {
 		s.addLinkLocked(l, wire.LoopLink{Kind: wire.LinkProject, Ref: p, Rel: wire.RelTouches})
 	}
-	s.commitLocked("l:" + l.ID)
+	s.commitLocked(keys...)
 	return l.ID
 }
 
@@ -205,8 +206,11 @@ func (s *Store) AgentClosed(e agents.AgentEvent) {
 		return
 	}
 	to := ""
-	if e.Reason == wire.ReasonMoved && e.To != "" {
-		to = s.refOf(e.To)
+	if e.Reason == wire.ReasonMoved {
+		to = e.ToRef
+		if to == "" && e.To != "" {
+			to = s.refOf(e.To) // a controller from before toRef
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

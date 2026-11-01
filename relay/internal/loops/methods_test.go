@@ -99,6 +99,30 @@ func TestAssign(t *testing.T) {
 	}
 }
 
+// TestNewestMembershipWins: an agent joining another loop (Assign with a
+// loop, loops.link) leaves the one it was in: it counts in one loop.
+func TestNewestMembershipWins(t *testing.T) {
+	s := openTest(t, "", "n-a", nil)
+	first := s.Assign(agents.AssignInfo{Ref: "n-a/r1", Agent: wire.Agent{Name: "parser"}})
+	second := newLoop(s, "second")
+	if got := s.Assign(agents.AssignInfo{Ref: "n-a/r1", Loop: second, Agent: wire.Agent{Name: "parser"}}); got != second {
+		t.Fatalf("assigned to %s", got)
+	}
+	if _, ok := linkOf(view(t, s, first), "n-a/r1"); ok {
+		t.Fatal("still a member of its first loop")
+	}
+	third := newLoop(s, "third")
+	must[wire.Loop](t, s, wire.MethodLoopsLink, wire.LoopLinkParams{ID: third, Link: wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/r1"}})
+	if _, ok := linkOf(view(t, s, second), "n-a/r1"); ok || s.LoopOf("n-a/r1") != third {
+		t.Fatalf("in %s; the second loop kept its link", s.LoopOf("n-a/r1"))
+	}
+	// A touches link is not membership: it stays.
+	must[wire.Loop](t, s, wire.MethodLoopsLink, wire.LoopLinkParams{ID: second, Link: wire.LoopLink{Kind: wire.LinkAgent, Ref: "n-a/r1", Rel: wire.RelTouches}})
+	if s.LoopOf("n-a/r1") != third {
+		t.Fatal("a touches link moved the agent")
+	}
+}
+
 func TestSettledAndClosed(t *testing.T) {
 	s := openTest(t, "", "n-a", nil)
 	s.SetClassify(func(msg string) (string, []string) {
@@ -151,6 +175,39 @@ func TestSettledAndClosed(t *testing.T) {
 	}
 	if n != 1 || s.LoopOf("n-b/m2") != mv || s.LoopOf("n-a/m1") != "" {
 		t.Fatalf("%d agent links after the move", n)
+	}
+}
+
+// TestItemCheckCleared: an item's check is set, then cleared with an
+// empty kind (loops.item and goals.item alike).
+func TestItemCheckCleared(t *testing.T) {
+	s := openTest(t, "", "n-a", nil)
+	loop := newLoop(s, "ship")
+	it := addItem(t, s, loop, "PR merged")
+	check := func(l []wire.LoopItem) *wire.ItemCheck {
+		for _, v := range l {
+			if v.ID == it {
+				return v.Check
+			}
+		}
+		t.Fatalf("no item %s", it)
+		return nil
+	}
+	l := must[wire.Loop](t, s, wire.MethodLoopsItem, wire.LoopItemParams{ID: loop, Item: wire.LoopItem{ID: it,
+		Check: &wire.ItemCheck{Kind: wire.CheckPR, Ref: "https://example.com/pr/1"}}})
+	if c := check(l.Items); c == nil || c.Kind != wire.CheckPR {
+		t.Fatalf("check %+v", c)
+	}
+	l = must[wire.Loop](t, s, wire.MethodLoopsItem, wire.LoopItemParams{ID: loop, Item: wire.LoopItem{ID: it, Check: &wire.ItemCheck{}}})
+	if c := check(l.Items); c != nil {
+		t.Fatalf("check not cleared: %+v", c)
+	}
+	ms := must[wire.GoalChanged](t, s, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Scope: ptr("p-app"), Title: ptr("Beta")}}).Milestone
+	m := must[wire.Milestone](t, s, wire.MethodGoalsItem, wire.LoopItemParams{ID: ms.ID, Item: wire.LoopItem{Text: "Tagged",
+		Check: &wire.ItemCheck{Kind: wire.CheckTag, Ref: "https://example.com/app@v1"}}})
+	m = must[wire.Milestone](t, s, wire.MethodGoalsItem, wire.LoopItemParams{ID: ms.ID, Item: wire.LoopItem{ID: m.Items[0].ID, Check: &wire.ItemCheck{}}})
+	if m.Items[0].Check != nil {
+		t.Fatalf("condition's check not cleared: %+v", m.Items[0].Check)
 	}
 }
 
@@ -276,6 +333,21 @@ func TestGoalsAndMilestones(t *testing.T) {
 	}
 	if _, err := call[wire.LoopSettings](t, s, wire.MethodLoopsSettingsSet, wire.LoopSettings{EveningAt: "25:00"}, agents.Caller{}); code(err) != wire.CodeInvalid {
 		t.Fatalf("bad time: %v", err)
+	}
+}
+
+// TestAgentsProposeMilestones: a milestone an agent creates is proposed
+// (a person accepts it); a person's is open.
+func TestAgentsProposeMilestones(t *testing.T) {
+	s := openTest(t, "", "n-a", nil)
+	planner := agents.Caller{Agent: "L/pl", Service: wire.ServicePlanner}
+	got, err := call[wire.GoalChanged](t, s, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Scope: ptr("p-app"), Title: ptr("Beta")}}, planner)
+	if err != nil || got.Milestone == nil || got.Milestone.Status != wire.MilestoneProposed {
+		t.Fatalf("an agent's milestone %+v %v", got.Milestone, err)
+	}
+	mine := must[wire.GoalChanged](t, s, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Scope: ptr("p-app"), Title: ptr("GA")}})
+	if mine.Milestone.Status != wire.LoopOpen {
+		t.Fatalf("a person's milestone %+v", mine.Milestone)
 	}
 }
 

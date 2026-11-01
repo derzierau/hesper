@@ -133,6 +133,10 @@ func (s *Store) Call(method string, params json.RawMessage, caller agents.Caller
 		if err := decode(&p); err != nil {
 			return nil, err, true
 		}
+		if m := p.Milestone; caller.Agent != "" && m != nil && m.ID == "" && m.Status == nil {
+			status := wire.MilestoneProposed // an agent proposes; a person accepts (goals.accept)
+			m.Status = &status
+		}
 		res, err := s.SaveGoal(p)
 		return res, err, true
 	case wire.MethodGoalsRemove:
@@ -208,7 +212,10 @@ func (s *Store) List(p wire.LoopsListParams) []wire.Loop {
 		}
 	}
 	out := []wire.Loop{}
-	for _, l := range s.snapshot().build().listed() {
+	s.mu.Lock()
+	sn := s.snapshotLocked(s.listedLocked())
+	s.mu.Unlock()
+	for _, l := range sn.build().listed() {
 		switch {
 		case only != "" && l.ID != only:
 		case p.Status == "" && !(l.Status == wire.LoopOpen || l.Status == wire.LoopParked):
@@ -233,7 +240,7 @@ func contains(list []string, v string) bool {
 
 // Get is loops.get (merged loops too).
 func (s *Store) Get(id string) (wire.Loop, error) {
-	l, ok := s.snapshot().build().loops[id]
+	l, ok := s.snapshotOf(id).build().loops[id]
 	if !ok {
 		return wire.Loop{}, wire.Errorf(wire.CodeNotFound, "no loop %s", id)
 	}
@@ -349,6 +356,7 @@ func (s *Store) Link(p wire.LoopLinkParams) (wire.Loop, error) {
 		}
 	}
 	var changed bool
+	var others []string // loops the agent leaves (newest membership wins)
 	if p.Remove {
 		rel := p.Link.Rel // empty: every relation to the ref
 		changed = s.removeLinksLocked(l, v.Kind, v.Ref, rel)
@@ -357,11 +365,15 @@ func (s *Store) Link(p wire.LoopLinkParams) (wire.Loop, error) {
 			return wire.Loop{}, wire.Errorf(wire.CodeNotFound, "loop %s has no such link", l.ID)
 		}
 	} else {
-		_, changed = s.addLinkLocked(l, v)
+		var k *LinkRecord
+		k, changed = s.addLinkLocked(l, v)
+		if member(k) {
+			others = s.leaveOthersLocked(l, v.Ref)
+		}
 	}
 	id := l.ID
-	if changed {
-		s.commitLocked("l:" + id)
+	if changed || len(others) > 0 {
+		s.commitLocked(append([]string{"l:" + id}, others...)...)
 	}
 	s.mu.Unlock()
 	return s.Get(id)
@@ -450,7 +462,6 @@ func (s *Store) moveLocked(from, to *LoopRecord, link func(*LinkRecord) bool, it
 		to.Items[id] = cp
 		it.Deleted.Set(true, s.clock.Tick())
 	}
-	s.index = nil
 }
 
 // Split is loops.split: the link Ref (an agent with every agent it
@@ -549,7 +560,7 @@ func (s *Store) SetSettings(p wire.LoopSettings) (wire.LoopSettings, error) {
 
 // Goals is goals.list (scope "": every product's), sorted by order.
 func (s *Store) Goals(scope string) wire.GoalsList {
-	b := s.snapshot().build()
+	b := s.snapshotOf().build()
 	out := wire.GoalsList{Goals: []wire.Goal{}, Milestones: []wire.Milestone{}}
 	for _, g := range b.goals {
 		if scope == "" || g.Scope == scope {
@@ -577,7 +588,7 @@ func (s *Store) Goals(scope string) wire.GoalsList {
 }
 
 func (s *Store) goal(id string) (wire.GoalChanged, error) {
-	b := s.snapshot().build()
+	b := s.snapshotOf().build()
 	if g, ok := b.goals[id]; ok {
 		return wire.GoalChanged{Goal: &g}, nil
 	}

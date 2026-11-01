@@ -130,11 +130,13 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 			// reason "moved" and the agent it became.
 			Reason string `json:"reason,omitempty"`
 			To     string `json:"to,omitempty"`
+			// ToRef (loops): that agent's loops ref ("<node>/<local>").
+			ToRef string `json:"toRef,omitempty"`
 		}
 		if err := params(m.Params, &p); err != nil {
 			return nil, err
 		}
-		if p.Reason != "" && (m.Method != "agents.close" || p.Reason != wire.ReasonMoved) || len(p.To) > 128 {
+		if p.Reason != "" && (m.Method != "agents.close" || p.Reason != wire.ReasonMoved) || len(p.To) > 128 || len(p.ToRef) > 256 {
 			return nil, protocol.Err("invalid_request", "agents.close takes reason \"moved\" only")
 		}
 		a, err := s.agent(ctx, p.ID)
@@ -147,7 +149,7 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 			if p.Reason == wire.ReasonMoved {
 				reason = wire.ReasonMoved
 			}
-			res, err := reg.CloseAs(a.ID, reason, p.To)
+			res, err := reg.CloseAs(a.ID, reason, p.To, p.ToRef)
 			if err != nil {
 				return nil, publicError(err)
 			}

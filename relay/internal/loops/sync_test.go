@@ -1,6 +1,8 @@
 package loops
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -73,5 +75,46 @@ func TestSyncBothWays(t *testing.T) {
 	}
 	if a.Sync(SyncParams{Records: roundTrip(t, res.Records)}).Changed {
 		t.Fatal("a second sync changed something")
+	}
+}
+
+// TestPeersPersistAndReset: the sync cursors survive a restart (next to
+// loops.json), are dropped with a new store here, and a host's new epoch
+// resets what was pushed even while a push is under way.
+func TestPeersPersistAndReset(t *testing.T) {
+	dir := t.TempDir()
+	s := openTest(t, dir, "n-a", nil)
+	p := s.Peer("n-b")
+	if !s.PeerSeen("n-b", "e1") {
+		t.Fatal("a first epoch is not new")
+	}
+	p = s.Peer("n-b")
+	s.PeerPulled("n-b", "e1", 7)
+	if !s.PeerPushed("n-b", p.Gen, 12, s.Hint().Epoch) {
+		t.Fatal("push not recorded")
+	}
+	s.Close()
+	s = openTest(t, dir, "n-a", nil)
+	if got := s.Peer("n-b"); got.Epoch != "e1" || got.Pulled != 7 || got.Pushed != 12 || got.Seen != "e1" {
+		t.Fatalf("after a restart %+v", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "loops.peers.json")); err != nil {
+		t.Fatal(err)
+	}
+	// A reset (the host has a new store) while a push is under way: the
+	// push's cursor does not overwrite it.
+	p = s.Peer("n-b")
+	if !s.PeerSeen("n-b", "e2") || s.Peer("n-b").Pushed != 0 {
+		t.Fatalf("no reset: %+v", s.Peer("n-b"))
+	}
+	if s.PeerPushed("n-b", p.Gen, 20, s.Hint().Epoch) || s.Peer("n-b").Pushed != 0 {
+		t.Fatalf("a stale push overwrote the reset: %+v", s.Peer("n-b"))
+	}
+	s.Close()
+	// A new store here (its file lost): the cursors go too.
+	os.Remove(filepath.Join(dir, "loops.json"))
+	s = openTest(t, dir, "n-a", nil)
+	if got := s.Peer("n-b"); got != (Peer{}) {
+		t.Fatalf("cursors of the old store %+v", got)
 	}
 }

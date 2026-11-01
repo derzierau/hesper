@@ -245,12 +245,14 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 // agents.*, the session starts (sessions.resume, sessions.fork,
 // sessions.continueAs), files.put / files.chunk and the review methods
 // that change an agent's folder or type into it, adding or removing a
-// port forward (only a person may), drafts.save and the loops, goals and
-// steward methods (loops.go: who calls decides what is allowed).
+// port forward (only a person may), drafts.save and drafts.remove,
+// sessions.delete and sessions.archive (a person's), and the loops, goals
+// and steward methods (loops.go: who calls decides what is allowed).
 func CarriesCaller(method string) bool {
 	switch method {
 	case "sessions.resume", "sessions.fork", "sessions.continueAs", "files.put", "files.chunk",
-		"review.accept", "review.reject", "review.sendBack", "forwards.add", "forwards.remove", "drafts.save":
+		"review.accept", "review.reject", "review.sendBack", "forwards.add", "forwards.remove", "drafts.save",
+		"drafts.remove", "sessions.delete", "sessions.archive":
 		return true
 	}
 	for _, prefix := range []string{"agents.", "loops.", "goals.", "steward."} {

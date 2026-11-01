@@ -24,9 +24,38 @@ func (r *Registry) SpawnService(p wire.SpawnParams, service string) (wire.Agent,
 	if service != wire.ServiceSteward && service != wire.ServicePlanner {
 		return wire.Agent{}, wire.Errorf(wire.CodeInvalid, "service must be %s or %s", wire.ServiceSteward, wire.ServicePlanner)
 	}
+	if err := r.serviceTree(p); err != nil {
+		return wire.Agent{}, err
+	}
 	return r.spawn(p, "", func(a *agent) {
 		a.Service, a.Background = service, service == wire.ServiceSteward
 	})
+}
+
+// serviceTree keeps a service spawn with a parent (a planner of the
+// Steward) within the agent tree's limits, as an agent's spawn through
+// the socket (Server.spawnTree): at most maxAgentDepth deep, at most
+// maxAgentChildren live children. The Steward starts its planners one at
+// a time (Steward.Plan), so counting here is enough.
+func (r *Registry) serviceTree(p wire.SpawnParams) error {
+	if p.Parent == "" {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if limit := r.settings.maxAgentDepth(); p.Depth > limit {
+		return wire.Errorf(wire.CodeForbidden, "agent %s is at depth %d: agents may start agents at most %d deep (settings.json maxAgentDepth)", p.Parent, p.Depth-1, limit)
+	}
+	live := 0
+	for _, a := range r.agents {
+		if a.Parent == p.Parent && a.Exit == nil && a.State != wire.StateExited {
+			live++
+		}
+	}
+	if limit := r.settings.maxAgentChildren(); live >= limit {
+		return wire.Errorf(wire.CodeForbidden, "agent %s has %d live children: at most %d (settings.json maxAgentChildren); close one first", p.Parent, live, limit)
+	}
+	return nil
 }
 
 // view is an agent as the wire shows it (the lock is held): with the loop
@@ -56,13 +85,15 @@ func (r *Registry) assign(a *agent, info AssignInfo) {
 }
 
 // parentRef is the ref of parent (an agent id) when it is one of this
-// Mac's agents' ids, else "": a parent on another Mac is linked by the
-// controller.
+// Mac's agents (the lock is held), else "": a parent on another Mac is
+// the controller's to link (it names the parent's loop in the spawn).
+// Its machine name alone is not enough: a controller that calls itself
+// what this Mac calls itself (both "L") sends its own parents so.
 func (r *Registry) parentRef(parent string) string {
 	if parent == "" {
 		return ""
 	}
-	if m, local := r.split(parent); m == r.machine {
+	if m, local := r.split(parent); m == r.machine && r.agents[local] != nil {
 		return r.ref(local)
 	}
 	return ""
@@ -110,8 +141,12 @@ func (r *Registry) settle(a *agent, ending string) {
 // exit; the lock is held): why, the agent it became (a move), its summary
 // and last ending, and its final message.
 func (r *Registry) closedWork(a *agent, reason, to string) {
+	toRef := ""
+	if reason == wire.ReasonMoved {
+		toRef = a.closeToRef
+	}
 	r.events.push(loopEvent{closed: true, AgentEvent: AgentEvent{Ref: r.ref(a.local), Agent: r.view(a), Ending: a.Ending,
-		Message: a.lastMessage, Reason: reason, To: to}})
+		Message: a.lastMessage, Reason: reason, To: to, ToRef: toRef}})
 }
 
 // Reports to a parent (SpawnParams.ReportToParent): when such a child's
@@ -141,12 +176,18 @@ func reportLine(id, ending string) string {
 	return "[hesper] child " + id + " settled: " + ending + "; run hesperctl result " + id
 }
 
-// queueReport queues child's report for its parent (the lock is held).
+// queueReport queues child's report for its parent (the lock is held):
+// once per turn. A turn settled again replaces its waiting line (the
+// latest ending) and sends nothing once its line went out.
 func (r *Registry) queueReport(child *agent) {
 	m, local := r.split(child.Parent)
 	if m != r.machine {
 		return // a parent on another Mac: not done in v1
 	}
+	if child.reportTurn.Equal(child.turnStart) && child.reportSent {
+		return
+	}
+	child.reportTurn, child.reportSent = child.turnStart, false
 	parent := r.agents[local]
 	if parent == nil || (parent.Kind != wire.KindClaude && parent.Kind != wire.KindCodex) {
 		return // gone, or a shell (the line would run as a command)
@@ -205,6 +246,11 @@ func (r *Registry) deliverReports(parent *agent) {
 	if err := typeText(parent.term, strings.Join(lines, "\n"), true, true); err != nil {
 		r.opt.Logf("hesperd: %s: reports from its children: %v", parent.ID, err)
 		return
+	}
+	for _, id := range pr.order {
+		if m, local := r.split(id); m == r.machine && r.agents[local] != nil {
+			r.agents[local].reportSent = true
+		}
 	}
 	r.dropReports(parent)
 }

@@ -178,7 +178,7 @@ func (f *Fleet) move(ctx context.Context, p wire.MoveParams, fromShort, local st
 	}
 	// 4. The source's agent is closed (moved), unless it forks.
 	if !p.Fork {
-		if err := f.closeMoved(ctx, src, local, moved.ID); err != nil {
+		if err := f.closeMoved(ctx, src, local, moved.ID, f.refOn(dst, moved.ID)); err != nil {
 			f.opt.Logf("remote: %s/%s moved to %s, but the source could not close it: %v", fromShort, local, p.To, err)
 		}
 	}
@@ -418,19 +418,47 @@ func (f *Fleet) get(ctx context.Context, s side, local string) (wire.Agent, erro
 	return a, nil
 }
 
-// closeMoved closes the source's agent with reason "moved" (a host
-// without it: a plain close).
-func (f *Fleet) closeMoved(ctx context.Context, s side, local, to string) error {
+// closeMoved closes the source's agent with reason "moved", the agent it
+// became (to) and that agent's loops ref (toRef: the source may not
+// resolve to, as both Macs may be called "L"). A host without toRef: the
+// close without it; a host without "moved": a plain close.
+func (f *Fleet) closeMoved(ctx context.Context, s side, local, to, toRef string) error {
 	if s.m == nil {
-		_, err := f.opt.Local.CloseAs(f.localShort()+"/"+local, wire.ReasonMoved, to)
+		_, err := f.opt.Local.CloseAs(f.localShort()+"/"+local, wire.ReasonMoved, to, toRef)
 		return err
 	}
-	_, err := f.request(ctx, s.c, s.m, "agents.close", map[string]any{"id": local, "reason": wire.ReasonMoved, "to": to})
+	params := map[string]any{"id": local, "reason": wire.ReasonMoved, "to": to}
+	if toRef != "" {
+		params["toRef"] = toRef
+	}
+	_, err := f.request(ctx, s.c, s.m, "agents.close", params)
 	var we *wire.Error
+	if errors.As(err, &we) && we.Code == wire.CodeInvalid && toRef != "" {
+		delete(params, "toRef")
+		_, err = f.request(ctx, s.c, s.m, "agents.close", params)
+	}
 	if errors.As(err, &we) && we.Code == wire.CodeInvalid {
 		_, err = f.request(ctx, s.c, s.m, "agents.close", map[string]any{"id": local})
 	}
 	return err
+}
+
+// refOn is the loops ref of agent id (as this Mac names it) on side s
+// ("" unknown: no loops store, a host that named no node).
+func (f *Fleet) refOn(s side, id string) string {
+	if f.opt.Loops == nil {
+		return ""
+	}
+	node := f.opt.Loops.Node()
+	if s.m != nil {
+		f.mu.Lock()
+		node = s.m.node
+		f.mu.Unlock()
+	}
+	if node == "" {
+		return ""
+	}
+	return node + "/" + localID(id)
 }
 
 func (f *Fleet) plan(ctx context.Context, s side, local string) (handoff.Plan, error) {

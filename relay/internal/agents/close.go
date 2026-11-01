@@ -31,13 +31,15 @@ var closeSettle = 200 * time.Millisecond
 // get agents.removed with reason "closed". The result names the session
 // to resume it with.
 func (r *Registry) CloseAgent(id string) (wire.CloseResult, error) {
-	return r.CloseAs(id, wire.ReasonClosed, "")
+	return r.CloseAs(id, wire.ReasonClosed, "", "")
 }
 
 // CloseAs is CloseAgent with the removal's reason: "closed", or "moved"
-// (move work) with the agent it became (to). The folder is checkpointed
-// before the agent ends (checkpoint.go).
-func (r *Registry) CloseAs(id, reason, to string) (wire.CloseResult, error) {
+// (move work) with the agent it became (to, as the controller names it)
+// and that agent's loops ref (toRef, "" not sent: the loops store
+// resolves to). The folder is checkpointed before the agent ends
+// (checkpoint.go).
+func (r *Registry) CloseAs(id, reason, to, toRef string) (wire.CloseResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, err := r.find(id)
@@ -50,12 +52,12 @@ func (r *Registry) CloseAs(id, reason, to string) (wire.CloseResult, error) {
 		return res, nil // being closed already
 	}
 	if a.term == nil || a.Exit != nil {
-		a.closeTo = to
+		a.closeTo, a.closeToRef = to, toRef
 		r.removeLocked(a, reason)
 		go r.closeCheckpoint(a.Agent)
 		return res, nil
 	}
-	a.closeReason, a.closeTo, a.respawn = reason, to, false
+	a.closeReason, a.closeTo, a.closeToRef, a.respawn = reason, to, toRef, false
 	interrupted := false
 	switch a.State {
 	case wire.StateWorking, wire.StateApproval, wire.StateQuestion:

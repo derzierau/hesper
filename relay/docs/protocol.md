@@ -458,7 +458,7 @@ renames to its own machine naming.
 | `agents.plan` | `{id}` | `{project, home, commits, projectId?, remote?, remoteHead?, git?, processes?}` (a move's source: commits the target may have; its Git remote; processes the agent started) |
 | `agents.probe` | `{path, home, commits, projectId?, kind?}` | `{exists, has, path?, tool?}` (a move's target: where the project is there, whether it has the tool) |
 | `agents.checkpoint` | `{id}` | `{checkpoint}` (null outside Git; right `transfer`) |
-| `agents.close` | `{id, reason?: "moved", to?}` | as locally (a move closes its source with reason `moved`) |
+| `agents.close` | `{id, reason?: "moved", to?, toRef?}` | as locally (a move closes its source with reason `moved`; `toRef` is the loops ref `<node>/<local id>` of the agent it became, which the host uses for the loop's link, as it may not resolve `to`, the controller's name, itself; a host without `toRef` answers `invalid_request` and gets the close without it) |
 | `checkpoints.restore` | `{key, ref, commit}` | `{path, branch}`: a worktree from a session's checkpoint (right `transfer`) |
 | `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?, alt?}`: the terminal as plain text (right `observe`) |
 | `projects.clone` | `{url}` | `{path}` |
@@ -562,13 +562,26 @@ controller records the new agent's loop itself.
 
 ### Loops on the local socket
 
-Types in `relay/pkg/wire/loops.go`. Agent callers follow the agent tree's
-policy: `steward.set`, `goals.accept`, `goals.remove`,
-`loops.settings.set` and any change of a loop's or milestone's status to
-`done` or `dropped` are a person's only; below Steward level `act`, so are
-`loops.merge` and `loops.split`; an agent that is not a service reads
-everything and changes only the items and links of its own loop
-(`forbidden` otherwise); the Steward (a service agent) writes the rest.
+Types in `relay/pkg/wire/loops.go`. A person may call every method.
+Agent callers follow the agent tree's policy:
+
+- a person's only: `steward.set`, `goals.accept`, `goals.remove`,
+  `loops.settings.set`; the status rule covers loops, goals and
+  milestones alike: no agent sets a loop's, goal's or milestone's
+  status to `done` or `dropped`, nor a goal's or milestone's to `open`
+  (accepting, reopening); a milestone an agent creates is `proposed`;
+- `loops.merge` and `loops.split`: the Steward at level `act`;
+- `steward.plan`: the Steward at level `suggest` or `act` (never a
+  planner);
+- `steward.inbox` and the other writes: service agents (the Steward, its
+  planners);
+- any other agent reads everything and changes only the items and links
+  of its own loop, agent links only for itself and the agents it
+  started.
+
+Refusals are `forbidden`. A member link added for an agent or session
+(`loops.link`, or a spawn into another loop) removes its member links in
+other loops.
 
 | Method | Params | Result |
 | --- | --- | --- |
@@ -576,7 +589,7 @@ everything and changes only the items and links of its own loop
 | `loops.get` | `{id}` | `Loop` (merged loops too, with `mergedInto`) |
 | `loops.save` | `LoopSaveParams` (no `id`: a new loop; else the fields given) | the `Loop` |
 | `loops.link` | `{id, link, remove?}`: an agent link may name the agent by its id here (`link.agent`); `rel` defaults to `member` (`touches` for projects, `blockedBy` for loops) | the `Loop` |
-| `loops.item` | `{id, item, remove?}` (`item.id` empty: a new item; else its non-empty fields change) | the `Loop` |
+| `loops.item` | `{id, item, remove?}` (`item.id` empty: a new item; else its non-empty fields change; `"check": {"kind": ""}` clears the item's check) | the `Loop` |
 | `loops.merge` | `{into, from}` | the `Loop` `into` (`from`'s links and items moved, `from.mergedInto` set) |
 | `loops.split` | `{id, ref, title?}` | the new `Loop` (the link `ref`, the agents it started or that continued it, and their items) |
 | `loops.settings.get` | `{}` | `LoopSettings` |
@@ -584,13 +597,13 @@ everything and changes only the items and links of its own loop
 | `goals.list` | `{scope?}` | `{goals: [Goal], milestones: [Milestone]}` by order |
 | `goals.save` | `{goal}` or `{milestone}` (patches; no `id`: new) | `{goal: Goal}` or `{milestone: Milestone}` |
 | `goals.remove` | `{id}` (a goal or a milestone; a milestone's loops are unfiled) | `{}` |
-| `goals.item` | `{id, item, remove?}`: a milestone's "done when" condition | the `Milestone` |
+| `goals.item` | `{id, item, remove?}`: a milestone's "done when" condition (as `loops.item`; `"check": {"kind": ""}` clears its check) | the `Milestone` |
 | `goals.file` | `{milestone, loop, remove?}` | the `Milestone` |
 | `goals.accept` | `{scope, ids?}` | `{accepted: N}`: proposed milestones opened |
 | `steward.status` | `{}` | `StewardStatus`: the shared `{enabled, level, node, machine}`, and on the Mac that runs it `agent`, `session`, `queued`, today's `wakes`, `lastWake`, `dropped` (events the full queue dropped) and `stopped` (why it does not run although it is on: it ended 3 times within an hour) |
 | `steward.set` | `{enabled?, level?, machine?}` (`enabled` without a machine: this Mac, unless one is set; `enabled: true` again clears `stopped`) | `StewardStatus` |
-| `steward.inbox` | `{}` (service agents only) | `[StewardEvent]`: the waiting events, oldest first, one per agent (or loop); the queue is emptied |
-| `steward.plan` | `{scope, prompt?}` (a project or group id) | `Agent`: the planning session (service `planner`, a child of the Steward when it runs here) |
+| `steward.inbox` | `{}` (a person or a service agent; never another agent) | `[StewardEvent]`: the waiting events, oldest first, one per agent (or loop); the queue is emptied |
+| `steward.plan` | `{scope, prompt?}` (a project or group id; a person, or the Steward at level `suggest` or `act`) | `Agent`: the planning session (service `planner`, a child of the Steward when it runs here); while the scope's planner runs, that one (one per scope) |
 
 Ids: loops `lp-`, goals `gl-`, milestones `ms-` + 12 hex; items `it-` + 8
 hex. Refs: an agent `<node>/<local id>` (`node` is the projects store's

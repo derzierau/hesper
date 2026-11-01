@@ -255,8 +255,9 @@ type agent struct {
 	// checkpoint.go: a turn's checkpoint is scheduled; the last one ran.
 	cpPending bool
 	cpLast    time.Time
-	// closeTo (move work): the agent a moved one became (reason "moved").
-	closeTo string
+	// closeTo (move work): the agent a moved one became (reason "moved");
+	// closeToRef its loops ref, when the controller sent it.
+	closeTo, closeToRef string
 	// hooks counts the agent's hook events: its review scan is out of
 	// date once it changed (reviewcache.go).
 	hooks uint64
@@ -268,6 +269,12 @@ type agent struct {
 	// ended during a hook (HookResult settles it once the message is in).
 	turnStart time.Time
 	settleDue bool
+	// reportTurn is the turn (its turnStart) last reported to its parent
+	// (SpawnParams.ReportToParent), reportSent once the line was typed:
+	// a turn that settles again (Codex: its screen, then notify) is
+	// never reported twice.
+	reportTurn time.Time
+	reportSent bool
 }
 
 // since is when an agent entered state, now: an agent the daemon

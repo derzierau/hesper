@@ -28,15 +28,6 @@ var (
 	loopsRetry        = 5 * time.Second
 )
 
-// loopPeer is what this Mac knows of one host node's loops.
-type loopPeer struct {
-	epoch  string // the host's epoch as last pulled
-	pulled int64  // the host's sequence number pulled up to
-	pushed int64  // this Mac's sequence number pushed up to
-	mine   string // this Mac's epoch when pushed
-	seen   string // the host's epoch in its last hint
-}
-
 // loopsEvent takes a host's loops hint.
 func (f *Fleet) loopsEvent(l *link, raw json.RawMessage) {
 	store := f.opt.Loops
@@ -47,6 +38,8 @@ func (f *Fleet) loopsEvent(l *link, raw json.RawMessage) {
 	if json.Unmarshal(raw, &h) != nil || h.Node == "" || h.Node == store.Node() {
 		return
 	}
+	reset := store.PeerSeen(h.Node, h.Epoch) // a new store there: it gets everything
+	p := store.Peer(h.Node)                  // the cursors persist with the store (loops.peers.json)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	m := l.m
@@ -57,15 +50,11 @@ func (f *Fleet) loopsEvent(l *link, raw json.RawMessage) {
 	if m.node == "" {
 		m.node = h.Node
 	}
-	p := f.loopPeerLocked(h.Node)
-	if p.seen != h.Epoch {
-		p.seen, p.pushed = h.Epoch, 0 // a new store there: it gets everything
-	}
 	if l.loopsKick == nil {
 		l.loopsKick = make(chan struct{}, 1)
 		go f.loopsWorker(l, h.Node)
 	}
-	if h.Epoch != p.epoch || h.Seq > p.pulled {
+	if reset || h.Epoch != p.Epoch || h.Seq > p.Pulled {
 		kick(l.loopsKick)
 	}
 }
@@ -75,18 +64,6 @@ func kick(ch chan struct{}) {
 	case ch <- struct{}{}:
 	default:
 	}
-}
-
-func (f *Fleet) loopPeerLocked(node string) *loopPeer {
-	if f.loopPeers == nil {
-		f.loopPeers = map[string]*loopPeer{}
-	}
-	p := f.loopPeers[node]
-	if p == nil {
-		p = &loopPeer{}
-		f.loopPeers[node] = p
-	}
-	return p
 }
 
 // loopsWorker runs one link's exchanges until the link ends.
@@ -115,15 +92,15 @@ func (f *Fleet) exchangeLoops(l *link, node string) error {
 	store := f.opt.Loops
 	f.mu.Lock()
 	c, m := f.c, l.m
-	p := *f.loopPeerLocked(node)
 	f.mu.Unlock()
 	if c == nil {
 		return nil
 	}
+	p := store.Peer(node)
 	self := store.Node()
 	for {
 		ctx, cancel := context.WithTimeout(l.ctx, 60*time.Second)
-		raw, err := f.request(ctx, c, m, "loops.pull", loops.PullParams{Since: p.pulled, Epoch: p.epoch, From: self})
+		raw, err := f.request(ctx, c, m, "loops.pull", loops.PullParams{Since: p.Pulled, Epoch: p.Epoch, From: self})
 		cancel()
 		if err != nil {
 			return err
@@ -135,18 +112,19 @@ func (f *Fleet) exchangeLoops(l *link, node string) error {
 		if store.Merge(res.Records) {
 			f.refreshLoops()
 		}
-		p.epoch, p.pulled = res.Epoch, res.Next
-		f.savePeer(node, func(q *loopPeer) { q.epoch, q.pulled = p.epoch, p.pulled })
+		p.Epoch, p.Pulled = res.Epoch, res.Next
+		store.PeerPulled(node, p.Epoch, p.Pulled)
 		if !res.More {
 			break
 		}
 	}
+	p = store.Peer(node)
 	for {
 		mine := store.Hint().Epoch
-		if p.mine != mine {
-			p.pushed = 0
+		if p.Mine != mine {
+			p.Pushed = 0
 		}
-		batch := store.Pull(loops.PullParams{Since: p.pushed, Epoch: mine, From: node})
+		batch := store.Pull(loops.PullParams{Since: p.Pushed, Epoch: mine, From: node})
 		if len(batch.Records) > 0 {
 			ctx, cancel := context.WithTimeout(l.ctx, 60*time.Second)
 			_, err := f.request(ctx, c, m, "loops.sync", loops.SyncParams{From: self, Records: batch.Records})
@@ -155,18 +133,15 @@ func (f *Fleet) exchangeLoops(l *link, node string) error {
 				return err
 			}
 		}
-		p.pushed, p.mine = batch.Next, mine
-		f.savePeer(node, func(q *loopPeer) { q.pushed, q.mine = p.pushed, p.mine })
+		if !store.PeerPushed(node, p.Gen, batch.Next, mine) {
+			p = store.Peer(node) // the host was reset meanwhile: from its cursor again
+			continue
+		}
+		p.Pushed, p.Mine = batch.Next, mine
 		if !batch.More {
 			return nil
 		}
 	}
-}
-
-func (f *Fleet) savePeer(node string, fn func(*loopPeer)) {
-	f.mu.Lock()
-	fn(f.loopPeerLocked(node))
-	f.mu.Unlock()
 }
 
 // syncLoopsLoop pushes every change of this Mac's loops to the linked
@@ -231,7 +206,10 @@ func (f *Fleet) refreshLoops() {
 
 // spawnFields: before an agents.spawn goes to m, the loop fields leave
 // the params of a host without loops (it decodes params strictly); the
-// returned function records the new agent's loop on this Mac instead.
+// returned function records the new agent's loop on this Mac instead. A
+// host with loops gets its parent's loop as loop when the spawn names
+// none (and no milestone): only this Mac knows the parent's ref, the
+// host resolves only parents of its own.
 func (f *Fleet) spawnFields(m *machine, fields map[string]json.RawMessage) func(wire.Agent) {
 	store := f.opt.Loops
 	if store == nil {
@@ -240,9 +218,6 @@ func (f *Fleet) spawnFields(m *machine, fields map[string]json.RawMessage) func(
 	f.mu.Lock()
 	capable := m.loops
 	f.mu.Unlock()
-	if capable {
-		return nil
-	}
 	var want struct {
 		Loop      string `json:"loop"`
 		Milestone string `json:"milestone"`
@@ -250,6 +225,14 @@ func (f *Fleet) spawnFields(m *machine, fields map[string]json.RawMessage) func(
 	}
 	raw, _ := json.Marshal(fields)
 	json.Unmarshal(raw, &want)
+	if capable {
+		if want.Loop == "" && want.Milestone == "" && want.Parent != "" {
+			if loop := store.LoopOf(store.RefOf(want.Parent)); loop != "" {
+				fields["loop"], _ = json.Marshal(loop)
+			}
+		}
+		return nil
+	}
 	delete(fields, "loop")
 	delete(fields, "milestone")
 	delete(fields, "reportToParent")

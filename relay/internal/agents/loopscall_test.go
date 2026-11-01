@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,7 +24,8 @@ func newStewardHarness(t *testing.T) (*harness, *fakeLoops) {
 
 func TestLoopsPolicyPerson(t *testing.T) {
 	h, l := newStewardHarness(t)
-	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet, wire.MethodLoopsMerge} {
+	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet, wire.MethodLoopsMerge,
+		wire.MethodStewardInbox} {
 		allowed(t, m, h.call(m, map[string]any{}, nil))
 	}
 	allowed(t, "close a loop", h.call(wire.MethodLoopsSave, wire.LoopSaveParams{ID: "lp-1", Status: ptr(wire.LoopDone)}, nil))
@@ -101,6 +103,10 @@ func TestLoopsPolicySteward(t *testing.T) {
 	forbidden(t, "close a loop", h.callAs(s.ID, wire.MethodLoopsSave, wire.LoopSaveParams{ID: "lp-1", Status: ptr(wire.LoopDropped)}, nil))
 	forbidden(t, "finish a goal", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Goal: &wire.GoalPatch{ID: "gl-1", Status: ptr(wire.LoopDone)}}, nil))
 	forbidden(t, "finish a milestone", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{ID: "ms-1", Status: ptr(wire.LoopDone)}}, nil))
+	forbidden(t, "accept a milestone", h.callAs(p.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{ID: "ms-1", Status: ptr(wire.LoopOpen)}}, nil))
+	forbidden(t, "create an open milestone", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Title: ptr("Beta"), Status: ptr(wire.LoopOpen)}}, nil))
+	forbidden(t, "reopen a goal", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Goal: &wire.GoalPatch{ID: "gl-1", Status: ptr(wire.LoopOpen)}}, nil))
+	allowed(t, "send a milestone back", h.callAs(p.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{ID: "ms-1", Status: ptr(wire.MilestoneProposed)}}, nil))
 	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet} {
 		forbidden(t, m, h.callAs(s.ID, m, map[string]any{}, nil))
 	}
@@ -134,4 +140,95 @@ func TestLoopsPolicySteward(t *testing.T) {
 	forbidden(t, "a resume", h.callAs(s.ID, "sessions.resume", map[string]any{"id": "x"}, nil))
 	// The Steward's own calls reach it as the Steward.
 	allowed(t, "steward.plan", h.callAs(s.ID, wire.MethodStewardPlan, wire.StewardPlanParams{Scope: "p-1"}, nil))
+}
+
+// TestStewardPlanPolicy: a person plans, and the Steward from level
+// suggest on; never a planner nor any other agent.
+func TestStewardPlanPolicy(t *testing.T) {
+	h, l := newStewardHarness(t)
+	s, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServiceSteward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServicePlanner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	plan := wire.StewardPlanParams{Scope: "p-1"}
+	allowed(t, "a person", h.call(wire.MethodStewardPlan, plan, nil))
+	allowed(t, "the Steward at suggest", h.callAs(s.ID, wire.MethodStewardPlan, plan, nil))
+	forbidden(t, "a planner", h.callAs(p.ID, wire.MethodStewardPlan, plan, nil))
+	forbidden(t, "an agent", h.callAs(a.ID, wire.MethodStewardPlan, plan, nil))
+	l.setLevel(wire.StewardWatch)
+	forbidden(t, "the Steward at watch", h.callAs(s.ID, wire.MethodStewardPlan, plan, nil))
+	l.setLevel(wire.StewardAct)
+	allowed(t, "the Steward at act", h.callAs(s.ID, wire.MethodStewardPlan, plan, nil))
+}
+
+// TestSpawnServiceTreeLimits: a service agent's children count against
+// maxAgentChildren and maxAgentDepth like any agent's.
+func TestSpawnServiceTreeLimits(t *testing.T) {
+	h := newHarness(t)
+	h.close()
+	writeJSON(t, filepath.Join(h.config, "settings.json"), map[string]any{
+		"defaults":      map[string]any{"kind": "claude", "kinds": map[string]string{"claude": "fake-claude", "codex": "fake-codex", "shell": "fake-shell"}},
+		"maxAgentDepth": 1, "maxAgentChildren": 1,
+	})
+	h.open()
+	s, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServiceSteward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job", Parent: s.ID, Depth: 1}, wire.ServicePlanner)
+	allowed(t, "planner 1", err)
+	_, err = h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job", Parent: s.ID, Depth: 1}, wire.ServicePlanner)
+	forbidden(t, "planner 2", err)
+	if !strings.Contains(err.Error(), "maxAgentChildren") {
+		t.Fatalf("message %q", err)
+	}
+	_, err = h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job", Parent: p1.ID, Depth: 2}, wire.ServicePlanner)
+	forbidden(t, "depth 2", err)
+}
+
+// TestHistoryAndDraftsPolicy: an agent never deletes or archives history,
+// and removes or replaces only the drafts it saved.
+func TestHistoryAndDraftsPolicy(t *testing.T) {
+	h, _ := newStewardHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	b := h.spawn(wire.SpawnParams{Task: "small job"})
+	forbidden(t, "delete history", h.callAs(a.ID, "sessions.delete", wire.SessionDeleteParams{ID: "s-1"}, nil))
+	forbidden(t, "archive history", h.callAs(a.ID, "sessions.archive", wire.SessionArchiveParams{ID: "s-1", Archived: true}, nil))
+	var mine wire.Draft
+	allowed(t, "save a draft", h.callAs(a.ID, "drafts.save", wire.DraftSaveParams{Draft: wire.Draft{ID: "d-mine", Text: "follow up"}}, &mine))
+	if mine.SavedBy != a.ID {
+		t.Fatalf("saved by %q", mine.SavedBy)
+	}
+	allowed(t, "a person's draft", h.call("drafts.save", wire.DraftSaveParams{Draft: wire.Draft{ID: "d-person", Text: "mine"}}, nil))
+	forbidden(t, "remove a person's draft", h.callAs(a.ID, "drafts.remove", wire.IDParams{ID: "d-person"}, nil))
+	forbidden(t, "replace a person's draft", h.callAs(a.ID, "drafts.save", wire.DraftSaveParams{Draft: wire.Draft{ID: "d-person", Text: "gone"}}, nil))
+	forbidden(t, "remove another agent's draft", h.callAs(b.ID, "drafts.remove", wire.IDParams{ID: "d-mine"}, nil))
+	allowed(t, "remove its own draft", h.callAs(a.ID, "drafts.remove", wire.IDParams{ID: "d-mine"}, nil))
+	allowed(t, "a person removes", h.call("drafts.remove", wire.IDParams{ID: "d-person"}, nil))
+}
+
+// TestLinkAgentsPolicy: an ordinary agent links only itself and the
+// agents it started (descendants) to its loop.
+func TestLinkAgentsPolicy(t *testing.T) {
+	h, _ := newStewardHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	other := h.spawn(wire.SpawnParams{Task: "small job"})
+	child, err := h.spawnAs(a.ID, wire.SpawnParams{Task: "small job"})
+	allowed(t, "child", err)
+	refOf := func(id string) string { return "n1/" + strings.TrimPrefix(id, "L/") }
+	link := func(v wire.LoopLink, remove bool) error {
+		return h.callAs(a.ID, wire.MethodLoopsLink, wire.LoopLinkParams{ID: a.Loop, Link: v, Remove: remove}, nil)
+	}
+	allowed(t, "itself", link(wire.LoopLink{Kind: wire.LinkAgent, Agent: a.ID}, false))
+	allowed(t, "its child by id", link(wire.LoopLink{Kind: wire.LinkAgent, Agent: child.ID}, false))
+	allowed(t, "its child by ref", link(wire.LoopLink{Kind: wire.LinkAgent, Ref: refOf(child.ID)}, false))
+	forbidden(t, "another agent by id", link(wire.LoopLink{Kind: wire.LinkAgent, Agent: other.ID}, false))
+	forbidden(t, "another agent by ref", link(wire.LoopLink{Kind: wire.LinkAgent, Ref: refOf(other.ID)}, false))
+	forbidden(t, "another agent's link removed", link(wire.LoopLink{Kind: wire.LinkAgent, Ref: refOf(other.ID)}, true))
+	allowed(t, "a URL", link(wire.LoopLink{Kind: wire.LinkURL, Ref: "https://example.com/pr/1"}, false))
 }
