@@ -458,7 +458,7 @@ renames to its own machine naming.
 | `agents.plan` | `{id}` | `{project, home, commits, projectId?, remote?, remoteHead?, git?, processes?}` (a move's source: commits the target may have; its Git remote; processes the agent started) |
 | `agents.probe` | `{path, home, commits, projectId?, kind?}` | `{exists, has, path?, tool?}` (a move's target: where the project is there, whether it has the tool) |
 | `agents.checkpoint` | `{id}` | `{checkpoint}` (null outside Git; right `transfer`) |
-| `agents.close` | `{id, reason?: "moved", to?}` | as locally (a move closes its source with reason `moved`) |
+| `agents.close` | `{id, reason?: "moved", to?, toRef?}` | as locally (a move closes its source with reason `moved`; `toRef` is the loops ref `<node>/<local id>` of the agent it became, which the host uses for the loop's link, as it may not resolve `to`, the controller's name, itself; a host without `toRef` answers `invalid_request` and gets the close without it) |
 | `checkpoints.restore` | `{key, ref, commit}` | `{path, branch}`: a worktree from a session's checkpoint (right `transfer`) |
 | `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?, alt?}`: the terminal as plain text (right `observe`) |
 | `projects.clone` | `{url}` | `{path}` |

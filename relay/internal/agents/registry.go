@@ -255,8 +255,9 @@ type agent struct {
 	// checkpoint.go: a turn's checkpoint is scheduled; the last one ran.
 	cpPending bool
 	cpLast    time.Time
-	// closeTo (move work): the agent a moved one became (reason "moved").
-	closeTo string
+	// closeTo (move work): the agent a moved one became (reason "moved");
+	// closeToRef its loops ref, when the controller sent it.
+	closeTo, closeToRef string
 	// hooks counts the agent's hook events: its review scan is out of
 	// date once it changed (reviewcache.go).
 	hooks uint64

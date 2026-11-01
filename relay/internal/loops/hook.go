@@ -205,8 +205,11 @@ func (s *Store) AgentClosed(e agents.AgentEvent) {
 		return
 	}
 	to := ""
-	if e.Reason == wire.ReasonMoved && e.To != "" {
-		to = s.refOf(e.To)
+	if e.Reason == wire.ReasonMoved {
+		to = e.ToRef
+		if to == "" && e.To != "" {
+			to = s.refOf(e.To) // a controller from before toRef
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

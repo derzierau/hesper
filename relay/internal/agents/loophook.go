@@ -84,11 +84,15 @@ type AgentEvent struct {
 	Ref   string
 	Agent wire.Agent
 	// Ending and Message (the final message, at most 64 KiB) for a
-	// settled turn and a close; Reason and To for a close.
+	// settled turn and a close; Reason and To for a close, and for a
+	// move ToRef, the loops ref of the agent it became when the
+	// controller sent it (To is in the controller's naming, which this
+	// Mac may not resolve: both Macs may be called "L").
 	Ending  string
 	Message string
 	Reason  string
 	To      string
+	ToRef   string
 }
 
 // isLoopMethod reports whether method is served by the loops store or the

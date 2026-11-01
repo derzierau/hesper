@@ -141,8 +141,12 @@ func (r *Registry) settle(a *agent, ending string) {
 // exit; the lock is held): why, the agent it became (a move), its summary
 // and last ending, and its final message.
 func (r *Registry) closedWork(a *agent, reason, to string) {
+	toRef := ""
+	if reason == wire.ReasonMoved {
+		toRef = a.closeToRef
+	}
 	r.events.push(loopEvent{closed: true, AgentEvent: AgentEvent{Ref: r.ref(a.local), Agent: r.view(a), Ending: a.Ending,
-		Message: a.lastMessage, Reason: reason, To: to}})
+		Message: a.lastMessage, Reason: reason, To: to, ToRef: toRef}})
 }
 
 // Reports to a parent (SpawnParams.ReportToParent): when such a child's

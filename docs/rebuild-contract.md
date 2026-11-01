@@ -5284,7 +5284,11 @@ every turn `done`) and `summary` on the link; the sentences of an
 `waits` loose ends for others, `offer` offers of the agent (dimmed, never
 counted), at most 5, each text once per loop. `AgentClosed`: reason, time
 and excerpt; reason `moved` with `to` rewrites the ref instead (the
-imported agent's own link, when Assign ran first, goes).
+imported agent's own link, when Assign ran first, goes). The new ref is
+the close's `toRef` (`AgentEvent.ToRef`: the controller sends the
+target's `<node>/<local id>` with `agents.close`), else `to` resolved
+on this Mac (an older controller), which goes wrong when both Macs call
+themselves `L`.
 
 **Wire** (`relay/docs/protocol.md`, "Shared state" and "Loops on the
 local socket"): `loops.list/get/save/link/item/merge/split`,
