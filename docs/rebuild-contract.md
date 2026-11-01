@@ -5190,7 +5190,10 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
 - **Service agents** (`Agent.service`: the Steward, the planner).
   Tidy Up (⇧⌘W) and auto-tidy (`TidyUp.select`, `AutoTidy`) never
   close them: hesperd runs them and they idle between wakes. Closing
-  one by hand (⌘W) still works.
+  one by hand (⌘W) still works. Their tiles live on the wall's quiet
+  shelf by default, working or not (`WallTileInput.shelved`,
+  `shelves`); one that needs the person (approval, question, error)
+  comes off it like any other agent.
 
 ## Wire names kept from Ghosty
 

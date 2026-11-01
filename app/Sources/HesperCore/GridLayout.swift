@@ -122,10 +122,19 @@ public struct WallTileInput: Equatable, Sendable {
     public var state: AgentState
     /// Height of the card's attention band (0: none).
     public var band: Double
-    public init(grid: GridSize, state: AgentState = .working, band: Double = 0) { self.grid = grid; self.state = state; self.band = band }
+    /// On the shelf whatever its state (`shelves`: a service agent).
+    public var shelved = false
+    public init(grid: GridSize, state: AgentState = .working, band: Double = 0, shelved: Bool = false) {
+        self.grid = grid; self.state = state; self.band = band; self.shelved = shelved
+    }
 
-    /// Done, idle or exited: the shelf's.
-    public var isQuiet: Bool { state == .done || state == .idle || state == .exited }
+    /// Done, idle or exited, or shelved: the shelf's.
+    public var isQuiet: Bool { shelved || state == .done || state == .idle || state == .exited }
+
+    /// The Steward and the planner (Agent.service) live on the quiet shelf
+    /// by default, working or not; one that needs the person comes off it
+    /// like any other agent.
+    public static func shelves(_ a: Agent) -> Bool { a.isService && !a.state.needsAttention }
 }
 
 /// One card on the wall: its frame, and for a live card the terminal area

@@ -725,7 +725,7 @@ final class WallView: NSView {
                     t.apply(a, connected: model.isConnected)
                 } else {
                     let t = TileView(agent: a, model: model)
-                    t.onShownChanged = { [weak self] old, new in self?.shownStateChanged(old, new) }
+                    t.onShownChanged = { [weak self, weak t] old, new in self?.shownStateChanged(old, new, service: t?.agent.isService ?? false) }
                     t.terminal.visible = renderingVisible
                     t.terminal.onCellMeasured = { [weak self] in self?.needsLayout = true }
                     tiles[a.id] = t
@@ -796,10 +796,12 @@ final class WallView: NSView {
 
     /// A card's shown state changed: the shelf, treemap weights and the
     /// main slot follow it.
-    private func shownStateChanged(_ old: AgentState, _ new: AgentState) {
+    private func shownStateChanged(_ old: AgentState, _ new: AgentState, service: Bool) {
         guard let model else { return }
-        let quietChanged = WallTileInput(grid: GridSize(cols: 1, rows: 1), state: old).isQuiet
-            != WallTileInput(grid: GridSize(cols: 1, rows: 1), state: new).isQuiet
+        func quiet(_ s: AgentState) -> Bool {
+            WallTileInput(grid: GridSize(cols: 1, rows: 1), state: s, shelved: service && !s.needsAttention).isQuiet
+        }
+        let quietChanged = quiet(old) != quiet(new)
         if quietChanged || model.arrangement == .treemap || model.arrangement == .mainStack {
             animateNext = true
             needsLayout = true
@@ -880,7 +882,8 @@ final class WallView: NSView {
     private func input(_ id: String) -> WallTileInput {
         if ghostTiles[id] != nil { return WallTileInput(grid: GridSize(cols: 120, rows: 40), state: .exited) } // shared history: shelf
         if let t = tiles[id] {
-            return WallTileInput(grid: t.agent.size ?? GridSize(cols: 120, rows: 40), state: t.shown.state, band: Metrics.footer)
+            return WallTileInput(grid: t.agent.size ?? GridSize(cols: 120, rows: 40), state: t.shown.state, band: Metrics.footer,
+                                 shelved: WallTileInput.shelves(t.shown))
         }
         // A draft: an active card while written, quiet (the shelf) when left.
         let d = draftTiles[id]
