@@ -50,7 +50,7 @@ func (s *Store) Merge(st *State, from string) bool {
 		if o == nil || o.ID == "" || o.ID != ProjectID(o.Identity) || !validRecord(o) {
 			continue
 		}
-		o.stamps(s.clock.observe)
+		o.stamps(s.clock.Observe)
 		r := s.projects[o.ID]
 		if r == nil {
 			if len(s.projects) >= maxRecords {
@@ -68,7 +68,7 @@ func (s *Store) Merge(st *State, from string) bool {
 		if o == nil || !groupID.MatchString(o.ID) {
 			continue
 		}
-		o.stamps(s.clock.observe)
+		o.stamps(s.clock.Observe)
 		g := s.groups[o.ID]
 		if g == nil {
 			if len(s.groups) >= maxGroups {

@@ -178,7 +178,7 @@ func (f *Fleet) move(ctx context.Context, p wire.MoveParams, fromShort, local st
 	}
 	// 4. The source's agent is closed (moved), unless it forks.
 	if !p.Fork {
-		if err := f.closeMoved(ctx, src, local, moved.ID); err != nil {
+		if err := f.closeMoved(ctx, src, local, moved.ID, f.refOn(dst, moved.ID)); err != nil {
 			f.opt.Logf("remote: %s/%s moved to %s, but the source could not close it: %v", fromShort, local, p.To, err)
 		}
 	}
@@ -265,7 +265,16 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 			return wire.Agent{}, wireError(err)
 		}
 	}
-	if err := markMove(bundle, handoff.MoveInfo{From: src.short, To: dst.short, Fork: p.Fork, Note: true}); err != nil {
+	// A host's agent's parent travels in this Mac's naming.
+	var parent func(string) string
+	if src.m != nil {
+		parent = func(id string) string {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return src.m.hostParent(id)
+		}
+	}
+	if err := markMove(bundle, handoff.MoveInfo{From: src.short, To: dst.short, Fork: p.Fork, Note: true}, parent); err != nil {
 		return wire.Agent{}, err
 	}
 	// 3. The target imports it.
@@ -365,8 +374,8 @@ func (f *Fleet) importUpload(ctx context.Context, dst side, upload string) (json
 }
 
 // markMove adds the move's part to a packed bundle's manifest (older
-// targets ignore it).
-func markMove(bundle string, info handoff.MoveInfo) error {
+// targets ignore it); parent, when set, renames the agent's parent.
+func markMove(bundle string, info handoff.MoveInfo, parent func(string) string) error {
 	path := filepath.Join(bundle, handoff.ManifestFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -377,6 +386,18 @@ func markMove(bundle string, info handoff.MoveInfo) error {
 		return wire.Errorf(wire.CodeRemote, "the bundle's manifest does not read: %v", err)
 	}
 	fields["move"], _ = json.Marshal(info)
+	if parent != nil && len(fields["agent"]) > 0 {
+		var agent map[string]json.RawMessage
+		if err := json.Unmarshal(fields["agent"], &agent); err != nil {
+			return wire.Errorf(wire.CodeRemote, "the bundle's manifest does not read: %v", err)
+		}
+		var was string
+		json.Unmarshal(agent["parent"], &was)
+		if now := parent(was); now != was {
+			agent["parent"], _ = json.Marshal(now)
+			fields["agent"], _ = json.Marshal(agent)
+		}
+	}
 	out, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
 		return err
@@ -397,19 +418,47 @@ func (f *Fleet) get(ctx context.Context, s side, local string) (wire.Agent, erro
 	return a, nil
 }
 
-// closeMoved closes the source's agent with reason "moved" (a host
-// without it: a plain close).
-func (f *Fleet) closeMoved(ctx context.Context, s side, local, to string) error {
+// closeMoved closes the source's agent with reason "moved", the agent it
+// became (to) and that agent's loops ref (toRef: the source may not
+// resolve to, as both Macs may be called "L"). A host without toRef: the
+// close without it; a host without "moved": a plain close.
+func (f *Fleet) closeMoved(ctx context.Context, s side, local, to, toRef string) error {
 	if s.m == nil {
-		_, err := f.opt.Local.CloseAs(f.localShort()+"/"+local, wire.ReasonMoved, to)
+		_, err := f.opt.Local.CloseAs(f.localShort()+"/"+local, wire.ReasonMoved, to, toRef)
 		return err
 	}
-	_, err := f.request(ctx, s.c, s.m, "agents.close", map[string]any{"id": local, "reason": wire.ReasonMoved, "to": to})
+	params := map[string]any{"id": local, "reason": wire.ReasonMoved, "to": to}
+	if toRef != "" {
+		params["toRef"] = toRef
+	}
+	_, err := f.request(ctx, s.c, s.m, "agents.close", params)
 	var we *wire.Error
+	if errors.As(err, &we) && we.Code == wire.CodeInvalid && toRef != "" {
+		delete(params, "toRef")
+		_, err = f.request(ctx, s.c, s.m, "agents.close", params)
+	}
 	if errors.As(err, &we) && we.Code == wire.CodeInvalid {
 		_, err = f.request(ctx, s.c, s.m, "agents.close", map[string]any{"id": local})
 	}
 	return err
+}
+
+// refOn is the loops ref of agent id (as this Mac names it) on side s
+// ("" unknown: no loops store, a host that named no node).
+func (f *Fleet) refOn(s side, id string) string {
+	if f.opt.Loops == nil {
+		return ""
+	}
+	node := f.opt.Loops.Node()
+	if s.m != nil {
+		f.mu.Lock()
+		node = s.m.node
+		f.mu.Unlock()
+	}
+	if node == "" {
+		return ""
+	}
+	return node + "/" + localID(id)
 }
 
 func (f *Fleet) plan(ctx context.Context, s side, local string) (handoff.Plan, error) {

@@ -16,12 +16,26 @@ final class AppControl {
     init(manager: WindowManager) {
         self.manager = manager
         manager.primary.client.onAppRequest = { [weak self] method, params in
-            await MainActor.run {
+            await self?.settle(method, params)
+            return await MainActor.run {
                 guard let self else { return .failure(AppControlError("unavailable", "Hesper.app is quitting").rpc) }
                 return self.handle(method, params)
             }
         }
     }
+
+    /// The loops a loop's `app.open` names may not be listed yet (hesperctl
+    /// just launched the app): wait for the first list, a bounded while
+    /// inside the bridge's 10 s, so `selected` says whether the loop is open.
+    private func settle(_ method: String, _ params: JSONValue) async {
+        guard AppControlMethod(rawValue: method) == .open, let r = try? AppOpenRequest.parse(params),
+              case .loops(let loop?) = r.target, !loop.isEmpty else { return }
+        let hub = manager.activeWall.model.loopHub
+        guard !hub.loaded else { return }
+        _ = await AppModel.waitUntil(Self.loopsWait) { hub.loaded }
+    }
+
+    static let loopsWait: Double = 6
 
     func handle(_ method: String, _ params: JSONValue) -> Result<JSONValue, RPCError> {
         do {
@@ -233,6 +247,42 @@ final class AppControl {
             if let query { m.paletteList.query = query; m.paletteList.index = 0 } // as typed into it
             if !m.showPalette { m.togglePalette() } // ⌘K
             return ["wall": .string(w.id), "query": query.map { .string($0) } ?? .null]
+
+        case .loops(let loop):
+            let w = manager.activeWall
+            let hub = w.model.loopHub
+            guard hub.available else { throw AppControlError("unavailable", "Loops need a newer hesperd on this Mac") }
+            let selected = loop.map { hub.loop($0)?.isActive == true } ?? false
+            manager.bringForward(w.window)
+            w.model.openLoopsSheet(loop.map { selected || !hub.loaded ? .loop($0) : .loops(select: nil) } ?? .loops(select: nil)) // ⌘L
+            if let loop, !selected, !hub.loaded {
+                // Still no list (settle waited): the board opens on it once one comes.
+                throw AppControlError("unavailable", "Hesper.app is still loading the loops; the board shows \(loop) once they arrive")
+            }
+            return ["wall": .string(w.id), "selected": .bool(selected)]
+
+        case .wrapUp:
+            let w = manager.activeWall
+            let hub = w.model.loopHub
+            guard hub.available else { throw AppControlError("unavailable", "The wrap-up needs a newer hesperd on this Mac") }
+            manager.bringForward(w.window)
+            w.model.openLoopsSheet(.wrapUp) // ⇧⌘E
+            let n = WrapUp(loops: hub.store.loops.values).entries.count
+            return ["wall": .string(w.id), "loops": .number(Double(n))]
+
+        case .product(let ref):
+            let w = manager.activeWall
+            let m = w.model
+            guard m.loopHub.available else { throw AppControlError("unavailable", "Products need a newer hesperd on this Mac") }
+            var scope = ref.flatMap { r in m.catalog.groups[r] != nil || m.catalog.project(r) != nil ? r : nil }
+            if let r = ref, scope == nil {
+                scope = m.catalog.groups.values.first { $0.name == r }?.id ?? m.catalog.projects.values.first { $0.name == r }?.id
+                guard scope != nil else { throw AppControlError.notFound("no project or group \(r)") }
+            }
+            manager.bringForward(w.window)
+            m.openLoopsSheet(.product(scope: scope ?? m.productScope)) // ⇧⌘L
+            let shown = LoopsSheetHost.panel(for: m)?.product?.scope
+            return ["wall": .string(w.id), "scope": shown.map { .string($0) } ?? .null]
         }
     }
 

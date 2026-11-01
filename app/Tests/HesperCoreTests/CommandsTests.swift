@@ -32,6 +32,7 @@ import Testing
         for m in [WallMove.left, .right, .up, .down] { e[.activate(m)] = "move and type: a click on the tile does the same" }
         e[.activateTile] = "the tile's primary button carries ⏎"
         for id in [CommandID.startDraft, .startDraftAndNew, .toggleWorktree, .leaveDraft] { e[id] = "the composer's Start button and chips carry the keys" }
+        for id in [CommandID.composerAddToLoop, .composerDraftInLoop] { e[id] = "the start strip's buttons carry the keys" }
         for id in [CommandID.moveUp, .moveDown, .closeOverlay, .overlayActivate, .overlayAlternate, .overlayActOn, .overlayBack, .overlayDeleteBackward] {
             e[id] = "overlay family: the footer hints and rows carry the keys"
         }
@@ -44,6 +45,12 @@ import Testing
         for id in [CommandID.reviewAccept, .reviewSendBack, .reviewProvenance, .reviewToggleFold, .reviewNextHunk, .reviewPreviousHunk,
                    .reviewNextFile, .reviewPreviousFile, .reviewSeen, .reviewReject, .reviewNote, .reviewBulkAccept] {
             e[id] = "Review's toolbar and hunk bars carry the keys"
+        }
+        for id in [CommandID.loopsOpen, .loopsDone, .loopsPark, .loopsDrop, .loopsMerge, .loopsNextAgent, .loopsStartDraft, .loopsMap,
+                   .loopsCheck, .loopsAddStep, .loopsTrigger, .loopsPreviousColumn, .loopsNextColumn, .loopsSwitchScope,
+                   .wrapUpAccept, .wrapUpNextStep, .wrapUpUndo, .wrapUpApply,
+                   .productFile, .productPlan, .productSavePlan, .productDropProposal, .productNextScope] {
+            e[id] = "the loops sheets' toolbars, cards and footers carry the keys"
         }
         return e
     }()
@@ -198,6 +205,8 @@ import Testing
             #expect(SearchKeys.history(k, characters: typed, focus: .list) == (SearchKeys.action(for: id) ?? .history(.pass)), where_)
         case .review:
             #expect(ReviewKeys.route(k) == (ReviewKeys.action(for: id) ?? .pass), where_)
+        case .loops, .wrapUp, .product:
+            #expect(LoopsKeys.route(k, in: s) == (LoopsKeys.action(for: id, in: s) ?? .pass), where_)
         case .settings, .everywhere:
             break // no router: the menu's key equivalents
         }

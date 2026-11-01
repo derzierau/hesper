@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -99,7 +100,11 @@ func (r *Registry) restore(rec record) {
 	if projectID != "" {
 		a.ProjectID = projectID
 	}
-	// The machine's short name may have changed since.
+	// The machine's short name may have changed since: its parent on
+	// this Mac (named with the old name) too; one on another Mac is kept.
+	if old, local, ok := strings.Cut(a.Parent, "/"); ok && old == rec.Machine && old != r.machine {
+		a.Parent = r.id(local)
+	}
 	a.ID, a.Machine = r.id(rec.Local), r.machine
 	r.agents[a.local] = a
 	if !rec.Running && !rec.Respawn {
@@ -116,6 +121,7 @@ func (r *Registry) restore(rec record) {
 	profile, err := r.profileOf(a)
 	fresh := false
 	if err == nil {
+		a.before, a.beforeSince = a.State, a.StateSince
 		fresh, err = r.comeBack(a, profile)
 	}
 	if err != nil {

@@ -96,6 +96,8 @@ type daemon struct {
 	groups   map[string]*Group
 	// sessions.go (shared history)
 	sess *sessionStore
+	// loops.go
+	loops *loopState
 }
 
 func runServe(args []string) error {
@@ -113,6 +115,7 @@ func runServe(args []string) error {
 	nSessions := fs.Int("sessions", 40, "seed this many history sessions (sessions.*)")
 	noSessions := fs.Bool("no-sessions", false, "answer sessions.* with -32601 (an older hesperd)")
 	indexingMs := fs.Int("indexing-ms", 0, "imitate the first index for this long (sessions.indexing)")
+	loopsSeed := fs.String("loops", "", "seed loops, goals, milestones and the Steward: demo (best with --projects demo)")
 	_ = fs.Parse(args)
 	var seedSizes [][2]int
 	for _, s := range strings.Split(*sizes, ",") {
@@ -138,12 +141,15 @@ func runServe(args []string) error {
 	defer os.Remove(path)
 
 	d := &daemon{agents: map[string]*agentProc{}, subs: map[chan []byte]bool{}, self: "L", tuiMode: *mode, fps: *fps, tuiCols: *cols, tuiRows: *rows, sock: path,
-		projects: map[string]*Project{}, groups: map[string]*Group{}}
+		projects: map[string]*Project{}, groups: map[string]*Group{}, loops: newLoopState()}
 	d.loadDrafts()
 	d.sess = &sessionStore{byID: map[string]*Session{}, disabled: *noSessions}
 	demoProjects := *projectsSeed == "demo"
 	if demoProjects {
 		d.seedDemoProjects()
+	}
+	if *loopsSeed == "demo" {
+		d.seedDemoLoops()
 	}
 	names := []string{"push-provider-fcm", "relay latency", "edition picker", "draft PR copy", "flaky badges test", "ios widgets", "auth renewal", "vt screen copy"}
 	for i := 0; i < *n; i++ {
@@ -573,7 +579,7 @@ func (d *daemon) control(c net.Conn, br *bufio.Reader, first []byte) {
 			if req.Method == "agents.subscribe" && rerr == nil && sub == nil {
 				sub = make(chan []byte, 4096)
 				d.mu.Lock()
-				snapshot := d.projectSnapshot()
+				snapshot := append(d.projectSnapshot(), d.loopsSnapshot()...)
 				for _, id := range d.order {
 					b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "agents.changed", "params": map[string]any{"agent": d.agents[id].a}})
 					snapshot = append(snapshot, b)
@@ -849,6 +855,10 @@ func (d *daemon) call(req rpcRequest) (any, *rpcError) {
 		return map[string]any{}, nil
 	case "projects.list", "groups.list", "projects.update", "projects.promote", "projects.remove", "groups.save", "groups.remove":
 		return d.projectCall(req.Method, req.Params)
+	case "loops.list", "loops.get", "loops.save", "loops.link", "loops.item", "loops.merge", "loops.split", "loops.settings.get", "loops.settings.set",
+		"goals.list", "goals.save", "goals.remove", "goals.item", "goals.file", "goals.accept",
+		"steward.status", "steward.set", "steward.inbox", "steward.plan":
+		return d.loopsCall(req.Method, req.Params)
 	// ---- test-only, outside the contract ----
 	case "fake.setState":
 		var att *Attention

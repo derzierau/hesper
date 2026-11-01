@@ -59,7 +59,9 @@ public struct AppEnvironment: Equatable, Sendable {
                                         // desks
                                         "fake-screens", "desks-test-out", "desks-shots", "desks-phase",
                                         // shared history
-                                        "history-test-out", "history-shots", "history-phase", "history-perf-out", "perf-history"]
+                                        "history-test-out", "history-shots", "history-phase", "history-perf-out", "perf-history",
+                                        // loops
+                                        "loops-test-out", "loops-shots"]
 
     /// The command a surface runs to show an agent (contract: `hesperd attach`).
     /// `view`: a read-only window onto the agent's last rows that fit the

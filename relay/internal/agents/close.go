@@ -31,13 +31,15 @@ var closeSettle = 200 * time.Millisecond
 // get agents.removed with reason "closed". The result names the session
 // to resume it with.
 func (r *Registry) CloseAgent(id string) (wire.CloseResult, error) {
-	return r.CloseAs(id, wire.ReasonClosed, "")
+	return r.CloseAs(id, wire.ReasonClosed, "", "")
 }
 
 // CloseAs is CloseAgent with the removal's reason: "closed", or "moved"
-// (move work) with the agent it became (to). The folder is checkpointed
-// before the agent ends (checkpoint.go).
-func (r *Registry) CloseAs(id, reason, to string) (wire.CloseResult, error) {
+// (move work) with the agent it became (to, as the controller names it)
+// and that agent's loops ref (toRef, "" not sent: the loops store
+// resolves to). The folder is checkpointed before the agent ends
+// (checkpoint.go).
+func (r *Registry) CloseAs(id, reason, to, toRef string) (wire.CloseResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	a, err := r.find(id)
@@ -50,12 +52,12 @@ func (r *Registry) CloseAs(id, reason, to string) (wire.CloseResult, error) {
 		return res, nil // being closed already
 	}
 	if a.term == nil || a.Exit != nil {
-		a.closeTo = to
+		a.closeTo, a.closeToRef = to, toRef
 		r.removeLocked(a, reason)
 		go r.closeCheckpoint(a.Agent)
 		return res, nil
 	}
-	a.closeReason, a.closeTo, a.respawn = reason, to, false
+	a.closeReason, a.closeTo, a.closeToRef, a.respawn = reason, to, toRef, false
 	interrupted := false
 	switch a.State {
 	case wire.StateWorking, wire.StateApproval, wire.StateQuestion:
@@ -150,6 +152,15 @@ func (r *Registry) SetBackground(id string, background bool) error {
 	return nil
 }
 
+// turnBegins: a state change that starts a turn (into working, an
+// approval or a question from anything else).
+func turnBegins(from, to string) bool {
+	busy := func(s string) bool {
+		return s == wire.StateWorking || s == wire.StateApproval || s == wire.StateQuestion
+	}
+	return busy(to) && !busy(from)
+}
+
 // turnEnded: a state change that finishes an agent's work (a turn ended:
 // from working, an approval or a question to done or idle). A start that
 // comes up idle (a resume, a respawn) is not one.
@@ -163,9 +174,10 @@ func turnEnded(from, to string) bool {
 
 // finishedInBackground closes a background agent that finished (the lock
 // is held): its process ends (graceful is moot), then it leaves with
-// reason "finished-in-background".
+// reason "finished-in-background". A service agent (loopwork.go) stays:
+// it lives in the background between its turns.
 func (r *Registry) finishedInBackground(a *agent) {
-	if a.closeReason != "" || a.Ended != "" || r.agents[a.local] != a || a.term == nil || a.Exit != nil {
+	if a.closeReason != "" || a.Ended != "" || r.agents[a.local] != a || a.term == nil || a.Exit != nil || a.Service != "" {
 		return // an ended one: exited closes it
 	}
 	a.closeReason = wire.ReasonFinishedInBackground
@@ -188,6 +200,8 @@ func (r *Registry) removeLocked(a *agent, reason string) {
 	for s := range r.subs {
 		s.pushRemovedTo(a.ID, reason, to)
 	}
+	r.closedWork(a, reason, to) // loopwork.go: the closed-work record
+	r.dropReports(a)            // loopwork.go
 	r.scheduleSave()
 	r.reviews().forget(a.local) // reviewlog.go
 }

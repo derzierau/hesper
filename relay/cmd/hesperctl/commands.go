@@ -25,9 +25,9 @@ import (
 // run dispatches on it; the overview, `help CMD` and `reference` are
 // generated from it, flags included (help runs the command with -h).
 //
-// Subcommands are commands whose name has two words ("history search"):
-// `hesperctl history search …` runs it; `hesperctl history` and `help
-// history` list the parent's subcommands.
+// Subcommands are commands whose name has two words ("history search"),
+// or three ("loops item add"): `hesperctl history search …` runs it;
+// `hesperctl history` and `help history` list the parent's subcommands.
 
 // Command is one hesperctl command.
 type Command struct {
@@ -60,13 +60,14 @@ type Command struct {
 const (
 	groupAgents   = "Agents"
 	groupProjects = "Projects"
+	groupLoops    = "Loops and goals"
 	groupHistory  = "History"
 	groupReview   = "Review"
 	groupRelay    = "Relay and devices"
 	groupHelp     = "Help"
 )
 
-var groupOrder = []string{groupAgents, groupReview, groupProjects, groupHistory, groupRelay}
+var groupOrder = []string{groupAgents, groupReview, groupLoops, groupProjects, groupHistory, groupRelay}
 
 var commands []*Command
 
@@ -80,9 +81,14 @@ func register(c Command) {
 	commands = append(commands, &c)
 }
 
-// lookup finds the command args start with, a subcommand ("history
-// search") before a command; n is how many args name it.
+// lookup finds the command args start with, the longest name first
+// ("loops item add", "history search", "ls"); n is how many args name it.
 func lookup(args []string) (c *Command, n int) {
+	if len(args) >= 3 && !strings.HasPrefix(args[1], "-") && !strings.HasPrefix(args[2], "-") {
+		if c := findCommand(args[0] + " " + args[1] + " " + args[2]); c != nil {
+			return c, 3
+		}
+	}
 	if len(args) >= 2 && !strings.HasPrefix(args[1], "-") {
 		if c := findCommand(args[0] + " " + args[1]); c != nil {
 			return c, 2
@@ -127,8 +133,25 @@ func printSubcommands(w io.Writer, parent string, subs []*Command, asJSON bool) 
 	return nil
 }
 
+// parentOf is the parent args name when they name no command ("loops
+// item", "history"), with its subcommands; "" when there is none.
+func parentOf(args []string) (string, []*Command) {
+	if len(args) >= 2 && !strings.HasPrefix(args[1], "-") && (len(args) == 2 || strings.HasPrefix(args[2], "-")) {
+		if subs := subcommands(args[0] + " " + args[1]); len(subs) > 0 {
+			return args[0] + " " + args[1], subs
+		}
+	}
+	if subs := subcommands(args[0]); len(subs) > 0 && (len(args) == 1 || strings.HasPrefix(args[1], "-")) {
+		return args[0], subs
+	}
+	return "", nil
+}
+
 // unknownCommand is the usage error for args that name no command.
 func unknownCommand(args []string) error {
+	if len(args) >= 3 && len(subcommands(args[0]+" "+args[1])) > 0 {
+		return usagef("unknown command %q (hesperctl help %s lists them)", strings.Join(args[:3], " "), args[0]+" "+args[1])
+	}
 	if len(args) >= 2 && len(subcommands(args[0])) > 0 {
 		return usagef("unknown command %q (hesperctl help %s lists them)", args[0]+" "+args[1], args[0])
 	}
@@ -251,8 +274,8 @@ func run(ctx context.Context, args []string) error {
 	}
 	c, n := lookup(args)
 	if c == nil {
-		if subs := subcommands(args[0]); len(subs) > 0 && (len(args) == 1 || strings.HasPrefix(args[1], "-")) {
-			return printSubcommands(os.Stdout, args[0], subs, wantsJSON(args[1:]))
+		if parent, subs := parentOf(args); parent != "" {
+			return printSubcommands(os.Stdout, parent, subs, wantsJSON(args[1:]))
 		}
 		return unknownCommand(args)
 	}
@@ -421,8 +444,8 @@ func helpCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	}
 	c, n := lookup(positional)
 	if c == nil {
-		if subs := subcommands(positional[0]); len(subs) > 0 && len(positional) == 1 {
-			return printSubcommands(os.Stdout, positional[0], subs, *asJSON)
+		if parent, subs := parentOf(positional); parent != "" && len(strings.Fields(parent)) == len(positional) {
+			return printSubcommands(os.Stdout, parent, subs, *asJSON)
 		}
 		return unknownCommand(positional)
 	}

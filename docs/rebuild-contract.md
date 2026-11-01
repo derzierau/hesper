@@ -370,7 +370,8 @@ the registry; the parents are aliases: `open ID` = `open agent ID`,
 [--scope S] [--new]`, `open new [--project P] [--task T | TASK…] [--kind
 K] [--profile P] [--machine M] [--worktree] [--branch B] [--wall W]`,
 `open history [QUERY…]`, `open inbox`, `open review [--agent ID]`, `open
-palette [--query TEXT]`; `wall [show] [--wall W]` (a table
+palette [--query TEXT]`, `open loops [--loop ID]`, `open wrapup`, `open
+product [SCOPE]`; `wall [show] [--wall W]` (a table
 and the bands; `--json`: the whole `app.state`), `wall set [--wall W]
 [--arrangement A] [--grouping G] [--density D] [--collapse BAND]…
 [--expand BAND]… [--band-order B,…] [--scope S] [--sidebar on|off]
@@ -777,7 +778,11 @@ every agent and keeps them `running`; on start those are respawned in the
 same cwd as `starting`: with resume when their session exists (rule
 above), else fresh — with their task only when they never got past
 `starting`, else without it and with the "could not be resumed" note
-(shells always fresh). A daemon stop never makes an agent `exited`: its
+(shells always fresh). A respawned agent back in the state it was saved
+with keeps that state's `stateSince` (an idle shell stays idle since
+when it was idle); done and idle count as one quiet state here, so a
+done Claude resumed with `--resume` comes back idle since it was done.
+The first other state after `starting` starts a new time. A daemon stop never makes an agent `exited`: its
 process's end while the daemon stops (Claude ends with status 0 on the
 hangup) keeps it `running` in the file. **A respawn or resume that fails is
 `error` "Not resumed" with the reason** (a profile that is gone, the
@@ -1110,7 +1115,10 @@ in tiles, scrolling back).
   `updated` set); `drafts.remove {id}` → `{}` (`not_found`). `Draft`:
   `{id: "d-…" (1–40 of [a-z0-9-]), text, machine?, machineExplicit?: bool, project?, profile?,
   worktree?: bool, branch?, attachments?: [path], after?: tile id ("^":
-  the front), parked?: bool, created, updated}` (`pkg/wire/drafts.go`).
+  the front), parked?: bool, savedBy?: agent id, created, updated}`
+  (`pkg/wire/drafts.go`; `savedBy` is set by hesperd: the agent that
+  saved it, none for a person's save, which makes the draft the
+  person's; an agent replaces and removes only its own drafts).
   Kept by the local daemon in `$HESPER_STATE_DIR/drafts.json` (0600,
   atomic; a broken file moves to `drafts.json.broken`), ≤ 200 drafts, text
   ≤ 256 KiB; the daemon never reads the text. `machine` is where the agent
@@ -2821,7 +2829,9 @@ package). Candidates: every project with a path on this Mac containing
 the folder (in the main checkout's coordinates, or literally), plus the
 repository and package found by identity (a second clone of the same
 repository on one Mac joins it too; the first clone keeps the recorded
-path while it exists). No candidate: `scratch:<folder>`.
+path while it exists). Of two with the same folder, the one with a
+remote identity wins (never a `duplicateOf` project), then the lowest
+id. No candidate: `scratch:<folder>`.
 **Auto-registration:** the folder's repository, and the detected package
 the folder is in, become projects on first sight, except repositories at
 the home folder or above (a dotfiles repository in `~` would swallow
@@ -2873,7 +2883,13 @@ manifest; never node_modules or dot folders; ≤ 2000 per repository.
   name this Mac gives it (as in agent ids: machines.json, …), else the
   name it gives itself, else its node id. `detectedPackages` only for
   repositories with a folder on this Mac whose manifests declare packages
-  (paths relative to the repository).
+  (paths relative to the repository). `duplicateOf?` (computed when the
+  views are built, never stored): set on a repository or folder with a
+  generated (local) identity that has the same folder on a machine as a
+  project with a remote identity, naming that project (the lowest id
+  when there are more). It happens when a repository was a project
+  before it had a remote: both list, and `duplicateOf` lets a client
+  offer to remove the one with the local identity.
 - `projects.list`: every project, most recently used first (then name),
   then the scratch projects of the agents there are (local and remote; one
   per `scratch:<folder>`, `paths` = the machines of those agents,
@@ -3657,6 +3673,15 @@ for an agent a person started), `depth` (0 for a person's agent, parent's
 survive daemon restarts and respawns), carried by moves (handoff
 manifest `agent.parent/depth/letParentAnswer`; after `agents.move` the
 controller re-points its local children at the moved agent's new id).
+`parent` is in the naming of the Mac that lists it. A host stores the
+parents its own agents start with its name for itself (often `L`); the
+controller renames such a parent like the host's agents (`L/x` →
+`L2/x`) when its prefix is the host's name for itself and `x` is one of
+the host's agents. A parent the controller sent is in the controller's
+naming already and is kept (both Macs may be called `L`). The same
+holds for the manifest of a move from a host, and for a rename of the
+host. A Mac renamed between daemon starts re-prefixes a stored parent
+only when it was named with the Mac's old name.
 `agents.spawn` gains `letParentAnswer` (ignored without a parent) and
 `caller`. Every `agents.*` call may carry `caller` (the calling agent's
 id; `wire.Client.Caller` adds it, hesperctl sets it from
@@ -3695,6 +3720,8 @@ launchd) and unset `HESPER_AGENT_ID`, and is then a person.
 | `agents.answer`; `agents.input` to an agent in `approval` or `question` | the target is the caller's **own child** (not a grandchild, not itself) started with `letParentAnswer` |
 | `agents.rename` | the target is the caller **itself** or a strict descendant (a person's name stays, below) |
 | `agents.input` (otherwise), `stop`, `resume`, `remove`, `move`, `close`, `kill`, `background`; rw attach (verified callers only) | the target is a strict **descendant** of the caller (never itself, never its parent or another agent's) |
+| `forwards.add`, `forwards.remove`, `sessions.delete`, `sessions.archive` | never (a person's: `hesperctl forwards`, `history delete`, `history archive`) |
+| `drafts.save`, `drafts.remove` | a new draft, or one the caller saved (`Draft.savedBy`); the Steward saves none at level watch |
 
 **Tile names.** An agent names its own tile: `hesperctl rename self
 NAME` (`self` is `HESPER_AGENT_ID`, any command's ID may be `self`).
@@ -4956,6 +4983,823 @@ Code: `pkg/agentlink/pipe.go` (`Pipe`, the `W` window),
   port lists, a forwarded echo).
 - **Not done:** reverse forwards (a port of the server reaching this Mac),
   UDP, half-close, a Hesper.app view.
+
+### As built — loops (app core)
+
+Plan: loops, goals, milestones and the Steward (wire:
+`relay/pkg/wire/loops.go`). Code: `HesperCore/Loops.swift` (wire types,
+store, calls) and the pure view models below; the sheets and inbox
+sections that draw them live in the `Hesper` target. hesperd computes
+who acts next (`Loop.next`); the app only sorts, filters and lays out.
+
+- **Wire types** (`Loop`, `LoopItem`, `LoopLink`, `LoopCounts`, `Goal`,
+  `Milestone`, `GoalsList`, `StewardStatus`, `StewardEvent`,
+  `LoopSettings`) decode leniently like `Projects.swift`: unknown fields
+  are ignored, missing ones defaulted, Go's zero time and empty strings
+  are nil, a bad entry in a list is skipped. Unknown enum values take
+  their safest case: status open, next others (never "needs you" by
+  accident), owner agent, item state open, kind step, relation member,
+  Steward level watch (a missing level is the default, suggest); an
+  unknown ending is nil and an unknown link kind keeps its raw value.
+  Items arrive sorted by `order`; an item with no `after` is ready.
+  Settings of 0 or a time that is not "HH:MM" are hesperd's defaults
+  (limit 5, stall 7 days, evening 18:00, 40 wakes).
+- **Agent** gains `parent`, `loop`, `service` (`isService`),
+  `reportToParent` and `ending`.
+- **Calls** (`DaemonClient`): `loopsList` (an array or `{loops}`),
+  `loopGet`, `loopSave(LoopPatch)`, `loopLink`, `loopItem(ItemPatch)`,
+  `loopMerge`, `loopSplit`, `loopSettings`/`setLoopSettings`,
+  `goalsList`, `goalSave(GoalPatch)`, `milestoneSave(MilestonePatch)`,
+  `goalRemove`, `milestoneItem`, `goalFile`, `goalsAccept`,
+  `stewardStatus`, `stewardSet(StewardPatch)`, `stewardInbox`,
+  `stewardPlan`. Patches send only the fields given. An older hesperd
+  answers -32601: `LoopsRPC.missing`.
+- **Notifications.** `DaemonClient.onLoopsNotification` gets every
+  `loops.*`, `goals.*` and `steward.*` notification on the reader
+  thread; `LoopsEvent.decode` turns one into `loopChanged`,
+  `loopRemoved`, `goalChanged`, `milestoneChanged` (goals.changed with a
+  milestone), `goalRemoved` (a goal's or a milestone's id) or
+  `stewardChanged`. `LoopStore` applies them and counts a `version` on
+  every change; derived models rebuild only when it moved.
+
+- **Board** (`LoopBoard.swift`). Columns You, Agents, Others, Parked
+  from `next` (a parked status always goes to Parked); closed and merged
+  loops are hidden. You: oldest waiting first (its oldest open item of
+  the person's, else its last change), looks-done loops last; Agents and
+  Others: most recent change first; Parked: soonest back first. Filters
+  (project with its packages, group, machine, milestone; "" milestone:
+  unfiled only) narrow the columns, never the totals: `yourMove` (You
+  without looks done), `looksDone`, `pill` ("3 your move") and
+  `limitHint` (over `loopLimit`) count every active loop. Selection is
+  kept across rebuilds while the loop is shown, else the first loop;
+  ↑↓ move in a column, ←→ to the nearest non-empty column at the same
+  row.
+- **Map** (`LoopMap.swift`). One loop or every active loop. Lanes per
+  machine (this Mac first, then by name, "Other loops" last), regions per
+  project inside a lane (by name, "No project" last). Nodes: the loop's
+  agent links, live agents in the loop it does not link yet (service
+  agents never), file links, the person's open items (not offers) and
+  missing parents. Edges: `started`, `continued`, `handoff` (an agent to
+  a file, a file to the agent that took it, or an agent's handoff
+  link), `youStep` (an item's source to the item), `blocks` (between the
+  loops' first agents, or to an "Other loops" node for a loop not
+  drawn) and `brokenParent` (a parent ref nobody here knows, the
+  cross-Mac dangling link). Columns are the longest path from a root
+  (blocks don't count, cycles are cut); every node has its own
+  (lane, region, column, row) slot, so nothing overlaps; children sort
+  near their parent's row. Output is plain `MapRect`/`MapPoint`
+  geometry from `LoopMapMetrics` (the spacing scale). `LoopMapCache`
+  rebuilds only when scope, metrics or the input version change.
+- **Wrap-up** (`WrapUp.swift`). Today's loops: active and changed since
+  local midnight, or on the person. Order: You, looks done, Agents,
+  Others, Parked, then most recent. One suggestion each, first match:
+  drop (debris: every live agent in error or exited and every gone one
+  left no ending, summary or result; nothing open; no file, URL or loop
+  linked; hesperd marks such a loop looks done too), done (looks done),
+  next step (the first open item of the person's), park (no change in 3
+  days), else keep. Tallies: started
+  today, finished today (done since midnight), on you, parked. `accept`,
+  `decide`, `undo`, `progress` and `patches` (done/dropped/parked until
+  tomorrow 09:00). `isDue` after `LoopSettings.eveningAt`.
+- **Start check** (`StartCheck.swift`). `LoopTokens.of`: case-, accent-
+  and width-folded words, split at non-alphanumerics, English and German
+  stop words and one-letter words dropped, a plural "s" cut from words
+  over four letters. `StartCheckIndex` (built per store version) holds
+  each open loop's tokens (title, goal, open item texts) and its loose
+  ends, steps and promises. A loop matches when at least 40 % of the
+  task's words are in it and two words are shared or it is in the
+  task's project (a package counts for its repository), or when 60 % of
+  one loose end's words (at least two; a one-word loose end only in the
+  task's project) are in the task. Best: same
+  project, then score, then a loose end, then the task's machine, then
+  the most recent. `onYou` (looks done left out) and `atLimit`
+  (≥ `loopLimit`) drive the red strip; a hint only.
+- **Inbox** (`YourMove.swift`). Sections: the queue exactly as
+  `AttentionQueue.ordered`, then "Your move": one entry per active,
+  unparked loop, newest first; an ask from a quiet agent beats a step it
+  named, which beats the person's first open item; an ask or step that
+  already became an item (its `source`) shows as the item; agents in
+  the queue are not repeated. Offers never appear (`YourMove.offers`
+  lists them for the loop's detail). Intents: Yes / No (`answer`, live
+  agents only), Did it (`checkOff` an item, or "Done." to the live agent
+  that named the step), Copy command (the first `code span` or `$ `
+  line), Later (park until tomorrow), Open.
+- **Product page** (`Products.swift`). Products are scopes with a goal
+  or milestone that is not dropped (`ProductPage.scopes`, groups first).
+  A page: open goals in order, accepted milestones in order (done
+  last), each with progress and a standing: done; on you (a filed loop
+  on the person, or an open condition of theirs); waiting on another
+  open milestone (all its active loops are blocked by that milestone's
+  loops, or a condition checks such a loop); stalled (hesperd's flag);
+  on track. Unfiled: active loops of the scope's projects filed under no
+  milestone. Proposed milestones in order for the planning view, with
+  `acceptAll`, `accept(id)` (goals.accept) and `drop(id)` (goals.remove).
+- **Settings › Steward** (`StewardSettings.swift`): the switch (on pins
+  it to this Mac when none is set), the three levels with their texts,
+  the machine choices (this Mac first, offline ones kept), a summary
+  line ("Runs on this Mac · 12 wakes today · 2 waiting", "· stopped",
+  "· 3 events dropped" from `StewardStatus.stopped` / `dropped`), the
+  stopped note ("Stopped: <why>. Turn it off and on again to retry.",
+  shown in the error tone under the switch) and the `steward.set`
+  patches (nil when nothing changes).
+
+- **Fake hesperd** (`app/Tools/fake-hesperd/loops.go`, TEST-ONLY): every
+  `loops.*`, `goals.*` and `steward.*` method on an in-memory store,
+  results shaped like the wire (a merge sends `loops.changed` for the
+  merged loop with `mergedInto`, as hesperd does, never
+  `loops.removed`; `loops.list` an array, `loops.get` /
+  `save` / `link` / `item` / `merge` / `split` / `goals.file` the loop,
+  `goals.save` `{goal}` or `{milestone}`, `goals.item` the milestone,
+  `goals.accept` `{accepted}`, `steward.plan` `{id}` plus two proposed
+  milestones), the notifications after each change and a snapshot after
+  `agents.subscribe` (open and parked loops, every goal and milestone,
+  the Steward). Who acts next follows the wire's rule, simplified.
+  `serve --loops demo` (with `--projects demo`) seeds invented loops in
+  every column (an ask, a named step with a command, looks done, debris,
+  stale, parked, blocked, done today), a map over L and M with a handoff
+  file and a parent nobody knows, the product "acme apps" with done,
+  open, stalled and proposed milestones, and an enabled Steward.
+
+**Status: built and unit-tested headless only** (HesperCoreTests,
+`go test` in the fake). Not run against a real hesperd with loops yet.
+
+### As built — loops (agents)
+
+Code: `internal/agents/loopwork.go` (the registry's side),
+`loophook.go` (the `Loops` and `Steward` interfaces), `loopscall.go`
+(policy), `internal/endings` (the classifier). The loops store
+(`internal/loops`) and the Steward (`internal/steward`) plug in through
+`Options.Loops` and `Options.Steward`; either may be nil.
+
+- **Service agents.** `Registry.SpawnService(p, service)` starts an agent
+  with `Agent.service` (`steward`, `planner`; persisted) set before its
+  process starts. A service agent is exempt from closing when it finishes
+  in the background (its turn ends, or its process ends on its own: it
+  stays, exited, for the Steward to restart) and from `hesperctl tidy`.
+- **Assign.** An agent is put in a loop where it is inserted, not on each
+  spawn path: `Spawn` (and `SpawnFrom`, `SpawnService`), `SpawnSession`
+  and `Import`. That covers spawns, resume, fork, continue-as, bring,
+  `Handoff.Spawn` and gateway imports. `Loops.Assign` gets the agent's ref
+  (`<loops node>/<local id>`), the agent, its parent's ref (a parent that
+  is one of this Mac's agents only, not just one named with this Mac's
+  name: two Macs may both be `L`; one on another Mac is the controller's
+  to link), the
+  source session's ref for resume, fork and continue-as (the session
+  record's key, `<sessions node>:<kind>:<session id>`), and the spawn's
+  `loop` and `milestone`, which win. A move carries the loop in the
+  manifest (`AgentInfo.loop`; an older source sends none and the agent
+  gets a new loop). Service agents are never assigned.
+- **Backfill.** When hesperd starts, every restored agent without a loop
+  (it ran before this Mac had loops: an upgrade) is assigned one,
+  parents before children, so a child joins its parent's loop. Agents
+  with a loop are left alone, so later starts assign nothing.
+- **Older hosts.** A host that has not sent a loops hint within a minute
+  of an inventory keeps no loops (an older hesperd). From then on the
+  controller assigns its agents itself (`internal/remote/loops.go`,
+  `backfillLoopsLocked`): every agent without a loop, parents first, and
+  each new one as it appears, with refs `<host node>/<local id>`. Such a
+  host names no node on its link, so it is known by a stand-in,
+  `dev-<relay device id>` (stable; real nodes start `n-`). When it names
+  its node later (an upgrade), the refs move over (`Store.RenameNode`),
+  and a host that sends a loops hint keeps its loops itself from then on.
+- **`Agent.loop`** is filled from `Loops.LoopOf(ref)` whenever this Mac's
+  agents are listed, fetched or notified; it is never kept in the
+  registry nor written to `agents.json` (the store's links are the
+  truth).
+- **Endings.** When a turn ends (from `working`, `approval` or
+  `question` to `done` or `idle`), `Agent.ending` (persisted) is set from
+  `internal/endings`: phrases over the last three paragraphs of the final
+  message (at most its last 2 KiB), English and German, in the order
+  `asks` > `yourStep` > `waits` > `offer` > `done`; `asks` also for a
+  final question to the reader. A hook's message (Claude's `Stop`,
+  Codex's `notify`) is classified in `HookResult` before the registry's
+  lock; a Codex notify that arrives after the screen showed it idle
+  classifies the turn again. A turn that ends without a hook (Codex's
+  screen, a tracked shell) uses the last message only when it came during
+  that turn, else ends `done`.
+- **Events.** Each settled turn and each removal (`removeLocked`, the
+  single exit) is queued for `Loops.AgentSettled` / `AgentClosed` and
+  `Steward.AgentSettled` / `AgentClosed`, delivered in order by one
+  goroutine the registry owns (stopped and drained by `Close`). The
+  queue holds 256 events; over that the oldest is dropped and counted
+  (logged at 1, 2, 4, … drops). Hooks and the lock never wait on the
+  store. A settled event carries the agent (with its loop), the ending
+  and the turn's final message (at most 64 KiB; empty when the turn had
+  none).
+- **Closed-work record.** `AgentClosed` carries the reason (`closed`,
+  `finished-in-background`, `removed`, `moved` with `To`, the agent it
+  became), the agent (its summary), its last ending and its final
+  message; the store keeps an excerpt.
+- **Report to parent.** `SpawnParams.reportToParent` on a spawn with a
+  parent sets `Agent.reportToParent` (persisted; ignored without a
+  parent). When such a child's turn ends, its parent is told one fixed
+  line, never free text from the child:
+  `[hesper] child <id> settled: <ending>; run hesperctl result <id>`.
+  The line is typed into the parent (hesperd's own input, no dispatch;
+  pasted, then Enter) only once the parent is `done` or `idle` and no
+  read-write attach typed into it in the last 30 s
+  (`ptyhost.Term.LastInput`); until then it waits, one per child with the
+  latest ending, at most 32 per parent (the oldest dropped), and goes out
+  at the parent's next quiet state or when the 30 s are up. One line per
+  turn: a turn that settles again (Codex: its screen showed it idle,
+  then its notify came) replaces its waiting line, and sends nothing
+  once its line went out. Several
+  waiting lines go out as one paste. Only Claude and Codex parents (a
+  shell would run the line), only on the same Mac: a parent on another
+  Mac is not told (not done in v1). Waiting reports are not persisted and
+  go with a removed parent.
+- **Policy** (`loopscall.go`; a person may do everything). The calling
+  agent is found as for the agent tree (`callerOf`); the store and the
+  Steward get `Caller{agent, ref, loop, service}` and the params without
+  `caller`. `pkg/wire` sends `caller` with `loops.*`, `goals.*`,
+  `steward.*`, `drafts.save`, `drafts.remove`, `sessions.delete` and
+  `sessions.archive`. For an agent caller:
+  - reads (`loops.list`, `loops.get`, `loops.settings.get`, `goals.list`,
+    `steward.status`): anything;
+  - a person's only: `steward.set`, `goals.accept`, `goals.remove`,
+    `loops.settings.set`, and any `loops.save` or `goals.save` that sets a
+    loop's, goal's or milestone's status to `done` or `dropped`, or a
+    goal's or milestone's to `open` (accepting a proposed milestone,
+    reopening); a milestone an agent creates without a status is
+    `proposed` (the store sets it), one a person creates `open`;
+  - `loops.merge`, `loops.split`: only the Steward (service `steward`) at
+    level act;
+  - `steward.plan`: only the Steward, at level suggest or act (a planner
+    or any other agent never);
+  - other writes (`loops.save`, `loops.link`, `loops.item`, `goals.save`,
+    `goals.item`, `goals.file`, `steward.inbox`): a service agent may; any
+    other agent only `loops.item` and `loops.link` of its own loop, and
+    agent links (added or removed) only for itself and the agents it
+    started (its descendants: by id, or by ref when on this Mac);
+  - `drafts.save` by the Steward: refused at level watch; an agent
+    replaces or removes (`drafts.remove`) only drafts it saved;
+  - `sessions.delete`, `sessions.archive`: never (tree.go's
+    `treePerson`);
+  - a service agent starting agents (`agents.spawn`, `sessions.resume`,
+    `fork`, `continueAs`): refused, except the Steward at level act
+    starting a draft (`SpawnParams.draft`), never with `letParentAnswer`.
+    Planners are started in hesperd (`SpawnService`), not through the
+    socket; a service spawn with a parent (a planner of the Steward) is
+    held to `maxAgentDepth` and `maxAgentChildren` like any agent's.
+
+  Refusals are `forbidden` and name the rule. Every write by an agent,
+  allowed or refused, is in `audit.log` (`agent.request` /
+  `agent.refused`); reads are not.
+
+### As built — loops (data)
+
+Design: the loops concept (v2) and its technical plan, sections
+Identity, Data, Wire and sync. Code: `relay/internal/crdt` (the
+registers, shared with projects), `relay/internal/loops` (records,
+store, merge, views, rules, methods, hooks, sync), `relay/pkg/wire/loops.go`
+(wire types), `internal/host/loops.go`, `internal/remote/loops.go`,
+`internal/gateway/loops.go`, `pkg/agentlink` (`Event.loops`,
+`Event.node`), `pkg/devicekey` (rights). The registry's side (when it
+calls Assign, AgentSettled and AgentClosed, the dispatcher's policy) is
+`internal/agents/loophook.go` and `loopscall.go`.
+
+**Model.** A loop is a lasting record of one piece of work: its links
+(agents, sessions, projects, URLs, files, other loops, each with a
+relation: `member`, `started`, `continued`, `handoff`, `blocks`,
+`blockedBy`, `touches`) and its items (steps, loose ends, promises,
+questions, offers; each with an owner `you`/`agent`/`others`, a state,
+an order and the items it comes `after`; an item may carry a `check`,
+which `loops.item`/`goals.item` with `check: {kind: ""}` clears). Goals and milestones belong to
+a product (a project or group id, `scope`); a milestone has "done when"
+conditions (items of kind `condition`) and the loops filed under it. One
+Steward configuration (`enabled`, `level`, `node`) and one set of loop
+settings (`loopLimit` 5, `stallDays` 7, `eveningAt` "18:00",
+`maxWakesPerDay` 40 by default) are shared by every Mac. **The store is
+the only source of truth for membership:** `LoopOf(ref)` is derived from
+the loops' live member links (agent or session links with rel `member`,
+`started` or `continued`; the newest wins, and on this Mac joining a
+loop (`Assign` with another loop, `loops.link` adding a member link)
+removes the agent's or session's member links in its other loops, so it
+counts in one; `mergedInto` chains are
+followed, at most 16 steps). A `mergedInto` cycle (A merged into B on
+one Mac and B into A on another at once) is broken the same way on
+every Mac when the records merge (and on load): its lowest id is
+unmerged (`mergedInto` cleared) and takes the other loops' links and
+items; they stay merged and resolve to it. Links hold settled facts only: the agent's
+name, how its last turn ended (`ending`, `summary`), how it was closed
+(`closedReason`, `closed`, the first KiB of its final message as
+`result`, dropped after 90 days by a stamped write). Live state (`agent`,
+`state`) is joined from the agent list when views are built.
+
+**Ids and refs.** Loops `lp-`, goals `gl-`, milestones `ms-` + 12 hex,
+items `it-` + 8 hex (random). A link's key is `ln-` + 16 hex of the
+SHA-256 of kind, rel, ref and from, so one link added on two Macs at once
+is one entry; a move rewrites the link's `ref` register and keeps its
+key. When the move's target linked the imported agent before it saw that
+rewrite, the loop holds two membership links for one agent after a sync:
+every merge (and loading the file) keeps the oldest live one per agent
+ref and tombstones the others, so every Mac keeps the same one. Agent ref: `<node>/<local id>`, `node` the projects store's node of
+the Mac the agent runs on (`Store.Node`); a host names its node in its
+full link event (`Event.node`), and `projects.Store.NodeOf/MachineOf`
+map machine names both ways. Session ref: `<sessions node>:<kind>:<id>`.
+
+**Hooks** (called with the registry's lock held; the store never calls
+out while holding its own). `Assign`: the loop the spawn named; else a
+new loop under its milestone; else the parent's loop; else the source
+session's; else a new loop titled after the agent's name (or its task's
+first line); the agent's member link says `started` from the parent or
+`continued` from the session; a `touches` link for its project (not
+scratch) and a member link for its own session. An agent that already
+has a loop keeps it; service agents get none. `AgentSettled`: `ending`
+(the classifier the gateway sets, `internal/endings`; the default calls
+every turn `done`) and `summary` on the link; the sentences of an
+`asks`/`yourStep` ending become items for the person (question, step),
+`waits` loose ends for others, `offer` offers of the agent (dimmed, never
+counted), at most 5, each text once per loop. `AgentClosed`: reason, time
+and excerpt; reason `moved` with `to` rewrites the ref instead (the
+imported agent's own link, when Assign ran first, goes). The new ref is
+the close's `toRef` (`AgentEvent.ToRef`: the controller sends the
+target's `<node>/<local id>` with `agents.close`), else `to` resolved
+on this Mac (an older controller), which goes wrong when both Macs call
+themselves `L`.
+
+**Wire** (`relay/docs/protocol.md`, "Shared state" and "Loops on the
+local socket"): `loops.list/get/save/link/item/merge/split`,
+`loops.settings.get/set`, `goals.list/save/remove/item/file/accept`; the
+`steward.*` methods are the Steward's (`internal/steward`), which uses
+`Store.SetStewardConfig` and `StewardChanges`. Results: `[Loop]`, the
+changed `Loop` (split: the new one), `LoopSettings`, `GoalsList`,
+`{goal}`/`{milestone}`, the changed `Milestone`, `{}`, `{accepted: N}`.
+The store enforces one rule itself: an agent caller that is not a
+service may read everything and change only the items and links of its
+own loop. Notifications: `loops.changed`/`loops.removed`,
+`goals.changed`/`goals.removed`, rebuilt ≤ 50 ms after a change of the
+records or of any agent, sent only when a view's JSON changed, coalesced
+per id. A rebuild copies only the loops it rebuilds: those whose records
+changed, those linking an agent whose live state (id, state, name,
+ending) changed, those waiting (`blockedBy`, merges followed) for a
+changed loop and those new to the list; every goal and milestone is
+rebuilt (from brief stand-ins of their loops). `loops.get` and the
+answers of `loops.save/link/item/merge/split` build only the loop they
+return, `goals.*` no loop. An index (`index.go`: ref → loop, agent ref →
+loops, each loop's filing and blockedBy links) is updated per committed
+loop, so `LoopOf` (the registry calls it with its lock held) is a map
+lookup and a merge chain, never a scan. `loops.pull` copies records in
+chunks of 32 under the lock and marshals them without it. Benchmarks at
+2,000 loops (`internal/loops/bench_test.go`): `LoopOf` right after a
+change 3.4 µs (was 2.6 ms), a view rebuild after one loop changed 1.0 ms
+(was 44 ms), `loops.get` 0.05 ms (was 16 ms). Who acts next (`next`, `nextText`, `looksDone`), counts, projects,
+items' `ready` and milestones' loops, progress, next text and `stalled`
+are computed in `rules.go`. Caps (64 links, 100 items a loop, 2,000
+loops) apply to views, never to merges.
+
+**Persistence:** `$HESPER_STATE_DIR/loops.json` (0600, temp file + fsync
++ rename, ≤ 50 ms after a change): `{version: 1, node, epoch, clock, seq,
+seqs, loops, goals, milestones, steward, settings}`. A file that does not
+decode moves to `loops.json.broken`. Every change bumps the record's
+sequence number (`seqs`, by `l:`/`g:`/`m:` + id, `steward`,
+`settings`); a new file (or a new projects node) gets a new `epoch`.
+
+**Sync between Macs** (`sync.go`, `internal/host/loops.go`,
+`internal/remote/loops.go`), as the shared history's: the host's hint
+`{node, epoch, seq}` on every link when it opens and ≤ 100 ms after each
+change (it is also the host's `loops` capability: inside the channel,
+never in the relay-visible snapshot); the controller pulls (`loops.pull
+{since, epoch, from}`) until `more` is false, then pushes its changes
+since what that host has (`loops.sync {from, records}`), one exchange per
+link at a time, again ≤ 150 ms after each local change, 5 s after a
+failure. The cursors (per other node: its epoch and sequence number
+pulled up to, this Mac's pushed up to and its epoch then, the epoch of
+its last hint) persist in `$HESPER_STATE_DIR/loops.peers.json` (0600,
+atomic, taken with the records `loops.json` is written from and written
+after it, never ahead of it; tied to the store's epoch: a new store
+here drops them), so a restart pulls and pushes only what changed. A
+hint with a new epoch resets what was pushed to that node; a push begun
+before the reset does not record its cursor and starts again. Batches ≤ 512 KiB; a record whose every stamp is the asking
+Mac's is not sent; each record merges by itself (per field last writer
+wins, tombstones stay, records that fail validation are dropped whole).
+Rights: `loops.pull` `observe`, `loops.sync` `transfer` (empty records
+`observe`). Separate from `projects.sync`, which older hosts decode
+strictly. A spawn to a host without `loops` loses `loop`, `milestone`
+and `reportToParent`, and the controller records the new agent's loop;
+a spawn with a parent and neither `loop` nor `milestone` to a host with
+`loops` gets the parent's loop as `loop` from the controller (the host
+cannot resolve another Mac's parent), so the child joins it.
+Remote agents carry `Agent.loop` (`LoopOf(<host node>/<local id>)`),
+refreshed when the loops change.
+
+**Tests:** `internal/projects` `TestStateGolden` (the projects wire
+shape, before and after the `crdt` move), `TestNodeOfMachineOf`;
+`internal/crdt` (clock, ties); `internal/loops`: persistence (0600,
+reload, epoch and sequence numbers), broken file, convergence (concurrent
+item adds, tombstone vs an older copy, LWW, idempotent merge), insane
+records dropped, `LoopOf` through merge chains and cycles, pruning
+replicates, view caps and the live join without the store's lock, Watch
+(open loops first, then changes), the next rules (table), ready, counts,
+projects, milestone rules, Assign's five ways, settled items and their
+dedup, closed and moved links, the agent caller rule, merge, split,
+list filters, goals and milestones, settings, Steward configuration,
+pull batches, echo and epochs, sync both ways. `internal/transport`
+`TestLoopsSharedBetweenMacs`: a loop made on L reaches M, items added on
+both survive, a removal on M reaches L, a merge on L shows on M, a goal
+from M and the Steward's configuration from L reach the other, the tap
+never saw a title, item text, URL or id or a `loops.`/`goals.` method,
+`loops.json` on both. `pkg/devicekey`: the rights.
+
+**Not done here:** the endings classifier (`internal/endings`), the
+registry calling the hooks and filling `Agent.loop` for local agents,
+the dispatcher's person-only rules, the Steward, hesperctl, the app.
+Tombstones are never collected; a Mac reinstalled gets a new node, so
+its old agents' refs no longer resolve to a machine name.
+
+### As built — loops (hesperctl)
+
+Code: `relay/cmd/hesperctl/loops.go`; group "Loops and goals". Command
+names may have three words now (`loops item add`): `lookup` tries the
+longest name first, `hesperctl loops item` lists that parent's commands,
+and the MCP tool is `hesper_loops_item_add`.
+
+- **Names.** LOOP: an id (`lp-…`, merged loops too), `self` (the loop of
+  the agent the command runs in: `loops.list {agent}` with
+  `HESPER_AGENT_ID`), the title (exactly, then case ignored) or a unique
+  beginning of it, among every loop including closed ones; more than
+  one is `ambiguous` (exit 2) and names the ids. MILESTONE the same over
+  every product's milestones. ITEM: its number in `loops show` (items by
+  `order`, from 1) or its id.
+- **Commands.** `loops ls` (`--status`, `--milestone`, `--project`; a
+  table ID, TITLE, NEXT (who and what, "parked until …", the status once
+  closed), AGENTS working/all, UPDATED), `show`, `new` (`--goal`,
+  `--done-when`, `--milestone`), `rename`, `park` (`--until` tomorrow,
+  12h/3d/2w or a date, 09:00 local that day; `--unpark` opens it),
+  `close --done|--drop`, `link`/`unlink` (exactly one of `--agent`,
+  `--session`, `--project`, `--url`, `--file [MACHINE:]PATH` (no machine:
+  this Mac, made absolute), `--loop`; `--blocks`, `--rel`, `--label`),
+  `item add` (`--owner` you by default, `--kind` step, `--after`), `item
+  check` (`--drop`, `--undo`), `item rm`, `merge INTO FROM`, `split LOOP
+  REF` (a link ref, or a member agent's id or name), `graph`, `settings`
+  (no flags: get; else set the flags given). Writes print the loop's id,
+  `--json` the `Loop`.
+- **Graph.** One node per agent or session ref, the facts of all its
+  links joined; children by `started`/`continued` links (`from` → `ref`),
+  a parent cycle cut; handoff files under the agent named in `from`,
+  other files as root nodes; then `blocks` and `blockedBy` loops with
+  their titles. Text: two spaces per level, `rel kind label (ref)
+  machine/agent state · ending`.
+- **Goals** (`goals.go`). SCOPE: a project or group by id, a folder (a
+  project), or a name unique among both (scratch projects left out).
+  ID (goals save, rm): a goal or milestone by id, title or a unique
+  beginning of it. `goals ls [SCOPE]` (per product: goals, then
+  milestones with status, done/total, due, loop count, next), `new SCOPE
+  TITLE` (a goal; `--milestone` with `--goal`, `--due`, `--auto-file`
+  and `--when` conditions, added by `goals.item` after the save),
+  `save` (the flags given; `--due ""` clears, `--status proposed` sends a
+  milestone back to planning), `rm`, `check MILESTONE ITEM` (`--drop`,
+  `--undo`), `file MILESTONE LOOP` (`--remove`), `plan SCOPE [PROMPT]`
+  (`steward.plan`, prints the agent), `accept SCOPE [MILESTONE…]`.
+- **Steward** (`steward.go`). `steward status` (`StewardStatus`: on or
+  off, level, machine, agent, queued, wakes today), `on` (`--machine`,
+  `--level`; without `--machine` this Mac when no Mac runs it yet:
+  `node` empty), `off`, `level watch|suggest|act`, `inbox` (the
+  Steward's own call: it drains the queue). All one `steward.set` and
+  print the status. `unavailable` (exit 4) while hesperd has no
+  Steward.
+- **`new --loop L --milestone M --report-to-parent`** fill
+  `SpawnParams.loop` (L resolved to an id), `milestone` (an id) and
+  `reportToParent`. `hello` carries no capabilities and the local socket
+  decodes spawn params leniently, so an older hesperd would drop them:
+  hesperctl first calls `loops.settings.get`; "no method" (`not_found`)
+  refuses with exit 2 and nothing is started. `--loop` with
+  `--milestone` and `--report-to-parent` outside an agent (no parent)
+  are usage errors.
+- **`events --kinds`** gains `loops`, `goals` and `steward` (a
+  notification's method prefix, as before).
+- **MCP and reference.** The tools come from the registry
+  (`hesper_loops_item_add`, `hesper_goals_ls`, `hesper_steward_status`,
+  …), with argument hints for LOOP, INTO, FROM, ITEM, MILESTONE, SCOPE
+  and LEVEL; the server's instructions tell an agent to put follow-ups
+  in its own loop. `hesperctl reference` explains loops, goals and
+  milestones and the Steward under Concepts.
+- **Tests** against `fullDaemon`, which now wires a loops store like the
+  gateway does and takes an optional Steward: `TestLoopsCommands`,
+  `TestGoalsCommands`, `TestStewardCommands` (a fake `agents.Steward`),
+  `TestStewardUnavailable`, `TestNewInLoop`, `TestNewInLoopOnOlderDaemon`
+  (a socket that knows no method), `TestEventsLoops`; `TestMCP` and
+  `TestReference` cover the new tools and Concepts.
+- **User docs:** `docs/loops.md`, the README's "Keep track of what you
+  started", the skill (`skills/hesper/SKILL.md` Concepts and "Keep track
+  of your work", `references/recipes.md` "Loops and milestones").
+
+**Status: built and tested headless** (`go test` of `cmd/hesperctl`
+against an in-process hesperd with the real loops store); the Steward
+commands only against a fake until `internal/steward` lands.
+`hesperctl open loops|wrapup|product` is the app slice's.
+
+### As built — loops (app sheets)
+
+Code: `app/Sources/Hesper/Loops/` (the Hesper target) on the app core
+above.
+
+- **LoopHub** (`Loops/LoopHub.swift`), one per daemon connection like
+  ReviewHub (`model.loopHub`). On every connect (`AppModel.loopSaw`) it
+  lists `loops.list` (status `all`: the store keeps done and dropped
+  loops for the wrap-up's tallies; boards, chips and counts show active
+  loops only), `goals.list`, `steward.status` and
+  `loops.settings.get` at once, off the main actor; an older hesperd
+  (-32601) leaves `available` false. One list at a time
+  (`LoopListGate`): a connect while one is out lists again after it; a
+  failed list retries after 1, 2, 4, 8 and 16 s, then waits for the
+  next connect. `loaded` turns on with the first list, or once a list
+  failed and notifications arrived (the subscribe snapshot). Notifications are decoded on the
+  reader thread (`LoopsEvent.decode`) into a bounded queue (4,096, the
+  oldest dropped), and applied to `store` on the main actor once per
+  120 ms batch; events that arrive while a list is out are replayed on
+  top of it. After each batch it rebuilds `chips` (loop id →
+  `LoopChip`: the title cut to 28 characters, who acts next, looks
+  done, the next text, open items on the person) and `onYouCount` (the
+  board's "your move"). `chip(for: agent)` reads `Agent.loop`. Writes go
+  through `run { client in … }` (off the main actor; a returned loop is
+  applied at once) and `stewardSet`; both return nil or the inline
+  error text (`LoopsErrorText`: forbidden says only a person can do it,
+  -32601 says to update hesperd).
+
+### As built — loops (app integration)
+
+Code: the existing surfaces of the `Hesper` target reading `LoopHub`;
+the logic is in HesperCore (`InboxList.swift` and the app core above).
+
+- **Inbox** (⌘J, `UI/Overlays.swift` `AttentionPanel`,
+  `AppModel+Overlays.swift`). The attention queue exactly as before,
+  then "Your move" (`LoopHub.yourMove(excluding:)`: `YourMove.entries`
+  without the queue's agents, cached per store version). Headers
+  ("Needs you", "Your move") show only when "Your move" has entries; the
+  title is "Inbox · n" over both. One selection runs through both
+  (`InboxList.items`, a queue agent or a loop); ↑↓ ⏎ ⌘⏎ esc and the
+  filter work as before (the filter also matches a loop's title, the
+  entry's text and its sender). The panel's height comes from
+  `InboxList.height` (rows, headers, gaps) before layout. An entry's
+  quick actions are buttons (the first ⏎, never Later: with no
+  answer or Did it, the agent gone, it is Open; Open ⌘⏎; letters stay the
+  filter's, so no keystroke answers by accident) and become
+  `YourMoveCall`s: Yes / No / Did it to a live agent type the text and
+  submit it (`agents.input` with submit), Did it on an item ticks it
+  off, Copy command copies, Later files an agent's ask or step as the
+  person's item (question or step, with the agent's link as `source`,
+  so the entry shows that item afterwards) and parks the loop until tomorrow
+  09:00, Open opens the loop's detail in this window's Loops sheet
+  (`LoopsSheetKind.loop`; the product page's ⏎ too). An acted-on entry hides until its loop
+  changes and comes back with a toast when a call fails. ⌘J opens when
+  either section has entries (else the "Nothing needs you." toast) and
+  closes itself a second after both are empty. With an empty queue the
+  toolbar shows a quiet "n your move" pill (never red) as the inbox's
+  anchor; its count (`LoopHub.yourMoveCount`) is stored, recounted
+  only when the loops, the acted-on entries or the queue change (the
+  hub keeps the queue's ids from each agent event). Offers never appear. The menu bar, the red pill and
+  notifications still count approval, question and error only.
+
+- **Tile loop tag** (`UI/TileParts.swift` `LoopTagView`, built in
+  `TileView.refreshContent` and the focus view's band). Right of the
+  band's one line, never on an action strip: who acts next as a
+  StateMark (`TileLoopTag.mark`: you a question's tone, agents working,
+  looks done done, others and parked outlined; never signal), the loop's
+  short title (`LoopChip`, 28 characters) and the word ("Your move");
+  a tight band keeps mark and title, the tooltip is `nextText`. A
+  service agent shows "Steward" / "Planner" and no loop. The tag is a
+  lookup in `LoopHub.chips` when the band refreshes; the wall observes
+  `chips` and refreshes only the bands whose loop's chip changed, and
+  relays out when one gains or loses its tag (a done or idle agent with
+  a tag but no summary keeps its one line: `AttentionBar.hasContent`).
+
+- **Sidebar** (⌘0, `UI/ProjectSidebar.swift`). Every project, group
+  and "All agents" row carries its loop counts (`ProjectNavRow.loops`,
+  `ProjectLoops.apply`): open loops (active, parked included) behind a
+  loop glyph, and those on the person (the board's "your move") as a
+  question-toned square with its count; a group counts each loop once
+  across its projects. `LoopHub.projectLoops` is rebuilt per store
+  version, read into the sidebar's Snapshot and observed by the window,
+  so a loop change alone reloads the rows. A duplicate project
+  (`Project.duplicateOf`, decoded leniently: missing, empty or not a
+  string is nil) shows a quiet warning triangle; its context menu's
+  "Remove Duplicate…" asks first (an NSAlert, like the sidebar's other
+  questions) and then calls `projects.remove` on the duplicate only.
+
+- **Composer start check** (⌘N, a draft tile and the quick launch
+  panel: `DraftChips.startStrip` in `UI/Composer.swift`). 150 ms after
+  the last keystroke `ComposerModel.runStartCheck` checks the task
+  against `LoopHub.startCheckIndex` (built once per store version and
+  catalog) with the folder's project and the machine; the strip shows
+  while the task has words and there is a match or loops on the person
+  (`StartStrip.shows`). It says "This looks like part of <loop>", the
+  loose end the task would tick off, and the on-you meter "n / limit
+  on you" (the error tone at `loopLimit` or over, a hint only). Keys:
+  ⌘⏎ Start is unchanged and starts a new loop; ⇧⌘⏎ "Add to loop" starts
+  with `SpawnRequest.loop` (sent as `loop`; in the quick launch panel
+  through the panel's own start, which clears and hides it, like ⌘⏎)
+  and, once the agent runs,
+  ticks the loose end off (`loops.item` done); ⌘D "Draft in loop" files
+  the task's first line as the agents' step with `draft` set to this
+  draft and parks it (draft tiles only: the quick launch panel keeps
+  no drafts). Both are registry commands on the composer surface
+  (`composerAddToLoop` on both composers, `composerDraftInLoop` on the
+  draft tile's only), so Settings › Shortcuts can rebind them; they map
+  to no AppCommand, so the window's router passes them to the text view
+  (`ComposerTextView.performKeyEquivalent`), which asks
+  `StartStrip.choice`, and the strip's buttons read their caps
+  (`StartStrip.addKey` / `draftKey`). The chip row's measured height
+  allows one more row.
+
+- **Service agents** (`Agent.service`: the Steward, the planner).
+  Tidy Up (⇧⌘W) and auto-tidy (`TidyUp.select`, `AutoTidy`) never
+  close them: hesperd runs them and they idle between wakes. Closing
+  one by hand (⌘W) still works. Their tiles live on the wall's quiet
+  shelf by default, working or not (`WallTileInput.shelved`,
+  `shelves`); one that needs the person (approval, question, error)
+  comes off it like any other agent.
+
+**Status: built and unit-tested headless only** (HesperCoreTests,
+`swift build --product Hesper`). Not run in the app or against a real
+hesperd with loops yet.
+
+- **Commands** (`HesperCore/Commands.swift`, `LoopsKeys.swift`). View ▸
+  Loops ⌘L, Product ⇧⌘L, Wrap-up ⇧⌘E (palette rows too; hidden while
+  hesperd has no loops.*: `CommandContext.loopsSupported`). Three
+  surfaces, `.loops`, `.wrapUp` and `.product`, in the shortcuts sheet
+  after Review; `loopsOpen`, `wrapUpOpen` and `productOpen` count as an
+  open sheet (⌘W is nobody's there). Plain-letter verbs, no menu items
+  (their key caps sit on the sheets' buttons): on the board and a
+  loop's detail ⏎ open, D done, P park (again: unpark), X drop, M merge
+  into another loop, N new agent in this loop, ⌘↩ start the drafted
+  next agent, G map / board, Space check a step off, A add a step, T a
+  step's trigger, ←→ columns, ⇥ all loops / the wall's project or
+  group; in the wrap-up ⏎ take the suggestion, D N P X decide, U undo,
+  ⌘↩ save; on the product page ⏎ open a loop, Y file an unfiled loop, P
+  plan with the Steward, X drop a proposal, ⌘↩ save the plan, ⇥ next
+  product. ↑↓ and esc are the overlay family's. `LoopsKeys.route(_:in:
+  editing:)` turns a chord into the sheet's action; while a field has
+  the keyboard only ⏎, esc and ↑↓ are the sheet's. The sheet's own
+  chord closes it; ⌘K ⌘Y ⌘J ⌘R and the other loops sheets close it and
+  go on (`passesThrough`).
+- **Sheets** (`Loops/LoopsSheetHost.swift`). One `LoopsPanel` per wall
+  window, the ShortcutsPanel template: a scrim over the wall, one
+  opaque Panel min(1080, 86 %) × min(760, 84 %) holding the SwiftUI
+  sheet in SheetChrome; opening another loops sheet replaces it. The
+  window asks the host first for keys (`MainWindow` sendEvent and
+  performKeyEquivalent, after the shortcuts sheet). Each sheet has an
+  `@Observable` model that rebuilds its HesperCore view model only
+  when `LoopStore.version` moved (`sync`, from `.onChange`), never per
+  render. Errors are one inline line under the chrome
+  (`LoopsErrorText`); empty states say what will appear and how.
+- **Loops sheet** (`LoopsSheet.swift`, W1/W2/G2). Board: four columns
+  (Your move, Agents on it, Waiting on others, Parked) of cards: title
+  and age, the next step (or "Looks done"), member chips (state square
+  and short id, four then +N), the loose-end count; the `working` ring
+  on the selection; the Steward's line under the board. Detail: next
+  pill and age, goal, done when, next; a drafted next agent card (⌘↩);
+  Steps and Loose ends numbered in one order with owner and trigger
+  columns (`LoopActions.triggerText`: "after 1, 3", "PR merged", …,
+  "ready"), the roll-up line ("2 of 5 done · 1 yours · next: …"),
+  offers dimmed; on the right the agents (⏎ goes to a live one), the
+  timeline (`LoopWords.timeline`) and the other links. Typed steps
+  (`LoopActions.step`): "@agent …" or "@others …" names the owner, else
+  the person's. Triggers (`LoopActions.trigger`): "after 2 3", "pr
+  <url>", "url <url>", "tag <name>", "review <id>", "loop <id>", a bare
+  URL, "none" (clears the steps it waits on and its check:
+  `ItemPatch.check` is `ItemCheckChange` keep / set / clear, clear sent
+  as `"check": {"kind": ""}`; the fake hesperd honours it). M opens a picker of the other open loops filtered as
+  typed. N opens a draft in the loop's project and ⌘↩ starts the
+  drafted one: `LoopHub.noteDraft` remembers the draft's loop (in
+  memory) and `startDraft` sends `SpawnRequest.loop` (only when hesperd
+  has loops). Map (`LoopMapView.swift`, G1): one Canvas from LoopMap's
+  geometry (cached by store version; live state rides on the links):
+  lane per machine, dashed project regions, nodes tinted per loop
+  (working, done, question, horizon, text2, dim: never signal or
+  error) with the state square, edges started and continued solid,
+  handoff dotted, step for you dotted signal, blocks horizon, parent
+  not found error dashed; a legend; a click opens the node's loop.
+- **Wrap-up sheet** (`WrapUpSheet.swift`, W4). Left: the tallies
+  (started, finished, on you, parked) and today's list (decided rows
+  say what). Right: one loop with four verdict cards (Done D, Next step
+  N, Park P, Drop X; the suggested one is outlined and carries ⏎).
+  Decisions stay local until ⌘↩ sends one `loops.save` per change (a
+  failed one stays decided); a store change rebuilds the list and keeps
+  them.
+- **Product sheet** (`ProductSheet.swift`, G4/G5). Scope: the given
+  project or group, else the wall's, else the first product (⇥ walks
+  `ProductPage.scopes`). Page: the goal, each milestone with its
+  standing pill, "done when n of m", due, progress bar, next and its
+  active loops (closed ones counted), then Unfiled (Y: a picker of the
+  open milestones, `goals.file`). A project with `duplicateOf` (the
+  same folder listed twice) shows a banner with "Remove this entry"
+  (`projects.remove`). P calls `steward.plan` and shows the planning
+  view; while a call is out, or a planner for the scope runs or starts
+  (`ProductPage.runningPlanner`: the one this app started, else
+  hesperd's "Plan <scope>"), P shows that one instead of starting
+  another: the planner agent's terminal embedded as a tile-role
+  `AgentTerminal` (a read-only `--fit` view, like a wall tile; "Talk to
+  the planner" opens it full size; detached while the sheet is hidden,
+  attached again when it shows: the product sheet's model is kept
+  across a close) and the proposed milestones,
+  updating from goals.changed; ⌘↩ is `goals.accept` for all of them, X
+  `goals.remove` for one.
+- **Settings › Steward** (the seventh pane, ⌘7): the switch, the level
+  (watch, suggest, act, each with its rung of the trust ladder), the Mac
+  it runs on (offline ones marked), what it never does (the
+  person-only calls), the hesperctl lines. `steward.set` off the main
+  actor; its answer is applied at once.
+- **app.open** (`HesperCore/AppControl.swift`): `{loops: true |
+  {loop}}`, `{wrapup: true}`, `{product: true | {scope}}`; the app
+  answers `{wall, selected}`, `{wall, loops}` (today's count) and
+  `{wall, scope}`; an unknown scope is `not_found`, a hesperd without
+  loops `unavailable`. `{loops: {loop}}` opens that loop's detail; before
+  the hub's first list (hesperctl launching the app) the app waits for
+  it up to 6 s so `selected` is true exactly when the loop is open, and
+  if it is still not there answers `unavailable` ("still loading") and
+  the sheet shows the loop once the list comes. hesperctl `open loops [--loop ID]`, `open
+  wrapup`, `open product [SCOPE]` (MCP: `hesper_open_loops`,
+  `hesper_open_wrapup`, `hesper_open_product`).
+- **Self-test** `test-ui-loops` (`Loops/LoopsSelfTest.swift`,
+  `Tools/run-loops.sh`, `--loops-test-out`): the fake daemon with
+  `--projects demo --loops demo`; opens each sheet by its key and checks
+  the columns, cards, detail steps, add and check a step, the map and
+  its broken parent, park, the wrap-up's verdicts, undo and a drop, the
+  product page's milestones and unfiled loops, filing, planning and
+  accept, and the Steward pane. It opens windows: only with the owner's
+  consent.
+
+**Status (app sheets): built; HesperCoreTests and the hesperctl tests
+pass headless. `test-ui-loops` is written and not run yet.**
+
+### As built — the Steward
+
+Code: `relay/internal/steward` (`steward.go` configuration and lifecycle,
+`wake.go` the wake queue, `brief.go` the session brief and the daily
+rotation, `plan.go` planning sessions, `prompt.md` and `plan.md` embedded),
+wired in `internal/gateway/steward.go`; the registry's seams are
+`agents.Options.Steward`, `Options.ServiceArgv` and `SpawnService`
+(`internal/agents/loopwork.go`), the policy is `loopscall.go`. The prompt
+is mirrored for people in `skills/hesper/references/steward.md` (a test
+keeps the copy identical).
+
+- **Configuration.** The loops store's synced `StewardConfig {enabled,
+  level, node}` (off by default; level `suggest` by default).
+  `steward.set` writes it (`enabled` without a machine names this Mac);
+  every Mac follows `StewardChanges`, and only the Mac whose node matches
+  runs the Steward: it starts it there and closes it everywhere else
+  (also a restored one, after a move or while off).
+- **The agent.** `SpawnService(service steward)`: Claude, in the
+  background, named "Steward", in `$STATE/steward` (0700), its first
+  message a brief. Its options replace the profile's (`steward.Argv`):
+  `--permission-mode default`, `--allowedTools` with `Bash(hesperctl
+  loops:*)`, `goals`, `steward`, `ls`, `show`, `result`, `history search`,
+  `history show`, `history brief`, `history stats`, `review ls`, `drafts
+  ls`, `drafts save` (never `history delete|archive` nor `drafts rm`),
+  `Bash(gh pr view:*)`, `Bash(gh release view:*)`, `Read`, `Grep`,
+  `Glob`, and `--append-system-prompt` with `prompt.md`.
+  Anything else asks a person; permissions are never skipped. A Steward
+  agent the registry restored is adopted, never started twice. Its
+  process ending, or a person closing it, restarts it (resume, else a new
+  one) after 5 s, 30 s and 2 min; a fourth end within an hour leaves it
+  stopped, with the reason in `status.stopped`, until `steward.set
+  {enabled: true}`.
+- **Wake queue.** Events: `settled` and `closed` (the registry's, never
+  for agents with a `service`), `loopCreated` (a loop created after
+  hesperd started, once per loop: `loops.save` without an id and
+  `loops.split` tell `Store.SetCreated`'s hook the calling agent's
+  service, and a loop the Steward or a planner made never queues, even
+  when the store's notification for it comes first; loops from `Assign`
+  or another Mac come from the store's notifications), `review` (the
+  registry's review notes) and `evening` (once a day at
+  `LoopSettings.eveningAt`, local time; not on the day it was turned on
+  after that time). One event per agent or loop (the latest wins, in the
+  first one's place); at most 256, the oldest dropped and counted
+  (`status.dropped`). Events queue only on the Mac that runs it. hesperd
+  types `[hesper] N new events. Run: hesperctl steward inbox` only while
+  the Steward is `done` or `idle`, at least 60 s after the last wake and
+  under `maxWakesPerDay` (default 40; counted from local midnight).
+  `steward.inbox` returns the queue and empties it.
+- **Daily rotation.** The first wake after local midnight closes the
+  session of the earlier day and starts a new one whose first message is
+  a brief from the store (the open and parked loops with who acts next and
+  their next text, at most 30; the open and proposed milestones with their
+  progress, at most 20); never a transcript. The waiting events stay for
+  the new session.
+- **Planning.** `steward.plan {scope, prompt?}` starts a visible planner
+  (`SpawnService(service planner)`, not in the background), a child of the
+  Steward when it runs here, never with `letParentAnswer`, in the scope's
+  project folder on this Mac, else `$STATE/steward/plans/<scope>`. Its
+  allowlist is its own (`PlanTools`): `hesperctl goals ls|new|save`,
+  `loops ls|show`, `ls`, `show`, `history search|show|brief`, `steward
+  status`, `git branch`, `git log`, `gh pr list|view`, `gh release
+  view`, `Read`, `Grep`, `Glob`; it uses `plan.md`; it writes milestones with status `proposed`
+  and never accepts them (`goals.accept` is a person's). One planner per
+  scope at a time: while a planner runs in the scope's folder (not
+  exited), `steward.plan` returns it instead of starting another (the
+  app opens what it gets); plans start one at a time. A person may plan,
+  and the Steward at level suggest or act.
+- **Tests** (`internal/steward`, a fake store and registry): start and
+  stop by node, adopting a restored agent, the restart backoff and cap,
+  wake gating (quiet only, 60 s, the daily cap, the midnight reset with
+  rotation), coalescing, service events skipped, the inbox, the evening,
+  the brief, planner spawns, the options, `steward.changed`, the mirrored
+  prompt; `internal/agents` `TestServiceArgv`.
+- **Not done:** the wake count and the queue are not persisted (a restart
+  of hesperd starts the day's count again and loses waiting events); a
+  person typing into the Steward's tile does not hold a wake back; a
+  planner on a Mac that does not run the Steward has no parent.
 
 ## Wire names kept from Ghosty
 

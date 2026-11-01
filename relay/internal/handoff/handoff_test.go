@@ -14,6 +14,10 @@ import (
 
 func run(t *testing.T, dir string, args ...string) string {
 	t.Helper()
+	if args[0] == "git" {
+		// Unsigned: a global commit.gpgsign would sign (and fail) here.
+		args = append([]string{"git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args[1:]...)
+	}
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
@@ -66,7 +70,7 @@ func TestMoveWithConversationAndUncommittedWork(t *testing.T) {
 	transcript := filepath.Join(src.ClaudeHome, "projects", ClaudeSlug(worktree), session+".jsonl")
 	write(t, transcript, `{"type":"user","cwd":"`+worktree+`","message":{"content":"fix <it> & more"},"n":12345678901234567890}`+"\n"+`{"type":"assistant","text":"ok"}`+"\n")
 	agent := wire.Agent{ID: "L/abc123", Kind: wire.KindClaude, Profile: "claude-auto-rc", Name: "fix", NameBy: wire.NameByPerson, Task: "Fix it",
-		Project: project, Worktree: worktree, Branch: "feature/fix", SessionID: session, Created: time.Now()}
+		Project: project, Worktree: worktree, Branch: "feature/fix", SessionID: session, Created: time.Now(), Loop: "lp-1"}
 	ctx := context.Background()
 
 	dir := filepath.Join(root, "bundle1")
@@ -86,9 +90,12 @@ func TestMoveWithConversationAndUncommittedWork(t *testing.T) {
 	if st := run(t, worktree, "git", "status", "--porcelain"); !strings.Contains(st, "A  staged.txt") || !strings.Contains(st, "M a.txt") || !strings.Contains(st, "?? new.txt") {
 		t.Fatalf("source status changed: %q", st)
 	}
-	_, placed, err := Unpack(ctx, dir, dst)
+	unpacked, placed, err := Unpack(ctx, dir, dst)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if unpacked.Agent.Loop != "lp-1" {
+		t.Fatalf("the loop did not travel: %+v", unpacked.Agent)
 	}
 	wantWT := filepath.Join(dst.Home, "worktrees", "app", "fix")
 	if placed.Project != filepath.Join(dst.Home, "projects", "app") || placed.Worktree != wantWT || !placed.Resume || placed.Branch != "feature/fix" {

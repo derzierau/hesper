@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/derzierau/hesper/relay/internal/crdt"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
@@ -70,7 +71,7 @@ type Store struct {
 	mu       sync.Mutex
 	node     string
 	short    string
-	clock    hlc
+	clock    crdt.Clock
 	projects map[string]*Record
 	groups   map[string]*GroupRecord
 	nodes    map[string]string // node → its own short name
@@ -145,7 +146,7 @@ func Open(opt Options) *Store {
 		s.node = "n-" + randomHex(8)
 		s.scheduleSave()
 	}
-	s.clock.node, s.clock.now = s.node, opt.Now
+	s.clock.Node, s.clock.Now = s.node, opt.Now
 	s.scratchCfg = loadScratchSettings(opt.ConfigDir, opt.Logf)
 	s.views = s.computeViewsLocked()
 	s.wg.Add(2)
@@ -182,7 +183,7 @@ func (s *Store) load() {
 		return
 	}
 	s.node = f.Node
-	s.clock.last = Stamp{T: f.Clock.T, C: f.Clock.C}
+	s.clock.Last = Stamp{T: f.Clock.T, C: f.Clock.C}
 	cutoff := s.opt.Now().Add(-tombstoneMaxAge).UnixMilli()
 	for _, r := range f.Projects {
 		if r == nil || r.ID == "" || r.ID != ProjectID(r.Identity) {
@@ -341,7 +342,7 @@ func (s *Store) write() {
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
 	s.mu.Lock()
-	f := storeFile{Version: 2, Node: s.node, Clock: Stamp{T: s.clock.last.T, C: s.clock.last.C}, Nodes: s.nodes, Aliases: s.aliases}
+	f := storeFile{Version: 2, Node: s.node, Clock: Stamp{T: s.clock.Last.T, C: s.clock.Last.C}, Nodes: s.nodes, Aliases: s.aliases}
 	st := s.exportLocked()
 	f.Projects, f.Groups = st.Projects, st.Groups
 	for _, p := range s.recent {
@@ -448,13 +449,16 @@ func (s *Store) resolveLocked(real string, gi gitInfo, pkgs []wire.DetectedPacka
 			}
 		}
 	}
-	best, bestLen := "", -1
+	best, bestLen, bestRemote := "", -1, false
 	consider := func(r *Record, p string) {
 		if r == nil || r.Deleted.V || p == "" {
 			return
 		}
-		if len(p) > bestLen {
-			best, bestLen = r.ID, len(p)
+		// The deepest wins; of two with the same folder the one with a
+		// remote identity (never its duplicateOf), then the lowest id.
+		remote := r.Identity.Remote != ""
+		if len(p) > bestLen || len(p) == bestLen && (remote && !bestRemote || remote == bestRemote && r.ID < best) {
+			best, bestLen, bestRemote = r.ID, len(p), remote
 		}
 	}
 	for _, r := range s.projects {
@@ -531,7 +535,7 @@ func (s *Store) ensureRepoLocked(gi gitInfo, revive bool) (*Record, bool) {
 		if !revive {
 			return nil, false
 		}
-		r.Deleted = Field[bool]{V: false, S: s.clock.tick()}
+		r.Deleted = Field[bool]{V: false, S: s.clock.Tick()}
 		changed = true
 	}
 	return r, s.setPathLocked(r, gi.Root, revive) || changed
@@ -560,7 +564,7 @@ func (s *Store) ensurePackageLocked(repo *Record, root, relp, name, kind string,
 		if !revive {
 			return nil, false
 		}
-		r.Deleted = Field[bool]{V: false, S: s.clock.tick()}
+		r.Deleted = Field[bool]{V: false, S: s.clock.Tick()}
 		changed = true
 	}
 	return r, s.setPathLocked(r, filepath.Join(root, relp), revive) || changed
@@ -579,7 +583,7 @@ func (s *Store) setPathLocked(r *Record, p string, force bool) bool {
 			return false
 		}
 	}
-	r.Paths[s.node] = Field[string]{V: p, S: s.clock.tick()}
+	r.Paths[s.node] = Field[string]{V: p, S: s.clock.Tick()}
 	return true
 }
 

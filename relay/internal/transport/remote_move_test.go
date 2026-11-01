@@ -376,3 +376,45 @@ func TestRemoteMovePreflightAndFork(t *testing.T) {
 	}
 	untouchedSource = L.waitAgent(t, a.ID, func(x wire.Agent) bool { return x.Exit == nil })
 }
+
+// A move from a host that calls itself what the controller calls itself
+// (both "L"): the loop's member link follows the agent to the right ref
+// on the target, and the import's own link goes.
+func TestRemoteMoveKeepsLoopBothNamedL(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
+	}
+	w := newWorld(t, worldOptions{beforeStart: func(_, M *node) { M.cfg.Registry.Machine = "L" }})
+	L, M := w.L, w.M
+	appRepo(t, M, true)
+	L.waitLinked(t, "M")
+	var a wire.Agent
+	if err := L.call(t, "agents.spawn", wire.SpawnParams{Machine: "M", Project: M.project, Task: "small job"}, &a); err != nil {
+		t.Fatal(err)
+	}
+	a = L.waitAgent(t, a.ID, func(a wire.Agent) bool { return a.State == wire.StateDone && a.Loop != "" })
+	var res wire.MoveResult
+	if err := L.call(t, "agents.move", wire.MoveParams{ID: a.ID, To: "L"}, &res); err != nil {
+		t.Fatal(err)
+	}
+	_, local, _ := strings.Cut(res.Agent, "/")
+	ref, wrong := L.d.Loops.Node()+"/"+local, M.d.Loops.Node()+"/"+local
+	for _, n := range []*node{L, M} {
+		eventually(t, n.short+" has the moved agent in its loop, once", func() bool {
+			l, ok := n.loop(t, a.Loop)
+			if !ok || n.d.Loops.LoopOf(ref) != a.Loop {
+				return false
+			}
+			members := 0
+			for _, k := range l.Links {
+				if k.Ref == wrong {
+					return false
+				}
+				if k.Kind == wire.LinkAgent && k.Ref == ref {
+					members++
+				}
+			}
+			return members == 1
+		})
+	}
+}

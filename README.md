@@ -164,6 +164,42 @@ session. You get tmux-style persistence without a terminal inside a terminal.
 `@machine`, `#project`, `/profile` or `~branch`, and ⌘↩ starts it; `~branch`
 gives the agent its own git worktree.
 
+## Keep track of what you started
+
+Twenty agents a day leave twenty threads behind: a PR to merge, a question
+you meant to answer, a promise to update the docs. Hesper keeps each piece
+of work as a **loop**, so closing a tile never loses what is still open.
+
+**Loops form by themselves.** An agent starts a loop; the helpers it
+starts, a session you resume, an agent you move to another Mac all join
+it. What an agent leaves for you at the end of its turn (a question, a
+step that is yours, something it waits for) becomes an item of the loop.
+
+**One board, who acts next.** ⌘L shows every open loop in four columns:
+on you, agents working, waiting on others, parked. ⌘J's queue ends with
+**Your move**: the loops waiting on you, with Yes / No, Did it, Copy
+command and Later right there.
+
+**An evening wrap-up.** ⇧⌘E goes through today's loops once: done, drop,
+park until tomorrow, or the next step.
+
+**Goals and milestones.** ⇧⌘L opens a product's page: its goals, its
+milestones with their "done when" conditions and the loops filed under
+them, and what has no milestone yet. A planning session proposes
+milestones; you accept them.
+
+**A Steward, if you want one.** A background agent that reads every
+finished turn and keeps the loops tidy: ticks off what is done, links the
+PR, drafts the next step. It is off until you turn it on (Settings ›
+Steward, or `hesperctl steward on`), runs on one Mac of your choice, and
+does only what its level allows: watch, suggest (drafts) or act (starts
+ready drafts). It never closes a loop and never answers an agent for you.
+
+**Stays on your Macs.** Loops are shared between your Macs over the same
+end to end encrypted link; the relay sees none of it. Agents use it too:
+`hesperctl loops item add self …` puts a follow-up in the agent's own loop.
+See [docs/loops.md](docs/loops.md).
+
 ## How it works
 
 ```
@@ -389,6 +425,7 @@ pick a profile per agent, per project or per kind:
 | ⌘K | Palette: agents, projects, machines, actions |
 | ⌘Y | History: every session on every Mac |
 | ⌘R | Review: finished work from every Mac, its diff, tests and where each change came from |
+| ⌘L / ⇧⌘L / ⇧⌘E | Loops: every piece of work by who acts next (G the map, D done, P park, X drop). The product page of the wall's project or group: milestones, unfiled loops, P plans with the Steward. The evening wrap-up, one loop at a time. |
 | ⌘W | Close the agent: it leaves the wall and stays in History (⌘Z brings it back); asks first when closing would lose something. In an agent window, closes the window and the agent keeps running. |
 | ⌥⌘W / ⌃⌘W / ⇧⌘W | Send the agent to the background / kill it / tidy up finished agents. ⇧⌘T reopens the last closed one. |
 | ⇧⌘M | Move the agent to another Mac |
@@ -414,6 +451,7 @@ hesperctl attach fix-the-login-redirect       # Ctrl-] detaches
 hesperctl send ID "yes, go ahead" ; hesperctl approve ID ; hesperctl deny ID
 hesperctl stop ID ; hesperctl resume ID ; hesperctl rm ID ; hesperctl move ID --to mini
 hesperctl open review --agent ID ; hesperctl open palette --query TEXT   # the app's sheets
+hesperctl open loops --loop ID ; hesperctl open wrapup ; hesperctl open product SCOPE
 hesperctl rename ID "Release notes" ; hesperctl rename ID --auto   # your name stays; --auto hands it back
 ```
 

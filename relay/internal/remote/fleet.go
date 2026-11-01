@@ -41,6 +41,7 @@ import (
 
 	"github.com/derzierau/hesper/relay/internal/agents"
 	"github.com/derzierau/hesper/relay/internal/controlsock"
+	"github.com/derzierau/hesper/relay/internal/loops"
 	"github.com/derzierau/hesper/relay/internal/projects"
 	"github.com/derzierau/hesper/relay/pkg/client"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
@@ -79,6 +80,9 @@ type Options struct {
 	// Sessions (optional; shared history) hears of links and hints
 	// (sessions.go).
 	Sessions SessionsLinks
+	// Loops (optional) is this Mac's loops store, replicated with the
+	// machines that keep loops (loops.go).
+	Loops *loops.Store
 }
 
 // Fleet is the controller role. Run connects; the agents.Remote methods
@@ -112,6 +116,15 @@ type machine struct {
 	lost            *time.Timer           // drops agents after the grace
 	rtts            []time.Duration
 	rttRoute        string
+	// node is the host's node (its full event's, else its loops hint's);
+	// loops: it keeps loops (a loops hint came on a link; loops.go).
+	node  string
+	loops bool
+	// backfill: the host keeps no loops (no hint came within
+	// loopsBackfillDelay of an inventory), so this Mac puts its agents in
+	// loops (loops.go); backfillWait: that wait is under way.
+	backfill     bool
+	backfillWait bool
 }
 
 type watcher struct {
@@ -226,6 +239,7 @@ func (f *Fleet) serve(ctx context.Context, c *client.Controller, creds protocol.
 	pctx, pcancel := context.WithCancel(ctx)
 	defer pcancel()
 	go f.syncProjectsLoop(pctx, c) // projects step 1
+	go f.syncLoopsLoop(pctx, c)    // loops.go
 	pings := time.NewTicker(pingEvery)
 	defer pings.Stop()
 	tick := time.NewTicker(time.Second)
@@ -351,6 +365,10 @@ func (f *Fleet) renameLocked(m *machine, short string) {
 	for local, a := range old {
 		f.emitRemovedLocked(a.ID)
 		a.ID, a.Machine = short+"/"+local, short
+		// Its parent on the same host moves with it.
+		if s, p, ok := strings.Cut(a.Parent, "/"); ok && s == m.short && old[p].ID != "" {
+			a.Parent = short + "/" + p
+		}
 		m.agents[local] = a
 		f.emitChangedLocked(a)
 	}
@@ -438,9 +456,37 @@ func (f *Fleet) dropAgentsLocked(m *machine) {
 
 // named is a host's agent in this Mac's naming.
 func (m *machine) named(a wire.Agent) wire.Agent {
+	return m.namedIn(a, m.isAgent)
+}
+
+// namedIn is named with the host's agents known by isHost (local ids).
+func (m *machine) namedIn(a wire.Agent, isHost func(local string) bool) wire.Agent {
 	a.ID = m.short + "/" + localID(a.ID)
 	a.Machine = m.short
+	a.Parent = m.parentIn(a.Parent, isHost)
 	return a
+}
+
+func (m *machine) isAgent(local string) bool {
+	_, ok := m.agents[local]
+	return ok
+}
+
+// hostParent is a parent link the host stored, in this Mac's naming.
+func (m *machine) hostParent(parent string) string {
+	return m.parentIn(parent, m.isAgent)
+}
+
+// parentIn: a parent the host named in its own naming (its short name
+// for itself) that is one of its agents is renamed like them. Any other
+// is kept: a parent this Mac sent is in this Mac's naming already, and
+// both Macs may call themselves "L".
+func (m *machine) parentIn(parent string, isHost func(local string) bool) string {
+	short, local, ok := strings.Cut(parent, "/")
+	if !ok || m.hostShort == "" || short != m.hostShort || !isHost(local) {
+		return parent
+	}
+	return m.short + "/" + local
 }
 
 func localID(id string) string {
@@ -584,6 +630,10 @@ func (f *Fleet) Call(ctx context.Context, short, method string, params json.RawM
 		}
 	}
 	delete(fields, "machine")
+	var assign func(wire.Agent)
+	if method == "agents.spawn" {
+		assign = f.spawnFields(m, fields) // loops.go
+	}
 	raw, err := f.request(ctx, c, m, method, fields)
 	var we *wire.Error
 	if _, by := fields["by"]; by && method == "agents.rename" && errors.As(err, &we) && we.Code == wire.CodeInvalid {
@@ -599,8 +649,12 @@ func (f *Fleet) Call(ctx context.Context, short, method string, params json.RawM
 	case "agents.spawn", "agents.resume", "agents.rename":
 		var a wire.Agent
 		if json.Unmarshal(raw, &a) == nil && a.ID != "" {
+			a = f.namedNoLock(m, a)
+			if assign != nil {
+				assign(a)
+			}
 			f.mu.Lock()
-			a = m.named(a)
+			a.Loop = f.loopOfLocked(m, localID(a.ID))
 			// Shown at once; the link's event confirms it.
 			m.agents[localID(a.ID)] = a
 			f.emitChangedLocked(a)

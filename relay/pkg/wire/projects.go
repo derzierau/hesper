@@ -56,6 +56,10 @@ type ProjectInfo struct {
 	// catalog; nil for every other kind and for the per-folder
 	// "scratch:<folder>" ids).
 	Scratch *ScratchInfo `json:"scratch,omitempty"`
+	// DuplicateOf: a project with a generated identity (made before its
+	// repository had a remote) that has the same folder on a machine as
+	// this project with a remote identity; computed, never stored.
+	DuplicateOf string `json:"duplicateOf,omitempty"`
 }
 
 // Scratch states (ScratchInfo.State).
