@@ -5387,7 +5387,9 @@ and the MCP tool is `hesper_loops_item_add`.
   refuses with exit 2 and nothing is started. `--loop` with
   `--milestone` and `--report-to-parent` outside an agent (no parent)
   are usage errors.
-- **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, `TestStewardCommands` with a fake `agents.Steward` (`fullDaemon(t, steward)`), `TestStewardUnavailable`, `TestNewInLoop`, `TestNewInLoopOnOlderDaemon`; `fullDaemon` now wires a
+- **`events --kinds`** gains `loops`, `goals` and `steward` (a
+  notification's method prefix, as before).
+- **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, `TestStewardCommands` with a fake `agents.Steward` (`fullDaemon(t, steward)`), `TestStewardUnavailable`, `TestNewInLoop`, `TestNewInLoopOnOlderDaemon`, `TestEventsLoops`; `fullDaemon` now wires a
   loops store (no Steward) like the gateway does.
 
 ## Wire names kept from Ghosty

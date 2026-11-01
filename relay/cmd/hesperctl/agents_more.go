@@ -61,8 +61,8 @@ func init() {
 			Help:   idHelp + " The screen hesperd keeps for the agent (as a person sees it, no colors or escape codes); --rows N only its last N rows with text (blank rows below the output are dropped first, so a mostly empty screen still shows its output); --scrollback that many lines from above the screen first. Works for agents of every machine.",
 			Output: "{text, rows, cols, cursor?:{col, row}, alt?}", Examples: []string{"hesperctl screen a7f3k2", "hesperctl screen a7f3k2 --rows 10 --scrollback 200"},
 			Run: screenCommand},
-		{Name: "events", NoMCP: true, Summary: "Stream agent, draft, project and history changes as JSON lines", Usage: "events [--agent ID]… [--kinds K,…]",
-			Help:   "One JSON object per line, {\"method\", \"params\"}, until interrupted: agents.changed {agent}, agents.removed {id, reason, data?: {to}} (first one agents.changed per agent), agents.moving {id, step, to, percent?, agent?} (a move's progress) and agents.bringing {id, draft?, step, to, from, percent?, path?, agent?, error?} (new --bring's progress), drafts.*, projects.*, groups.*, sessions.*. --kinds keeps only agents, drafts, projects, groups or sessions; --agent only those agents' events.",
+		{Name: "events", NoMCP: true, Summary: "Stream agent, draft, project, history and loop changes as JSON lines", Usage: "events [--agent ID]… [--kinds K,…]",
+			Help:   "One JSON object per line, {\"method\", \"params\"}, until interrupted: agents.changed {agent}, agents.removed {id, reason, data?: {to}} (first one agents.changed per agent), agents.moving {id, step, to, percent?, agent?} (a move's progress) and agents.bringing {id, draft?, step, to, from, percent?, path?, agent?, error?} (new --bring's progress), drafts.*, projects.*, groups.*, sessions.*, loops.changed {loop} and loops.removed {id}, goals.changed {goal} or {milestone} and goals.removed {id}, steward.changed {steward} (first one for every open and parked loop, goal and milestone, and the Steward). --kinds keeps only agents, drafts, projects, groups, sessions, loops, goals or steward; --agent only those agents' events.",
 			Output: "a stream of {method, params}", Examples: []string{"hesperctl events --kinds agents", "hesperctl events --agent a7f3k2 | jq -r '.params.agent.state'"},
 			Run: eventsCommand},
 		{Name: "wait", ReadOnly: true, Summary: "Wait until agents reach a state", Usage: "wait ID… --until COND [--any|--all] [--next] [--timeout D] [--json]",
@@ -904,7 +904,7 @@ func lastRows(text string, n int) string {
 }
 
 // eventKinds are events --kinds' names: a notification's method prefix.
-var eventKinds = []string{"agents", "drafts", "projects", "groups", "sessions"}
+var eventKinds = []string{"agents", "drafts", "projects", "groups", "sessions", "loops", "goals", "steward"}
 
 // noteAgent is the agent a notification is about ("" for others).
 func noteAgent(n wire.Notification) string {

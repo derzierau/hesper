@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -267,5 +269,38 @@ func TestNewInLoopOnOlderDaemon(t *testing.T) {
 	defer mu.Unlock()
 	if contains(methods, "agents.spawn") {
 		t.Fatalf("spawned anyway: %v", methods)
+	}
+}
+
+// events --kinds loops streams the loop notifications only.
+func TestEventsLoops(t *testing.T) {
+	e := fullDaemon(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var err error
+	out := capture(t, func() {
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			c, err := wire.Dial(ctx, e.sock)
+			if err == nil {
+				title := "Streamed loop"
+				c.Call(ctx, wire.MethodLoopsSave, wire.LoopSaveParams{Title: &title}, nil)
+				c.Close()
+			}
+			time.Sleep(500 * time.Millisecond)
+			cancel()
+		}()
+		err = run(ctx, []string{"events", "--kinds", "loops", "--daemon-socket", e.sock})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"method":"loops.changed"`) || !strings.Contains(out, "Streamed loop") {
+		t.Fatalf("events:\n%s", out)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasPrefix(line, `{"method":"loops.`) {
+			t.Fatalf("not a loops event: %s", line)
+		}
 	}
 }
