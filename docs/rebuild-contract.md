@@ -370,7 +370,8 @@ the registry; the parents are aliases: `open ID` = `open agent ID`,
 [--scope S] [--new]`, `open new [--project P] [--task T | TASK…] [--kind
 K] [--profile P] [--machine M] [--worktree] [--branch B] [--wall W]`,
 `open history [QUERY…]`, `open inbox`, `open review [--agent ID]`, `open
-palette [--query TEXT]`; `wall [show] [--wall W]` (a table
+palette [--query TEXT]`, `open loops [--loop ID]`, `open wrapup`, `open
+product [SCOPE]`; `wall [show] [--wall W]` (a table
 and the bands; `--json`: the whole `app.state`), `wall set [--wall W]
 [--arrangement A] [--grouping G] [--density D] [--collapse BAND]…
 [--expand BAND]… [--band-order B,…] [--scope S] [--sidebar on|off]
@@ -5111,6 +5112,104 @@ above.
   applied at once) and `stewardSet`; both return nil or the inline
   error text (`LoopsErrorText`: forbidden says only a person can do it,
   -32601 says to update hesperd).
+
+- **Commands** (`HesperCore/Commands.swift`, `LoopsKeys.swift`). View ▸
+  Loops ⌘L, Product ⇧⌘L, Wrap-up ⇧⌘E (palette rows too; hidden while
+  hesperd has no loops.*: `CommandContext.loopsSupported`). Three
+  surfaces, `.loops`, `.wrapUp` and `.product`, in the shortcuts sheet
+  after Review; `loopsOpen`, `wrapUpOpen` and `productOpen` count as an
+  open sheet (⌘W is nobody's there). Plain-letter verbs, no menu items
+  (their key caps sit on the sheets' buttons): on the board and a
+  loop's detail ⏎ open, D done, P park (again: unpark), X drop, M merge
+  into another loop, N new agent in this loop, ⌘↩ start the drafted
+  next agent, G map / board, Space check a step off, A add a step, T a
+  step's trigger, ←→ columns, ⇥ all loops / the wall's project or
+  group; in the wrap-up ⏎ take the suggestion, D N P X decide, U undo,
+  ⌘↩ save; on the product page ⏎ open a loop, Y file an unfiled loop, P
+  plan with the Steward, X drop a proposal, ⌘↩ save the plan, ⇥ next
+  product. ↑↓ and esc are the overlay family's. `LoopsKeys.route(_:in:
+  editing:)` turns a chord into the sheet's action; while a field has
+  the keyboard only ⏎, esc and ↑↓ are the sheet's. The sheet's own
+  chord closes it; ⌘K ⌘Y ⌘J ⌘R and the other loops sheets close it and
+  go on (`passesThrough`).
+- **Sheets** (`Loops/LoopsSheetHost.swift`). One `LoopsPanel` per wall
+  window, the ShortcutsPanel template: a scrim over the wall, one
+  opaque Panel min(1080, 86 %) × min(760, 84 %) holding the SwiftUI
+  sheet in SheetChrome; opening another loops sheet replaces it. The
+  window asks the host first for keys (`MainWindow` sendEvent and
+  performKeyEquivalent, after the shortcuts sheet). Each sheet has an
+  `@Observable` model that rebuilds its HesperCore view model only
+  when `LoopStore.version` moved (`sync`, from `.onChange`), never per
+  render. Errors are one inline line under the chrome
+  (`LoopsErrorText`); empty states say what will appear and how.
+- **Loops sheet** (`LoopsSheet.swift`, W1/W2/G2). Board: four columns
+  (Your move, Agents on it, Waiting on others, Parked) of cards: title
+  and age, the next step (or "Looks done"), member chips (state square
+  and short id, four then +N), the loose-end count; the `working` ring
+  on the selection; the Steward's line under the board. Detail: next
+  pill and age, goal, done when, next; a drafted next agent card (⌘↩);
+  Steps and Loose ends numbered in one order with owner and trigger
+  columns (`LoopActions.triggerText`: "after 1, 3", "PR merged", …,
+  "ready"), the roll-up line ("2 of 5 done · 1 yours · next: …"),
+  offers dimmed; on the right the agents (⏎ goes to a live one), the
+  timeline (`LoopWords.timeline`) and the other links. Typed steps
+  (`LoopActions.step`): "@agent …" or "@others …" names the owner, else
+  the person's. Triggers (`LoopActions.trigger`): "after 2 3", "pr
+  <url>", "url <url>", "tag <name>", "review <id>", "loop <id>", a bare
+  URL, "none". M opens a picker of the other open loops filtered as
+  typed. N opens a draft in the loop's project and ⌘↩ starts the
+  drafted one: `LoopHub.noteDraft` remembers the draft's loop (in
+  memory) and `startDraft` sends `SpawnRequest.loop` (only when hesperd
+  has loops). Map (`LoopMapView.swift`, G1): one Canvas from LoopMap's
+  geometry (cached by store version; live state rides on the links):
+  lane per machine, dashed project regions, nodes tinted per loop
+  (working, done, question, horizon, text2, dim: never signal or
+  error) with the state square, edges started and continued solid,
+  handoff dotted, step for you dotted signal, blocks horizon, parent
+  not found error dashed; a legend; a click opens the node's loop.
+- **Wrap-up sheet** (`WrapUpSheet.swift`, W4). Left: the tallies
+  (started, finished, on you, parked) and today's list (decided rows
+  say what). Right: one loop with four verdict cards (Done D, Next step
+  N, Park P, Drop X; the suggested one is outlined and carries ⏎).
+  Decisions stay local until ⌘↩ sends one `loops.save` per change (a
+  failed one stays decided); a store change rebuilds the list and keeps
+  them.
+- **Product sheet** (`ProductSheet.swift`, G4/G5). Scope: the given
+  project or group, else the wall's, else the first product (⇥ walks
+  `ProductPage.scopes`). Page: the goal, each milestone with its
+  standing pill, "done when n of m", due, progress bar, next and its
+  active loops (closed ones counted), then Unfiled (Y: a picker of the
+  open milestones, `goals.file`). A project with `duplicateOf` (the
+  same folder listed twice) shows a banner with "Remove this entry"
+  (`projects.remove`). P calls `steward.plan` and shows the planning
+  view: the planner agent's terminal embedded as a tile-role
+  `AgentTerminal` (a read-only `--fit` view, like a wall tile; "Talk to
+  the planner" opens it full size) and the proposed milestones,
+  updating from goals.changed; ⌘↩ is `goals.accept` for all of them, X
+  `goals.remove` for one.
+- **Settings › Steward** (the seventh pane, ⌘7): the switch, the level
+  (watch, suggest, act, each with its rung of the trust ladder), the Mac
+  it runs on (offline ones marked), what it never does (the
+  person-only calls), the hesperctl lines. `steward.set` off the main
+  actor; its answer is applied at once.
+- **app.open** (`HesperCore/AppControl.swift`): `{loops: true |
+  {loop}}`, `{wrapup: true}`, `{product: true | {scope}}`; the app
+  answers `{wall, selected}`, `{wall, loops}` (today's count) and
+  `{wall, scope}`; an unknown scope is `not_found`, a hesperd without
+  loops `unavailable`. hesperctl `open loops [--loop ID]`, `open
+  wrapup`, `open product [SCOPE]` (MCP: `hesper_open_loops`,
+  `hesper_open_wrapup`, `hesper_open_product`).
+- **Self-test** `test-ui-loops` (`Loops/LoopsSelfTest.swift`,
+  `Tools/run-loops.sh`, `--loops-test-out`): the fake daemon with
+  `--projects demo --loops demo`; opens each sheet by its key and checks
+  the columns, cards, detail steps, add and check a step, the map and
+  its broken parent, park, the wrap-up's verdicts, undo and a drop, the
+  product page's milestones and unfiled loops, filing, planning and
+  accept, and the Steward pane. It opens windows: only with the owner's
+  consent.
+
+**Status (app sheets): built; HesperCoreTests and the hesperctl tests
+pass headless. `test-ui-loops` is written and not run yet.**
 
 ## Wire names kept from Ghosty
 
