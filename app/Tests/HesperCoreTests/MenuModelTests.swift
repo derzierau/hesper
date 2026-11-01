@@ -35,7 +35,7 @@ import Testing
                                   "Send to Background ⌥⌘W", "Kill ⌃⌘W", "Tidy Up Finished Agents ⇧⌘W", "Reopen Closed Agent ⇧⌘T", "—",
                                   "Move to Another Mac… ⇧⌘M", "Rename…", "Resume"])
         let layouts = WallArrangement.allCases.enumerated().map { "\($1.title) ⌥⌘\($0 + 1)" }
-        #expect(rows(.view) == ["Command Palette ⌘K", "History ⌘Y", "Review ⌘R", "Routines ⇧⌘R", "—", "Project Sidebar ⌘0", "Wall Scope… ⌃⌘S", "—"]
+        #expect(rows(.view) == ["Command Palette ⌘K", "History ⌘Y", "Review ⌘R", "Routines ⇧⌘R", "Loops ⌘L", "Product ⇧⌘L", "Wrap-up ⇧⌘E", "—", "Project Sidebar ⌘0", "Wall Scope… ⌃⌘S", "—"]
             + layouts + ["Next Layout ⌥⌘L", "Dense Cards", "—", "Previous Agent ⌥⌘←", "Next Agent ⌥⌘→", "Previous Band ⌥⌘↑", "Next Band ⌥⌘↓", "—",
                          "Enter Full Screen ⌃⌘F"])
         #expect(rows(.window) == ["Minimize ⌘M", "Zoom", "—", "Show Wall ⇧⌘0", "Make Home Wall", "—", "Desks", "Desk Picker… ⇧⌘D", "Save Desk As…", "—",

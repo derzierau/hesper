@@ -39,4 +39,13 @@ struct LoopChipTests {
         #expect(LoopsErrorText.of(missing).contains("no loops yet"))
         #expect(LoopsErrorText.of(RPCError(code: -32000, message: "bad title", kind: .invalid)) == "bad title")
     }
+
+    @Test func spawnNamesTheLoopOnlyWhenSet() {
+        var r = SpawnRequest(project: "/tmp/fake/p", task: "t")
+        #expect(r.params["loop"] == nil)
+        r.loop = "lp-1"
+        #expect(r.params["loop"] == "lp-1")
+        r.loop = ""
+        #expect(r.params["loop"] == nil)
+    }
 }

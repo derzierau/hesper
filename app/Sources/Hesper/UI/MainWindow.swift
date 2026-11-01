@@ -30,6 +30,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let model, event.type == .keyDown else { return super.performKeyEquivalent(with: event) }
         if ShortcutsSheetHost.handleKeyEquivalent(event, window: self) { return true } // keyboard shortcuts: the sheet's ⌘ keys
+        if model.popover == nil, LoopsSheetHost.handleKeyEquivalent(event, window: self) { return true } // loops sheets: their ⌘ keys
         if model.popover == nil, HistoryPanelHost.handleKeyEquivalent(event, window: self) { return true } // shared history: the panel's ⌘ keys (a popover over it has the keys)
         if model.popover == nil, ReviewPanelHost.handleKeyEquivalent(event, window: self) { return true } // review: the sheet's ⌘ keys
         let chord = KeyChord(event: event)
@@ -55,6 +56,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
         // The same under a sheet: what its surface doesn't bind goes to the
         // menu (File ▸ Close is off there), not to the wall under it.
         if ShortcutsSheetHost.isOpen(model) { return super.performKeyEquivalent(with: event) }
+        if let s = LoopsSheetHost.surface(model), CommandRegistry.resolve(chord, in: s) == nil { return super.performKeyEquivalent(with: event) }
         if HistoryPanelHost.isOpen(model), CommandRegistry.resolve(chord, in: .history) == nil { return super.performKeyEquivalent(with: event) }
         if ReviewPanelHost.isOpen(model), CommandRegistry.resolve(chord, in: .review) == nil { return super.performKeyEquivalent(with: event) }
         if model.activeTileID != nil, firstResponder is GhosttySurfaceView, model.mode != .focus {
@@ -92,6 +94,7 @@ class MainWindow: NSWindow { // not final: the window layer's AgentWindow refine
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, ShortcutsSheetHost.handleKey(event, window: self) { return } // keyboard shortcuts: esc
+        if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, LoopsSheetHost.handleKey(event, window: self) { return } // loops sheets
         if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, HistoryPanelHost.handleKey(event, window: self) { return } // shared history
         if event.type == .keyDown, !(model?.showPalette ?? false), model?.popover == nil, ReviewPanelHost.handleKey(event, window: self) { return } // review
         if event.type == .keyDown, let model {
@@ -200,6 +203,7 @@ final class RootView: NSView {
         HistoryPanelHost.attach(self) // shared history (⌘Y panel, ghost cards)
         ReviewPanelHost.attach(self) // review (⌘R sheet)
         ShortcutsSheetHost.attach(self) // keyboard shortcuts (⌘/ sheet)
+        LoopsSheetHost.attach(self) // loops (⌘L, ⇧⌘L, ⇧⌘E sheets)
         observeChanges { [weak self] in
             guard let self else { return }
             _ = (self.model.sidebarVisible, self.model.scope, self.model.machines)
@@ -298,6 +302,7 @@ final class RootView: NSView {
         overlay.frame = bounds
         historyPanel?.frame = historyFrame // shared history
         reviewPanel?.frame = reviewFrame // review
+        loopsPanel?.frame = reviewFrame // loops sheets
     }
 
     /// The soft edge on a side with cards scrolled off it.
@@ -355,6 +360,17 @@ final class RootView: NSView {
     }
 
     func shortcutsClosed() { restoreKeyboard() }
+
+    // MARK: Loops (the ⌘L, ⇧⌘L and ⇧⌘E sheets sit over the wall, under the overlays)
+
+    private(set) weak var loopsPanel: LoopsPanel?
+
+    func addLoopsPanel(_ p: LoopsPanel) {
+        loopsPanel = p
+        addSubview(p, positioned: .below, relativeTo: overlay)
+    }
+
+    func loopsClosed() { restoreKeyboard() }
 
     private func anchor(for kind: PopoverKind) -> CGRect? {
         switch kind {

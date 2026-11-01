@@ -314,6 +314,7 @@ extension AppModel {
             return
         }
         guard var req = c.spawnRequest() else { return }
+        req.loop = loopHub.loop(forDraft: id) // loops: a draft the loops sheet opened starts in its loop
         // A folder that isn't there yet (the note said so): created now.
         if c.missingFolder != nil {
             if c.createMissingFolder() != nil { onAgentsChanged?(); return }
@@ -371,6 +372,7 @@ extension AppModel {
             }
             do {
                 let a = try await client.spawn(req)
+                loopHub.draftStarted(id)
                 adopt(draftID: id, agent: a)
                 onDraftStarted?(a)
                 Task { await refreshLists() }

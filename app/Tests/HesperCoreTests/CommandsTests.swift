@@ -45,6 +45,12 @@ import Testing
                    .reviewNextFile, .reviewPreviousFile, .reviewSeen, .reviewReject, .reviewNote, .reviewBulkAccept] {
             e[id] = "Review's toolbar and hunk bars carry the keys"
         }
+        for id in [CommandID.loopsOpen, .loopsDone, .loopsPark, .loopsDrop, .loopsMerge, .loopsNextAgent, .loopsStartDraft, .loopsMap,
+                   .loopsCheck, .loopsAddStep, .loopsTrigger, .loopsPreviousColumn, .loopsNextColumn, .loopsSwitchScope,
+                   .wrapUpAccept, .wrapUpNextStep, .wrapUpUndo, .wrapUpApply,
+                   .productFile, .productPlan, .productSavePlan, .productDropProposal, .productNextScope] {
+            e[id] = "the loops sheets' toolbars, cards and footers carry the keys"
+        }
         return e
     }()
 
@@ -198,6 +204,8 @@ import Testing
             #expect(SearchKeys.history(k, characters: typed, focus: .list) == (SearchKeys.action(for: id) ?? .history(.pass)), where_)
         case .review:
             #expect(ReviewKeys.route(k) == (ReviewKeys.action(for: id) ?? .pass), where_)
+        case .loops, .wrapUp, .product:
+            #expect(LoopsKeys.route(k, in: s) == (LoopsKeys.action(for: id, in: s) ?? .pass), where_)
         case .settings, .everywhere:
             break // no router: the menu's key equivalents
         }

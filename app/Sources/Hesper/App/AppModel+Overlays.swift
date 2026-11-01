@@ -563,7 +563,9 @@ extension AppModel {
                        hasDraft: editingDraftID != nil || selectedDraft != nil, reviewCount: reviewHub.items.count, wallEmpty: wall.isEmpty,
                        canReopen: closeBook.reopen.top != nil, canUndo: undoToast != nil || textHasFocus,
                        historySupported: HistoryHub.shared(for: self).supported == true, historyOpen: HistoryPanelHost.isOpen(self),
-                       reviewOpen: ReviewPanelHost.isOpen(self), paletteOpen: showPalette, popoverOpen: popover != nil,
+                       reviewOpen: ReviewPanelHost.isOpen(self), loopsOpen: LoopsSheetHost.surface(self) == .loops,
+                       wrapUpOpen: LoopsSheetHost.surface(self) == .wrapUp, productOpen: LoopsSheetHost.surface(self) == .product,
+                       loopsSupported: loopHub.available, paletteOpen: showPalette, popoverOpen: popover != nil,
                        shortcutsOpen: ShortcutsSheetHost.isOpen(self),
                        isHomeWall: isHomeWall, inFullScreen: inFullScreen)
     }
