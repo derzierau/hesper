@@ -335,7 +335,8 @@ func Open(opt Options) (*Registry, error) {
 	for _, rec := range records {
 		r.restore(rec)
 	}
-	go r.pruneLoop() // checkpoint.go
+	r.backfillLoops() // loopwork.go
+	go r.pruneLoop()  // checkpoint.go
 	// The registry's lock is what every hook, list and attach waits on:
 	// a hold over 10 s (and a stall of the whole process) is logged with
 	// the holder's stack.

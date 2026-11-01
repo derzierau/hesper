@@ -5149,6 +5149,10 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   `loop` and `milestone`, which win. A move carries the loop in the
   manifest (`AgentInfo.loop`; an older source sends none and the agent
   gets a new loop). Service agents are never assigned.
+- **Backfill.** When hesperd starts, every restored agent without a loop
+  (it ran before this Mac had loops: an upgrade) is assigned one,
+  parents before children, so a child joins its parent's loop. Agents
+  with a loop are left alone, so later starts assign nothing.
 - **`Agent.loop`** is filled from `Loops.LoopOf(ref)` whenever this Mac's
   agents are listed, fetched or notified; it is never kept in the
   registry nor written to `agents.json` (the store's links are the

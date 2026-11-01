@@ -541,3 +541,33 @@ func TestServiceArgv(t *testing.T) {
 		t.Fatalf("agent argv %q", argv)
 	}
 }
+
+// Agents that ran before loops existed (an upgrade) get a loop when
+// hesperd starts: parents first, so a child joins its parent's loop.
+func TestBackfillLoopsOnOpen(t *testing.T) {
+	h := newHarness(t)
+	parent := h.spawn(wire.SpawnParams{Kind: "shell"})
+	child := h.spawn(wire.SpawnParams{Kind: "shell"})
+	other := h.spawn(wire.SpawnParams{Kind: "shell"})
+	h.close()
+	editRecord(t, h, child.ID, func(rec map[string]any) { rec["parent"], rec["depth"] = parent.ID, 1 })
+	l := newFakeLoops()
+	h.opt.Loops = l
+	h.open()
+	_, p := h.reg.split(parent.ID)
+	_, c := h.reg.split(child.ID)
+	_, o := h.reg.split(other.ID)
+	pl, cl, ol := l.LoopOf("n1/"+p), l.LoopOf("n1/"+c), l.LoopOf("n1/"+o)
+	if pl == "" || cl != pl || ol == "" || ol == pl {
+		t.Fatalf("loops: parent %q child %q other %q", pl, cl, ol)
+	}
+	if n := len(l.assigns()); n != 3 {
+		t.Fatalf("%d assigns, want 3", n)
+	}
+	// A second start assigns nothing again.
+	h.close()
+	h.open()
+	if n := len(l.assigns()); n != 3 {
+		t.Fatalf("%d assigns after a restart, want 3", n)
+	}
+}

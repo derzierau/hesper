@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +83,35 @@ func (r *Registry) assign(a *agent, info AssignInfo) {
 	}
 	info.Ref, info.Agent, info.ParentRef = r.ref(a.local), a.Agent, r.parentRef(a.Parent)
 	l.Assign(info)
+}
+
+// backfillLoops puts the restored agents that have no loop in one (agents
+// that ran before loops existed, or before this Mac had a loops store):
+// parents first, so a child joins its parent's loop. Service agents get
+// none. Assign is cheap and the store never calls back into the registry,
+// so the lock is held throughout.
+func (r *Registry) backfillLoops() {
+	l := r.opt.Loops
+	if l == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	missing := make([]*agent, 0, len(r.agents))
+	for _, a := range r.agents {
+		if a.Service == "" && l.LoopOf(r.ref(a.local)) == "" {
+			missing = append(missing, a)
+		}
+	}
+	sort.Slice(missing, func(i, j int) bool {
+		if missing[i].Depth != missing[j].Depth {
+			return missing[i].Depth < missing[j].Depth
+		}
+		return missing[i].Created.Before(missing[j].Created)
+	})
+	for _, a := range missing {
+		r.assign(a, AssignInfo{})
+	}
 }
 
 // parentRef is the ref of parent (an agent id) when it is one of this
