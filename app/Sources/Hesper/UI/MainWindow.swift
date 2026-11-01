@@ -202,7 +202,7 @@ final class RootView: NSView {
         ShortcutsSheetHost.attach(self) // keyboard shortcuts (⌘/ sheet)
         observeChanges { [weak self] in
             guard let self else { return }
-            _ = (self.model.sidebarVisible, self.model.scope, self.model.machines)
+            _ = (self.model.sidebarVisible, self.model.scope, self.model.machines, self.model.loopHub.projectLoops)
             self.needsLayout = true
             if self.showsSidebar { self.sidebar.reload() }
         }

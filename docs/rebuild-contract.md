@@ -5410,6 +5410,116 @@ against an in-process hesperd with the real loops store); the Steward
 commands only against a fake until `internal/steward` lands.
 `hesperctl open loops|wrapup|product` is the app slice's.
 
+### As built — loops (app sheets)
+
+Code: `app/Sources/Hesper/Loops/` (the Hesper target) on the app core
+above.
+
+- **LoopHub** (`Loops/LoopHub.swift`), one per daemon connection like
+  ReviewHub (`model.loopHub`). On every connect (`AppModel.loopSaw`) it
+  lists `loops.list`, `goals.list`, `steward.status` and
+  `loops.settings.get` at once, off the main actor; an older hesperd
+  (-32601) leaves `available` false. Notifications are decoded on the
+  reader thread (`LoopsEvent.decode`) into a bounded queue (4,096, the
+  oldest dropped), and applied to `store` on the main actor once per
+  120 ms batch; events that arrive while a list is out are replayed on
+  top of it. After each batch it rebuilds `chips` (loop id →
+  `LoopChip`: the title cut to 28 characters, who acts next, looks
+  done, the next text, open items on the person) and `onYouCount` (the
+  board's "your move"). `chip(for: agent)` reads `Agent.loop`. Writes go
+  through `run { client in … }` (off the main actor; a returned loop is
+  applied at once) and `stewardSet`; both return nil or the inline
+  error text (`LoopsErrorText`: forbidden says only a person can do it,
+  -32601 says to update hesperd).
+
+### As built — loops (app integration)
+
+Code: the existing surfaces of the `Hesper` target reading `LoopHub`;
+the logic is in HesperCore (`InboxList.swift` and the app core above).
+
+- **Inbox** (⌘J, `UI/Overlays.swift` `AttentionPanel`,
+  `AppModel+Overlays.swift`). The attention queue exactly as before,
+  then "Your move" (`LoopHub.yourMove(excluding:)`: `YourMove.entries`
+  without the queue's agents, cached per store version). Headers
+  ("Needs you", "Your move") show only when "Your move" has entries; the
+  title is "Inbox · n" over both. One selection runs through both
+  (`InboxList.items`, a queue agent or a loop); ↑↓ ⏎ ⌘⏎ esc and the
+  filter work as before (the filter also matches a loop's title, the
+  entry's text and its sender). The panel's height comes from
+  `InboxList.height` (rows, headers, gaps) before layout. An entry's
+  quick actions are buttons (the first ⏎, Open ⌘⏎; letters stay the
+  filter's, so no keystroke answers by accident) and become
+  `YourMoveCall`s: Yes / No / Did it to a live agent type the text and
+  submit it (`agents.input` with submit), Did it on an item ticks it
+  off, Copy command copies, Later files an agent's ask or step as the
+  person's item (question or step) and parks the loop until tomorrow
+  09:00, Open calls `LoopHub.openLoop` (the Loops sheet) or else opens
+  the asking agent's tile. An acted-on entry hides until its loop
+  changes and comes back with a toast when a call fails. ⌘J opens when
+  either section has entries (else the "Nothing needs you." toast) and
+  closes itself a second after both are empty. With an empty queue the
+  toolbar shows a quiet "n your move" pill (never red) as the inbox's
+  anchor. Offers never appear. The menu bar, the red pill and
+  notifications still count approval, question and error only.
+
+- **Tile loop tag** (`UI/TileParts.swift` `LoopTagView`, built in
+  `TileView.refreshContent` and the focus view's band). Right of the
+  band's one line, never on an action strip: who acts next as a
+  StateMark (`TileLoopTag.mark`: you a question's tone, agents working,
+  looks done done, others and parked outlined; never signal), the loop's
+  short title (`LoopChip`, 28 characters) and the word ("Your move");
+  a tight band keeps mark and title, the tooltip is `nextText`. A
+  service agent shows "Steward" / "Planner" and no loop. The tag is a
+  lookup in `LoopHub.chips` when the band refreshes; the wall observes
+  `chips` and refreshes only the bands whose loop's chip changed, and
+  relays out when one gains or loses its tag (a done or idle agent with
+  a tag but no summary keeps its one line: `AttentionBar.hasContent`).
+
+- **Sidebar** (⌘0, `UI/ProjectSidebar.swift`). Every project, group
+  and "All agents" row carries its loop counts (`ProjectNavRow.loops`,
+  `ProjectLoops.apply`): open loops (active, parked included) behind a
+  loop glyph, and those on the person (the board's "your move") as a
+  question-toned square with its count; a group counts each loop once
+  across its projects. `LoopHub.projectLoops` is rebuilt per store
+  version, read into the sidebar's Snapshot and observed by the window,
+  so a loop change alone reloads the rows. A duplicate project
+  (`Project.duplicateOf`, decoded leniently: missing, empty or not a
+  string is nil) shows a quiet warning triangle; its context menu's
+  "Remove Duplicate…" asks first (an NSAlert, like the sidebar's other
+  questions) and then calls `projects.remove` on the duplicate only.
+
+- **Composer start check** (⌘N, a draft tile and the quick launch
+  panel: `DraftChips.startStrip` in `UI/Composer.swift`). 150 ms after
+  the last keystroke `ComposerModel.runStartCheck` checks the task
+  against `LoopHub.startCheckIndex` (built once per store version and
+  catalog) with the folder's project and the machine; the strip shows
+  while the task has words and there is a match or loops on the person
+  (`StartStrip.shows`). It says "This looks like part of <loop>", the
+  loose end the task would tick off, and the on-you meter "n / limit
+  on you" (the error tone at `loopLimit` or over, a hint only). Keys:
+  ⌘⏎ Start is unchanged and starts a new loop; ⇧⌘⏎ "Add to loop" starts
+  with `SpawnRequest.loop` (sent as `loop`) and, once the agent runs,
+  ticks the loose end off (`loops.item` done); ⌘D "Draft in loop" files
+  the task's first line as the agents' step with `draft` set to this
+  draft and parks it (draft tiles only: the quick launch panel keeps
+  no drafts). Both chords are unbound in the composer (the window's
+  router passes them to the text view, `ComposerTextView
+  .performKeyEquivalent`), and are the strip's own keys, not registry
+  commands. The chip row's measured height allows one more row.
+
+- **Service agents** (`Agent.service`: the Steward, the planner).
+  Tidy Up (⇧⌘W) and auto-tidy (`TidyUp.select`, `AutoTidy`) never
+  close them: hesperd runs them and they idle between wakes. Closing
+  one by hand (⌘W) still works. Their tiles live on the wall's quiet
+  shelf by default, working or not (`WallTileInput.shelved`,
+  `shelves`); one that needs the person (approval, question, error)
+  comes off it like any other agent.
+
+**Status: built and unit-tested headless only** (HesperCoreTests,
+`swift build --product Hesper`). Not run in the app or against a real
+hesperd with loops yet; the inbox's Open waits on the Loops sheet
+setting `LoopHub.openLoop`.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

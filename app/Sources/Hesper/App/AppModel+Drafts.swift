@@ -305,7 +305,9 @@ extension AppModel {
     /// agent in place: same slot, the first line names it. `bring`: the
     /// note's "Bring clean" (else a folder only this Mac has comes along
     /// with its changes, the note's default).
-    func startDraft(_ id: String, openNext: Bool = false, bring: BringChanges? = nil) {
+    /// `loop`: the start check's "add to that loop" (⇧⌘⏎): the agent joins
+    /// it, and `tickOff` (the loose end it does) is ticked off once it runs.
+    func startDraft(_ id: String, openNext: Bool = false, bring: BringChanges? = nil, loop: String? = nil, tickOff: String? = nil) {
         guard drafts[id] != nil, startingDrafts[id] == nil else { return }
         let c = composer(for: id)
         // No folder yet: ⌘↩ goes to the folder chip (Start is disabled).
@@ -314,6 +316,7 @@ extension AppModel {
             return
         }
         guard var req = c.spawnRequest() else { return }
+        req.loop = loop
         // A folder that isn't there yet (the note said so): created now.
         if c.missingFolder != nil {
             if c.createMissingFolder() != nil { onAgentsChanged?(); return }
@@ -373,6 +376,7 @@ extension AppModel {
                 let a = try await client.spawn(req)
                 adopt(draftID: id, agent: a)
                 onDraftStarted?(a)
+                if let loop, let tickOff { self.tickOff(tickOff, in: loop) }
                 Task { await refreshLists() }
             } catch let e as RPCError where req.scratch && ScratchSupport.missing(e) {
                 // That Mac's hesperd makes no scratches: today's way, choose a folder.
@@ -462,11 +466,22 @@ extension AppModel {
         }
     }
 
+    /// The start check's loose end, done by the agent just started in its
+    /// loop: ticked off (a failure says so; the agent runs either way).
+    private func tickOff(_ item: String, in loop: String) {
+        let hub = loopHub
+        Task { @MainActor in
+            if let e = await hub.run({ client in try await client.loopItem(loop, item: .done(item)); return nil }) {
+                self.showToast("Could not tick the loose end off: \(e)", error: true)
+            }
+        }
+    }
+
     // MARK: Quick launch
 
     /// ⌘↩ in the quick launch panel: start it (the agent joins the wall),
     /// clear the text, keep the choices.
-    func startQuick(bring: BringChanges? = nil) async -> String? {
+    func startQuick(bring: BringChanges? = nil, loop: String? = nil, tickOff: String? = nil) async -> String? {
         let c = composer(for: quickDraft.id)
         if c.needsFolder {
             c.complete(.project) // the # list: choose a folder first
@@ -477,6 +492,7 @@ extension AppModel {
         c.busy = true
         defer { c.busy = false }
         var r = req
+        r.loop = loop
         if let url = c.resolution.cloneURL {
             switch await clone(url: url, machine: r.machine) {
             case .success(let p): r.project = p
@@ -509,6 +525,7 @@ extension AppModel {
             quickDraft = d
             c.error = nil
             onStarted?(a, true)
+            if let loop, let tickOff { self.tickOff(tickOff, in: loop) }
             Task { await refreshLists() }
             return nil
         } catch {

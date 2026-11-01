@@ -127,19 +127,21 @@ public enum CloseRules {
 public enum TidyUp {
     /// ⇧⌘W: the finished agents (done, idle, exited) among `agents` (the
     /// wall's, in order), only `band`'s when a band is focused; never
-    /// working or needing you.
+    /// working or needing you, never an agent hesperd runs itself (the
+    /// Steward, the planner: `service`).
     public static func select(_ agents: [Agent], band: String?, bandOf: (Agent) -> String?) -> [Agent] {
-        agents.filter { CloseRules.isFinished($0) && (band == nil || bandOf($0) == band) }
+        agents.filter { CloseRules.isFinished($0) && !$0.isService && (band == nil || bandOf($0) == band) }
     }
 }
 
 /// Settings › Agents › "Close finished agents after 30 min" (off by
 /// default): a finished agent closes itself once it has been finished that
-/// long. Killed agents stay (their pane is there to be read).
+/// long. Killed agents stay (their pane is there to be read), and so do
+/// service agents (hesperd runs them; they idle between wakes).
 public enum AutoTidy {
     public static let after: TimeInterval = 30 * 60
 
-    static func eligible(_ a: Agent) -> Bool { CloseRules.isFinished(a) && !a.isKilled && a.stateSince != nil }
+    static func eligible(_ a: Agent) -> Bool { CloseRules.isFinished(a) && !a.isKilled && !a.isService && a.stateSince != nil }
 
     public static func due(_ agents: [Agent], now: Date, after: TimeInterval = after, exclude: Set<String> = []) -> [Agent] {
         agents.filter { a in

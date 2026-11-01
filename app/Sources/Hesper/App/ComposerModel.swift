@@ -23,6 +23,9 @@ final class ComposerModel {
     var targetFolders: [String: Bool] = [:]
     /// Bumped when a folder was created (the missing-folder note re-checks).
     var folderCheck = 0
+    /// The start check for the task (StartStrip; nil: nothing to say).
+    var startCheck: StartCheckResult?
+    @ObservationIgnored private var checkTask: Task<Void, Never>?
     /// The text view: replace its text (a completion, a chip choice).
     @ObservationIgnored var onReplaceText: ((String, Int) -> Void)?
     /// The text view: where the caret is (root/panel coordinates).
@@ -63,8 +66,65 @@ final class ComposerModel {
             d = app.syncDraft(d, previousText: previous)
             persist(d)
             error = nil
+            scheduleStartCheck()
         }
         updateCompletion(text: text)
+    }
+
+    // MARK: Start check
+
+    /// The strip under the task, when it has something to say.
+    var startStrip: StartStrip? { startCheck.map(StartStrip.init) }
+
+    /// A short pause after the last keystroke, then one check (the index
+    /// is LoopHub's, built per store version).
+    func scheduleStartCheck() {
+        checkTask?.cancel()
+        checkTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.runStartCheck()
+        }
+    }
+
+    func runStartCheck() {
+        let hub = app.loopHub
+        let r = resolution
+        var next: StartCheckResult?
+        if hub.available, hub.loaded {
+            let res = hub.startCheckIndex(catalog: app.catalog)
+                .check(task: r.task, project: app.folderProjectID(r.project, machine: r.machine), machine: r.machine)
+            if StartStrip.shows(res, task: r.task) { next = res }
+        }
+        if next != startCheck { startCheck = next }
+    }
+
+    /// ⇧⌘⏎ / ⌘D or the strip's buttons. Adding starts the agent in the
+    /// loop (and ticks the loose end off once it runs); a draft in the
+    /// loop files the task as the agents' step pointing at this draft and
+    /// leaves the composer (the quick launch panel keeps no drafts: it
+    /// only adds).
+    func perform(_ c: StartStrip.Choice) {
+        switch c {
+        case .addToLoop(let loop, let looseEnd):
+            if quick {
+                Task { _ = await app.startQuick(loop: loop, tickOff: looseEnd) }
+            } else {
+                app.startDraft(id, loop: loop, tickOff: looseEnd)
+            }
+        case .draftInLoop(let loop):
+            guard !quick else { return }
+            let item = StartStrip.draftItem(task: resolution.task, draft: id)
+            let id = id
+            Task { @MainActor in
+                if let e = await app.loopHub.run({ client in try await client.loopItem(loop, item: item); return nil }) {
+                    self.error = e
+                } else {
+                    self.startCheck = nil
+                    self.app.parkDraft(id)
+                }
+            }
+        }
     }
 
     /// The folder chosen (chip list, folder picker, a typed path, recent):
