@@ -5188,7 +5188,10 @@ Code: `internal/agents/loopwork.go` (the registry's side),
     `steward.status`): anything;
   - a person's only: `steward.set`, `goals.accept`, `goals.remove`,
     `loops.settings.set`, and any `loops.save` or `goals.save` that sets a
-    loop's, goal's or milestone's status to `done` or `dropped`;
+    loop's, goal's or milestone's status to `done` or `dropped`, or a
+    goal's or milestone's to `open` (accepting a proposed milestone,
+    reopening); a milestone an agent creates without a status is
+    `proposed` (the store sets it), one a person creates `open`;
   - `loops.merge`, `loops.split`: only the Steward (service `steward`) at
     level act;
   - `steward.plan`: only the Steward, at level suggest or act (a planner

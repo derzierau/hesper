@@ -564,8 +564,10 @@ controller records the new agent's loop itself.
 
 Types in `relay/pkg/wire/loops.go`. Agent callers follow the agent tree's
 policy: `steward.set`, `goals.accept`, `goals.remove`,
-`loops.settings.set` and any change of a loop's or milestone's status to
-`done` or `dropped` are a person's only; below Steward level `act`, so are
+`loops.settings.set`, any change of a loop's, goal's or milestone's
+status to `done` or `dropped` and any change of a goal's or milestone's
+status to `open` (accepting, reopening) are a person's only (a milestone
+an agent creates is `proposed`); below Steward level `act`, so are
 `loops.merge` and `loops.split`; an agent that is not a service reads
 everything and changes only the items and links of its own loop
 (`forbidden` otherwise); the Steward (a service agent) writes the rest.

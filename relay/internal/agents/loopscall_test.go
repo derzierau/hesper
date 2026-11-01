@@ -102,6 +102,10 @@ func TestLoopsPolicySteward(t *testing.T) {
 	forbidden(t, "close a loop", h.callAs(s.ID, wire.MethodLoopsSave, wire.LoopSaveParams{ID: "lp-1", Status: ptr(wire.LoopDropped)}, nil))
 	forbidden(t, "finish a goal", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Goal: &wire.GoalPatch{ID: "gl-1", Status: ptr(wire.LoopDone)}}, nil))
 	forbidden(t, "finish a milestone", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{ID: "ms-1", Status: ptr(wire.LoopDone)}}, nil))
+	forbidden(t, "accept a milestone", h.callAs(p.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{ID: "ms-1", Status: ptr(wire.LoopOpen)}}, nil))
+	forbidden(t, "create an open milestone", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Title: ptr("Beta"), Status: ptr(wire.LoopOpen)}}, nil))
+	forbidden(t, "reopen a goal", h.callAs(s.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Goal: &wire.GoalPatch{ID: "gl-1", Status: ptr(wire.LoopOpen)}}, nil))
+	allowed(t, "send a milestone back", h.callAs(p.ID, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{ID: "ms-1", Status: ptr(wire.MilestoneProposed)}}, nil))
 	for _, m := range []string{wire.MethodStewardSet, wire.MethodGoalsAccept, wire.MethodGoalsRemove, wire.MethodLoopsSettingsSet} {
 		forbidden(t, m, h.callAs(s.ID, m, map[string]any{}, nil))
 	}

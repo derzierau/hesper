@@ -279,6 +279,21 @@ func TestGoalsAndMilestones(t *testing.T) {
 	}
 }
 
+// TestAgentsProposeMilestones: a milestone an agent creates is proposed
+// (a person accepts it); a person's is open.
+func TestAgentsProposeMilestones(t *testing.T) {
+	s := openTest(t, "", "n-a", nil)
+	planner := agents.Caller{Agent: "L/pl", Service: wire.ServicePlanner}
+	got, err := call[wire.GoalChanged](t, s, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Scope: ptr("p-app"), Title: ptr("Beta")}}, planner)
+	if err != nil || got.Milestone == nil || got.Milestone.Status != wire.MilestoneProposed {
+		t.Fatalf("an agent's milestone %+v %v", got.Milestone, err)
+	}
+	mine := must[wire.GoalChanged](t, s, wire.MethodGoalsSave, wire.GoalSaveParams{Milestone: &wire.MilestonePatch{Scope: ptr("p-app"), Title: ptr("GA")}})
+	if mine.Milestone.Status != wire.LoopOpen {
+		t.Fatalf("a person's milestone %+v", mine.Milestone)
+	}
+}
+
 func TestStewardConfig(t *testing.T) {
 	s := openTest(t, "", "n-a", nil)
 	s.SetMachine("mini")

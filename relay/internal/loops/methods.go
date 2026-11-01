@@ -133,6 +133,10 @@ func (s *Store) Call(method string, params json.RawMessage, caller agents.Caller
 		if err := decode(&p); err != nil {
 			return nil, err, true
 		}
+		if m := p.Milestone; caller.Agent != "" && m != nil && m.ID == "" && m.Status == nil {
+			status := wire.MilestoneProposed // an agent proposes; a person accepts (goals.accept)
+			m.Status = &status
+		}
 		res, err := s.SaveGoal(p)
 		return res, err, true
 	case wire.MethodGoalsRemove:

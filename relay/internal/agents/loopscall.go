@@ -15,7 +15,8 @@ import (
 // Policy, when an agent calls (a person may do everything):
 //   - reads (loopReads): anything;
 //   - a person's only (loopPerson), and any loops.save or goals.save that
-//     marks a loop, goal or milestone done or dropped: never;
+//     marks a loop, goal or milestone done or dropped, or a goal or
+//     milestone open (accepting, reopening): never;
 //   - loops.merge and loops.split: only the Steward at level act;
 //   - steward.plan: only the Steward, from level suggest on;
 //   - other writes: a service agent (the Steward, a planner) may; any
@@ -106,6 +107,9 @@ func (s *Server) loopsAllowed(who Caller, method string, params json.RawMessage)
 	if what := closes(method, params); what != "" {
 		return wire.Errorf(wire.CodeForbidden, "agent %s may not mark a %s done or dropped: a person does (hesperctl loops close, goals save)", caller, what)
 	}
+	if what := opens(method, params); what != "" {
+		return wire.Errorf(wire.CodeForbidden, "agent %s may not open a %s: a person accepts or reopens it (hesperctl goals accept, goals save)", caller, what)
+	}
 	switch method {
 	case wire.MethodLoopsMerge, wire.MethodLoopsSplit:
 		if who.Service == wire.ServiceSteward && s.stewardLevel() == wire.StewardAct {
@@ -160,6 +164,26 @@ func closes(method string, params json.RawMessage) string {
 		if p.Milestone != nil && final(p.Milestone.Status) {
 			return "milestone"
 		}
+	}
+	return ""
+}
+
+// opens is what a goals.save opens ("goal", "milestone"; "" nothing):
+// accepting a proposed milestone (goals.accept) and reopening a goal or
+// milestone a person closed are a person's.
+func opens(method string, params json.RawMessage) string {
+	if method != wire.MethodGoalsSave {
+		return ""
+	}
+	var p wire.GoalSaveParams
+	if json.Unmarshal(params, &p) != nil {
+		return ""
+	}
+	if p.Goal != nil && p.Goal.Status != nil && *p.Goal.Status == wire.LoopOpen {
+		return "goal"
+	}
+	if p.Milestone != nil && p.Milestone.Status != nil && *p.Milestone.Status == wire.LoopOpen {
+		return "milestone"
 	}
 	return ""
 }
