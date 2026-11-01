@@ -5455,7 +5455,8 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   filter work as before (the filter also matches a loop's title, the
   entry's text and its sender). The panel's height comes from
   `InboxList.height` (rows, headers, gaps) before layout. An entry's
-  quick actions are buttons (the first ⏎, Open ⌘⏎; letters stay the
+  quick actions are buttons (the first ⏎, never Later: with no
+  answer or Did it, the agent gone, it is Open; Open ⌘⏎; letters stay the
   filter's, so no keystroke answers by accident) and become
   `YourMoveCall`s: Yes / No / Did it to a live agent type the text and
   submit it (`agents.input` with submit), Did it on an item ticks it

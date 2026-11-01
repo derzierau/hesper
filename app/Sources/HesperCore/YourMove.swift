@@ -120,9 +120,7 @@ public enum YourMove {
             out.append(YourMoveAction(title: "Yes", intent: .answer(agent: a, text: "Yes")))
             out.append(YourMoveAction(title: "No", intent: .answer(agent: a, text: "No")))
         }
-        out.append(YourMoveAction(title: "Later", intent: .later(loop: l.id)))
-        out.append(YourMoveAction(title: "Open", intent: .open(loop: l.id)))
-        return out
+        return finish(out, loop: l)
     }
 
     /// A step: Did it (ticks the item off, or tells the live agent), Copy
@@ -134,10 +132,19 @@ public enum YourMove {
         } else if let k, let a = k.agent, k.isLive {
             out.append(YourMoveAction(title: "Did it", intent: .answer(agent: a, text: "Done.")))
         }
+        let open = out.isEmpty
+        if open { out.append(YourMoveAction(title: "Open", intent: .open(loop: l.id))) }
         if let cmd = command(in: text) { out.append(YourMoveAction(title: "Copy command", intent: .copy(cmd))) }
         out.append(YourMoveAction(title: "Later", intent: .later(loop: l.id)))
-        out.append(YourMoveAction(title: "Open", intent: .open(loop: l.id)))
+        if !open { out.append(YourMoveAction(title: "Open", intent: .open(loop: l.id))) }
         return out
+    }
+
+    /// Later and Open after the answers. With no answer (the agent is
+    /// gone) Open comes first: ⏎ never parks a loop.
+    private static func finish(_ answers: [YourMoveAction], loop l: Loop) -> [YourMoveAction] {
+        let later = YourMoveAction(title: "Later", intent: .later(loop: l.id)), open = YourMoveAction(title: "Open", intent: .open(loop: l.id))
+        return answers.isEmpty ? [open, later] : answers + [later, open]
     }
 
     /// The command a step names: the first `code span`, else a line
