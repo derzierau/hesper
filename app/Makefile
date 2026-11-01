@@ -38,7 +38,7 @@ PERF_FPS ?= 120
 PERF_SECONDS ?= 10
 DAEMON ?= fake
 
-.PHONY: test-ui-history perf-history test-ui-desks test-ui-projects test-ui-windows perf-walls layout layout-matrix build app bin fake test test-unit test-fake test-ui test-ui-real perf run clean icon icon-preview
+.PHONY: test-ui-loops test-ui-history perf-history test-ui-desks test-ui-projects test-ui-windows perf-walls layout layout-matrix build app bin fake test test-unit test-fake test-ui test-ui-real perf run clean icon icon-preview
 
 build: app fake
 
@@ -86,7 +86,7 @@ app: bin build/AppIcon.icns
 	codesign --verify --strict $(APP)
 	@echo "built $(APP)"
 
-test: test-unit test-fake test-ui test-ui-windows test-ui-projects test-ui-desks test-ui-history
+test: test-unit test-fake test-ui test-ui-windows test-ui-projects test-ui-desks test-ui-history test-ui-loops
 
 test-unit:
 	swift test
@@ -108,6 +108,11 @@ test-ui-projects: build
 # Desks: per display setup (injected display sets), pointers, relaunch (SHOTS=dir).
 test-ui-desks: build
 	SHOTS=$(SHOTS) Tools/run-desks.sh
+# Loops: the board, a loop's detail, the map, the wrap-up, a product page
+# with its planning view, Settings › Steward (fake --loops demo; SHOTS=dir).
+test-ui-loops: build
+	SHOTS=$(SHOTS) Tools/run-loops.sh
+
 # Shared history: History panel, card, ghost cards, ⌘K (SHOTS=dir), then
 # the same app against a daemon without sessions.* (History hidden).
 test-ui-history: build
