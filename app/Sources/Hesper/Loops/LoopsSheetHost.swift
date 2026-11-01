@@ -189,7 +189,8 @@ final class LoopsPanel: NSView {
             wrapUp = m; board = nil; product = nil
             if replaces { hosting.rootView = AnyView(WrapUpSheetView(model: m, hub: hub, onClose: close)) }
         case .product(let scope):
-            let m = (replaces ? nil : product) ?? ProductSheetModel(hub: hub, app: model)
+            // Kept while hidden (its planner reattaches on show); another sheet drops it.
+            let m = product ?? ProductSheetModel(hub: hub, app: model)
             m.open(scope: scope)
             product = m; board = nil; wrapUp = nil
             if replaces { hosting.rootView = AnyView(ProductSheetView(model: m, hub: hub, onClose: close)) }

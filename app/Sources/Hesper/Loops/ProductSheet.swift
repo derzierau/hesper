@@ -28,6 +28,9 @@ final class ProductSheetModel {
     private(set) var busy = false
     /// The planning session's agent (steward.plan's answer).
     private(set) var planner: String?
+    /// The sheet is up: the planner's terminal is attached only then (a
+    /// hidden sheet keeps no live view of it).
+    private(set) var visible = false
     @ObservationIgnored private var seen = -1
 
     init(hub: LoopHub, app: AppModel) {
@@ -38,6 +41,7 @@ final class ProductSheetModel {
     var catalog: ProjectCatalog { app?.catalog ?? ProjectCatalog() }
 
     func open(scope s: String?) {
+        visible = true
         error = nil
         filing = false
         seen = -1
@@ -50,7 +54,10 @@ final class ProductSheetModel {
         sync()
     }
 
-    func closed() { filing = false }
+    func closed() {
+        filing = false
+        visible = false
+    }
 
     func sync() {
         let store = hub.store
@@ -468,8 +475,12 @@ struct PlanningView: View {
             .padding(.horizontal, DS.Spacing.m)
             .frame(height: DS.chromeMaxHeight)
             if let id = model.planner, let app = model.appModel, let agent = app.agent(id) {
-                PlannerTerminal(agent: agent, model: app)
-                    .background(Color(nsColor: DS.terminalBackground))
+                if model.visible {
+                    PlannerTerminal(agent: agent, model: app)
+                        .background(Color(nsColor: DS.terminalBackground))
+                } else {
+                    Color(nsColor: DS.terminalBackground) // hidden: detached until the sheet shows again
+                }
             } else {
                 LoopsEmpty(symbol: "text.bubble", title: model.busy ? "Starting the planner…" : "No planner running",
                            detail: model.busy ? "The Steward starts a planning agent for this product."

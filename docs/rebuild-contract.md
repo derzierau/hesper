@@ -5614,7 +5614,9 @@ hesperd with loops yet.
   hesperd's "Plan <scope>"), P shows that one instead of starting
   another: the planner agent's terminal embedded as a tile-role
   `AgentTerminal` (a read-only `--fit` view, like a wall tile; "Talk to
-  the planner" opens it full size) and the proposed milestones,
+  the planner" opens it full size; detached while the sheet is hidden,
+  attached again when it shows: the product sheet's model is kept
+  across a close) and the proposed milestones,
   updating from goals.changed; ⌘↩ is `goals.accept` for all of them, X
   `goals.remove` for one.
 - **Settings › Steward** (the seventh pane, ⌘7): the switch, the level
