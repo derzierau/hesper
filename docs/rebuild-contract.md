@@ -1115,7 +1115,10 @@ in tiles, scrolling back).
   `updated` set); `drafts.remove {id}` → `{}` (`not_found`). `Draft`:
   `{id: "d-…" (1–40 of [a-z0-9-]), text, machine?, machineExplicit?: bool, project?, profile?,
   worktree?: bool, branch?, attachments?: [path], after?: tile id ("^":
-  the front), parked?: bool, created, updated}` (`pkg/wire/drafts.go`).
+  the front), parked?: bool, savedBy?: agent id, created, updated}`
+  (`pkg/wire/drafts.go`; `savedBy` is set by hesperd: the agent that
+  saved it, none for a person's save, which makes the draft the
+  person's; an agent replaces and removes only its own drafts).
   Kept by the local daemon in `$HESPER_STATE_DIR/drafts.json` (0600,
   atomic; a broken file moves to `drafts.json.broken`), ≤ 200 drafts, text
   ≤ 256 KiB; the daemon never reads the text. `machine` is where the agent
@@ -3717,6 +3720,8 @@ launchd) and unset `HESPER_AGENT_ID`, and is then a person.
 | `agents.answer`; `agents.input` to an agent in `approval` or `question` | the target is the caller's **own child** (not a grandchild, not itself) started with `letParentAnswer` |
 | `agents.rename` | the target is the caller **itself** or a strict descendant (a person's name stays, below) |
 | `agents.input` (otherwise), `stop`, `resume`, `remove`, `move`, `close`, `kill`, `background`; rw attach (verified callers only) | the target is a strict **descendant** of the caller (never itself, never its parent or another agent's) |
+| `forwards.add`, `forwards.remove`, `sessions.delete`, `sessions.archive` | never (a person's: `hesperctl forwards`, `history delete`, `history archive`) |
+| `drafts.save`, `drafts.remove` | a new draft, or one the caller saved (`Draft.savedBy`); the Steward saves none at level watch |
 
 **Tile names.** An agent names its own tile: `hesperctl rename self
 NAME` (`self` is `HESPER_AGENT_ID`, any command's ID may be `self`).
@@ -5183,7 +5188,8 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   agent is found as for the agent tree (`callerOf`); the store and the
   Steward get `Caller{agent, ref, loop, service}` and the params without
   `caller`. `pkg/wire` sends `caller` with `loops.*`, `goals.*`,
-  `steward.*` and `drafts.save`. For an agent caller:
+  `steward.*`, `drafts.save`, `drafts.remove`, `sessions.delete` and
+  `sessions.archive`. For an agent caller:
   - reads (`loops.list`, `loops.get`, `loops.settings.get`, `goals.list`,
     `steward.status`): anything;
   - a person's only: `steward.set`, `goals.accept`, `goals.remove`,
@@ -5199,7 +5205,10 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   - other writes (`loops.save`, `loops.link`, `loops.item`, `goals.save`,
     `goals.item`, `goals.file`, `steward.inbox`): a service agent may; any
     other agent only `loops.item` and `loops.link` of its own loop;
-  - `drafts.save` by the Steward: refused at level watch;
+  - `drafts.save` by the Steward: refused at level watch; an agent
+    replaces or removes (`drafts.remove`) only drafts it saved;
+  - `sessions.delete`, `sessions.archive`: never (tree.go's
+    `treePerson`);
   - a service agent starting agents (`agents.spawn`, `sessions.resume`,
     `fork`, `continueAs`): refused, except the Steward at level act
     starting a draft (`SpawnParams.draft`), never with `letParentAnswer`.
@@ -5643,9 +5652,11 @@ keeps the copy identical).
   background, named "Steward", in `$STATE/steward` (0700), its first
   message a brief. Its options replace the profile's (`steward.Argv`):
   `--permission-mode default`, `--allowedTools` with `Bash(hesperctl
-  loops:*)`, `goals`, `steward`, `ls`, `show`, `result`, `history`,
-  `review ls`, `drafts`, `Bash(gh pr view:*)`, `Bash(gh release view:*)`,
-  `Read`, `Grep`, `Glob`, and `--append-system-prompt` with `prompt.md`.
+  loops:*)`, `goals`, `steward`, `ls`, `show`, `result`, `history search`,
+  `history show`, `history brief`, `history stats`, `review ls`, `drafts
+  ls`, `drafts save` (never `history delete|archive` nor `drafts rm`),
+  `Bash(gh pr view:*)`, `Bash(gh release view:*)`, `Read`, `Grep`,
+  `Glob`, and `--append-system-prompt` with `prompt.md`.
   Anything else asks a person; permissions are never skipped. A Steward
   agent the registry restored is adopted, never started twice. Its
   process ending, or a person closing it, restarts it (resume, else a new
@@ -5678,8 +5689,10 @@ keeps the copy identical).
   (`SpawnService(service planner)`, not in the background), a child of the
   Steward when it runs here, never with `letParentAnswer`, in the scope's
   project folder on this Mac, else `$STATE/steward/plans/<scope>`. Its
-  options add `Bash(git branch:*)`, `Bash(git log:*)` and `Bash(gh pr
-  list:*)` and use `plan.md`; it writes milestones with status `proposed`
+  allowlist is its own (`PlanTools`): `hesperctl goals ls|new|save`,
+  `loops ls|show`, `ls`, `show`, `history search|show|brief`, `steward
+  status`, `git branch`, `git log`, `gh pr list|view`, `gh release
+  view`, `Read`, `Grep`, `Glob`; it uses `plan.md`; it writes milestones with status `proposed`
   and never accepts them (`goals.accept` is a person's). One planner per
   scope at a time: while a planner runs in the scope's folder (not
   exited), `steward.plan` returns it instead of starting another (the

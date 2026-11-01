@@ -94,9 +94,16 @@ func (s *DraftStore) listLocked() []wire.Draft {
 	return out
 }
 
-// Save creates or replaces a draft; Created is kept from an existing one,
-// Updated is now.
+// Save creates or replaces a draft (a person's); Created is kept from an
+// existing one, Updated is now.
 func (s *DraftStore) Save(d wire.Draft) (wire.Draft, error) {
+	return s.save(d, "")
+}
+
+// save creates or replaces a draft for by (an agent's full id, "" a
+// person): an agent replaces only the drafts it saved, and the draft is
+// marked as its (SavedBy); a person's save makes it the person's.
+func (s *DraftStore) save(d wire.Draft, by string) (wire.Draft, error) {
 	if d.ID == "" {
 		d.ID = newDraftID()
 	}
@@ -113,6 +120,11 @@ func (s *DraftStore) Save(d wire.Draft) (wire.Draft, error) {
 		s.mu.Unlock()
 		return wire.Draft{}, wire.Errorf(wire.CodeInvalid, "too many drafts (%d)", draftLimit)
 	}
+	if by != "" && exists && old.SavedBy != by {
+		s.mu.Unlock()
+		return wire.Draft{}, notTheirs(by, "replace", d.ID)
+	}
+	d.SavedBy = by
 	switch {
 	case exists && !old.Created.IsZero():
 		d.Created = old.Created
@@ -123,25 +135,40 @@ func (s *DraftStore) Save(d wire.Draft) (wire.Draft, error) {
 	s.drafts[d.ID] = d
 	s.notifyLocked(d.ID, &d)
 	s.mu.Unlock()
-	s.save()
+	s.write()
 	return d, nil
+}
+
+// notTheirs refuses agent by changing a draft it did not save.
+func notTheirs(by, what, id string) error {
+	return wire.Errorf(wire.CodeForbidden, "agent %s may not %s draft %s: it did not save it (a person does: hesperctl drafts rm)", by, what, id)
 }
 
 // Remove forgets a draft (not_found when there is none).
 func (s *DraftStore) Remove(id string) error {
+	return s.remove(id, "")
+}
+
+// remove forgets a draft for by (an agent: only one it saved).
+func (s *DraftStore) remove(id, by string) error {
 	s.mu.Lock()
-	if _, ok := s.drafts[id]; !ok {
+	old, ok := s.drafts[id]
+	if !ok {
 		s.mu.Unlock()
 		return wire.Errorf(wire.CodeNotFound, "no draft %s", id)
+	}
+	if by != "" && old.SavedBy != by {
+		s.mu.Unlock()
+		return notTheirs(by, "remove", id)
 	}
 	delete(s.drafts, id)
 	s.notifyLocked(id, nil)
 	s.mu.Unlock()
-	s.save()
+	s.write()
 	return nil
 }
 
-func (s *DraftStore) save() {
+func (s *DraftStore) write() {
 	if s.path == "" {
 		return
 	}
@@ -171,8 +198,8 @@ func newDraftID() string {
 	return "d-" + string(b)
 }
 
-// call runs a drafts.* method.
-func (s *DraftStore) call(method string, params json.RawMessage) (any, error) {
+// call runs a drafts.* method for by (an agent's full id, "" a person).
+func (s *DraftStore) call(method string, params json.RawMessage, by string) (any, error) {
 	switch method {
 	case "drafts.list":
 		return s.List(), nil
@@ -181,7 +208,7 @@ func (s *DraftStore) call(method string, params json.RawMessage) (any, error) {
 		if err := decode(params, &p); err != nil {
 			return nil, err
 		}
-		return s.Save(p.Draft)
+		return s.save(p.Draft, by)
 	case "drafts.remove":
 		var p wire.IDParams
 		if err := decode(params, &p); err != nil {
@@ -190,7 +217,7 @@ func (s *DraftStore) call(method string, params json.RawMessage) (any, error) {
 		if p.ID == "" {
 			return nil, &badParams{errors.New("id is required")}
 		}
-		return struct{}{}, s.Remove(p.ID)
+		return struct{}{}, s.remove(p.ID, by)
 	}
 	return nil, &noMethod{method}
 }

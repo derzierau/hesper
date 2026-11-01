@@ -189,3 +189,24 @@ func TestSpawnServiceTreeLimits(t *testing.T) {
 	_, err = h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job", Parent: p1.ID, Depth: 2}, wire.ServicePlanner)
 	forbidden(t, "depth 2", err)
 }
+
+// TestHistoryAndDraftsPolicy: an agent never deletes or archives history,
+// and removes or replaces only the drafts it saved.
+func TestHistoryAndDraftsPolicy(t *testing.T) {
+	h, _ := newStewardHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	b := h.spawn(wire.SpawnParams{Task: "small job"})
+	forbidden(t, "delete history", h.callAs(a.ID, "sessions.delete", wire.SessionDeleteParams{ID: "s-1"}, nil))
+	forbidden(t, "archive history", h.callAs(a.ID, "sessions.archive", wire.SessionArchiveParams{ID: "s-1", Archived: true}, nil))
+	var mine wire.Draft
+	allowed(t, "save a draft", h.callAs(a.ID, "drafts.save", wire.DraftSaveParams{Draft: wire.Draft{ID: "d-mine", Text: "follow up"}}, &mine))
+	if mine.SavedBy != a.ID {
+		t.Fatalf("saved by %q", mine.SavedBy)
+	}
+	allowed(t, "a person's draft", h.call("drafts.save", wire.DraftSaveParams{Draft: wire.Draft{ID: "d-person", Text: "mine"}}, nil))
+	forbidden(t, "remove a person's draft", h.callAs(a.ID, "drafts.remove", wire.IDParams{ID: "d-person"}, nil))
+	forbidden(t, "replace a person's draft", h.callAs(a.ID, "drafts.save", wire.DraftSaveParams{Draft: wire.Draft{ID: "d-person", Text: "gone"}}, nil))
+	forbidden(t, "remove another agent's draft", h.callAs(b.ID, "drafts.remove", wire.IDParams{ID: "d-mine"}, nil))
+	allowed(t, "remove its own draft", h.callAs(a.ID, "drafts.remove", wire.IDParams{ID: "d-mine"}, nil))
+	allowed(t, "a person removes", h.call("drafts.remove", wire.IDParams{ID: "d-person"}, nil))
+}
