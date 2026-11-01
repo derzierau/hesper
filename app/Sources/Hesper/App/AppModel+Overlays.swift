@@ -626,7 +626,7 @@ extension AppModel {
     /// The loop's detail in this window's Loops sheet (⌘L), selected.
     private func openLoop(_ id: String, from e: YourMoveEntry) {
         closePopover()
-        openLoopsSheet(.loops(select: id))
+        openLoopsSheet(.loop(id))
     }
 
     /// Drops answered marks of agents that left the queue (or asked again).

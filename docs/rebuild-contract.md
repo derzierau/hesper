@@ -5461,7 +5461,8 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   submit it (`agents.input` with submit), Did it on an item ticks it
   off, Copy command copies, Later files an agent's ask or step as the
   person's item (question or step) and parks the loop until tomorrow
-  09:00, Open opens the loop selected in this window's Loops sheet. An acted-on entry hides until its loop
+  09:00, Open opens the loop's detail in this window's Loops sheet
+  (`LoopsSheetKind.loop`; the product page's ⏎ too). An acted-on entry hides until its loop
   changes and comes back with a toast when a call fails. ⌘J opens when
   either section has entries (else the "Nothing needs you." toast) and
   closes itself a second after both are empty. With an empty queue the
@@ -5618,7 +5619,11 @@ hesperd with loops yet.
   {loop}}`, `{wrapup: true}`, `{product: true | {scope}}`; the app
   answers `{wall, selected}`, `{wall, loops}` (today's count) and
   `{wall, scope}`; an unknown scope is `not_found`, a hesperd without
-  loops `unavailable`. hesperctl `open loops [--loop ID]`, `open
+  loops `unavailable`. `{loops: {loop}}` opens that loop's detail; before
+  the hub's first list (hesperctl launching the app) the app waits for
+  it up to 6 s so `selected` is true exactly when the loop is open, and
+  if it is still not there answers `unavailable` ("still loading") and
+  the sheet shows the loop once the list comes. hesperctl `open loops [--loop ID]`, `open
   wrapup`, `open product [SCOPE]` (MCP: `hesper_open_loops`,
   `hesper_open_wrapup`, `hesper_open_product`).
 - **Self-test** `test-ui-loops` (`Loops/LoopsSelfTest.swift`,

@@ -5,13 +5,16 @@ import SwiftUI
 /// Which of the loops sheets is up: the board (⌘L), the wrap-up (⇧⌘E)
 /// or a product's page (⇧⌘L, a project or group id).
 enum LoopsSheetKind: Equatable {
+    /// The board, `select` selected on it.
     case loops(select: String?)
+    /// One loop's detail in the Loops sheet ("Open the loop").
+    case loop(String)
     case wrapUp
     case product(scope: String?)
 
     var surface: Surface {
         switch self {
-        case .loops: return .loops
+        case .loops, .loop: return .loops
         case .wrapUp: return .wrapUp
         case .product: return .product
         }
@@ -171,9 +174,13 @@ final class LoopsPanel: NSView {
         let hub = model.loopHub
         let close: () -> Void = { [weak self] in self?.close() }
         switch kind {
-        case .loops(let select):
+        case .loops, .loop:
             let m = (replaces ? nil : board) ?? LoopsSheetModel(hub: hub, app: model)
-            m.open(select: select)
+            switch kind {
+            case .loop(let id): m.open(select: id, detail: true)
+            case .loops(let select): m.open(select: select, detail: false)
+            default: break
+            }
             board = m; wrapUp = nil; product = nil
             if replaces { hosting.rootView = AnyView(LoopsSheetView(model: m, hub: hub, onClose: close)) }
         case .wrapUp:

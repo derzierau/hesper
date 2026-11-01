@@ -138,9 +138,9 @@ final class ProductSheetModel {
 
     private func openSelected() {
         guard let id = selected, let app else { return }
-        if hub.loop(id) != nil { LoopsSheetHost.show(app, .loops(select: id), toggle: false); return }
+        if hub.loop(id) != nil { LoopsSheetHost.show(app, .loop(id), toggle: false); return }
         if let first = page?.milestones.first(where: { $0.id == id })?.loops.first(where: \.isActive) {
-            LoopsSheetHost.show(app, .loops(select: first.id), toggle: false)
+            LoopsSheetHost.show(app, .loop(first.id), toggle: false)
         }
     }
 

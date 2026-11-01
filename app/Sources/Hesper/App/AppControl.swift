@@ -16,12 +16,26 @@ final class AppControl {
     init(manager: WindowManager) {
         self.manager = manager
         manager.primary.client.onAppRequest = { [weak self] method, params in
-            await MainActor.run {
+            await self?.settle(method, params)
+            return await MainActor.run {
                 guard let self else { return .failure(AppControlError("unavailable", "Hesper.app is quitting").rpc) }
                 return self.handle(method, params)
             }
         }
     }
+
+    /// The loops a loop's `app.open` names may not be listed yet (hesperctl
+    /// just launched the app): wait for the first list, a bounded while
+    /// inside the bridge's 10 s, so `selected` says whether the loop is open.
+    private func settle(_ method: String, _ params: JSONValue) async {
+        guard AppControlMethod(rawValue: method) == .open, let r = try? AppOpenRequest.parse(params),
+              case .loops(let loop?) = r.target, !loop.isEmpty else { return }
+        let hub = manager.activeWall.model.loopHub
+        guard !hub.loaded else { return }
+        _ = await AppModel.waitUntil(Self.loopsWait) { hub.loaded }
+    }
+
+    static let loopsWait: Double = 6
 
     func handle(_ method: String, _ params: JSONValue) -> Result<JSONValue, RPCError> {
         do {
@@ -240,7 +254,11 @@ final class AppControl {
             guard hub.available else { throw AppControlError("unavailable", "Loops need a newer hesperd on this Mac") }
             let selected = loop.map { hub.loop($0)?.isActive == true } ?? false
             manager.bringForward(w.window)
-            w.model.openLoopsSheet(.loops(select: selected ? loop : nil)) // ⌘L
+            w.model.openLoopsSheet(loop.map { selected || !hub.loaded ? .loop($0) : .loops(select: nil) } ?? .loops(select: nil)) // ⌘L
+            if let loop, !selected, !hub.loaded {
+                // Still no list (settle waited): the board opens on it once one comes.
+                throw AppControlError("unavailable", "Hesper.app is still loading the loops; the board shows \(loop) once they arrive")
+            }
             return ["wall": .string(w.id), "selected": .bool(selected)]
 
         case .wrapUp:
