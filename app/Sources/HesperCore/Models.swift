@@ -294,6 +294,9 @@ public struct SpawnRequest: Equatable, Sendable {
     /// The folder isn't on `machine`: hesperd brings it from another Mac
     /// first (`BringRequest`; agents.bringing reports how far).
     public var bring: BringRequest?
+    /// The loop the agent joins (the composer's start check); nil: its
+    /// parent's, or hesperd opens a new one.
+    public var loop: String?
 
     public enum Worktree: Equatable, Sendable { case auto, path(String) }
 
@@ -317,6 +320,7 @@ public struct SpawnRequest: Equatable, Sendable {
         }
         if let branch, !branch.isEmpty { o["branch"] = .string(branch) }
         if let bring, !scratch { o["bring"] = bring.params }
+        if let loop, !loop.isEmpty { o["loop"] = .string(loop) }
         return .object(o)
     }
 }

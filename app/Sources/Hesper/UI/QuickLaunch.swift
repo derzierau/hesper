@@ -172,6 +172,7 @@ final class QuickLaunchController {
     private func refresh() {
         _ = composer.completion
         _ = composer.resolution
+        _ = composer.startCheck
         list.rootView = AnyView(QuickCompletion(composer: composer))
         chips.rootView = AnyView(DraftChips(composer: composer, onChip: { [weak self] k in
             guard let self else { return }

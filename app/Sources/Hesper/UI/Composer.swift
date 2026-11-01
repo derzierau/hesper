@@ -188,6 +188,18 @@ final class ComposerTextView: NSTextView {
 
     // MARK: Keys
 
+    /// The start strip's ⇧⌘⏎ and ⌘D (StartStrip.choice): unbound in the
+    /// composer, so the window hands them to the text view.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, window?.firstResponder === self, let c = composer, c.completion == nil,
+           let s = c.startStrip, let choice = s.choice(for: KeyChord(event: event)) {
+            if case .draftInLoop = choice, c.quick { return super.performKeyEquivalent(with: event) }
+            c.perform(choice)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
         let chord = KeyChord(event: event)
         if let c = composer, c.completion != nil {
@@ -393,6 +405,7 @@ struct DraftChips: View {
                 if r.project != nil || composer.projectLocked { projectPill(r) }
             }
             note
+            startStrip
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .coordinateSpace(name: "chips")
@@ -496,6 +509,51 @@ struct DraftChips: View {
         }
     }
 
+    /// The start check (StartStrip): "This looks like part of <loop>"
+    /// with Add to loop ⇧⌘⏎ and Draft in loop ⌘D (the draft tile only),
+    /// Start's ⌘⏎ still a new loop, and the on-you meter (red at the
+    /// limit, a hint only). Wraps like the folder note.
+    @ViewBuilder private var startStrip: some View {
+        if let s = composer.startStrip {
+            ChipFlow {
+                if let t = s.text {
+                    HStack(spacing: DS.Spacing.s) {
+                        Image(systemName: "arrow.triangle.2.circlepath").font(.ds(.meta)).foregroundStyle(Theme.dim)
+                        Text(t).font(.ds(.chrome)).foregroundStyle(Theme.fg2).lineLimit(1).truncationMode(.tail)
+                    }
+                    .frame(minHeight: Pill.height)
+                    .accessibilityIdentifier("draft.loop.match")
+                }
+                if let le = s.looseEnd, !compact {
+                    Text(le).font(.ds(.chrome)).foregroundStyle(Theme.dim).lineLimit(1).truncationMode(.tail)
+                        .frame(minHeight: Pill.height)
+                }
+                if let add = s.add {
+                    fixButton("Add to loop", id: "draft.loop.add", key: compact ? nil : StartStrip.addKey) { composer.perform(add) }
+                        .help("Start the agent in this loop" + (s.looseEnd == nil ? "" : " and tick the loose end off"))
+                }
+                if let d = s.draft, !composer.quick {
+                    fixButton("Draft in loop", id: "draft.loop.draft", key: compact ? nil : StartStrip.draftKey) { composer.perform(d) }
+                        .help("Save this as a step of the loop and leave it as a draft")
+                }
+                if s.add != nil, !compact, let start = CommandRegistry.cap(.startDraft) {
+                    HStack(spacing: DS.Spacing.xs) {
+                        Kbd(start)
+                        Text("new loop").font(.ds(.meta)).foregroundStyle(Theme.dim)
+                    }
+                    .frame(minHeight: Pill.height)
+                }
+                Text(s.meter).font(.ds(.meta)).monospacedDigit()
+                    .foregroundStyle(s.atLimit ? Theme.color(.error) : Theme.dim)
+                    .frame(minHeight: Pill.height)
+                    .help(s.meterHelp)
+                    .accessibilityIdentifier("draft.loop.meter")
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("draft.loop")
+        }
+    }
+
     private func fixButton(_ title: String, id: String, key: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: DS.Spacing.s) {
@@ -519,7 +577,7 @@ struct DraftChips: View {
 
     /// The tallest the row gets: three lines of chips and a two-line note
     /// whose buttons wrap once.
-    static var maxHeight: CGFloat { 4 * Pill.height + 4 * DS.Spacing.xs + 2 * DS.chromeMaxHeight }
+    static var maxHeight: CGFloat { 5 * Pill.height + 5 * DS.Spacing.xs + 2 * DS.chromeMaxHeight }
 
     /// The worktree chip is a toggle (⌥⌘B); a ~branch token in the task
     /// still picks the branch (its popover keeps its rows).
@@ -758,6 +816,7 @@ final class DraftTileView: NSView {
         _ = composer.busy
         _ = composer.error
         _ = composer.folderCheck
+        _ = composer.startCheck
         _ = composer.targetFolders
         _ = composer.bringFailures
         guard let model else { return }

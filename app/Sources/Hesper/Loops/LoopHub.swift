@@ -163,6 +163,19 @@ final class LoopHub {
         return e
     }
 
+    // MARK: Start check
+
+    @ObservationIgnored private var startIndex: (version: Int, catalog: ProjectCatalog, index: StartCheckIndex)?
+
+    /// The composer's start check index, built once per store version
+    /// (and catalog); a check per keystroke only tokenizes the task.
+    func startCheckIndex(catalog: ProjectCatalog) -> StartCheckIndex {
+        if let m = startIndex, m.version == store.version, m.catalog == catalog { return m.index }
+        let ix = StartCheckIndex(loops: store.loops.values, catalog: catalog, loopLimit: settings.loopLimit, version: store.version)
+        startIndex = (store.version, catalog, ix)
+        return ix
+    }
+
     /// Opens a loop's detail (set by the Loops sheet; nil: the inbox's
     /// Open goes to the asking agent's tile instead).
     @ObservationIgnored var openLoop: ((String) -> Void)?

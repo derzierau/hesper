@@ -5168,6 +5168,25 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   "Remove Duplicate…" asks first (an NSAlert, like the sidebar's other
   questions) and then calls `projects.remove` on the duplicate only.
 
+- **Composer start check** (⌘N, a draft tile and the quick launch
+  panel: `DraftChips.startStrip` in `UI/Composer.swift`). 150 ms after
+  the last keystroke `ComposerModel.runStartCheck` checks the task
+  against `LoopHub.startCheckIndex` (built once per store version and
+  catalog) with the folder's project and the machine; the strip shows
+  while the task has words and there is a match or loops on the person
+  (`StartStrip.shows`). It says "This looks like part of <loop>", the
+  loose end the task would tick off, and the on-you meter "n / limit
+  on you" (the error tone at `loopLimit` or over, a hint only). Keys:
+  ⌘⏎ Start is unchanged and starts a new loop; ⇧⌘⏎ "Add to loop" starts
+  with `SpawnRequest.loop` (sent as `loop`) and, once the agent runs,
+  ticks the loose end off (`loops.item` done); ⌘D "Draft in loop" files
+  the task's first line as the agents' step with `draft` set to this
+  draft and parks it (draft tiles only: the quick launch panel keeps
+  no drafts). Both chords are unbound in the composer (the window's
+  router passes them to the text view, `ComposerTextView
+  .performKeyEquivalent`), and are the strip's own keys, not registry
+  commands. The chip row's measured height allows one more row.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
