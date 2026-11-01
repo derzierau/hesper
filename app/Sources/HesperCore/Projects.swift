@@ -46,6 +46,9 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
     /// A scratch's lifecycle (`kind: "scratch"`, Scratch.swift); nil from
     /// an older hesperd.
     public var scratch: ScratchInfo?
+    /// The project this one duplicates (hesperd: the same folder listed
+    /// twice); nil from an older hesperd.
+    public var duplicateOf: String?
 
     public init(id: String, name: String, color: String? = nil, kind: ProjectKind = .repo, identity: String? = nil, parentId: String? = nil,
                 paths: [String: String] = [:], groups: [String] = [], defaults: ProjectDefaults? = nil, detectedPackages: [String] = [],
@@ -55,7 +58,7 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
         self.lastUsed = lastUsed; self.synthesized = synthesized; self.scratch = scratch
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, color, colorSet, kind, identity, parentId, paths, groups, defaults, detectedPackages, lastUsed, scratch }
+    enum CodingKeys: String, CodingKey { case id, name, color, colorSet, kind, identity, parentId, paths, groups, defaults, detectedPackages, lastUsed, scratch, duplicateOf }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -83,6 +86,7 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
         }
         lastUsed = Agent.date(try? c.decodeIfPresent(String.self, forKey: .lastUsed)).flatMap { $0.timeIntervalSince1970 < 0 ? nil : $0 }
         scratch = try? c.decodeIfPresent(ScratchInfo.self, forKey: .scratch)
+        duplicateOf = (try? c.decodeIfPresent(String.self, forKey: .duplicateOf)).flatMap { $0 }.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -100,6 +104,7 @@ public struct Project: Codable, Equatable, Sendable, Identifiable {
         if !detectedPackages.isEmpty { try c.encode(detectedPackages, forKey: .detectedPackages) }
         try c.encodeIfPresent(lastUsed.map(Agent.format), forKey: .lastUsed)
         try c.encodeIfPresent(scratch, forKey: .scratch)
+        try c.encodeIfPresent(duplicateOf, forKey: .duplicateOf)
     }
 
     /// The folder on `machine`, else on the local machine, else any.

@@ -100,6 +100,11 @@ public struct ProjectNavRow: Equatable, Sendable, Identifiable {
     public var kept = false
     /// An archived scratch (shown after "Show archived").
     public var archived = false
+    /// Open loops and those on the person (ProjectLoops.apply).
+    public var loops = LoopTally()
+    /// The project this one duplicates (the same folder listed twice):
+    /// a quiet warning and "Remove Duplicate…".
+    public var duplicateOf: String?
     /// The row as the old sidebar row (menus, click, drag, tests); nil
     /// for actions, "All projects", the scratch fold and "no match".
     public var base: SidebarRow?
@@ -634,6 +639,7 @@ public enum ProjectNav {
             r.quiet = agents.isEmpty
             r.colorHex = catalog.colorHex(project: parent[pid] ?? pid)
             r.lastActivity = agents.compactMap { $0.stateSince ?? $0.created }.max()
+            r.duplicateOf = catalog.project(pid)?.duplicateOf
             r.base = SidebarRow(id: r.id, kind: .project, title: catalog.project(pid)?.name ?? pid, colorHex: r.colorHex, count: agents.count,
                                 needsYou: r.tally.needsYou > 0, depth: depth, groupID: group, projectID: pid,
                                 scratch: isFolded(pid), scope: .project(pid))

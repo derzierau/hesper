@@ -36,6 +36,8 @@ final class LoopHub {
     private(set) var chips: [String: LoopChip] = [:]
     /// Active loops that need the person (looks done and parked left out).
     private(set) var onYouCount = 0
+    /// The sidebar's loop counts per project (ProjectLoops).
+    private(set) var projectLoops = ProjectLoops()
     /// The first list arrived (false: still connecting; empty states wait).
     private(set) var loaded = false
 
@@ -138,6 +140,8 @@ final class LoopHub {
         if c != chips { chips = c }
         let n = LoopChip.onYouCount(store)
         if n != onYouCount { onYouCount = n }
+        let p = ProjectLoops(loops: store.loops.values)
+        if p != projectLoops { projectLoops = p }
     }
 
     // MARK: Inbox

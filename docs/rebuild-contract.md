@@ -5155,6 +5155,19 @@ the logic is in HesperCore (`InboxList.swift` and the app core above).
   relays out when one gains or loses its tag (a done or idle agent with
   a tag but no summary keeps its one line: `AttentionBar.hasContent`).
 
+- **Sidebar** (⌘0, `UI/ProjectSidebar.swift`). Every project, group
+  and "All agents" row carries its loop counts (`ProjectNavRow.loops`,
+  `ProjectLoops.apply`): open loops (active, parked included) behind a
+  loop glyph, and those on the person (the board's "your move") as a
+  question-toned square with its count; a group counts each loop once
+  across its projects. `LoopHub.projectLoops` is rebuilt per store
+  version, read into the sidebar's Snapshot and observed by the window,
+  so a loop change alone reloads the rows. A duplicate project
+  (`Project.duplicateOf`, decoded leniently: missing, empty or not a
+  string is nil) shows a quiet warning triangle; its context menu's
+  "Remove Duplicate…" asks first (an NSAlert, like the sidebar's other
+  questions) and then calls `projects.remove` on the duplicate only.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,
