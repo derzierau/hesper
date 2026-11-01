@@ -5372,7 +5372,14 @@ and the MCP tool is `hesper_loops_item_add`.
   milestone back to planning), `rm`, `check MILESTONE ITEM` (`--drop`,
   `--undo`), `file MILESTONE LOOP` (`--remove`), `plan SCOPE [PROMPT]`
   (`steward.plan`, prints the agent), `accept SCOPE [MILESTONE…]`.
-- **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, which now wires a
+- **Steward** (`steward.go`). `steward status` (`StewardStatus`: on or
+  off, level, machine, agent, queued, wakes today), `on` (`--machine`,
+  `--level`; without `--machine` this Mac when no Mac runs it yet:
+  `node` empty), `off`, `level watch|suggest|act`, `inbox` (the
+  Steward's own call: it drains the queue). All one `steward.set` and
+  print the status. `unavailable` (exit 4) while hesperd has no
+  Steward.
+- **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, `TestStewardCommands` with a fake `agents.Steward` (`fullDaemon(t, steward)`), `TestStewardUnavailable`, which now wires a
   loops store (no Steward) like the gateway does.
 
 ## Wire names kept from Ghosty

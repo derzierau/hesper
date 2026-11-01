@@ -26,7 +26,7 @@ const (
 
 // fullEnv is hesperd as gateway wires it, minus other machines: the
 // registry with the project store, the loops store and the shared
-// history (no Steward). Its claude and
+// history; a Steward only when steward is given. Its claude and
 // codex profiles are cat; the history holds internal/sessions' two
 // synthetic transcripts, in project.
 type fullEnv struct {
@@ -37,7 +37,7 @@ type fullEnv struct {
 	root    string // the projects root (clone)
 }
 
-func fullDaemon(t *testing.T) *fullEnv {
+func fullDaemon(t *testing.T, steward ...agents.Steward) *fullEnv {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "gctl")
 	if err != nil {
@@ -81,7 +81,11 @@ func fullDaemon(t *testing.T) *fullEnv {
 		t.Fatal(err)
 	}
 	e.sock = filepath.Join(state, "hesperd.sock")
-	reg, err := agents.Open(agents.Options{StateDir: state, ConfigDir: config, Socket: e.sock, Machine: "L",
+	var st agents.Steward
+	if len(steward) > 0 {
+		st = steward[0]
+	}
+	reg, err := agents.Open(agents.Options{StateDir: state, ConfigDir: config, Socket: e.sock, Machine: "L", Steward: st,
 		Env: os.Environ(), LoginShell: "/bin/sh", ClaudeConfig: filepath.Join(dir, "claude.json"), ClaudeHome: claude, CodexHome: codex, Home: home,
 		WorktreeRoot: filepath.Join(dir, "wt"), ProjectsRoot: e.root, StopGrace: time.Second, Logf: t.Logf, Projects: store, Sessions: hist, Loops: loopStore})
 	if err != nil {
