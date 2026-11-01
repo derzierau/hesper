@@ -587,10 +587,10 @@ everything and changes only the items and links of its own loop
 | `goals.item` | `{id, item, remove?}`: a milestone's "done when" condition | the `Milestone` |
 | `goals.file` | `{milestone, loop, remove?}` | the `Milestone` |
 | `goals.accept` | `{scope, ids?}` | `{accepted: N}`: proposed milestones opened |
-| `steward.status` | `{}` | `StewardStatus` |
-| `steward.set` | `{enabled?, level?, machine?}` | `StewardStatus` |
-| `steward.inbox` | `{}` | `[StewardEvent]` (the Steward's own call) |
-| `steward.plan` | `{scope, prompt?}` | `Agent`: the planning session |
+| `steward.status` | `{}` | `StewardStatus`: the shared `{enabled, level, node, machine}`, and on the Mac that runs it `agent`, `session`, `queued`, today's `wakes`, `lastWake`, `dropped` (events the full queue dropped) and `stopped` (why it does not run although it is on: it ended 3 times within an hour) |
+| `steward.set` | `{enabled?, level?, machine?}` (`enabled` without a machine: this Mac, unless one is set; `enabled: true` again clears `stopped`) | `StewardStatus` |
+| `steward.inbox` | `{}` (service agents only) | `[StewardEvent]`: the waiting events, oldest first, one per agent (or loop); the queue is emptied |
+| `steward.plan` | `{scope, prompt?}` (a project or group id) | `Agent`: the planning session (service `planner`, a child of the Steward when it runs here) |
 
 Ids: loops `lp-`, goals `gl-`, milestones `ms-` + 12 hex; items `it-` + 8
 hex. Refs: an agent `<node>/<local id>` (`node` is the projects store's
@@ -602,7 +602,8 @@ first `loops.changed {loop}` for every open and parked loop, `goals.changed
 {goal}` or `{milestone}` for every goal and milestone, and
 `steward.changed {steward}`; then `loops.changed`, `loops.removed {id}` (a
 merged loop), `goals.changed`, `goals.removed {id}` and `steward.changed`
-at each change. A loop's view changes with its members' live state too.
+at each change (the Steward's: its configuration, its agent starting or
+stopping, a wake, its inbox emptied; at most every 250 ms). A loop's view changes with its members' live state too.
 
 **Computed fields** (in hesperd, one place): `Loop.next` is `parked` or
 `closed` for those statuses; else `you` when a member agent waits in

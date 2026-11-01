@@ -78,6 +78,9 @@ func (s *Store) Call(method string, params json.RawMessage, caller agents.Caller
 			return nil, err, true
 		}
 		res, err := s.Save(p)
+		if err == nil && p.ID == "" {
+			s.loopCreated(res.ID, caller.Service) // the Steward's own: no wake
+		}
 		return res, err, true
 	case wire.MethodLoopsLink:
 		var p wire.LoopLinkParams
@@ -106,6 +109,9 @@ func (s *Store) Call(method string, params json.RawMessage, caller agents.Caller
 			return nil, err, true
 		}
 		res, err := s.Split(p)
+		if err == nil {
+			s.loopCreated(res.ID, caller.Service)
+		}
 		return res, err, true
 	case wire.MethodLoopsSettingsGet:
 		return s.Settings(), nil, true

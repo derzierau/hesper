@@ -5617,6 +5617,76 @@ hesperd with loops yet.
 **Status (app sheets): built; HesperCoreTests and the hesperctl tests
 pass headless. `test-ui-loops` is written and not run yet.**
 
+### As built — the Steward
+
+Code: `relay/internal/steward` (`steward.go` configuration and lifecycle,
+`wake.go` the wake queue, `brief.go` the session brief and the daily
+rotation, `plan.go` planning sessions, `prompt.md` and `plan.md` embedded),
+wired in `internal/gateway/steward.go`; the registry's seams are
+`agents.Options.Steward`, `Options.ServiceArgv` and `SpawnService`
+(`internal/agents/loopwork.go`), the policy is `loopscall.go`. The prompt
+is mirrored for people in `skills/hesper/references/steward.md` (a test
+keeps the copy identical).
+
+- **Configuration.** The loops store's synced `StewardConfig {enabled,
+  level, node}` (off by default; level `suggest` by default).
+  `steward.set` writes it (`enabled` without a machine names this Mac);
+  every Mac follows `StewardChanges`, and only the Mac whose node matches
+  runs the Steward: it starts it there and closes it everywhere else
+  (also a restored one, after a move or while off).
+- **The agent.** `SpawnService(service steward)`: Claude, in the
+  background, named "Steward", in `$STATE/steward` (0700), its first
+  message a brief. Its options replace the profile's (`steward.Argv`):
+  `--permission-mode default`, `--allowedTools` with `Bash(hesperctl
+  loops:*)`, `goals`, `steward`, `ls`, `show`, `result`, `history`,
+  `review ls`, `drafts`, `Bash(gh pr view:*)`, `Bash(gh release view:*)`,
+  `Read`, `Grep`, `Glob`, and `--append-system-prompt` with `prompt.md`.
+  Anything else asks a person; permissions are never skipped. A Steward
+  agent the registry restored is adopted, never started twice. Its
+  process ending, or a person closing it, restarts it (resume, else a new
+  one) after 5 s, 30 s and 2 min; a fourth end within an hour leaves it
+  stopped, with the reason in `status.stopped`, until `steward.set
+  {enabled: true}`.
+- **Wake queue.** Events: `settled` and `closed` (the registry's, never
+  for agents with a `service`), `loopCreated` (a loop created after
+  hesperd started, once per loop: `loops.save` without an id and
+  `loops.split` tell `Store.SetCreated`'s hook the calling agent's
+  service, and a loop the Steward or a planner made never queues, even
+  when the store's notification for it comes first; loops from `Assign`
+  or another Mac come from the store's notifications), `review` (the
+  registry's review notes) and `evening` (once a day at
+  `LoopSettings.eveningAt`, local time; not on the day it was turned on
+  after that time). One event per agent or loop (the latest wins, in the
+  first one's place); at most 256, the oldest dropped and counted
+  (`status.dropped`). Events queue only on the Mac that runs it. hesperd
+  types `[hesper] N new events. Run: hesperctl steward inbox` only while
+  the Steward is `done` or `idle`, at least 60 s after the last wake and
+  under `maxWakesPerDay` (default 40; counted from local midnight).
+  `steward.inbox` returns the queue and empties it.
+- **Daily rotation.** The first wake after local midnight closes the
+  session of the earlier day and starts a new one whose first message is
+  a brief from the store (the open and parked loops with who acts next and
+  their next text, at most 30; the open and proposed milestones with their
+  progress, at most 20); never a transcript. The waiting events stay for
+  the new session.
+- **Planning.** `steward.plan {scope, prompt?}` starts a visible planner
+  (`SpawnService(service planner)`, not in the background), a child of the
+  Steward when it runs here, never with `letParentAnswer`, in the scope's
+  project folder on this Mac, else `$STATE/steward/plans/<scope>`. Its
+  options add `Bash(git branch:*)`, `Bash(git log:*)` and `Bash(gh pr
+  list:*)` and use `plan.md`; it writes milestones with status `proposed`
+  and never accepts them (`goals.accept` is a person's).
+- **Tests** (`internal/steward`, a fake store and registry): start and
+  stop by node, adopting a restored agent, the restart backoff and cap,
+  wake gating (quiet only, 60 s, the daily cap, the midnight reset with
+  rotation), coalescing, service events skipped, the inbox, the evening,
+  the brief, planner spawns, the options, `steward.changed`, the mirrored
+  prompt; `internal/agents` `TestServiceArgv`.
+- **Not done:** the wake count and the queue are not persisted (a restart
+  of hesperd starts the day's count again and loses waiting events); a
+  person typing into the Steward's tile does not hold a wake back; a
+  planner on a Mac that does not run the Steward has no parent.
+
 ## Wire names kept from Ghosty
 
 Hesper was called Ghosty. The rename covers the binaries (`hesperd`,

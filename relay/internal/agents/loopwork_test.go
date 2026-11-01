@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -466,5 +467,32 @@ func TestReportsCoalesce(t *testing.T) {
 	h.resultHas(parent.ID, reportLine("L/kid002", wire.EndingWaits))
 	if res, _ := h.reg.Result(parent.ID); strings.Contains(res.Message, "kid001") {
 		t.Fatalf("dropped report delivered: %s", res.Message)
+	}
+}
+
+// TestServiceArgv: a service agent's options are the hook's, never its
+// profile's; other agents keep theirs.
+func TestServiceArgv(t *testing.T) {
+	h := newHarness(t)
+	h.close()
+	// "claude": the fake agent's mode (the test binary is the command).
+	h.opt.ServiceArgv = func(service string) []string { return []string{"claude", "--allowedTools", "Read," + service} }
+	h.open()
+	s, err := h.reg.SpawnService(wire.SpawnParams{Project: h.project, Task: "small job"}, wire.ServiceSteward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.Background {
+		t.Fatal("the Steward starts on a wall")
+	}
+	h.waitState(s.ID, wire.StateDone)
+	argv := h.argvs(s.ID)[0]
+	if len(argv) < 4 || argv[1] != "--allowedTools" || argv[2] != "Read,steward" || argv[3] != "--session-id" || slices.Contains(argv, "--permission-mode") {
+		t.Fatalf("service argv %q", argv)
+	}
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	h.waitState(a.ID, wire.StateDone)
+	if argv := h.argvs(a.ID)[0]; !slices.Contains(argv, "--permission-mode") || slices.Contains(argv, "--allowedTools") {
+		t.Fatalf("agent argv %q", argv)
 	}
 }

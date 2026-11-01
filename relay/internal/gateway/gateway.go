@@ -29,6 +29,7 @@ import (
 	"github.com/derzierau/hesper/relay/internal/projects"
 	"github.com/derzierau/hesper/relay/internal/remote"
 	"github.com/derzierau/hesper/relay/internal/sessions"
+	"github.com/derzierau/hesper/relay/internal/steward"
 	"github.com/derzierau/hesper/relay/pkg/client"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
@@ -95,8 +96,10 @@ type Daemon struct {
 	Registry *agents.Registry
 	// Projects is the project registry (projects step 1).
 	Projects *projects.Store
-	// Loops is the loops store (internal/loops).
-	Loops *loops.Store
+	// Loops is the loops store (internal/loops); Steward runs the Steward
+	// when the store's configuration names this Mac (internal/steward).
+	Loops   *loops.Store
+	Steward *steward.Steward
 	// History is the shared history (internal/sessions); nil with
 	// NoHistory.
 	History *sessions.Service
@@ -160,6 +163,8 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	d.Loops = loops.Open(loops.Options{StateDir: opt.StateDir, Node: d.Projects.Node(), Machine: opt.Machine, Logf: opt.Logf})
 	d.Loops.SetClassify(endings.Classify) // loose ends from final messages
 	opt.Loops = d.Loops
+	d.Steward = d.newSteward(opt.StateDir, opt.Logf) // steward.go
+	opt.Steward, opt.ServiceArgv = d.Steward, steward.Argv
 	// shared history: before the agents (the socket serves sessions.*).
 	if !cfg.NoHistory {
 		h := cfg.History
@@ -212,6 +217,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	d.wireProjects()
 	d.wireHistory() // shared history
 	d.wireLoops(ctx)
+	d.wireSteward(ctx) // steward.go
 	d.Server = agents.NewServer(reg)
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.Server.Serve(ln) }()
@@ -386,6 +392,9 @@ func (d *Daemon) Close() {
 		}
 		if d.Server != nil {
 			d.Server.Close()
+		}
+		if d.Steward != nil {
+			d.Steward.Close() // before the registry: it calls it
 		}
 		if d.Registry != nil {
 			d.Registry.Close()

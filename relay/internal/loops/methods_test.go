@@ -3,7 +3,9 @@ package loops
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
@@ -303,5 +305,38 @@ func TestStewardConfig(t *testing.T) {
 	}
 	if _, err := s.SetStewardConfig(wire.StewardSetParams{Level: ptr("boss")}); code(err) != wire.CodeInvalid {
 		t.Fatalf("bad level: %v", err)
+	}
+}
+
+// TestLoopCreatedHook: loops.save without an id and loops.split tell the
+// creation hook which service (if any) made the loop, so the Steward
+// never wakes on loops it or its planners created.
+func TestLoopCreatedHook(t *testing.T) {
+	s := openTest(t, t.TempDir(), "n-a", nil)
+	var mu sync.Mutex
+	var got []string
+	s.SetCreated(func(id, service string) {
+		mu.Lock()
+		got = append(got, id+" "+service)
+		mu.Unlock()
+	})
+	steward := agents.Caller{Agent: "L/st", Service: wire.ServiceSteward}
+	mine, err := call[wire.Loop](t, s, wire.MethodLoopsSave, wire.LoopSaveParams{Title: ptr("by the Steward")}, steward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	person := must[wire.Loop](t, s, wire.MethodLoopsSave, wire.LoopSaveParams{Title: ptr("by a person")})
+	must[wire.Loop](t, s, wire.MethodLoopsSave, wire.LoopSaveParams{ID: person.ID, Title: ptr("renamed")}) // no new loop
+	must[wire.Loop](t, s, wire.MethodLoopsLink, wire.LoopLinkParams{ID: person.ID, Link: wire.LoopLink{Kind: wire.LinkURL, Ref: "https://example.com/pr/1"}})
+	split, err := call[wire.Loop](t, s, wire.MethodLoopsSplit, wire.LoopSplitParams{ID: person.ID, Ref: "https://example.com/pr/1", Title: "the PR"},
+		agents.Caller{Agent: "L/pl", Service: wire.ServicePlanner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{mine.ID + " " + wire.ServiceSteward, person.ID + " ", split.ID + " " + wire.ServicePlanner}
+	if !slices.Equal(got, want) {
+		t.Fatalf("created %q, want %q", got, want)
 	}
 }
