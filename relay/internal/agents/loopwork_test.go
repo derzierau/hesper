@@ -420,6 +420,41 @@ func TestReportToParent(t *testing.T) {
 	}
 }
 
+// TestReportOncePerTurn: a turn settled twice (Codex: its screen, then
+// its notify) is reported once: a delivered line is not sent again, a
+// waiting one is replaced.
+func TestReportOncePerTurn(t *testing.T) {
+	h, _ := newLoopsHarness(t)
+	parent := h.spawn(wire.SpawnParams{Task: "small job"})
+	h.waitState(parent.ID, wire.StateDone)
+	child, err := h.spawnAs(parent.ID, wire.SpawnParams{Task: "small job", ReportToParent: true})
+	allowed(t, "child", err)
+	h.resultHas(parent.ID, reportLine(child.ID, wire.EndingDone))
+	h.waitState(parent.ID, wire.StateDone)
+	h.call("agents.input", wire.InputParams{ID: parent.ID, Text: "approve it", Submit: true}, nil)
+	h.waitState(parent.ID, wire.StateApproval)
+	pl, cl := strings.TrimPrefix(parent.ID, "L/"), strings.TrimPrefix(child.ID, "L/")
+	resettle := func(ending string) *parentReports {
+		h.reg.mu.Lock()
+		defer h.reg.mu.Unlock()
+		h.reg.settle(h.reg.agents[cl], ending)
+		return h.reg.reports[pl]
+	}
+	if pr := resettle(wire.EndingAsks); pr != nil {
+		t.Fatalf("a delivered turn queued again: %+v", pr.ending)
+	}
+	// A new turn waits (the parent is busy); settled again, it is replaced.
+	h.call("agents.input", wire.InputParams{ID: child.ID, Text: "all good", Submit: true}, nil)
+	eventuallyTrue(t, "child's new turn queued", func() bool {
+		h.reg.mu.Lock()
+		defer h.reg.mu.Unlock()
+		return h.reg.reports[pl] != nil
+	})
+	if pr := resettle(wire.EndingWaits); len(pr.order) != 1 || pr.ending[child.ID] != wire.EndingWaits {
+		t.Fatalf("queued %v %v", pr.order, pr.ending)
+	}
+}
+
 // TestReportWaitsForTyping: a person typing into the parent (a read-write
 // attach) holds the report back for reportQuiet.
 func TestReportWaitsForTyping(t *testing.T) {

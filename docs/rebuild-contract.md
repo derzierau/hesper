@@ -5181,7 +5181,10 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   read-write attach typed into it in the last 30 s
   (`ptyhost.Term.LastInput`); until then it waits, one per child with the
   latest ending, at most 32 per parent (the oldest dropped), and goes out
-  at the parent's next quiet state or when the 30 s are up. Several
+  at the parent's next quiet state or when the 30 s are up. One line per
+  turn: a turn that settles again (Codex: its screen showed it idle,
+  then its notify came) replaces its waiting line, and sends nothing
+  once its line went out. Several
   waiting lines go out as one paste. Only Claude and Codex parents (a
   shell would run the line), only on the same Mac: a parent on another
   Mac is not told (not done in v1). Waiting reports are not persisted and

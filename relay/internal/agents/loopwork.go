@@ -172,12 +172,18 @@ func reportLine(id, ending string) string {
 	return "[hesper] child " + id + " settled: " + ending + "; run hesperctl result " + id
 }
 
-// queueReport queues child's report for its parent (the lock is held).
+// queueReport queues child's report for its parent (the lock is held):
+// once per turn. A turn settled again replaces its waiting line (the
+// latest ending) and sends nothing once its line went out.
 func (r *Registry) queueReport(child *agent) {
 	m, local := r.split(child.Parent)
 	if m != r.machine {
 		return // a parent on another Mac: not done in v1
 	}
+	if child.reportTurn.Equal(child.turnStart) && child.reportSent {
+		return
+	}
+	child.reportTurn, child.reportSent = child.turnStart, false
 	parent := r.agents[local]
 	if parent == nil || (parent.Kind != wire.KindClaude && parent.Kind != wire.KindCodex) {
 		return // gone, or a shell (the line would run as a command)
@@ -236,6 +242,11 @@ func (r *Registry) deliverReports(parent *agent) {
 	if err := typeText(parent.term, strings.Join(lines, "\n"), true, true); err != nil {
 		r.opt.Logf("hesperd: %s: reports from its children: %v", parent.ID, err)
 		return
+	}
+	for _, id := range pr.order {
+		if m, local := r.split(id); m == r.machine && r.agents[local] != nil {
+			r.agents[local].reportSent = true
+		}
 	}
 	r.dropReports(parent)
 }

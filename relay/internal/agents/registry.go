@@ -268,6 +268,12 @@ type agent struct {
 	// ended during a hook (HookResult settles it once the message is in).
 	turnStart time.Time
 	settleDue bool
+	// reportTurn is the turn (its turnStart) last reported to its parent
+	// (SpawnParams.ReportToParent), reportSent once the line was typed:
+	// a turn that settles again (Codex: its screen, then notify) is
+	// never reported twice.
+	reportTurn time.Time
+	reportSent bool
 }
 
 // since is when an agent entered state, now: an agent the daemon
