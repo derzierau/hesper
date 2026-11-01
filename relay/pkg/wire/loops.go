@@ -273,6 +273,11 @@ type StewardStatus struct {
 	Wakes    int       `json:"wakes"`
 	LastWake time.Time `json:"lastWake,omitzero"`
 	Session  string    `json:"session,omitempty"`
+	// Dropped counts events the full queue dropped (the oldest first);
+	// Stopped says why the Steward does not run although it is on here
+	// (it failed too often: turning it off and on again retries).
+	Dropped int    `json:"dropped,omitempty"`
+	Stopped string `json:"stopped,omitempty"`
 }
 
 // StewardEvent is one event steward.inbox hands the Steward.
