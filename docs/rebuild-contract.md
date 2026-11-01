@@ -5340,7 +5340,14 @@ never in the relay-visible snapshot); the controller pulls (`loops.pull
 {since, epoch, from}`) until `more` is false, then pushes its changes
 since what that host has (`loops.sync {from, records}`), one exchange per
 link at a time, again ≤ 150 ms after each local change, 5 s after a
-failure. Batches ≤ 512 KiB; a record whose every stamp is the asking
+failure. The cursors (per other node: its epoch and sequence number
+pulled up to, this Mac's pushed up to and its epoch then, the epoch of
+its last hint) persist in `$HESPER_STATE_DIR/loops.peers.json` (0600,
+atomic, taken with the records `loops.json` is written from and written
+after it, never ahead of it; tied to the store's epoch: a new store
+here drops them), so a restart pulls and pushes only what changed. A
+hint with a new epoch resets what was pushed to that node; a push begun
+before the reset does not record its cursor and starts again. Batches ≤ 512 KiB; a record whose every stamp is the asking
 Mac's is not sent; each record merges by itself (per field last writer
 wins, tombstones stay, records that fail validation are dropped whole).
 Rights: `loops.pull` `observe`, `loops.sync` `transfer` (empty records

@@ -99,8 +99,6 @@ type Fleet struct {
 	changed  chan struct{} // closed when a link or connection changes
 	ready    chan struct{} // closed with the first inventory
 
-	loopPeers map[string]*loopPeer // by host node (loops.go)
-
 	files fileUploads // attachments being forwarded (files.go)
 	fwd   forwards    // port forwards (forward.go)
 }

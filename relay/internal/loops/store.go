@@ -86,8 +86,11 @@ type Store struct {
 	idx        *index           // index.go (nil: built on first use)
 	dirty      map[string]bool  // loops changed since the last view build
 	allDirty   bool             // every view (names, agents source)
-	shared     chan struct{}    // closed at the next change (sync)
-	stewardCh  chan struct{}    // closed at the next Steward config change
+	peers      map[string]*Peer // sync cursors (peers.go)
+	peersDirty bool
+	unsaved    bool          // records changed since loops.json was written
+	shared     chan struct{} // closed at the next change (sync)
+	stewardCh  chan struct{} // closed at the next Steward config change
 
 	// Joined in when views are built (views.go), each called without
 	// the lock held.
@@ -153,9 +156,11 @@ func Open(opt Options) *Store {
 		for _, k := range s.keysLocked() {
 			s.bumpLocked(k)
 		}
+		s.unsaved = true
 		s.scheduleSave()
 	}
 	s.clock.Node, s.clock.Now = s.node, opt.Now
+	s.loadPeers()
 	s.pruneLocked()
 	s.commitLocked(s.breakCyclesLocked()...) // a file from before cycles were broken
 	s.wg.Add(2)
@@ -376,6 +381,7 @@ func (s *Store) commitLocked(keys ...string) {
 	}
 	close(s.shared)
 	s.shared = make(chan struct{})
+	s.unsaved = true
 	s.scheduleSave()
 	s.kickViews()
 }
@@ -420,6 +426,13 @@ func (s *Store) write() {
 	s.wmu.Lock()
 	defer s.wmu.Unlock()
 	s.mu.Lock()
+	peers := s.peersLocked()
+	if !s.unsaved { // only the cursors changed
+		s.mu.Unlock()
+		s.writePeers(peers)
+		return
+	}
+	s.unsaved = false
 	f := storeFile{Version: 1, Node: s.node, Epoch: s.epoch, Clock: stamp{T: s.clock.Last.T, C: s.clock.Last.C}, Seq: s.seq,
 		Seqs: s.seqs, Steward: s.steward, Settings: s.settings, Loops: []*LoopRecord{}, Goals: []*GoalRecord{}, Milestones: []*MilestoneRecord{}}
 	for _, l := range s.loops {
@@ -441,7 +454,13 @@ func (s *Store) write() {
 	}
 	if err != nil {
 		s.opt.Logf("hesperd: saving loops.json: %v", err)
+		s.mu.Lock()
+		s.unsaved = true // the next change tries again
+		s.peersDirty = s.peersDirty || peers != nil
+		s.mu.Unlock()
+		return
 	}
+	s.writePeers(peers) // after loops.json: never cursors past what it holds
 }
 
 // atomicWrite replaces path with data (temp file, fsync, rename).
