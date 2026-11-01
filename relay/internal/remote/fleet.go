@@ -120,6 +120,11 @@ type machine struct {
 	// loops: it keeps loops (a loops hint came on a link; loops.go).
 	node  string
 	loops bool
+	// backfill: the host keeps no loops (no hint came within
+	// loopsBackfillDelay of an inventory), so this Mac puts its agents in
+	// loops (loops.go); backfillWait: that wait is under way.
+	backfill     bool
+	backfillWait bool
 }
 
 type watcher struct {

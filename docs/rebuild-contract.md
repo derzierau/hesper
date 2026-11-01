@@ -5153,6 +5153,14 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   (it ran before this Mac had loops: an upgrade) is assigned one,
   parents before children, so a child joins its parent's loop. Agents
   with a loop are left alone, so later starts assign nothing.
+- **Older hosts.** A host that has not sent a loops hint within a minute
+  of an inventory keeps no loops (an older hesperd). From then on the
+  controller assigns its agents itself (`internal/remote/loops.go`,
+  `backfillLoopsLocked`): every agent without a loop, parents first, and
+  each new one as it appears, with refs `<host node>/<local id>`. The
+  host's node comes from its link, else from the shared project registry
+  (`projects.Store.NodeOf`). A host that later sends a hint keeps its
+  loops itself from then on.
 - **`Agent.loop`** is filled from `Loops.LoopOf(ref)` whenever this Mac's
   agents are listed, fetched or notified; it is never kept in the
   registry nor written to `agents.json` (the store's links are the

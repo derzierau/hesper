@@ -3,6 +3,8 @@ package remote
 import (
 	"context"
 	"encoding/json"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
@@ -179,10 +181,96 @@ func (f *Fleet) syncLoopsLoop(ctx context.Context, c *client.Controller) {
 
 // loopOfLocked is the loop of one of m's agents ("" none or unknown).
 func (f *Fleet) loopOfLocked(m *machine, local string) string {
-	if f.opt.Loops == nil || m.node == "" {
+	node := f.nodeLocked(m)
+	if f.opt.Loops == nil || node == "" {
 		return ""
 	}
-	return f.opt.Loops.LoopOf(m.node + "/" + local)
+	return f.opt.Loops.LoopOf(node + "/" + local)
+}
+
+// nodeLocked is m's node: from its link, else from the project registry
+// every Mac shares (a host from before loops names none on its link).
+func (f *Fleet) nodeLocked(m *machine) string {
+	if m.node != "" || f.opt.Projects == nil {
+		return m.node
+	}
+	return f.opt.Projects.NodeOf(m.short)
+}
+
+// loopsBackfillDelay is how long a host has, after its first inventory,
+// to say it keeps loops itself (its loops hint comes when the link opens).
+const loopsBackfillDelay = time.Minute
+
+// armBackfillLocked follows an inventory of m: a host that has not said
+// it keeps loops within loopsBackfillDelay of it is an older hesperd,
+// whose agents this Mac puts in loops (startBackfillLocked). A link that
+// ends during the wait leaves it to the next link's inventory.
+func (f *Fleet) armBackfillLocked(m *machine, l *link) {
+	if f.opt.Loops == nil || m.loops {
+		return
+	}
+	if m.backfill || m.backfillWait {
+		f.backfillLoopsLocked(m)
+		return
+	}
+	m.backfillWait = true
+	time.AfterFunc(loopsBackfillDelay, func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		m.backfillWait = false
+		if m.link == l {
+			f.startBackfillLocked(m)
+		}
+	})
+}
+
+// startBackfillLocked: m keeps no loops (unless a hint said otherwise):
+// from now on this Mac keeps the loops of its agents.
+func (f *Fleet) startBackfillLocked(m *machine) {
+	if m.loops {
+		return
+	}
+	m.backfill = true
+	f.backfillLoopsLocked(m)
+}
+
+// backfillLoopsLocked puts every agent of a host without loops that has no
+// loop in one, parents first, so a child shares its parent's loop (the
+// parent's ref when the parent is one of the host's agents). The store
+// never calls back into the Fleet, so f.mu is held throughout.
+func (f *Fleet) backfillLoopsLocked(m *machine) {
+	store := f.opt.Loops
+	if store == nil || !m.backfill || m.loops {
+		return
+	}
+	node := f.nodeLocked(m)
+	if node == "" {
+		return
+	}
+	missing := make([]wire.Agent, 0, len(m.agents))
+	for local, a := range m.agents {
+		if a.Service == "" && store.LoopOf(node+"/"+local) == "" {
+			missing = append(missing, a)
+		}
+	}
+	sort.Slice(missing, func(i, j int) bool {
+		if missing[i].Depth != missing[j].Depth {
+			return missing[i].Depth < missing[j].Depth
+		}
+		return missing[i].Created.Before(missing[j].Created)
+	})
+	for _, a := range missing {
+		local := localID(a.ID)
+		info := agents.AssignInfo{Ref: node + "/" + local, Agent: a}
+		if short, parent, ok := strings.Cut(a.Parent, "/"); ok && short == m.short {
+			if _, on := m.agents[parent]; on {
+				info.ParentRef = node + "/" + parent
+			}
+		}
+		a.Loop = store.Assign(info)
+		m.agents[local] = a
+		f.emitChangedLocked(a)
+	}
 }
 
 // refreshLoops updates the remote agents' Agent.Loop after the loops
