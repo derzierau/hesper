@@ -25,6 +25,14 @@ struct StewardSettingsTests {
         let there = StewardSettings(status: StewardStatus(enabled: true, machine: "mini"), machines: machines, local: "L")
         #expect(there.summary == "Runs on mini" && !there.runsHere)
         #expect(there.setEnabled(true) == nil && there.setEnabled(false) == StewardPatch(enabled: false))
+        // Stopped after failing: why, and that off and on again retries.
+        var failing = StewardStatus(enabled: true, machine: "L", wakes: 3, dropped: 2, stopped: "it failed 5 times in 10 minutes")
+        let broken = StewardSettings(status: failing, machines: machines, local: "L")
+        #expect(broken.summary == "Runs on this Mac · 3 wakes today · stopped · 2 events dropped")
+        #expect(broken.stoppedNote == "Stopped: it failed 5 times in 10 minutes. Turn it off and on again to retry.")
+        failing.enabled = false
+        #expect(StewardSettings(status: failing, machines: machines, local: "L").stoppedNote == nil)
+        #expect(here.stoppedNote == nil)
         // A Mac the list doesn't know yet is still shown.
         let gone = StewardSettings(status: StewardStatus(enabled: true, machine: "old"), machines: [], local: "L")
         #expect(gone.machines.map(\.machine) == ["L", "old"])

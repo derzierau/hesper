@@ -55,8 +55,16 @@ public struct StewardSettings: Equatable, Sendable {
         guard runsHere else { return whereText }
         var parts = [whereText, status.wakes == 1 ? "1 wake today" : "\(status.wakes) wakes today"]
         if status.queued > 0 { parts.append("\(status.queued) waiting") }
-        if status.agent == nil { parts.append("not running") }
+        if status.stopped != nil { parts.append("stopped") } else if status.agent == nil { parts.append("not running") }
+        if status.dropped > 0 { parts.append(status.dropped == 1 ? "1 event dropped" : "\(status.dropped) events dropped") }
         return parts.joined(separator: " · ")
+    }
+
+    /// Why it stopped although it is on, and how to retry (nil: it is not
+    /// stopped).
+    public var stoppedNote: String? {
+        guard status.enabled, let why = status.stopped else { return nil }
+        return "Stopped: \(why). Turn it off and on again to retry."
     }
 
     // MARK: Intents (steward.set)

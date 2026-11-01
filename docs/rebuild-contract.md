@@ -5092,8 +5092,11 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
 - **Settings › Steward** (`StewardSettings.swift`): the switch (on pins
   it to this Mac when none is set), the three levels with their texts,
   the machine choices (this Mac first, offline ones kept), a summary
-  line ("Runs on this Mac · 12 wakes today · 2 waiting") and the
-  `steward.set` patches (nil when nothing changes).
+  line ("Runs on this Mac · 12 wakes today · 2 waiting", "· stopped",
+  "· 3 events dropped" from `StewardStatus.stopped` / `dropped`), the
+  stopped note ("Stopped: <why>. Turn it off and on again to retry.",
+  shown in the error tone under the switch) and the `steward.set`
+  patches (nil when nothing changes).
 
 - **Fake hesperd** (`app/Tools/fake-hesperd/loops.go`, TEST-ONLY): every
   `loops.*`, `goals.*` and `steward.*` method on an in-memory store,

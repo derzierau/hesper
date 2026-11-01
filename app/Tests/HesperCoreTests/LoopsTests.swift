@@ -81,6 +81,10 @@ struct LoopsTests {
         // Missing level: the default (suggest); unknown: watch.
         #expect(try F.decode(StewardStatus.self, "{}") == StewardStatus())
         #expect(try F.decode(StewardStatus.self, #"{"level":"overlord"}"#).level == .watch)
+        // Why it stopped and the events its full queue dropped.
+        let st = try F.decode(StewardStatus.self, #"{"enabled":true,"stopped":"it failed 5 times in 10 minutes","dropped":7}"#)
+        #expect(st.stopped == "it failed 5 times in 10 minutes" && st.dropped == 7)
+        #expect(s.stopped == nil && s.dropped == 0)
 
         let set = try F.decode(LoopSettings.self, F.wireSettings)
         #expect(set == LoopSettings(loopLimit: 4, stallDays: 10, eveningAt: "19:30", maxWakesPerDay: 20))

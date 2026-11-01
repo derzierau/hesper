@@ -571,15 +571,21 @@ public struct StewardStatus: Equatable, Sendable, Decodable {
     public var wakes: Int
     public var lastWake: Date?
     public var session: String?
+    /// Events its full queue dropped (the oldest first).
+    public var dropped: Int
+    /// Why it does not run although it is on here (it failed too often;
+    /// turning it off and on again retries).
+    public var stopped: String?
 
     /// Off at level suggest: hesperd's default (decision 3, off by default).
     public init(enabled: Bool = false, level: StewardLevel = .suggest, node: String? = nil, machine: String? = nil, agent: String? = nil,
-                queued: Int = 0, wakes: Int = 0, lastWake: Date? = nil, session: String? = nil) {
+                queued: Int = 0, wakes: Int = 0, lastWake: Date? = nil, session: String? = nil, dropped: Int = 0, stopped: String? = nil) {
         self.enabled = enabled; self.level = level; self.node = node; self.machine = machine; self.agent = agent
         self.queued = queued; self.wakes = wakes; self.lastWake = lastWake; self.session = session
+        self.dropped = dropped; self.stopped = stopped
     }
 
-    enum CodingKeys: String, CodingKey { case enabled, level, node, machine, agent, queued, wakes, lastWake, session }
+    enum CodingKeys: String, CodingKey { case enabled, level, node, machine, agent, queued, wakes, lastWake, session, dropped, stopped }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         enabled = c.bool(.enabled)
@@ -587,6 +593,7 @@ public struct StewardStatus: Equatable, Sendable, Decodable {
         level = c.opt(.level).map { StewardLevel(rawValue: $0) ?? .watch } ?? .suggest
         node = c.opt(.node); machine = c.opt(.machine); agent = c.opt(.agent)
         queued = c.int(.queued); wakes = c.int(.wakes); lastWake = c.date(.lastWake); session = c.opt(.session)
+        dropped = c.int(.dropped); stopped = c.opt(.stopped)
     }
 }
 
