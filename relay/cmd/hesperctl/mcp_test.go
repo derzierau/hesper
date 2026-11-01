@@ -229,7 +229,7 @@ func TestMCPHandshakeAndTools(t *testing.T) {
 			t.Errorf("%s: listed %v, NoMCP %v", cmd.Name, listed, cmd.NoMCP)
 		}
 	}
-	for _, name := range []string{"hesper_agents_new", "hesper_agents_ls", "hesper_agents_wait", "hesper_history_search", "hesper_projects_ls", "hesper_reference", "hesper_open_review", "hesper_open_palette"} {
+	for _, name := range []string{"hesper_agents_new", "hesper_agents_ls", "hesper_agents_wait", "hesper_history_search", "hesper_projects_ls", "hesper_reference", "hesper_open_review", "hesper_open_palette", "hesper_open_loops", "hesper_open_wrapup", "hesper_open_product"} {
 		if tools[name] == nil {
 			t.Errorf("no tool %s", name)
 		}
