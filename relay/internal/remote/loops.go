@@ -98,7 +98,7 @@ func (f *Fleet) loopsWorker(l *link, node string) {
 		case <-l.loopsKick:
 		}
 		if err := f.exchangeLoops(l, node); err != nil && l.ctx.Err() == nil {
-			f.opt.Logf("remote: loops with %s: %v", l.m.short, err)
+			f.opt.Logf("remote: loops with %s: %v", f.shortOf(l.m), err)
 			select {
 			case <-l.ctx.Done():
 				return
@@ -130,7 +130,7 @@ func (f *Fleet) exchangeLoops(l *link, node string) error {
 		}
 		var res loops.PullResult
 		if err := json.Unmarshal(raw, &res); err != nil || res.Node != node {
-			return wire.Errorf(wire.CodeRemote, "bad loops.pull answer from %s", m.short)
+			return wire.Errorf(wire.CodeRemote, "bad loops.pull answer from %s", f.shortOf(m))
 		}
 		if store.Merge(res.Records) {
 			f.refreshLoops()
@@ -266,6 +266,13 @@ func (f *Fleet) spawnFields(m *machine, fields map[string]json.RawMessage) func(
 		}
 		store.Assign(info)
 	}
+}
+
+// shortOf is m's short name (the inventory renames machines under f.mu).
+func (f *Fleet) shortOf(m *machine) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return m.short
 }
 
 // NodeOf is the node of a machine as this Mac calls it, from its link
