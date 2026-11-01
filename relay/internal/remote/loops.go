@@ -231,7 +231,10 @@ func (f *Fleet) refreshLoops() {
 
 // spawnFields: before an agents.spawn goes to m, the loop fields leave
 // the params of a host without loops (it decodes params strictly); the
-// returned function records the new agent's loop on this Mac instead.
+// returned function records the new agent's loop on this Mac instead. A
+// host with loops gets its parent's loop as loop when the spawn names
+// none (and no milestone): only this Mac knows the parent's ref, the
+// host resolves only parents of its own.
 func (f *Fleet) spawnFields(m *machine, fields map[string]json.RawMessage) func(wire.Agent) {
 	store := f.opt.Loops
 	if store == nil {
@@ -240,9 +243,6 @@ func (f *Fleet) spawnFields(m *machine, fields map[string]json.RawMessage) func(
 	f.mu.Lock()
 	capable := m.loops
 	f.mu.Unlock()
-	if capable {
-		return nil
-	}
 	var want struct {
 		Loop      string `json:"loop"`
 		Milestone string `json:"milestone"`
@@ -250,6 +250,14 @@ func (f *Fleet) spawnFields(m *machine, fields map[string]json.RawMessage) func(
 	}
 	raw, _ := json.Marshal(fields)
 	json.Unmarshal(raw, &want)
+	if capable {
+		if want.Loop == "" && want.Milestone == "" && want.Parent != "" {
+			if loop := store.LoopOf(store.RefOf(want.Parent)); loop != "" {
+				fields["loop"], _ = json.Marshal(loop)
+			}
+		}
+		return nil
+	}
 	delete(fields, "loop")
 	delete(fields, "milestone")
 	delete(fields, "reportToParent")

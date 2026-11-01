@@ -197,14 +197,24 @@ func TestAssignOnInsertion(t *testing.T) {
 	}
 }
 
-// TestParentRefOnlyLocal: a parent on another Mac has no ref here.
+// TestParentRefOnlyLocal: a parent on another Mac has no ref here, also
+// when that Mac calls itself what this one does (both "L").
 func TestParentRefOnlyLocal(t *testing.T) {
 	h, _ := newLoopsHarness(t)
-	if got := h.reg.parentRef("L/abc"); got != "n1/abc" {
+	a := h.spawn(wire.SpawnParams{Task: "small job"})
+	ref := func(id string) string {
+		h.reg.mu.Lock()
+		defer h.reg.mu.Unlock()
+		return h.reg.parentRef(id)
+	}
+	if got := ref(a.ID); got != "n1/"+strings.TrimPrefix(a.ID, "L/") {
 		t.Fatalf("local parent %q", got)
 	}
-	if got := h.reg.parentRef("M/abc"); got != "" {
+	if got := ref("M/abc"); got != "" {
 		t.Fatalf("remote parent %q", got)
+	}
+	if got := ref("L/zz9zz9"); got != "" {
+		t.Fatalf("another L's parent %q", got)
 	}
 }
 

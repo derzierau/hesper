@@ -85,13 +85,15 @@ func (r *Registry) assign(a *agent, info AssignInfo) {
 }
 
 // parentRef is the ref of parent (an agent id) when it is one of this
-// Mac's agents' ids, else "": a parent on another Mac is linked by the
-// controller.
+// Mac's agents (the lock is held), else "": a parent on another Mac is
+// the controller's to link (it names the parent's loop in the spawn).
+// Its machine name alone is not enough: a controller that calls itself
+// what this Mac calls itself (both "L") sends its own parents so.
 func (r *Registry) parentRef(parent string) string {
 	if parent == "" {
 		return ""
 	}
-	if m, local := r.split(parent); m == r.machine {
+	if m, local := r.split(parent); m == r.machine && r.agents[local] != nil {
 		return r.ref(local)
 	}
 	return ""

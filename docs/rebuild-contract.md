@@ -5134,8 +5134,10 @@ Code: `internal/agents/loopwork.go` (the registry's side),
   spawn path: `Spawn` (and `SpawnFrom`, `SpawnService`), `SpawnSession`
   and `Import`. That covers spawns, resume, fork, continue-as, bring,
   `Handoff.Spawn` and gateway imports. `Loops.Assign` gets the agent's ref
-  (`<loops node>/<local id>`), the agent, its parent's ref (a parent on
-  this Mac only; one on another Mac is the controller's to link), the
+  (`<loops node>/<local id>`), the agent, its parent's ref (a parent that
+  is one of this Mac's agents only, not just one named with this Mac's
+  name: two Macs may both be `L`; one on another Mac is the controller's
+  to link), the
   source session's ref for resume, fork and continue-as (the session
   record's key, `<sessions node>:<kind>:<session id>`), and the spawn's
   `loop` and `milestone`, which win. A move carries the loop in the
@@ -5315,7 +5317,10 @@ wins, tombstones stay, records that fail validation are dropped whole).
 Rights: `loops.pull` `observe`, `loops.sync` `transfer` (empty records
 `observe`). Separate from `projects.sync`, which older hosts decode
 strictly. A spawn to a host without `loops` loses `loop`, `milestone`
-and `reportToParent`, and the controller records the new agent's loop.
+and `reportToParent`, and the controller records the new agent's loop;
+a spawn with a parent and neither `loop` nor `milestone` to a host with
+`loops` gets the parent's loop as `loop` from the controller (the host
+cannot resolve another Mac's parent), so the child joins it.
 Remote agents carry `Agent.loop` (`LoopOf(<host node>/<local id>)`),
 refreshed when the loops change.
 

@@ -134,3 +134,29 @@ func TestLoopsSharedBetweenMacs(t *testing.T) {
 		}
 	}
 }
+
+// A child an agent on L starts on M joins its parent's loop: L names the
+// loop in the spawn (M cannot know L's parent), on both Macs.
+func TestRemoteChildJoinsParentsLoop(t *testing.T) {
+	w := newWorld(t, worldOptions{})
+	L, M := w.L, w.M
+	L.waitLinked(t, "M")
+	M.waitLinked(t, "L")
+	var parent wire.Agent
+	if err := L.call(t, "agents.spawn", wire.SpawnParams{Project: L.project, Task: "small job"}, &parent); err != nil {
+		t.Fatal(err)
+	}
+	parent = L.waitAgent(t, parent.ID, func(a wire.Agent) bool { return a.Loop != "" })
+	eventually(t, "M has the parent's loop", func() bool { _, ok := M.loop(t, parent.Loop); return ok })
+	c := L.client(t)
+	c.Caller = parent.ID
+	var child wire.Agent
+	if err := c.Call(w.ctx, "agents.spawn", wire.SpawnParams{Machine: "M", Project: M.project, Task: "small job"}, &child); err != nil {
+		t.Fatal(err)
+	}
+	ref := M.d.Loops.Node() + "/" + strings.TrimPrefix(child.ID, "M/")
+	for _, n := range []*node{L, M} {
+		eventually(t, n.short+" puts the child in its parent's loop", func() bool { return n.d.Loops.LoopOf(ref) == parent.Loop })
+	}
+	L.waitAgent(t, child.ID, func(a wire.Agent) bool { return a.Loop == parent.Loop })
+}
