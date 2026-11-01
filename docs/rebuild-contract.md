@@ -5064,7 +5064,8 @@ who acts next (`Loop.next`); the app only sorts, filters and lays out.
   ends, steps and promises. A loop matches when at least 40 % of the
   task's words are in it and two words are shared or it is in the
   task's project (a package counts for its repository), or when 60 % of
-  one loose end's words (at least two) are in the task. Best: same
+  one loose end's words (at least two; a one-word loose end only in the
+  task's project) are in the task. Best: same
   project, then score, then a loose end, then the task's machine, then
   the most recent. `onYou` (looks done left out) and `atLimit`
   (≥ `loopLimit`) drive the red strip; a hint only.

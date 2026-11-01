@@ -72,6 +72,18 @@ struct StartCheckTests {
         #expect(ix.check(task: "rotate apns signing key", project: "p-web").match?.loop == "lp-push")
     }
 
+    @Test func oneWordLooseEndOnlyInItsProject() {
+        let ix = StartCheckIndex(loops: [
+            F.loop("lp-billing", "Billing service rewrite", items: [F.item("d", "Deploy", owner: .agent, kind: .looseEnd)], projects: ["p-web"]),
+        ], catalog: catalog)
+        // One shared word elsewhere never matches, nor ticks the loose end off.
+        #expect(ix.check(task: "deploy the dashboard", project: "p-app").match == nil)
+        #expect(ix.check(task: "deploy the dashboard").match == nil)
+        // In the loop's own project it does.
+        let r = ix.check(task: "deploy the dashboard", project: "p-web")
+        #expect(r.match?.loop == "lp-billing" && r.match?.looseEnd == "d")
+    }
+
     @Test func limitCounts() {
         let ix = StartCheckIndex(loops: loops(), catalog: catalog, loopLimit: 2, version: 7)
         let r = ix.check(task: "anything")

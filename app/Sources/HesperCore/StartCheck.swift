@@ -82,7 +82,9 @@ public struct StartCheckIndex: Sendable {
     /// The minimum share of the task's words a loop must have; and at
     /// least two shared words, or one in the same project.
     public static let threshold = 0.4
-    /// A loose end matches when this share of its own words is in the task.
+    /// A loose end matches when this share of its own words is in the task
+    /// (at least two of them; one for a one-word loose end in the task's
+    /// project).
     public static let looseEndThreshold = 0.6
 
     let entries: [Entry]
@@ -128,7 +130,8 @@ public struct StartCheckIndex: Sendable {
             for it in e.items where !it.tokens.isEmpty {
                 let hit = words.intersection(it.tokens).count
                 let ratio = Double(hit) / Double(it.tokens.count)
-                guard hit >= min(2, it.tokens.count), ratio >= Self.looseEndThreshold else { continue }
+                // Two shared words; a one-word loose end only in its own project.
+                guard hit >= (it.tokens.count == 1 && same ? 1 : 2), ratio >= Self.looseEndThreshold else { continue }
                 if loose == nil || ratio > loose!.ratio { loose = (it.id, it.text, ratio) }
             }
             let clears = score >= Self.threshold && (shared >= 2 || same) || loose != nil
