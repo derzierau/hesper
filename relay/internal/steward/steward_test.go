@@ -404,14 +404,15 @@ func TestQueueCoalesceSkipInbox(t *testing.T) {
 	if again := w.st.Inbox(); again == nil || len(again) != 0 {
 		t.Fatalf("inbox not emptied: %v", again)
 	}
-	// Bounded: the oldest dropped, counted.
+	// Bounded: the oldest dropped, counted (new loops only: lp-2 above
+	// counts once).
 	for i := range maxEvents + 44 {
-		w.st.LoopCreated(fmt.Sprintf("lp-%d", i), "")
+		w.st.LoopCreated(fmt.Sprintf("lp-b%d", i), "")
 	}
 	if st := w.st.Status(); st.Queued != maxEvents || st.Dropped != 44 {
 		t.Fatalf("status %+v", st)
 	}
-	if first := w.st.Inbox()[0]; first.Loop != "lp-44" {
+	if first := w.st.Inbox()[0]; first.Loop != "lp-b44" {
 		t.Fatalf("first kept %s", first.Loop)
 	}
 }
