@@ -5379,7 +5379,15 @@ and the MCP tool is `hesper_loops_item_add`.
   Steward's own call: it drains the queue). All one `steward.set` and
   print the status. `unavailable` (exit 4) while hesperd has no
   Steward.
-- **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, `TestStewardCommands` with a fake `agents.Steward` (`fullDaemon(t, steward)`), `TestStewardUnavailable`, which now wires a
+- **`new --loop L --milestone M --report-to-parent`** fill
+  `SpawnParams.loop` (L resolved to an id), `milestone` (an id) and
+  `reportToParent`. `hello` carries no capabilities and the local socket
+  decodes spawn params leniently, so an older hesperd would drop them:
+  hesperctl first calls `loops.settings.get`; "no method" (`not_found`)
+  refuses with exit 2 and nothing is started. `--loop` with
+  `--milestone` and `--report-to-parent` outside an agent (no parent)
+  are usage errors.
+- **Tests:** `TestLoopsCommands`, `TestGoalsCommands` against `fullDaemon`, `TestStewardCommands` with a fake `agents.Steward` (`fullDaemon(t, steward)`), `TestStewardUnavailable`, `TestNewInLoop`, `TestNewInLoopOnOlderDaemon`; `fullDaemon` now wires a
   loops store (no Steward) like the gateway does.
 
 ## Wire names kept from Ghosty

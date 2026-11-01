@@ -1,7 +1,13 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -172,4 +178,94 @@ func TestLoopsCommands(t *testing.T) {
 		t.Fatalf("settings set: %+v", s)
 	}
 	e.fails(t, exitUsage, codeUsage, "loops", "settings", "--evening", "late")
+}
+
+// new --loop, --milestone and --report-to-parent reach the spawn.
+func TestNewInLoop(t *testing.T) {
+	e := fullDaemon(t)
+	lid := strings.TrimSpace(e.ok(t, "loops", "new", "Release", "notes"))
+	e.ok(t, "projects", "promote", e.project, "--name", "app")
+	var ch wire.GoalChanged
+	e.okJSON(t, &ch, "goals", "new", "app", "1.4", "--milestone")
+
+	var a wire.Agent
+	e.okJSON(t, &a, "new", "--project", e.project, "--loop", "release", "write the notes")
+	eventually(t, "joined the loop", func() bool {
+		var l wire.Loop
+		e.okJSON(t, &l, "loops", "show", lid)
+		return l.Counts.Agents == 1
+	})
+	e.okJSON(t, &a, "new", "--project", e.project, "--milestone", "1.4", "fix the login")
+	var list []wire.Loop
+	eventually(t, "a loop under the milestone", func() bool {
+		e.okJSON(t, &list, "loops", "ls", "--milestone", "1.4")
+		return len(list) == 1 && list[0].ID != lid && list[0].Counts.Agents == 1
+	})
+	e.fails(t, exitUsage, codeUsage, "new", "--project", e.project, "--loop", lid, "--milestone", "1.4", "x")
+	e.fails(t, exitNotFound, wire.CodeNotFound, "new", "--project", e.project, "--loop", "nope", "x")
+	// --report-to-parent: only inside an agent.
+	e.fails(t, exitUsage, codeUsage, "new", "--project", e.project, "--report-to-parent", "x")
+	t.Setenv("HESPER_AGENT_ID", a.ID)
+	t.Setenv("HESPER_SOCKET", e.sock)
+	var child wire.Agent
+	e.okJSON(t, &child, "new", "--project", e.project, "--report-to-parent", "write the test")
+	if !child.ReportToParent || child.Parent != a.ID {
+		t.Fatalf("child: parent %q reportToParent %v", child.Parent, child.ReportToParent)
+	}
+}
+
+// An older hesperd knows no loops.* method and would drop the loop
+// flags: new refuses them (exit 2) and starts nothing.
+func TestNewInLoopOnOlderDaemon(t *testing.T) {
+	dir, err := os.MkdirTemp("/tmp", "gctl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "old.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var mu sync.Mutex
+	var methods []string
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				r := bufio.NewReader(conn)
+				for {
+					line, err := wire.ReadLine(r)
+					if err != nil {
+						return
+					}
+					var req wire.Request
+					json.Unmarshal(line, &req)
+					mu.Lock()
+					methods = append(methods, req.Method)
+					mu.Unlock()
+					out, _ := json.Marshal(wire.Response{JSONRPC: "2.0", ID: req.ID,
+						Error: &wire.RPCError{Code: wire.RPCNoMethod, Message: "no method " + req.Method, Data: &wire.ErrorData{Code: wire.CodeNotFound}}})
+					conn.Write(append(out, '\n'))
+				}
+			}()
+		}
+	}()
+	for _, flags := range [][]string{{"--loop", "lp-000000000001"}, {"--milestone", "1.4"}} {
+		args := append([]string{"new", "--project", t.TempDir(), "--daemon-socket", sock, "--json"}, flags...)
+		code, errCode, msg := jsonError(t, append(args, "fix it")...)
+		if code != exitUsage || errCode != codeUsage || !strings.Contains(msg, "does not know loops") {
+			t.Fatalf("%v: exit %d %s %s", flags, code, errCode, msg)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if contains(methods, "agents.spawn") {
+		t.Fatalf("spawned anyway: %v", methods)
+	}
 }

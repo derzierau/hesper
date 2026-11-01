@@ -1001,3 +1001,41 @@ func loopsSettings(ctx context.Context, f *flag.FlagSet, args []string) error {
 		return tw.Flush()
 	})
 }
+
+// spawnLoop puts new's --loop and --milestone into p (as ids), after it
+// made sure hesperd knows loops: an older one would drop them and
+// reportToParent silently (it decodes spawn params leniently), so they
+// are refused instead (exit 2).
+func spawnLoop(ctx context.Context, c *wire.Client, loop, milestone string, p *wire.SpawnParams) error {
+	if loop == "" && milestone == "" && !p.ReportToParent {
+		return nil
+	}
+	if loop != "" && milestone != "" {
+		return usagef("--loop or --milestone, not both (a loop has its milestone)")
+	}
+	if p.ReportToParent && c.Caller == "" {
+		return usagef("--report-to-parent tells the agent that starts this one: run it inside a Hesper agent")
+	}
+	var s wire.LoopSettings
+	if err := c.Call(ctx, wire.MethodLoopsSettingsGet, nil, &s); err != nil {
+		if errorCode(err) == wire.CodeNotFound {
+			return usagef("this hesperd does not know loops (update it): --loop, --milestone and --report-to-parent would be dropped")
+		}
+		return err
+	}
+	if loop != "" {
+		l, err := resolveLoop(ctx, c, loop)
+		if err != nil {
+			return err
+		}
+		p.Loop = l.ID
+	}
+	if milestone != "" {
+		m, err := resolveMilestone(ctx, c, milestone)
+		if err != nil {
+			return err
+		}
+		p.Milestone = m.ID
+	}
+	return nil
+}
