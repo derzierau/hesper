@@ -173,9 +173,12 @@ struct LoopsTests {
         let p = LoopPatch(title: "New", milestone: "", parkedUntil: F.t0).params
         #expect(p["title"] == "New" && p["milestone"] == "" && p["parkedUntil"]?.stringValue?.hasSuffix("Z") == true && p["id"] == nil)
         #expect(ItemPatch.done("it-1").json == ["id": "it-1", "state": "done"])
-        let item = ItemPatch(text: "x", owner: .others, kind: .looseEnd, order: 1.5, after: ["a"], check: ItemCheck(kind: "url", ref: "https://example.com")).json
+        let item = ItemPatch(text: "x", owner: .others, kind: .looseEnd, order: 1.5, after: ["a"], check: .set(ItemCheck(kind: "url", ref: "https://example.com"))).json
         #expect(item == ["text": "x", "owner": "others", "kind": "looseEnd", "order": .number(1.5), "after": ["a"],
                          "check": ["kind": "url", "ref": "https://example.com"]])
+        // Clearing a check sends an empty kind; keeping it sends nothing.
+        #expect(ItemPatch(id: "it-1", check: .clear).json == ["id": "it-1", "check": ["kind": ""]])
+        #expect(ItemPatch(id: "it-1").json == ["id": "it-1"])
         #expect(GoalPatch(scope: "g", title: "T").params == ["goal": ["scope": "g", "title": "T"]])
         #expect(MilestonePatch(id: "ms-1", status: .done, autoFile: false).params == ["milestone": ["id": "ms-1", "status": "done", "autoFile": false]])
         #expect(StewardPatch(enabled: true, level: .watch).params == ["enabled": true, "level": "watch"])

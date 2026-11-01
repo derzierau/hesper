@@ -52,8 +52,8 @@ public enum LoopActions {
     public static func trigger(_ text: String, item: LoopItem, steps: [LoopItem]) -> ItemPatch? {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let words = t.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard let first = words.first?.lowercased() else { return ItemPatch(id: item.id, after: []) }
-        if first == "none" || first == "clear" { return ItemPatch(id: item.id, after: []) }
+        guard let first = words.first?.lowercased() else { return ItemPatch(id: item.id, after: [], check: .clear) }
+        if first == "none" || first == "clear" { return ItemPatch(id: item.id, after: [], check: .clear) }
         if first == "after" {
             let ids = words.dropFirst().compactMap { w -> String? in
                 guard let n = Int(w.trimmingCharacters(in: CharacterSet(charactersIn: "#,"))), n >= 1, n <= steps.count else { return nil }
@@ -63,10 +63,10 @@ public enum LoopActions {
             return ids.isEmpty ? nil : ItemPatch(id: item.id, after: ids)
         }
         if let kind = ItemCheckKind(rawValue: first), words.count >= 2 {
-            return ItemPatch(id: item.id, check: ItemCheck(kind: kind.rawValue, ref: words.dropFirst().joined(separator: " ")))
+            return ItemPatch(id: item.id, check: .set(ItemCheck(kind: kind.rawValue, ref: words.dropFirst().joined(separator: " "))))
         }
         if words.count == 1, let u = URL(string: t), let scheme = u.scheme, scheme.hasPrefix("http") {
-            return ItemPatch(id: item.id, check: ItemCheck(kind: t.contains("/pull/") ? ItemCheckKind.pr.rawValue : ItemCheckKind.url.rawValue, ref: t))
+            return ItemPatch(id: item.id, check: .set(ItemCheck(kind: t.contains("/pull/") ? ItemCheckKind.pr.rawValue : ItemCheckKind.url.rawValue, ref: t)))
         }
         return nil
     }

@@ -5571,7 +5571,9 @@ hesperd with loops yet.
   (`LoopActions.step`): "@agent …" or "@others …" names the owner, else
   the person's. Triggers (`LoopActions.trigger`): "after 2 3", "pr
   <url>", "url <url>", "tag <name>", "review <id>", "loop <id>", a bare
-  URL, "none". M opens a picker of the other open loops filtered as
+  URL, "none" (clears the steps it waits on and its check:
+  `ItemPatch.check` is `ItemCheckChange` keep / set / clear, clear sent
+  as `"check": {"kind": ""}`; the fake hesperd honours it). M opens a picker of the other open loops filtered as
   typed. N opens a draft in the loop's project and ⌘↩ starts the
   drafted one: `LoopHub.noteDraft` remembers the draft's loop (in
   memory) and `startDraft` sends `SpawnRequest.loop` (only when hesperd

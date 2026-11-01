@@ -694,6 +694,25 @@ public struct LoopPatch: Equatable, Sendable {
     }
 }
 
+/// What an `ItemPatch` does to an item's check: leave it, set it, or
+/// clear it (sent as `"check": {"kind": ""}`).
+public enum ItemCheckChange: Equatable, Sendable {
+    case keep
+    case set(ItemCheck)
+    case clear
+
+    /// The check it sets (nil: keep or clear).
+    public var value: ItemCheck? { if case .set(let c) = self { return c } else { return nil } }
+
+    var json: JSONValue? {
+        switch self {
+        case .keep: return nil
+        case .set(let c): return c.json
+        case .clear: return ["kind": ""]
+        }
+    }
+}
+
 /// `loops.item` / `goals.item`: add (no id), change or remove an item; only
 /// the fields given change.
 public struct ItemPatch: Equatable, Sendable {
@@ -705,10 +724,10 @@ public struct ItemPatch: Equatable, Sendable {
     public var order: Double?
     public var after: [String]?
     public var draft: String?
-    public var check: ItemCheck?
+    public var check: ItemCheckChange
 
     public init(id: String? = nil, text: String? = nil, owner: ItemOwner? = nil, state: ItemState? = nil, kind: ItemKind? = nil,
-                order: Double? = nil, after: [String]? = nil, draft: String? = nil, check: ItemCheck? = nil) {
+                order: Double? = nil, after: [String]? = nil, draft: String? = nil, check: ItemCheckChange = .keep) {
         self.id = id; self.text = text; self.owner = owner; self.state = state; self.kind = kind
         self.order = order; self.after = after; self.draft = draft; self.check = check
     }
@@ -726,7 +745,7 @@ public struct ItemPatch: Equatable, Sendable {
         if let order { o["order"] = .number(order) }
         if let after { o["after"] = .array(after.map(JSONValue.string)) }
         if let draft { o["draft"] = .string(draft) }
-        if let check { o["check"] = check.json }
+        if let check = check.json { o["check"] = check }
         return .object(o)
     }
 }

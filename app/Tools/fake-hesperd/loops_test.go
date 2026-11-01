@@ -184,3 +184,22 @@ func TestLoopsSnapshot(t *testing.T) {
 		t.Errorf("snapshot %v", n)
 	}
 }
+
+func TestItemCheckClears(t *testing.T) {
+	d, _ := newLoopsDaemon(t)
+	asLoop := func(raw json.RawMessage) (l Loop) { _ = json.Unmarshal(raw, &l); return l }
+	l := asLoop(call(t, d, "loops.save", map[string]any{"title": "Checked"}))
+	l = asLoop(call(t, d, "loops.item", map[string]any{"id": l.ID, "item": map[string]any{"text": "Ship it", "check": map[string]any{"kind": "tag", "ref": "v1"}}}))
+	if len(l.Items) != 1 || l.Items[0].Check == nil {
+		t.Fatalf("set: %+v", l.Items)
+	}
+	id := l.Items[0].ID
+	l = asLoop(call(t, d, "loops.item", map[string]any{"id": l.ID, "item": map[string]any{"id": id, "text": "Ship it now"}}))
+	if l.Items[0].Check == nil {
+		t.Fatalf("a patch without check dropped it: %+v", l.Items[0])
+	}
+	l = asLoop(call(t, d, "loops.item", map[string]any{"id": l.ID, "item": map[string]any{"id": id, "check": map[string]any{"kind": ""}}}))
+	if l.Items[0].Check != nil {
+		t.Errorf("an empty kind kept the check: %+v", l.Items[0].Check)
+	}
+}

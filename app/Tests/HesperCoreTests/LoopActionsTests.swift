@@ -37,11 +37,14 @@ struct LoopActionsTests {
         #expect(LoopActions.trigger("after 1 #2", item: c, steps: steps) == ItemPatch(id: "c", after: ["a", "b"]))
         #expect(LoopActions.trigger("after 3", item: c, steps: steps) == nil) // not itself
         #expect(LoopActions.trigger("after 9", item: c, steps: steps) == nil)
-        #expect(LoopActions.trigger("", item: c, steps: steps) == ItemPatch(id: "c", after: []))
-        #expect(LoopActions.trigger("none", item: c, steps: steps) == ItemPatch(id: "c", after: []))
-        #expect(LoopActions.trigger("tag v1.2", item: c, steps: steps)?.check == ItemCheck(kind: "tag", ref: "v1.2"))
-        #expect(LoopActions.trigger("https://example.com/acme/demo/pull/7", item: c, steps: steps)?.check?.kind == "pr")
-        #expect(LoopActions.trigger("https://example.com/status", item: c, steps: steps)?.check?.kind == "url")
+        // "none" (or nothing) clears what it waits on: its steps and its check.
+        #expect(LoopActions.trigger("", item: c, steps: steps) == ItemPatch(id: "c", after: [], check: .clear))
+        #expect(LoopActions.trigger("none", item: c, steps: steps) == ItemPatch(id: "c", after: [], check: .clear))
+        #expect(LoopActions.trigger("tag v1.2", item: c, steps: steps)?.check == .set(ItemCheck(kind: "tag", ref: "v1.2")))
+        #expect(LoopActions.trigger("https://example.com/acme/demo/pull/7", item: c, steps: steps)?.check.value?.kind == "pr")
+        #expect(LoopActions.trigger("https://example.com/status", item: c, steps: steps)?.check.value?.kind == "url")
+        // "after" keeps the check.
+        #expect(LoopActions.trigger("after 1", item: c, steps: steps)?.check == .keep)
         #expect(LoopActions.trigger("soon", item: c, steps: steps) == nil)
     }
 

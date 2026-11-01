@@ -888,9 +888,14 @@ func patchItem(it *LoopItem, f map[string]json.RawMessage, now time.Time) *rpcEr
 		_ = json.Unmarshal(raw, &it.After)
 	}
 	if raw, ok := f["check"]; ok {
+		// An empty kind clears the check (the trigger "none").
 		var c ItemCheck
-		if json.Unmarshal(raw, &c) == nil && c.Kind != "" {
-			it.Check = &c
+		if json.Unmarshal(raw, &c) == nil {
+			if c.Kind == "" {
+				it.Check = nil
+			} else {
+				it.Check = &c
+			}
 		}
 	}
 	switch it.State {
