@@ -1,0 +1,30 @@
+// Settings every target shares. Debug.xcconfig and Release.xcconfig
+// include this file; project.yml names them.
+
+// Bundle IDs and the app group derive from one prefix. A contributor sets
+// their own prefix and team in Local.xcconfig (git-ignored; copy
+// Local.xcconfig.example), because bundle IDs are unique per team.
+HESPER_BUNDLE_PREFIX = de.olezierau.hesper
+HESPER_APP_GROUP = group.$(HESPER_BUNDLE_PREFIX)
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+IPHONEOS_DEPLOYMENT_TARGET = 26.0
+// iPhone and iPad (docs/iphone/concept.md, "iPad").
+TARGETED_DEVICE_FAMILY = 1,2
+
+// Swift 6 with approachable concurrency (SE-0461, SE-0470), as in the
+// packages. Default main-actor isolation is set per target in project.yml.
+SWIFT_VERSION = 6.0
+SWIFT_STRICT_CONCURRENCY = complete
+SWIFT_APPROACHABLE_CONCURRENCY = YES
+SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES
+SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+STRING_CATALOG_GENERATE_SYMBOLS = YES
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+
+#include? "Local.xcconfig"

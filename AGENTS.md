@@ -4,12 +4,14 @@ Hesper runs Claude Code, Codex and shell agents on the owner's Macs.
 - `relay/`: Go 1.25. `hesperd` (per-Mac daemon), `hesperctl` (CLI), `hesper-relay` (network relay).
 - `app/`: Swift 6.2, SwiftPM only, macOS 14+. Hesper.app. `HesperCore` is pure, tested logic; `Hesper` is AppKit/SwiftUI on libghostty.
 - The app is only a view of hesperd. It never talks to the network.
+- `apps/ios/`: Swift 6.2, SwiftUI, iOS 26+. The iPhone and iPad app; XcodeGen project, logic in `Packages/HesperKit`, screens in `Packages/HesperUI`, wire models from `HesperCore`. It talks only to the owner's relay and Macs, through a `LinkClient`.
 
 ## Commands
 - Relay, full check: `cd relay && test -z "$(gofmt -l .)" && make build test check`
 - One Go test: `cd relay && go test -race ./internal/<pkg>/ -run <Name>`
 - App, headless: `make -C relay build && make -C app test-unit test-fake`
 - App bundle: `make -C app build` (output `app/build/Hesper.app`)
+- iPhone app, headless: `make -C apps/ios check` (needs XcodeGen; `apps/ios/README.md`)
 - Installer: `scripts/test-install.sh`
 - `relay/internal/vt` tests need `tmux` 3.7 or newer on PATH.
 
@@ -38,7 +40,7 @@ Hesper runs Claude Code, Codex and shell agents on the owner's Macs.
 - One logical change per commit. Each commit builds and passes its tests on its own.
 - Keep formatting, renames and refactors in their own commits, apart from behaviour changes.
 - Subject: `<area>: <what changes, imperative>`, at most 72 characters, no trailing period.
-  Areas: `relay`, `hesperd`, `hesperctl`, `app` or an app feature (`Wall`, `History`, `Desks`), `install.sh`, `ci`, `release`, `brew`, `docs`, `AGENTS.md`.
+  Areas: `relay`, `hesperd`, `hesperctl`, `app` or an app feature (`Wall`, `History`, `Desks`), `ios`, `install.sh`, `ci`, `release`, `brew`, `docs`, `AGENTS.md`.
 - Body, wrapped at 72: why the change is needed and anything a reviewer cannot see in the diff.
 - Work on a branch; never commit to or force-push `main`.
 - Commits written by an agent end with its `Co-Authored-By:` trailer.
