@@ -30,7 +30,8 @@ import Testing
         let host = FakeHost(id: "MACHINE_ID", short: "studio", offer: Self.secret)
         let context = try await Self.context(FakeRelay([host]))
         let pairing = LivePairing(context: context, deviceName: "iPhone", pushEnvironment: "sandbox")
-        #expect(try await pairing.pair(offer: Self.offer(host)) == .approved(machine: "MACHINE_ID", rights: ["observe", "answer"]))
+        // The Mac as the live link and the fleet name it, not its machine id.
+        #expect(try await pairing.pair(offer: Self.offer(host)) == .approved(machine: "studio", rights: ["observe", "answer"]))
         let sent = try #require(host.params("devices.request"))
         #expect(sent["name"] as? String == "iPhone")
         #expect(sent["hardware"] as? Bool == false)
@@ -65,7 +66,7 @@ import Testing
             return
         }
         let keys = try context.keys()
-        #expect(machine == "MACHINE_ID")
+        #expect(machine == "mini")
         #expect(code == ApprovalCode.make(hostKey: host.hostKey, key: keys.device.publicKeyDER, strongKey: keys.strong.publicKeyDER))
         #expect(host.params("devices.request")?["offerProof"] == nil)
     }

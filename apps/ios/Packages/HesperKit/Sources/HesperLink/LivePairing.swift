@@ -151,6 +151,8 @@ public final class LivePairing: PairingService {
         } catch let e as RelayError where e.code == "forbidden" && offer != nil {
             throw PairingError.offerExpired
         }
+        // The result names the Mac as the live link and the fleet do.
+        let label = (try? await relay.machines())?.first { $0.id == machine }.map(LiveLink.name) ?? machine
         guard let status = try JSONSerialization.jsonObject(with: answer) as? [String: Any],
             let key = (status["hostKey"] as? String).flatMap({ Data(base64Encoded: $0) }), key.count == 32
         else { throw PairingError.failed("\(name) sent no valid host key") }
@@ -161,12 +163,12 @@ public final class LivePairing: PairingService {
             host.rights = granted
             host.approved = true
             try context.hosts.save(host)
-            return .approved(machine: machine, rights: granted)
+            return .approved(machine: label, rights: granted)
         case "pending":
             let code = ApprovalCode.make(hostKey: key, key: keys.device.publicKeyDER, strongKey: keys.strong.publicKeyDER)
             if let theirs = status["code"] as? String, theirs != code { throw PairingError.keyChanged(machine: machine) }
             let expires = (status["expires"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) } ?? Date() + 600
-            return .pending(machine: machine, code: code, expires: expires)
+            return .pending(machine: label, code: code, expires: expires)
         default:
             throw PairingError.failed("\(name) answered with an unknown status")
         }

@@ -43,7 +43,8 @@ public struct RelayAccount: Equatable, Sendable {
     }
 }
 
-/// How asking a Mac to let this phone in ended.
+/// How asking a Mac to let this phone in ended. `machine` names the Mac
+/// as the link and the fleet do (its short name), not by machine id.
 public enum PairResult: Equatable, Sendable {
     /// The Mac approved this phone with these rights.
     case approved(machine: String, rights: [String])
