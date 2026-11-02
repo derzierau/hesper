@@ -147,10 +147,10 @@ var (
 	expiredProblem      = problem{400, "expired", "This sign-in has expired", "Sign-in links work once, for 10 minutes.", "Start again on your device."}
 	wrongBrowserProblem = problem{403, "", "This browser can't finish the sign-in", "The sign-in started in another browser, or this browser blocks cookies for this site.", "Start again on your device and finish in the browser it opens, with cookies allowed."}
 	deniedProblem       = problem{400, "denied", "GitHub sign-in was cancelled", "GitHub didn't sign you in, so nothing was approved.", "To try again, start again on your device."}
-	githubProblem       = problem{403, "", "GitHub didn't confirm your account", "The relay couldn't check your GitHub sign-in.", "Start again on your device. If it keeps happening, try again later."}
+	githubProblem       = problem{403, "failed", "GitHub didn't confirm your account", "The relay couldn't check your GitHub sign-in.", "Start again on your device. If it keeps happening, try again later."}
 	originProblem       = problem{403, "", "This approval came from another site", "The relay only takes Approve from its own page, so nothing was approved.", "Start again on your device and approve on the page it opens."}
-	busyProblem         = problem{503, "", "The relay is busy", "Too many sign-ins are open right now.", "Wait a minute, then start again on your device."}
-	rateProblem         = problem{429, "", "Too many sign-ins", "The relay is getting more requests than it lets through.", "Wait a minute, then reload this page."}
+	busyProblem         = problem{503, "failed", "The relay is busy", "Too many sign-ins are open right now.", "Wait a minute, then start again on your device."}
+	rateProblem         = problem{429, "failed", "Too many sign-ins", "The relay is getting more requests than it lets through.", "Wait a minute, then reload this page."}
 	notFoundProblem     = problem{404, "", "Page not found", "This address isn't part of a sign-in.", "Start again on your device."}
 )
 

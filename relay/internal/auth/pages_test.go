@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -165,6 +166,29 @@ func TestBrowserErrorPages(t *testing.T) {
 	page(t, b.do("POST", "/auth/approve", form), 200, "Already approved")
 
 	page(t, open().do("GET", "/auth/nowhere", ""), 404, "Page not found")
+
+	p.err = errors.New("GitHub is down")
+	b = open()
+	page(t, b.do("GET", "/auth/github/callback?code=ok&state="+b.toGitHub(b.enroll(false)), ""), 403, "GitHub didn't confirm your account")
+	p.err = nil
+}
+
+// Whatever fails once the relay knows the enrollment ends the app's
+// sheet: status=failed when no other status says what happened.
+func TestFailedReturnsToApp(t *testing.T) {
+	_, p, open := pageTest(t)
+	p.err = errors.New("GitHub is down")
+	b := open()
+	id := b.enroll(true)
+	backToApp(t, b.do("GET", "/auth/github/callback?code=ok&state="+b.toGitHub(id), ""), id, "failed")
+	p.err = nil
+
+	b = open()
+	id = b.enroll(true)
+	for i := 0; i < 240; i++ {
+		b.do("GET", "/auth/nowhere", "")
+	}
+	backToApp(t, b.do("GET", "/auth/login?enrollment="+id, ""), id, "failed")
 }
 
 func TestApproveTwice(t *testing.T) {

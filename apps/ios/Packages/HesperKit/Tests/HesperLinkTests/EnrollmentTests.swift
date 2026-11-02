@@ -139,6 +139,7 @@ import Testing
         #expect(status("hesper-ios://auth?enrollment=enr-1&status=denied") == .denied)
         #expect(status("hesper-ios://auth?enrollment=enr-1&status=not_allowed") == .notAllowed(login: ""))
         #expect(status("hesper-ios://auth?enrollment=enr-1&status=expired") == .expired)
+        #expect(status("hesper-ios://auth?enrollment=enr-1&status=failed") == .failed)
         #expect(status("hesper-ios://auth?enrollment=enr-2&status=approved") == nil)
     }
 
