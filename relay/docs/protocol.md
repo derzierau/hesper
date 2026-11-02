@@ -36,6 +36,15 @@ refresh-family expiry. Only one renewal may run per device. Persist the new pair
 before connecting. A lost response or persistence failure requires a new login;
 reusing a refresh token revokes the entire device and active connection.
 
+**Push token.** A controller registers its APNs device token with
+`POST /v1/devices/push` `{"token":"HEX","environment":"sandbox"|"production"}`
+and its access token as `Authorization: Bearer`. `token` is the hex APNs token
+(64 to 200 hex digits, stored lower case); a new registration replaces the
+device's earlier one, and revoking the device (also by refresh reuse) drops it.
+Answers: 200 `{"registered":true}`, 400 `invalid_request`, 401 `unauthorized`,
+403 `forbidden` for a host. The relay only keeps the token; it sends no
+notifications yet.
+
 Native JSON endpoints reject browser `Origin` headers. Browser approval uses a
 separate cookie-bound CSRF token and escaped HTML. Authentication requests share
 a global 240/minute budget; responses never cache. GitHub needs no repository scopes.

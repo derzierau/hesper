@@ -40,6 +40,7 @@ func (s *HTTP) Handler() http.Handler {
 	mux.HandleFunc("GET /auth/login", s.login)
 	mux.HandleFunc("GET /auth/github/callback", s.callback)
 	mux.HandleFunc("POST /auth/approve", s.approve)
+	mux.HandleFunc("POST /v1/devices/push", s.push)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -85,6 +86,7 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 var challengePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+var pushTokenPattern = regexp.MustCompile(`^(?:[0-9a-fA-F]{2}){32,100}$`)
 
 func (s *HTTP) enroll(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -307,4 +309,39 @@ func (s *HTTP) refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	c.Relay = s.PublicURL
 	jsonReply(w, 200, c)
+}
+
+// push stores the APNs token of the controller holding the bearer access
+// token. Sending notifications is not the relay's job yet.
+func (s *HTTP) push(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token       string `json:"token"`
+		Environment string `json:"environment"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		fail(w, 401, "unauthorized")
+		return
+	}
+	d, err := s.Repository.Authenticate(r.Context(), token)
+	if err != nil || d.CredentialExpiresAt.IsZero() || !s.Policy.Allowed(d.Owner) {
+		fail(w, 401, "unauthorized")
+		return
+	}
+	if d.Role != identity.Controller {
+		fail(w, 403, "forbidden")
+		return
+	}
+	if !pushTokenPattern.MatchString(req.Token) || (req.Environment != "sandbox" && req.Environment != "production") {
+		fail(w, 400, "invalid_request")
+		return
+	}
+	if err := s.Repository.SetPush(r.Context(), d.ID, identity.Push{Token: strings.ToLower(req.Token), Environment: req.Environment, Updated: time.Now().UTC()}); err != nil {
+		fail(w, 401, "unauthorized")
+		return
+	}
+	jsonReply(w, 200, map[string]bool{"registered": true})
 }

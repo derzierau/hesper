@@ -23,7 +23,15 @@ type Device struct {
 	Role                Role      `json:"role"`
 	Name                string    `json:"name"`
 	Revoked             bool      `json:"revoked"`
+	Push                *Push     `json:"push,omitempty"`
 	CredentialExpiresAt time.Time `json:"-"`
+}
+
+// Push is a controller's APNs registration. Revocation drops it.
+type Push struct {
+	Token       string    `json:"token"`
+	Environment string    `json:"environment"` // "sandbox" or "production"
+	Updated     time.Time `json:"updated"`
 }
 type Invitation struct {
 	Owner   string    `json:"owner"`

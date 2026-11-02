@@ -15,7 +15,9 @@ import (
 
 	"github.com/derzierau/hesper/relay/internal/auth"
 	"github.com/derzierau/hesper/relay/internal/identity"
+	"github.com/derzierau/hesper/relay/internal/relay"
 	"github.com/derzierau/hesper/relay/internal/storage"
+	"github.com/derzierau/hesper/relay/internal/transport"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 )
 
@@ -288,5 +290,88 @@ func TestDefaultAppCallbacks(t *testing.T) {
 	}
 	if c := load(`,"appCallbacks":[]`); len(c.AppCallbacks) != 0 {
 		t.Fatal(c.AppCallbacks)
+	}
+}
+func claimed(t *testing.T, repo *storage.Bolt, owner string, role identity.Role) protocol.Credentials {
+	t.Helper()
+	ctx := context.Background()
+	verifier := identity.Secret()
+	e := auth.Enrollment{ID: identity.Secret(), Name: "iPhone", Role: role, Challenge: auth.Challenge(verifier), Expires: time.Now().Add(time.Minute)}
+	if err := repo.CreateEnrollment(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Approve(ctx, e.ID, auth.Principal{ID: owner, Login: "octocat"}); err != nil {
+		t.Fatal(err)
+	}
+	_, c, err := repo.Claim(ctx, e.ID, verifier, time.Minute, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+func TestPushToken(t *testing.T) {
+	repo, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+	app := transport.New(repo, relay.New(nil, time.Second))
+	app.Auth = &auth.HTTP{Repository: repo, Provider: &provider{}, Policy: auth.NewAllowlist([]string{"12345678"}), PublicURL: "https://relay.example"}
+	h := app.PublicHandler()
+	push := func(bearer, body string) int {
+		r := httptest.NewRequest("POST", "https://relay.example/v1/devices/push", strings.NewReader(body))
+		if bearer != "" {
+			r.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	stored := func(id string) *identity.Push {
+		devices, _ := repo.Devices(context.Background(), "")
+		for _, d := range devices {
+			if d.ID == id {
+				return d.Push
+			}
+		}
+		return nil
+	}
+	phone := claimed(t, repo, "github:12345678", identity.Controller)
+	first := strings.Repeat("ab", 32)
+	if code := push(phone.Token, `{"token":"`+first+`","environment":"sandbox"}`); code != 200 {
+		t.Fatal(code)
+	}
+	second := strings.Repeat("CD", 32)
+	if code := push(phone.Token, `{"token":"`+second+`","environment":"production"}`); code != 200 {
+		t.Fatal(code)
+	}
+	if p := stored(phone.DeviceID); p == nil || p.Token != strings.ToLower(second) || p.Environment != "production" {
+		t.Fatal("token not replaced", p)
+	}
+	for name, c := range map[string]struct {
+		bearer, body string
+		code         int
+	}{
+		"no bearer":   {"", `{"token":"` + first + `","environment":"sandbox"}`, 401},
+		"bad bearer":  {"nope", `{"token":"` + first + `","environment":"sandbox"}`, 401},
+		"environment": {phone.Token, `{"token":"` + first + `","environment":"dev"}`, 400},
+		"short token": {phone.Token, `{"token":"abcd","environment":"sandbox"}`, 400},
+		"not hex":     {phone.Token, `{"token":"` + strings.Repeat("zz", 32) + `","environment":"sandbox"}`, 400},
+		"unknown":     {phone.Token, `{"token":"` + first + `","environment":"sandbox","x":1}`, 400},
+		"host":        {claimed(t, repo, "github:12345678", identity.Host).Token, `{"token":"` + first + `","environment":"sandbox"}`, 403},
+		"not allowed": {claimed(t, repo, "github:999", identity.Controller).Token, `{"token":"` + first + `","environment":"sandbox"}`, 401},
+	} {
+		if code := push(c.bearer, c.body); code != c.code {
+			t.Errorf("%s: %d, want %d", name, code, c.code)
+		}
+	}
+	if err := repo.Revoke(context.Background(), phone.DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	if p := stored(phone.DeviceID); p != nil {
+		t.Fatal("revoke kept the push token")
+	}
+	if code := push(phone.Token, `{"token":"`+first+`","environment":"sandbox"}`); code != 401 {
+		t.Fatal("revoked device registered a token", code)
 	}
 }

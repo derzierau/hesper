@@ -148,6 +148,23 @@ func (s *Bolt) Revoke(ctx context.Context, id string) error {
 			return protocol.Err("not_found", "Device not found")
 		}
 		device.Revoked = true
+		device.Push = nil
+		return b.Put([]byte(id), protocol.JSON(device))
+	})
+}
+
+// SetPush stores the device's APNs registration, replacing an earlier one.
+func (s *Bolt) SetPush(ctx context.Context, id string, push identity.Push) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(devices)
+		var device identity.Device
+		if json.Unmarshal(b.Get([]byte(id)), &device) != nil || device.Revoked {
+			return protocol.Err("unauthorized", "Device has been revoked")
+		}
+		device.Push = &push
 		return b.Put([]byte(id), protocol.JSON(device))
 	})
 }

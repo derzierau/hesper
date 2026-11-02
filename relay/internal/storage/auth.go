@@ -175,6 +175,7 @@ func (s *Bolt) Rotate(ctx context.Context, token, proof string, accessTTL time.D
 				return nil
 			}
 			d.Revoked = true
+			d.Push = nil
 			replay = true
 			return tx.Bucket(devices).Put([]byte(d.ID), protocol.JSON(d))
 		}
