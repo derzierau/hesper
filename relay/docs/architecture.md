@@ -43,6 +43,18 @@ credentials are stored hashed. Existing sockets close at access expiry. An
 allowlist reload disconnects removed users immediately. The host and CLI serialize
 file renewal with a process lock and atomically replace mode-0600 credentials.
 An ambiguous refresh requires sign-in again rather than retrying a consumed token.
+
+Signing in again can keep a controller's device ID, because hosts keep their
+approvals by it. The relay records the device key of the first
+`devices.request` a controller sends (the relay sees it, unsigned); a later
+enrollment with `previousDevice` must be signed by that key over the new
+enrollment's challenge, and is claimed only by the same GitHub owner for a
+device that was never revoked. The earlier device's credentials are deleted.
+This gives the relay no new power over hosts: they still verify every
+request with the key they approved, so a wrongly recorded key only keeps an
+ID that cannot sign anything. Hosts are unchanged. A controller that never
+sent `devices.request` through the relay has no recorded key and gets a new
+ID, as before.
 Legacy invitations are permitted only in explicit loopback development mode.
 
 A controller can address only active hosts in the same owner namespace. A host

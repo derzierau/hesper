@@ -2,11 +2,16 @@ package auth_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,7 +19,10 @@ import (
 
 	"github.com/derzierau/hesper/relay/internal/auth"
 	"github.com/derzierau/hesper/relay/internal/identity"
+	"github.com/derzierau/hesper/relay/internal/relay"
 	"github.com/derzierau/hesper/relay/internal/storage"
+	"github.com/derzierau/hesper/relay/internal/transport"
+	"github.com/derzierau/hesper/relay/pkg/devicekey"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 )
 
@@ -192,5 +200,331 @@ func TestGitHubIdentityExchange(t *testing.T) {
 	p, err := g.Identify(context.Background(), "code", "proof")
 	if err != nil || p.ID != "github:12345678" {
 		t.Fatal(p, err)
+	}
+}
+func TestAppCallbackFlow(t *testing.T) {
+	repo, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+	p := &provider{owner: "github:12345678"}
+	api := &auth.HTTP{Repository: repo, Provider: p, Policy: auth.NewAllowlist([]string{"12345678"}), PublicURL: "https://relay.example", AppCallbacks: auth.DefaultAppCallbacks, Register: func(identity.Device) {}, Revoke: func(string) {}}
+	h := api.Handler()
+	// Each step is what ASWebAuthenticationSession does: open
+	// verificationURL, follow redirects, keep cookies, stop at the callback.
+	var cookie *http.Cookie
+	request := func(method, target, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, target, strings.NewReader(body))
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		if method == "POST" && strings.HasSuffix(target, "/auth/approve") {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.Header.Set("Origin", "https://relay.example")
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if c := w.Result().Cookies(); len(c) > 0 {
+			cookie = c[0]
+		}
+		return w
+	}
+	signIn := func(name string) (string, string, *httptest.ResponseRecorder) {
+		cookie = nil
+		verifier := identity.Secret()
+		w := request("POST", "https://relay.example/v1/auth/enroll", string(protocol.JSON(map[string]string{"name": name, "role": "controller", "challenge": auth.Challenge(verifier), "callback": "hesper-ios://auth"})))
+		if w.Code != 201 {
+			t.Fatal(w.Code, w.Body)
+		}
+		var e struct{ ID, Code, VerificationURL string }
+		json.Unmarshal(w.Body.Bytes(), &e)
+		w = request("GET", e.VerificationURL, "")
+		u, _ := url.Parse(w.Header().Get("Location"))
+		if w.Code != 303 || u.Host != "github.test" {
+			t.Fatal(w.Code, u)
+		}
+		return e.ID, verifier, request("GET", "https://relay.example/auth/github/callback?code=ok&state="+u.Query().Get("state"), "")
+	}
+	back := func(w *httptest.ResponseRecorder, id, status string) {
+		t.Helper()
+		u, err := url.Parse(w.Header().Get("Location"))
+		if w.Code != 303 || err != nil || u.Scheme != "hesper-ios" || u.Host != "auth" || u.Path != "" {
+			t.Fatal(w.Code, w.Header().Get("Location"))
+		}
+		q := u.Query()
+		want := url.Values{"enrollment": {id}, "status": {status}}
+		if status == "approved" {
+			want.Set("approved", "1")
+		}
+		if q.Encode() != want.Encode() {
+			t.Fatalf("callback carries %v, want %v", q, want)
+		}
+	}
+
+	id, verifier, w := signIn("iPhone")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "<strong>iPhone</strong>") || !strings.Contains(w.Body.String(), id[:8]) {
+		t.Fatal("approval page must name the device and show the code", w.Code, w.Body)
+	}
+	back(request("POST", "https://relay.example/auth/approve", "state="+cookie.Value), id, "approved")
+	w = request("POST", "https://relay.example/v1/auth/claim", string(protocol.JSON(map[string]string{"id": id, "verifier": verifier})))
+	var c protocol.Credentials
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &c) != nil || c.Role != "controller" || c.Relay != "https://relay.example" {
+		t.Fatal(w.Code, w.Body)
+	}
+
+	// An account the relay does not let in returns to the app too.
+	p.owner = "github:999"
+	id, _, w = signIn("iPhone")
+	back(w, id, "not_allowed")
+}
+func TestDefaultAppCallbacks(t *testing.T) {
+	dir := t.TempDir()
+	load := func(extra string) auth.Config {
+		t.Helper()
+		path := filepath.Join(dir, "auth.json")
+		os.WriteFile(path, []byte(`{"publicURL":"https://relay.example","githubClientId":"x","githubSecretFile":"s","allowedGitHubIds":["1"]`+extra+`}`), 0600)
+		c, err := auth.LoadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	if c := load(""); len(c.AppCallbacks) != 1 || c.AppCallbacks[0] != "hesper-ios://auth" {
+		t.Fatal(c.AppCallbacks)
+	}
+	if c := load(`,"appCallbacks":[]`); len(c.AppCallbacks) != 0 {
+		t.Fatal(c.AppCallbacks)
+	}
+}
+func claimed(t *testing.T, repo *storage.Bolt, owner string, role identity.Role) protocol.Credentials {
+	t.Helper()
+	ctx := context.Background()
+	verifier := identity.Secret()
+	e := auth.Enrollment{ID: identity.Secret(), Name: "iPhone", Role: role, Challenge: auth.Challenge(verifier), Expires: time.Now().Add(time.Minute)}
+	if err := repo.CreateEnrollment(ctx, e); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Approve(ctx, e.ID, auth.Principal{ID: owner, Login: "octocat"}); err != nil {
+		t.Fatal(err)
+	}
+	_, c, err := repo.Claim(ctx, e.ID, verifier, time.Minute, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+func TestPushToken(t *testing.T) {
+	repo, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+	app := transport.New(repo, relay.New(nil, time.Second))
+	app.Auth = &auth.HTTP{Repository: repo, Provider: &provider{}, Policy: auth.NewAllowlist([]string{"12345678"}), PublicURL: "https://relay.example"}
+	h := app.PublicHandler()
+	push := func(bearer, body string) int {
+		r := httptest.NewRequest("POST", "https://relay.example/v1/devices/push", strings.NewReader(body))
+		if bearer != "" {
+			r.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	stored := func(id string) *identity.Push {
+		devices, _ := repo.Devices(context.Background(), "")
+		for _, d := range devices {
+			if d.ID == id {
+				return d.Push
+			}
+		}
+		return nil
+	}
+	phone := claimed(t, repo, "github:12345678", identity.Controller)
+	first := strings.Repeat("ab", 32)
+	if code := push(phone.Token, `{"token":"`+first+`","environment":"sandbox"}`); code != 200 {
+		t.Fatal(code)
+	}
+	second := strings.Repeat("CD", 32)
+	if code := push(phone.Token, `{"token":"`+second+`","environment":"production"}`); code != 200 {
+		t.Fatal(code)
+	}
+	if p := stored(phone.DeviceID); p == nil || p.Token != strings.ToLower(second) || p.Environment != "production" {
+		t.Fatal("token not replaced", p)
+	}
+	for name, c := range map[string]struct {
+		bearer, body string
+		code         int
+	}{
+		"no bearer":   {"", `{"token":"` + first + `","environment":"sandbox"}`, 401},
+		"bad bearer":  {"nope", `{"token":"` + first + `","environment":"sandbox"}`, 401},
+		"environment": {phone.Token, `{"token":"` + first + `","environment":"dev"}`, 400},
+		"short token": {phone.Token, `{"token":"abcd","environment":"sandbox"}`, 400},
+		"not hex":     {phone.Token, `{"token":"` + strings.Repeat("zz", 32) + `","environment":"sandbox"}`, 400},
+		"unknown":     {phone.Token, `{"token":"` + first + `","environment":"sandbox","x":1}`, 400},
+		"host":        {claimed(t, repo, "github:12345678", identity.Host).Token, `{"token":"` + first + `","environment":"sandbox"}`, 403},
+		"not allowed": {claimed(t, repo, "github:999", identity.Controller).Token, `{"token":"` + first + `","environment":"sandbox"}`, 401},
+	} {
+		if code := push(c.bearer, c.body); code != c.code {
+			t.Errorf("%s: %d, want %d", name, code, c.code)
+		}
+	}
+	if err := repo.Revoke(context.Background(), phone.DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	if p := stored(phone.DeviceID); p != nil {
+		t.Fatal("revoke kept the push token")
+	}
+	if code := push(phone.Token, `{"token":"`+first+`","environment":"sandbox"}`); code != 401 {
+		t.Fatal("revoked device registered a token", code)
+	}
+}
+
+// signIn runs enroll → browser approval → claim for an enrollment body
+// built from the verifier's challenge, and returns the claim response.
+func signIn(t *testing.T, h http.Handler, body func(challenge string) string) *httptest.ResponseRecorder {
+	t.Helper()
+	serve := func(r *http.Request) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	verifier := identity.Secret()
+	w := serve(httptest.NewRequest("POST", "https://relay.example/v1/auth/enroll", strings.NewReader(body(auth.Challenge(verifier)))))
+	if w.Code != 201 {
+		return w
+	}
+	var e struct{ ID, VerificationURL string }
+	json.Unmarshal(w.Body.Bytes(), &e)
+	w = serve(httptest.NewRequest("GET", e.VerificationURL, nil))
+	cookie := w.Result().Cookies()[0]
+	u, _ := url.Parse(w.Header().Get("Location"))
+	r := httptest.NewRequest("GET", "https://relay.example/auth/github/callback?code=ok&state="+u.Query().Get("state"), nil)
+	r.AddCookie(cookie)
+	w = serve(r)
+	cookie = w.Result().Cookies()[0]
+	r = httptest.NewRequest("POST", "https://relay.example/auth/approve", strings.NewReader("state="+cookie.Value))
+	r.AddCookie(cookie)
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Origin", "https://relay.example")
+	if w = serve(r); w.Code != 200 {
+		t.Fatal("approval", w.Code, w.Body)
+	}
+	return serve(httptest.NewRequest("POST", "https://relay.example/v1/auth/claim", strings.NewReader(string(protocol.JSON(map[string]string{"id": e.ID, "verifier": verifier})))))
+}
+func TestReenrollmentKeepsDeviceID(t *testing.T) {
+	ctx := context.Background()
+	repo, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+	p := &provider{owner: "github:12345678"}
+	revoked := ""
+	h := (&auth.HTTP{Repository: repo, Provider: p, Policy: auth.NewAllowlist([]string{"12345678", "999"}), PublicURL: "https://relay.example", Register: func(identity.Device) {}, Revoke: func(id string) { revoked = id }}).Handler()
+	enroll := func(name string) func(string) string {
+		return func(challenge string) string {
+			return string(protocol.JSON(map[string]string{"name": name, "role": "controller", "challenge": challenge}))
+		}
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, _ := devicekey.EncodePublicKey(&key.PublicKey)
+	again := func(id, role string, signer *ecdsa.PrivateKey, sentKey string) func(string) string {
+		return func(challenge string) string {
+			digest := devicekey.ReenrollDigest(id, challenge)
+			sig, _ := ecdsa.SignASN1(rand.Reader, signer, digest[:])
+			return string(protocol.JSON(map[string]any{"name": "iPhone 17", "role": role, "challenge": challenge, "previousDevice": map[string]string{"id": id, "key": sentKey, "sig": base64.StdEncoding.EncodeToString(sig)}}))
+		}
+	}
+	credentials := func(w *httptest.ResponseRecorder) protocol.Credentials {
+		t.Helper()
+		var c protocol.Credentials
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &c) != nil {
+			t.Fatal(w.Code, w.Body)
+		}
+		return c
+	}
+	first := credentials(signIn(t, h, enroll("iPhone")))
+
+	// No key recorded yet: the relay cannot tell the device, a new ID it is.
+	if w := signIn(t, h, again(first.DeviceID, "controller", key, public)); w.Code != 400 {
+		t.Fatal("re-enrollment without a recorded key", w.Code)
+	}
+	if err := repo.PinDeviceKey(ctx, first.DeviceID, public); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	otherPublic, _ := devicekey.EncodePublicKey(&other.PublicKey)
+	repo.PinDeviceKey(ctx, first.DeviceID, otherPublic) // the first key stays
+	if err := repo.SetPush(ctx, first.DeviceID, identity.Push{Token: strings.Repeat("ab", 32), Environment: "production"}); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]func(string) string{
+		"other key signs": again(first.DeviceID, "controller", other, public),
+		"other key sent":  again(first.DeviceID, "controller", other, otherPublic),
+		"host role":       again(first.DeviceID, "host", key, public),
+		"unknown device":  again(identity.Secret(), "controller", key, public),
+	} {
+		if w := signIn(t, h, body); w.Code != 400 || !strings.Contains(w.Body.String(), "invalid_previous_device") {
+			t.Errorf("%s: %d %s", name, w.Code, w.Body)
+		}
+	}
+	// Another GitHub account on the same relay cannot take the ID over.
+	p.owner = "github:999"
+	if w := signIn(t, h, again(first.DeviceID, "controller", key, public)); w.Code != 403 || !strings.Contains(w.Body.String(), "previous_device_rejected") {
+		t.Fatal("other owner kept the device ID", w.Code, w.Body)
+	}
+	p.owner = "github:12345678"
+
+	next := credentials(signIn(t, h, again(first.DeviceID, "controller", key, public)))
+	if next.DeviceID != first.DeviceID {
+		t.Fatal("device ID changed")
+	}
+	d, err := repo.Device(ctx, first.DeviceID)
+	if err != nil || d.Name != "iPhone 17" || d.Key != public || d.Push == nil {
+		t.Fatal(d, err)
+	}
+	if _, err := repo.Authenticate(ctx, first.Token); err == nil {
+		t.Fatal("earlier access token still valid")
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "https://relay.example/v1/auth/refresh", strings.NewReader(string(protocol.JSON(map[string]string{"refreshToken": first.RefreshToken})))))
+	if w.Code != 401 || revoked != "" {
+		t.Fatal("earlier refresh token must be gone, not count as reuse", w.Code, revoked)
+	}
+	if _, err := repo.Authenticate(ctx, next.Token); err != nil {
+		t.Fatal(err)
+	}
+
+	// A revoked device never comes back: refused at enrollment, and at
+	// claim when revoked while the browser approval was open.
+	if err := repo.Revoke(ctx, first.DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	if w := signIn(t, h, again(first.DeviceID, "controller", key, public)); w.Code != 400 {
+		t.Fatal("revoked device re-enrolled", w.Code)
+	}
+	second := credentials(signIn(t, h, enroll("iPad")))
+	repo.PinDeviceKey(ctx, second.DeviceID, public)
+	verifier := identity.Secret()
+	body := again(second.DeviceID, "controller", key, public)(auth.Challenge(verifier))
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "https://relay.example/v1/auth/enroll", strings.NewReader(body)))
+	var e struct{ ID string }
+	if w.Code != 201 || json.Unmarshal(w.Body.Bytes(), &e) != nil {
+		t.Fatal(w.Code, w.Body)
+	}
+	if err := repo.Approve(ctx, e.ID, auth.Principal{ID: "github:12345678"}); err != nil {
+		t.Fatal(err)
+	}
+	repo.Revoke(ctx, second.DeviceID)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "https://relay.example/v1/auth/claim", strings.NewReader(string(protocol.JSON(map[string]string{"id": e.ID, "verifier": verifier})))))
+	if w.Code != 403 {
+		t.Fatal("device revoked during sign-in came back", w.Code, w.Body)
 	}
 }

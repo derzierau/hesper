@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/identity"
+	"github.com/derzierau/hesper/relay/pkg/devicekey"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 )
 
@@ -38,6 +39,7 @@ type Hub struct {
 	timeout     time.Duration
 	closed      bool
 	allowed     func(string) bool
+	keys        func(deviceID, key string)
 }
 
 func New(devices []identity.Device, timeout time.Duration) *Hub {
@@ -171,6 +173,13 @@ func (h *Hub) finish(id string, result json.RawMessage, err *protocol.Error) {
 	r.controller.peer.Send(protocol.Message{Type: "result", ID: r.clientID, Result: result, Error: err})
 }
 func (h *Hub) Handle(c *Connection, m protocol.Message) error {
+	err := h.handle(c, m)
+	if err == nil && c.device.Role == identity.Controller && m.Type == "request" && m.Method == "devices.request" {
+		h.observeKey(c.device.ID, m.Params)
+	}
+	return err
+}
+func (h *Hub) handle(c *Connection, m protocol.Message) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.connections[c.device.ID] != c || h.closed || (h.allowed != nil && !h.allowed(c.device.Owner)) {
@@ -241,6 +250,30 @@ func (h *Hub) Close() {
 		c.peer.Close()
 	}
 	h.connections = map[string]*Connection{}
+}
+
+// SetKeyObserver sets the function that learns the device key a controller
+// asks hosts to approve (the key of its devices.request). It is called
+// outside the hub lock, on the connection's goroutine.
+func (h *Hub) SetKeyObserver(observe func(deviceID, key string)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.keys = observe
+}
+func (h *Hub) observeKey(deviceID string, params json.RawMessage) {
+	h.mu.Lock()
+	observe := h.keys
+	h.mu.Unlock()
+	var req struct {
+		Key string `json:"key"`
+	}
+	if observe == nil || json.Unmarshal(params, &req) != nil {
+		return
+	}
+	if _, _, err := devicekey.ParsePublicKey(req.Key); err != nil {
+		return
+	}
+	observe(deviceID, req.Key)
 }
 
 // SetPolicy replaces the gate and immediately removes disallowed connections.

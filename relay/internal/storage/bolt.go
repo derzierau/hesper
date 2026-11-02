@@ -148,6 +148,55 @@ func (s *Bolt) Revoke(ctx context.Context, id string) error {
 			return protocol.Err("not_found", "Device not found")
 		}
 		device.Revoked = true
+		device.Push = nil
+		return b.Put([]byte(id), protocol.JSON(device))
+	})
+}
+
+// Device returns one device record, revoked or not.
+func (s *Bolt) Device(ctx context.Context, id string) (identity.Device, error) {
+	var device identity.Device
+	if err := ctx.Err(); err != nil {
+		return device, err
+	}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		if json.Unmarshal(tx.Bucket(devices).Get([]byte(id)), &device) != nil {
+			return protocol.Err("not_found", "Device not found")
+		}
+		return nil
+	})
+	return device, err
+}
+
+// PinDeviceKey records key as the controller's device key unless one is
+// already recorded: the first key wins and is never replaced.
+func (s *Bolt) PinDeviceKey(ctx context.Context, id, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(devices)
+		var device identity.Device
+		if json.Unmarshal(b.Get([]byte(id)), &device) != nil || device.Revoked || device.Role != identity.Controller || device.Key != "" {
+			return nil
+		}
+		device.Key = key
+		return b.Put([]byte(id), protocol.JSON(device))
+	})
+}
+
+// SetPush stores the device's APNs registration, replacing an earlier one.
+func (s *Bolt) SetPush(ctx context.Context, id string, push identity.Push) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(devices)
+		var device identity.Device
+		if json.Unmarshal(b.Get([]byte(id)), &device) != nil || device.Revoked {
+			return protocol.Err("unauthorized", "Device has been revoked")
+		}
+		device.Push = &push
 		return b.Put([]byte(id), protocol.JSON(device))
 	})
 }

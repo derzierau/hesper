@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -130,5 +131,27 @@ func TestTimeoutAndDuplicateIDs(t *testing.T) {
 	}
 	if got := next(t, pc, "result"); got.Error == nil || got.Error.Code != "timeout" {
 		t.Fatalf("unexpected response %+v", got)
+	}
+}
+func TestKeyObserverSeesDevicesRequestKeys(t *testing.T) {
+	a := device("host-a", "a", identity.Host)
+	c := device("client", "a", identity.Controller)
+	h := New([]identity.Device{a, c}, time.Second)
+	defer h.Close()
+	host, _ := attach(t, h, a)
+	controller, _ := attach(t, h, c)
+	var seen []string
+	h.SetKeyObserver(func(id, key string) { seen = append(seen, id+" "+key) })
+	key := "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEzl43zIIDgn77ReDsdfJBbUZPR4rW1lPcHfHSg8qfTIMtdAV9LOC4yz8Oa1V7H5Khq52cmq3h3IqTuH0vGkZM6g=="
+	request := func(c *Connection, id, method, params string) {
+		m := protocol.Message{Version: protocol.Version, Type: "request", ID: id, MachineID: a.ID, Method: method, Params: json.RawMessage(params)}
+		h.Handle(c, m)
+	}
+	request(controller, "1", "devices.request", `{"name":"iPhone","key":"`+key+`"}`)
+	request(controller, "2", "capture", `{"key":"`+key+`"}`)
+	request(controller, "3", "devices.request", `{"key":"not a key"}`)
+	request(host, "4", "devices.request", `{"key":"`+key+`"}`)
+	if len(seen) != 1 || seen[0] != "client "+key {
+		t.Fatal(seen)
 	}
 }

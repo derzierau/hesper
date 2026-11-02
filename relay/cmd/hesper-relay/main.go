@@ -59,6 +59,11 @@ func run() error {
 	}
 	hub := relay.New(devices, 20*time.Second)
 	defer hub.Close()
+	hub.SetKeyObserver(func(id, key string) {
+		if err := repo.PinDeviceKey(ctx, id, key); err != nil {
+			slog.Error("device key not recorded", "error", err)
+		}
+	})
 	app := transport.New(repo, hub)
 	defer app.Terminals.Close()
 	if *authPath != "" {

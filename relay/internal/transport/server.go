@@ -62,6 +62,7 @@ func (s *Server) PublicHandler() http.Handler {
 		handler := s.Auth.Handler()
 		mux.Handle("/auth/", handler)
 		mux.Handle("/v1/auth/", handler)
+		mux.Handle("POST /v1/devices/push", handler)
 	} else {
 		mux.HandleFunc("POST /v1/pair", s.pair)
 	}
