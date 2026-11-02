@@ -1,6 +1,7 @@
 import HesperDesign
 import HesperFleet
 import SwiftUI
+import TipKit
 
 /// The iPhone's tab bar (wireframes round 5): the three tabs in a glass
 /// capsule and the mic in its own circle next to them. The system bar has
@@ -44,6 +45,7 @@ struct CaptureBar: View {
                     .frame(width: Self.circle, height: Self.circle)
                     .glassEffect(.regular.tint(away ? Theme.dim : Theme.accent).interactive(), in: .circle)
                     .glassEffectID("mic", in: glass)
+                    .popoverTip(MicTip(), arrowEdge: .bottom)
                     .scaleEffect(holding ? 1.12 : 1)
                     .animation(.snappy, value: holding)
                     .contentShape(.circle)

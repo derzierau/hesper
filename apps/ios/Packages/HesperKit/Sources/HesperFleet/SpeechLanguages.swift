@@ -23,6 +23,21 @@ public enum SpeechLanguages {
         return out
     }
 
+    /// The language in its own name, for the language screen: "Deutsch",
+    /// "English (US)". The region shows only where it is not the
+    /// language's own (de-DE is just German, de-CH is not).
+    public static func displayName(_ id: String) -> String {
+        let id = normalized(id)
+        let locale = Locale(identifier: id)
+        let language = language(id)
+        guard let name = locale.localizedString(forLanguageCode: language)?.capitalized(with: locale) else { return id }
+        let parts = id.split(separator: "-")
+        guard parts.count > 1, let region = parts.last.map(String.init), region.count == 2, region != language.uppercased() else {
+            return name
+        }
+        return "\(name) (\(region))"
+    }
+
     static func match(_ id: String, in supported: [String]) -> String? {
         if supported.contains(id) { return id }
         let language = language(id)

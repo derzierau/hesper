@@ -21,6 +21,10 @@ public struct RootView: View {
     @State private var talk = Talk()
     @State private var capture: Capture?
     @State private var kept: KeptTask?
+    /// When the app last went to the background, for the Inbox's
+    /// notifications card.
+    @State private var awaySince: Date?
+    @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
 
@@ -28,7 +32,8 @@ public struct RootView: View {
         TabView(selection: selection) {
             SwiftUI.Tab("Inbox", systemImage: "tray", value: Tab.inbox) {
                 NavigationStack {
-                    InboxScreen().captureBar(tab: $tab, dictation: dictation, talk: $talk, capture: open).agentDestinations()
+                    InboxScreen(awaySince: awaySince).captureBar(tab: $tab, dictation: dictation, talk: $talk, capture: open)
+                        .agentDestinations()
                 }
             }
             .badge(model.fleet.counts.needsYou)
@@ -64,6 +69,9 @@ public struct RootView: View {
             if let kept { KeptToast(kept: kept) { withAnimation { self.kept = nil } } }
         }
         .tint(Theme.accent)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { awaySince = .now }
+        }
         // The voice model loads before the mic is touched.
         .task { dictation.prepare() }
         .onChange(of: model.fleet.speechHints, initial: true) { _, hints in dictation.hints = hints }

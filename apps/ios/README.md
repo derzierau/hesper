@@ -4,8 +4,11 @@ A remote for the agents on your Macs: what needs you, start, follow, steer
 and judge. The concept and wireframes are in
 [`docs/iphone/`](../../docs/iphone/concept.md).
 
-It runs on sample Macs (`FixtureLink`) or, once signed in and paired, on
-the owner's Macs through the mobile link library (`HesperLink`).
+On first launch it shows onboarding
+([`docs/iphone/onboarding.md`](../../docs/iphone/onboarding.md)) until a Mac
+is paired or the owner looks around with the sample Macs. Sample Macs run
+on fixtures (`FixtureLink`, `FixturePairing`); paired Macs through the
+mobile link library (`HesperLink`), wired in `App/Services.swift`.
 
 ## Requirements
 
@@ -52,8 +55,10 @@ groups need a paid developer account.
 
 - `HesperFleet`: link events folded into one fleet across Macs, the Inbox
   order, project groups, counts, the copy of a row, and `FleetModel`, the
-  app's observable model over a `LinkClient`.
-- `HesperFixtures`: the sample Macs from the wireframes and `FixtureLink`.
+  app's observable model over a `LinkClient`. Onboarding and Add Mac on a
+  `PairingService`: `OnboardingModel`, `AddMacModel`, `PairingPayload`.
+- `HesperFixtures`: the sample Macs from the wireframes, `FixtureLink`, and
+  `FixturePairing`, which plays every way pairing can end.
 - `HesperSurfaces`: what the app shares with its extensions (app group
   counts, the Live Activity's attributes).
 - `HesperLink`: the live link, the controller side of the relay protocol.
@@ -68,12 +73,23 @@ groups need a paid developer account.
 `HesperUI`:
 
 - `HesperDesign`: the Mac's Dusk/Daylight tokens, the square state mark, controls.
-- `HesperFeatures`: Inbox, Agents (with search and Later), Macs, the agent
-  view, and capture: the mic circle, dictation and the capture sheet.
+- `HesperFeatures`: Inbox, Agents (with search and Later), Macs (with Add
+  Mac), Settings, the agent view, capture (the mic circle, dictation and
+  the capture sheet) and onboarding.
 
 Wire models and design tokens come from the Mac app's `HesperCore`
 (`app/Package.swift` exports it), so the phone and the Mac decode the same
 contract.
+
+## Checking a screen
+
+A Debug build walks onboarding to one screen on the fixtures with
+`-HesperOnboardingDemo <step>` (`hello`, `scan`, `address`, `signIn`,
+`pickMac`, `approveOnMac`, `connected`, `language`, `samples`), and plays a
+failure with `-HesperPairingFixture <name>` (`notAllowed`, `unreachable`,
+`cancelled`, `pending`, `offline`, `denied`, `unsupported`, `keyChanged`).
+For a headless simulator: `xcrun simctl launch <device> <bundle id>
+-HesperOnboardingDemo connected`, then `xcrun simctl io <device> screenshot`.
 
 ## Choices
 
