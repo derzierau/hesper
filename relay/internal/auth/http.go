@@ -157,10 +157,15 @@ func (s *HTTP) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("code") == "" {
-		fail(w, 400, "denied")
+		if !s.returnToApp(w, r, f.EnrollmentID, "denied") {
+			fail(w, 400, "denied")
+		}
 		return
 	}
 	p, err := s.Provider.Identify(r.Context(), r.URL.Query().Get("code"), f.Verifier)
+	if err == nil && !s.Policy.Allowed(p.ID) && s.returnToApp(w, r, f.EnrollmentID, "not_allowed") {
+		return
+	}
 	if err != nil || !s.Policy.Allowed(p.ID) {
 		fail(w, 403, "not_allowed")
 		return
@@ -207,16 +212,37 @@ func (s *HTTP) approve(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{Name: "ghosty_auth", Path: "/auth/", HttpOnly: true, Secure: strings.HasPrefix(s.PublicURL, "https:"), SameSite: http.SameSiteLaxMode, MaxAge: -1})
 	if e.Callback != "" {
-		u, _ := url.Parse(e.Callback)
-		q := u.Query()
-		q.Set("enrollment", e.ID)
-		q.Set("approved", "1")
-		u.RawQuery = q.Encode()
-		http.Redirect(w, r, u.String(), http.StatusSeeOther)
+		redirectToApp(w, r, e, "approved")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = io.WriteString(w, "<!doctype html><title>Hesper approved</title><h1>Device approved</h1><p>Return to your device. You can close this window.</p>")
+}
+
+// redirectToApp sends the browser back to the enrollment's registered app
+// callback with only the enrollment ID and the status.
+func redirectToApp(w http.ResponseWriter, r *http.Request, e Enrollment, status string) {
+	u, _ := url.Parse(e.Callback)
+	q := u.Query()
+	q.Set("enrollment", e.ID)
+	q.Set("status", status)
+	if status == "approved" {
+		// wire name: approved=1 predates status and is kept for older apps.
+		q.Set("approved", "1")
+	}
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusSeeOther)
+}
+
+// returnToApp ends a failed sign-in at the app callback, if the enrollment
+// has one, so an app's authentication session does not stay on an error.
+func (s *HTTP) returnToApp(w http.ResponseWriter, r *http.Request, id, status string) bool {
+	e, err := s.Repository.Enrollment(r.Context(), id)
+	if err != nil || e.Callback == "" {
+		return false
+	}
+	redirectToApp(w, r, e, status)
+	return true
 }
 func (s *HTTP) claim(w http.ResponseWriter, r *http.Request) {
 	var req struct {

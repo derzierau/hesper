@@ -162,7 +162,9 @@ pair-host --machine <other>` on one, `hesperctl approve CODE` on the other;
 see the README).
 
 A native app that signs in through its own callback URL needs that exact URL in
-`appCallbacks`. The default empty list supports CLI browser approval.
+`appCallbacks`. Without the setting the list is `["hesper-ios://auth"]`, the
+iPhone app's callback; an explicit list replaces it (`[]` allows only CLI
+browser approval).
 
 ## Renewal and access changes
 

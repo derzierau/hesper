@@ -14,7 +14,14 @@ URLs. HTTP clients must not follow enrollment redirects with secrets attached.
    `verificationURL`, `expires`, `interval` (poll seconds).
 3. Open `verificationURL` in the system authentication browser. GitHub callback
    is `/auth/github/callback`. The user checks the matching code and approves the
-   named device. A registered app callback carries only enrollment ID and status.
+   named device. A registered app callback carries only enrollment ID and status:
+   `<callback>?approved=1&enrollment=<id>&status=approved` after approval;
+   `status=denied` (GitHub sign-in cancelled) or `status=not_allowed` (the GitHub
+   account is not on the allowlist) end the sign-in at the callback too, so an
+   app's authentication session (`ASWebAuthenticationSession`) never stays on an
+   error page. `approved=1` is the older form of `status=approved`. The iPhone
+   app's `hesper-ios://auth` is registered unless the relay's config lists its own
+   `appCallbacks`.
 4. Poll `POST /v1/auth/claim` with `id` and `verifier` no faster than the returned
    interval. HTTP 409 / `authorization_pending` means keep waiting. Other failures
    terminate the flow. Success returns credentials; claiming is single-use.

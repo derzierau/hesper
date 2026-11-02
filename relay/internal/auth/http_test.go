@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -192,5 +193,100 @@ func TestGitHubIdentityExchange(t *testing.T) {
 	p, err := g.Identify(context.Background(), "code", "proof")
 	if err != nil || p.ID != "github:12345678" {
 		t.Fatal(p, err)
+	}
+}
+func TestAppCallbackFlow(t *testing.T) {
+	repo, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+	p := &provider{owner: "github:12345678"}
+	api := &auth.HTTP{Repository: repo, Provider: p, Policy: auth.NewAllowlist([]string{"12345678"}), PublicURL: "https://relay.example", AppCallbacks: auth.DefaultAppCallbacks, Register: func(identity.Device) {}, Revoke: func(string) {}}
+	h := api.Handler()
+	// Each step is what ASWebAuthenticationSession does: open
+	// verificationURL, follow redirects, keep cookies, stop at the callback.
+	var cookie *http.Cookie
+	request := func(method, target, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, target, strings.NewReader(body))
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		if method == "POST" && strings.HasSuffix(target, "/auth/approve") {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.Header.Set("Origin", "https://relay.example")
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if c := w.Result().Cookies(); len(c) > 0 {
+			cookie = c[0]
+		}
+		return w
+	}
+	signIn := func(name string) (string, string, *httptest.ResponseRecorder) {
+		cookie = nil
+		verifier := identity.Secret()
+		w := request("POST", "https://relay.example/v1/auth/enroll", string(protocol.JSON(map[string]string{"name": name, "role": "controller", "challenge": auth.Challenge(verifier), "callback": "hesper-ios://auth"})))
+		if w.Code != 201 {
+			t.Fatal(w.Code, w.Body)
+		}
+		var e struct{ ID, Code, VerificationURL string }
+		json.Unmarshal(w.Body.Bytes(), &e)
+		w = request("GET", e.VerificationURL, "")
+		u, _ := url.Parse(w.Header().Get("Location"))
+		if w.Code != 303 || u.Host != "github.test" {
+			t.Fatal(w.Code, u)
+		}
+		return e.ID, verifier, request("GET", "https://relay.example/auth/github/callback?code=ok&state="+u.Query().Get("state"), "")
+	}
+	back := func(w *httptest.ResponseRecorder, id, status string) {
+		t.Helper()
+		u, err := url.Parse(w.Header().Get("Location"))
+		if w.Code != 303 || err != nil || u.Scheme != "hesper-ios" || u.Host != "auth" || u.Path != "" {
+			t.Fatal(w.Code, w.Header().Get("Location"))
+		}
+		q := u.Query()
+		want := url.Values{"enrollment": {id}, "status": {status}}
+		if status == "approved" {
+			want.Set("approved", "1")
+		}
+		if q.Encode() != want.Encode() {
+			t.Fatalf("callback carries %v, want %v", q, want)
+		}
+	}
+
+	id, verifier, w := signIn("iPhone")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "<strong>iPhone</strong>") || !strings.Contains(w.Body.String(), id[:8]) {
+		t.Fatal("approval page must name the device and show the code", w.Code, w.Body)
+	}
+	back(request("POST", "https://relay.example/auth/approve", "state="+cookie.Value), id, "approved")
+	w = request("POST", "https://relay.example/v1/auth/claim", string(protocol.JSON(map[string]string{"id": id, "verifier": verifier})))
+	var c protocol.Credentials
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &c) != nil || c.Role != "controller" || c.Relay != "https://relay.example" {
+		t.Fatal(w.Code, w.Body)
+	}
+
+	// An account the relay does not let in returns to the app too.
+	p.owner = "github:999"
+	id, _, w = signIn("iPhone")
+	back(w, id, "not_allowed")
+}
+func TestDefaultAppCallbacks(t *testing.T) {
+	dir := t.TempDir()
+	load := func(extra string) auth.Config {
+		t.Helper()
+		path := filepath.Join(dir, "auth.json")
+		os.WriteFile(path, []byte(`{"publicURL":"https://relay.example","githubClientId":"x","githubSecretFile":"s","allowedGitHubIds":["1"]`+extra+`}`), 0600)
+		c, err := auth.LoadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	if c := load(""); len(c.AppCallbacks) != 1 || c.AppCallbacks[0] != "hesper-ios://auth" {
+		t.Fatal(c.AppCallbacks)
+	}
+	if c := load(`,"appCallbacks":[]`); len(c.AppCallbacks) != 0 {
+		t.Fatal(c.AppCallbacks)
 	}
 }
