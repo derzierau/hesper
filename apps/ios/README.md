@@ -4,8 +4,8 @@ A remote for the agents on your Macs: what needs you, start, follow, steer
 and judge. The concept and wireframes are in
 [`docs/iphone/`](../../docs/iphone/concept.md).
 
-This is the base project. It runs on sample Macs (`FixtureLink`) until the
-mobile link library gives it a live connection; see "What comes next".
+It runs on sample Macs (`FixtureLink`) or, once signed in and paired, on
+the owner's Macs through the mobile link library (`HesperLink`).
 
 ## Requirements
 
@@ -56,6 +56,14 @@ groups need a paid developer account.
 - `HesperFixtures`: the sample Macs from the wireframes and `FixtureLink`.
 - `HesperSurfaces`: what the app shares with its extensions (app group
   counts, the Live Activity's attributes).
+- `HesperLink`: the live link, the controller side of the relay protocol.
+  Device and strong keys in the Secure Enclave (software on the simulator),
+  the X25519 end-to-end key in the Keychain, request signing
+  (`pkg/devicekey`'s golden vector), GitHub enrollment with PKCE and one
+  renewal at a time, the relay socket, the Noise IK channel (BLAKE2s;
+  vectors from `relay/pkg/e2e`), sealed links, `LiveLink: LinkClient` and
+  `LivePairing: PairingService`. Its flows are tested against a fake relay
+  and Mac.
 
 `HesperUI`:
 
@@ -92,15 +100,13 @@ contract.
 
 In the order of the concept's "Core work":
 
-1. A live `LinkClient` from the mobile link library: pairing, the
-   end-to-end channel, `agents.link` per Mac.
-2. The terminal in the agent view: libghostty-spm's `GhosttyTerminal`
+1. The terminal in the agent view: libghostty-spm's `GhosttyTerminal`
    on an `agents.attach`, Mirror first, then Fit to iPhone.
-3. Push: the notification extension decrypts ids into text; actionable
+2. Push: the notification extension decrypts ids into text; actionable
    Allow / Deny / Reply.
-4. Live Activity and widget pushes from the relay.
-5. Speech for replies in the agent view, App Intents and a Control Center
+3. Live Activity and widget pushes from the relay.
+4. Speech for replies in the agent view, App Intents and a Control Center
    control that opens capture.
-6. An Icon Composer icon (`AppIcon.icon`); the current icon is the Mac's
+5. An Icon Composer icon (`AppIcon.icon`); the current icon is the Mac's
    icon, cropped.
-7. String catalogs once the copy settles.
+6. String catalogs once the copy settles.

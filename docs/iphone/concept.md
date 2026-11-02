@@ -409,7 +409,10 @@ What core Hesper (`main`) needs before this app can ship, in order:
 
 1. **A mobile client library**: the controller side of the relay
    protocol (enrollment, device and strong keys, `devices.request`, signed
-   requests, Noise channel, links) usable from Swift.
+   requests, Noise channel, links) usable from Swift. *Built*:
+   `HesperLink` in `apps/ios/Packages/HesperKit` (`LiveLink`,
+   `LivePairing`); still to come: attaches on the link (`agents.attach`,
+   core job 4) and the direct path.
 2. **Push from the relay**: APNs alerts on entering approval, question or
    error, ids only; the phone fills in text end to end. Plus a presence
    signal so a Mac in active use suppresses pushes.
