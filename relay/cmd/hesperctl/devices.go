@@ -70,9 +70,26 @@ func pairHostCommand(ctx context.Context, f *flag.FlagSet, args []string) error 
 	rights := f.String("rights", "observe,answer,type,transfer", "Rights to ask for: "+strings.Join(devicekey.AllRights, ","))
 	name := f.String("name", defaultDeviceName(), "This device's name on the host")
 	wait := f.Duration("wait", 0, "Wait this long for the approval (0: print the code and return)")
+	offerText := f.String("offer", "", "A pairing code the host shows (hesperctl phone there): approved at once, no code to compare; sets --machine")
 	asJSON := jsonFlag(f)
 	if err := f.Parse(args); err != nil {
 		return err
+	}
+	var offer devicekey.PairingCode
+	var secret []byte
+	if *offerText != "" {
+		var err error
+		if offer, err = devicekey.ParsePairingCode(*offerText); err != nil {
+			return usagef("--offer: %v", err)
+		}
+		if time.Now().Unix() >= offer.Expires {
+			return usagef("--offer: the code has expired; the host shows a new one")
+		}
+		secret, _ = offer.Secret()
+		if *machine != "" && *machine != offer.Machine {
+			return usagef("--machine and the code's machine (%s) differ", offer.Machine)
+		}
+		*machine = offer.Machine
 	}
 	if *machine == "" {
 		return usagef("--machine is required")
@@ -120,6 +137,10 @@ func pairHostCommand(ctx context.Context, f *flag.FlagSet, args []string) error 
 			request.E2EKey, request.E2EBinding = base64.StdEncoding.EncodeToString(id.Public), id.Binding
 		}
 	}
+	if secret != nil {
+		// The proof covers the keys sent; the secret stays here.
+		request.OfferProof = devicekey.OfferProof(secret, m.ID, request.Name, request.Key, request.StrongKey, request.E2EKey)
+	}
 	params, _ := devicekey.NormalizeParams(protocol.JSON(request))
 	ask := func() (host.ApprovalStatus, error) {
 		requestCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
@@ -139,6 +160,9 @@ func pairHostCommand(ctx context.Context, f *flag.FlagSet, args []string) error 
 	hostKey, err := base64.StdEncoding.Strict().DecodeString(status.HostKey)
 	if err != nil || len(hostKey) != 32 {
 		return fmt.Errorf("%s sent no valid host key", m.Short)
+	}
+	if secret != nil && status.HostKey != offer.HostKey {
+		return fmt.Errorf("%s answered with another host key than its pairing code shows: something between the machines changed it", m.Short)
 	}
 	// The host key is pinned like for transfers; the code covers it, so a
 	// relay that swaps it shows a different code here than on the host.

@@ -343,6 +343,8 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 	go func() { defer wg.Done(); c.watchProjects() }() // projects step 1
 	wg.Add(1)
 	go func() { defer wg.Done(); c.watchSessions() }() // shared history
+	wg.Add(1)
+	go func() { defer wg.Done(); c.watchDevices() }() // pairing offers
 	ctx, cancel := context.WithCancel(context.Background())
 	if remote := c.s.reg.opt.Remote; remote != nil {
 		// review: a remote agent that settles may be ready for review.
@@ -781,6 +783,13 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 			return res, err
 		}
 		return nil, wire.Errorf(wire.CodeUnavailable, "the shared history is not available")
+	case "devices.offer", "devices.offerCancel":
+		// pairing offers (devicehook.go): a person's only (tree.go)
+		if reg.opt.Devices != nil {
+			res, err, _ := reg.opt.Devices.Call(method, withoutCaller(params))
+			return res, err
+		}
+		return nil, wire.Errorf(wire.CodeUnavailable, "pairing needs this Mac's host role (hesperctl login --role host)")
 	case "app.state", "app.open", "app.wall.set", "app.desk":
 		return s.app.forward(method, withoutCaller(params)) // app control (appbridge.go): any caller, it touches no agent
 	case "review.list", "review.diff", "review.accept", "review.reject", "review.sendBack", "review.evidence", "review.provenance":
