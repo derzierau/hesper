@@ -147,7 +147,7 @@ the original client request ID before returning the result to that controller.
 | `ping` | `{}` (unsigned, right `observe`) | `{}`: controllers time the round trip (`hello`'s `rttMs`) |
 | `agents.*`, `projects.*`, `profiles.list`, `fs.stat` | see [Agents](#agents) | |
 | `transfer`, `agents.import`, `job`, `agents.export`, `download` | see [Moves](#moves) | |
-| `devices.request` | `name`, `key`, `strongKey`, `hardware`, `rights` (unsigned) | `{"status":"pending","code","expires","hostKey"}` or `{"status":"approved","name","rights","hostKey"}` |
+| `devices.request` | `name`, `key`, `strongKey`, `hardware`, `rights`, optional `e2eKey`, `e2eBinding`, `offerProof` (unsigned; see [Pairing offers](#pairing-offers)) | `{"status":"pending","code","expires","hostKey"}` or `{"status":"approved","name","rights","hostKey"}` |
 | `e2e.hello`, `e2e` | see [End-to-end channel](#end-to-end-channel) (unsigned; they carry the others) | |
 | `direct.offer` | `{}`, only inside the channel (unsigned) | see [Direct path](#direct-path) |
 
@@ -272,6 +272,76 @@ codes match, so a relay that swaps any key is caught. Approval happens only
 on the host: `hesperctl approve CODE|NAME` (or `--deny`),
 `hesperctl devices-local [--revoke NAME]`. A device
 without hardware keys is not granted `shell` unless `--allow-software-shell`.
+
+## Pairing offers
+
+The host can vouch for a device itself: someone at the host opens an
+offer, the host shows it as a code, the device scans it and proves it in
+`devices.request`, and the host approves the device at once with no code
+to compare (`hesperctl phone`, Hesper.app's Settings › iPhone; the
+iPhone app's onboarding, [docs/iphone/onboarding.md](../../docs/iphone/onboarding.md)).
+
+**Offers** live in hesperd's memory only: at most 3 open (a new one ends
+the oldest), 5 minutes each, single use, each with 16 random bytes of
+secret and the rights it grants. hesperd's local socket (never the relay)
+opens and ends them; only a person may, not an agent:
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `devices.offer` | `{rights?: [String]}` (default `observe, answer, type, transfer`; `shell` only on a host run with `--allow-shell`) | `{payload, expires, id}`: the code to show, Unix seconds, the offer's id |
+| `devices.offerCancel` | `{id}` | `{}` (`not_found` when no such offer is open) |
+
+Without the host role both answer `unavailable`. An `agents.subscribe`
+connection gets `devices.paired {offer, device, name, rights}` when an
+offer approved a device.
+
+**Pairing code.** `payload` is `HESPER1:` followed by base64url (no
+padding) of compact JSON, in this field order:
+
+```json
+{"v":1,"relay":"https://relay.example.com","machine":"MACHINE_ID","name":"studio",
+ "hostKey":"BASE64_X25519","rights":["observe","answer","type","transfer"],
+ "offer":"BASE64URL_16_BYTES","expires":1793650956}
+```
+
+`relay` is the origin of the host's credentials, `machine` its relay
+device ID, `name` its host name's first label, `hostKey` its X25519
+transfer key (standard base64; the device pins it in
+`trusted-hosts.json`), `offer` the secret. Anything else, or `v` other
+than 1, is not a pairing code. It is not a URL: credentials and pairing
+secrets never belong in URLs.
+
+**Offer proof.** `devices.request`'s `offerProof` is standard base64 of
+HMAC-SHA256, keyed with the 16 secret bytes, over these lines joined by
+`\n` (no trailing newline):
+
+```text
+hesper-offer-v1
+<host machine ID>
+<name>
+<key>
+<strongKey>
+<e2eKey, or empty>
+```
+
+`key`, `strongKey` and `e2eKey` exactly as sent in the request. The secret
+itself never leaves the device, so the relay, which sees the request,
+cannot reuse it for keys of its own. `pkg/devicekey` has the golden
+vectors (`offer_test.go`).
+
+**Host checks.** The host computes the proof of every open offer and
+compares in constant time. A match ends that offer and approves the
+device with the offer's rights, minus `shell` for a device without
+hardware keys: `controllers.json` gets it with `approvedBy: "offer"` (a
+name another device has gets a number: "iPhone 2"), a request of the same
+device waiting for approval is dropped, the macOS notification "Hesper:
+iPhone added" shows, the audit log gets `device.approved` with the offer's
+id, and the result is `{"status":"approved","name","rights","hostKey"}`.
+No match (wrong, used, cancelled or expired offer): `forbidden`, audited
+as `device.offer.refused`, and nothing waits for approval. Without
+`offerProof` the request works as before. A host older than this rejects
+the unknown field (`invalid_request`); a device then falls back to the
+code flow.
 
 ## End-to-end channel
 

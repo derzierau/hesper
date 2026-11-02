@@ -86,6 +86,9 @@ type Authorizer struct {
 	// for approval (MacNotify on macOS).
 	Notify func(title, body string)
 	Now    func() time.Time
+	// Offers (optional) are the open pairing offers: a request that
+	// proves one is approved at once (offers.go).
+	Offers *Offers
 
 	mu     sync.Mutex
 	nonces *nonceCache
@@ -255,6 +258,10 @@ type ApprovalRequest struct {
 	// end-to-end static key and the device key's signature of it.
 	E2EKey     string `json:"e2eKey,omitempty"`
 	E2EBinding string `json:"e2eBinding,omitempty"`
+	// OfferProof (optional): devicekey.OfferProof with the secret of an
+	// open pairing offer. A match approves at once; anything else is
+	// refused and nothing waits.
+	OfferProof string `json:"offerProof,omitempty"`
 }
 
 // ApprovalStatus is the result of devices.request.
@@ -269,7 +276,9 @@ type ApprovalStatus struct {
 
 // RequestApproval handles devices.request: unauthenticated by design, it
 // can only add a pending request (at most MaxPending, rate limited) that
-// someone at this machine has to approve. It never grants anything itself.
+// someone at this machine has to approve. It grants nothing itself, except
+// to a request with the proof of a pairing offer someone at this machine
+// opened.
 func (a *Authorizer) RequestApproval(ctx context.Context, m protocol.Message) (json.RawMessage, error) {
 	now := a.now()
 	var p ApprovalRequest
@@ -304,6 +313,9 @@ func (a *Authorizer) RequestApproval(ctx context.Context, m protocol.Message) (j
 		return nil, protocol.Err("unsupported", "Host has no transfer key for approval codes")
 	}
 	hostKey := base64.StdEncoding.EncodeToString(a.HostKey)
+	if p.OfferProof != "" {
+		return a.approveOffered(m, p, hostKey, now)
+	}
 	list, _, err := a.Store.LoadControllers()
 	if err != nil {
 		return nil, protocol.Err("unavailable", "Host device allowlist is damaged")
@@ -360,6 +372,35 @@ func (a *Authorizer) RequestApproval(ctx context.Context, m protocol.Message) (j
 		go a.Notify("Hesper: device waiting for approval", fmt.Sprintf("%q asks for %s. Code %s. Approve: C-a A or hesperctl approve %s", p.Name, strings.Join(pending.Rights, ", "), code, code))
 	}
 	return protocol.JSON(ApprovalStatus{Status: "pending", Code: code, Expires: pending.Expires, HostKey: hostKey}), nil
+}
+
+// approveOffered approves the sender of a request that proves an open
+// pairing offer with the offer's rights, as approve would (no shell for a
+// device without hardware keys), and announces it.
+func (a *Authorizer) approveOffered(m protocol.Message, p ApprovalRequest, hostKey string, now time.Time) (json.RawMessage, error) {
+	f, ok := a.Offers.use(a.MachineID, p)
+	if !ok {
+		a.Audit("device.offer.refused", map[string]any{"device": m.ControllerID, "name": p.Name, "ok": false, "detail": "no open offer matches the proof"})
+		return nil, protocol.Err("forbidden", "No open pairing offer matches; scan the code on the host again")
+	}
+	rights := f.rights
+	if !p.Hardware {
+		rights = slices.DeleteFunc(slices.Clone(rights), func(r string) bool { return r == devicekey.Shell })
+	}
+	if len(rights) == 0 {
+		return nil, protocol.Err("forbidden", "The offer grants only shell, which needs hardware keys")
+	}
+	c := Controller{Device: m.ControllerID, Name: p.Name, Key: p.Key, StrongKey: p.StrongKey, Hardware: p.Hardware,
+		Rights: rights, Approved: now.Unix(), ApprovedBy: "offer", E2EKey: p.E2EKey}
+	c, err := a.Store.ApproveOffered(c, f.id, now)
+	if err != nil {
+		return nil, protocol.Err("unavailable", "Host cannot record the approval: "+err.Error())
+	}
+	if a.Notify != nil {
+		go a.Notify("Hesper: "+c.Name+" added", fmt.Sprintf("%q may now %s on this Mac. Remove: hesperctl devices-local --revoke %q", c.Name, strings.Join(c.Rights, ", "), c.Name))
+	}
+	a.Offers.paired(Paired{Offer: f.id, Device: c.Device, Name: c.Name, Rights: c.Rights})
+	return protocol.JSON(ApprovalStatus{Status: "approved", Name: c.Name, Rights: c.Rights, HostKey: hostKey}), nil
 }
 
 // MacNotify shows a macOS notification. Texts are passed as arguments,

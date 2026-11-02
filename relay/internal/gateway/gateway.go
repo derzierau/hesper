@@ -101,6 +101,9 @@ type Daemon struct {
 	Service *host.Service // nil without host credentials
 	Runner  *host.Runner  // nil without host credentials
 	Auth    *host.Authorizer
+	// Offers are the pairing offers (devices.offer); they answer
+	// unavailable without host credentials.
+	Offers  *host.Offers
 	Handoff *host.Handoff
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
@@ -167,6 +170,8 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 			opt.Sessions = hist
 		}
 	}
+	d.Offers = &host.Offers{}
+	opt.Devices = d.Offers
 	if exists(cfg.ControllerCredentials) {
 		hostID := ""
 		if c, err := client.LoadCredentials(cfg.HostCredentials); err == nil {
@@ -244,6 +249,8 @@ func (d *Daemon) startHost(ctx context.Context, cfg Config, logf func(string, ..
 	} else if !enforcing {
 		logf("device keys not enforced: no approved controllers yet (hesperctl approve on this Mac after pair-host on the other)")
 	}
+	auth.Offers = d.Offers
+	d.Offers.Configure(hc.Relay, hc.DeviceID, machineName(), key.PublicKey().Bytes(), cfg.AllowShell)
 	d.Auth = auth
 	// Everything but the relay-visible snapshot and pings goes through the
 	// channel (agent names, tasks and screens never travel in plaintext).
@@ -362,6 +369,17 @@ func (d *Daemon) startHost(ctx context.Context, cfg Config, logf func(string, ..
 		}
 	}()
 	return nil
+}
+
+// machineName is this Mac's name in pairing codes: its host name's first
+// label, as `hesperctl login` names the host ($(hostname -s)).
+func machineName() string {
+	name, _ := os.Hostname()
+	name, _, _ = strings.Cut(name, ".")
+	if !host.ValidName(name) {
+		return "Mac"
+	}
+	return name
 }
 
 // Close stops the roles, the socket and the agents (they resume on the
