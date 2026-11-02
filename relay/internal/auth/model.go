@@ -49,8 +49,12 @@ func (e *ReplayError) Error() string { return "refresh credential was reused" }
 
 type Repository interface {
 	CreateEnrollment(context.Context, Enrollment) error
+	// Enrollment returns a live enrollment. One that expired or was
+	// claimed, while still stored, comes back with an "expired" error.
 	Enrollment(context.Context, string) (Enrollment, error)
 	PutFlow(context.Context, Flow) error
+	// TakeFlow consumes a live flow. An expired one, while still stored,
+	// comes back with the error, so its enrollment is known.
 	TakeFlow(context.Context, string) (Flow, error)
 	Approve(context.Context, string, Principal) error
 	Claim(context.Context, string, string, time.Duration, time.Duration) (identity.Device, protocol.Credentials, error)

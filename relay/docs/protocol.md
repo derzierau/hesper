@@ -16,12 +16,25 @@ URLs. HTTP clients must not follow enrollment redirects with secrets attached.
    is `/auth/github/callback`. The user checks the matching code and approves the
    named device. A registered app callback carries only enrollment ID and status:
    `<callback>?approved=1&enrollment=<id>&status=approved` after approval;
-   `status=denied` (GitHub sign-in cancelled) or `status=not_allowed` (the GitHub
-   account is not on the allowlist) end the sign-in at the callback too, so an
-   app's authentication session (`ASWebAuthenticationSession`) never stays on an
-   error page. `approved=1` is the older form of `status=approved`. The iPhone
-   app's `hesper-ios://auth` is registered unless the relay's config lists its own
-   `appCallbacks`.
+   `status=denied` (GitHub sign-in cancelled), `status=not_allowed` (the GitHub
+   account is not on the allowlist) or `status=expired` (the enrollment or the
+   browser sign-in ran out, or was used up; start again) end the sign-in at the
+   callback too, so an app's authentication session (`ASWebAuthenticationSession`)
+   never stays on an error page. Apps treat any other status as a failed sign-in.
+   A second Approve of an approved enrollment (a double tap) returns
+   `status=approved` again and changes nothing. `approved=1` is the older form of
+   `status=approved`. The iPhone app's `hesper-ios://auth` is registered unless
+   the relay's config lists its own `appCallbacks`.
+
+   The browser routes (`/auth/...`) answer in HTML: the approval page, "Device
+   approved" when there is no app callback, and a page per failure that says
+   what happened and what to do, with the same HTTP status as before (400
+   expired or cancelled, 403 wrong browser, cookie, origin or account, 404,
+   429 with `Retry-After`, 503 busy). The approval form posts `state` and
+   `enrollment`; the second only picks the page for an Approve that came after
+   the enrollment was approved. The pages carry one inline stylesheet, allowed
+   by its hash in the CSP (`style-src 'sha256-…'`), and no scripts or other
+   resources. The JSON API (`/v1/...`) keeps its JSON errors.
 4. Poll `POST /v1/auth/claim` with `id` and `verifier` no faster than the returned
    interval. HTTP 409 / `authorization_pending` means keep waiting. Other failures
    terminate the flow. Success returns credentials; claiming is single-use.
