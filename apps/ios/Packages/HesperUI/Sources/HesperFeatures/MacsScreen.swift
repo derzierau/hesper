@@ -4,12 +4,36 @@ import HesperFleet
 import SwiftUI
 
 /// The paired Macs in plain words: who is reachable, how, and who needs
-/// you there. Pairing comes with the mobile link library.
+/// you there; then Add Mac. On the sample Macs, a pill and Connect yours.
 struct MacsScreen: View {
     @Environment(FleetModel.self) private var model
+    @Environment(OnboardingModel.self) private var onboarding: OnboardingModel?
+    @Environment(AddMacModel.self) private var addMac: AddMacModel?
 
     var body: some View {
+        let samples = onboarding?.mode == .samples
         List {
+            if samples, let onboarding {
+                Section {
+                    HStack(spacing: DS.Spacing.m) {
+                        Text("Sample Macs")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, DS.Spacing.m)
+                            .padding(.vertical, DS.Spacing.xs)
+                            .background(Theme.accent.opacity(0.15), in: .capsule)
+                            .foregroundStyle(Theme.accent)
+                        Text("Made up, to look around.").font(.subheadline).foregroundStyle(Theme.text2)
+                        Spacer()
+                        Button("Connect yours") { Task { await onboarding.connectYours() } }
+                            .primaryAction()
+                            .controlSize(.small)
+                    }
+                    .themedRow()
+                }
+            }
+            if !samples, model.fleet.macList.isEmpty {
+                Text("No Mac lets this iPhone in.").foregroundStyle(Theme.text2).themedRow()
+            }
             Section {
                 ForEach(model.fleet.macList) { mac in
                     HStack(spacing: DS.Spacing.m) {
@@ -30,16 +54,21 @@ struct MacsScreen: View {
                     .themedRow()
                 }
             }
-            Section {
-                Label("Add a Mac", systemImage: "plus")
-                    .foregroundStyle(Theme.dim)
-                    .themedRow()
-            } footer: {
-                Text("Pairing arrives with the mobile link library (docs/iphone/concept.md, Core work 1).")
+            if !samples, addMac != nil {
+                AddMacSection()
             }
         }
         .themedList()
         .navigationTitle("Macs")
+        .toolbar {
+            if onboarding != nil {
+                NavigationLink {
+                    SettingsScreen()
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
+        }
     }
 
     private func status(_ mac: MacStatus) -> String {
