@@ -124,7 +124,9 @@ Code: `relay/macos/hesper-keys/main.swift` (helper), `relay/pkg/devicekey`
   [--allow-software-shell] NAME|CODE`, `hesperctl devices-local [--revoke
   NAME] [--json]`, `hesperctl pair-host --machine M [--rights …] [--name N]
   [--wait D] [--json]`. Default requested rights: observe, answer, type,
-  transfer.
+  transfer. A request with the proof of a pairing offer the host opened
+  (`hesperctl phone`; `pair-host --offer CODE`) is approved at once,
+  without a code to compare (`relay/docs/protocol.md`, Pairing offers).
 - **Control socket**: the control socket's `request` op carries `auth`. The
   calling command signs in its own process (`Controller.Request`; strong key
   for `shell.*`, so Touch ID prompts for the command the user ran) and the
