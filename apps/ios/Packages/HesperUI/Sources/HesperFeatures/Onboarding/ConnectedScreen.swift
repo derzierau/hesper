@@ -40,7 +40,7 @@ struct ConnectedScreen: View {
                 Button {
                     Task { await askForNotifications() }
                 } label: {
-                    Text("Continue").frame(maxWidth: .infinity)
+                    Text("Continue").foregroundStyle(Theme.background).frame(maxWidth: .infinity)
                 }
                 .primaryAction()
                 .disabled(asking)

@@ -64,6 +64,7 @@ struct SignInScreen: View {
                     if model.busy { ProgressView() }
                     Text(model.failure == nil ? "Continue with GitHub" : "Try again")
                 }
+                .foregroundStyle(Theme.background)
                 .frame(maxWidth: .infinity)
             }
             .primaryAction()

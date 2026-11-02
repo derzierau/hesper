@@ -111,7 +111,8 @@ struct WideButton: View {
 
     var body: some View {
         if primary {
-            Button(action: action) { Text(title).frame(maxWidth: .infinity) }.primaryAction()
+            // On the accent, in the background's colour (as the mic circle).
+            Button(action: action) { Text(title).foregroundStyle(Theme.background).frame(maxWidth: .infinity) }.primaryAction()
         } else {
             Button(action: action) { Text(title).frame(maxWidth: .infinity) }.secondaryAction()
         }
