@@ -42,10 +42,21 @@ func (s *HTTP) Handler() http.Handler {
 	mux.HandleFunc("GET /auth/github/callback", s.callback)
 	mux.HandleFunc("POST /auth/approve", s.approve)
 	mux.HandleFunc("POST /v1/devices/push", s.push)
+	// Browsers apply form-action to the redirect after a form POST too, so
+	// Approve may end at a registered app callback's scheme.
+	formAction := "'self'"
+	seen := map[string]bool{}
+	for _, c := range s.AppCallbacks {
+		if u, err := url.Parse(c); err == nil && u.Scheme != "" && !seen[u.Scheme] {
+			seen[u.Scheme] = true
+			formAction += " " + u.Scheme + ":"
+		}
+	}
+	csp := "default-src 'none'; form-action " + formAction + "; frame-ancestors 'none'"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", csp)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		s.mu.Lock()
 		if time.Since(s.window) >= time.Minute {

@@ -266,6 +266,11 @@ func TestAppCallbackFlow(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "<strong>iPhone</strong>") || !strings.Contains(w.Body.String(), id[:8]) {
 		t.Fatal("approval page must name the device and show the code", w.Code, w.Body)
 	}
+	// Browsers apply form-action to the redirect after Approve, so the
+	// approval page must allow the app's scheme or the sheet stays put.
+	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self' hesper-ios:;") {
+		t.Fatal("approval page's form-action must allow the app callback:", csp)
+	}
 	back(request("POST", "https://relay.example/auth/approve", "state="+cookie.Value), id, "approved")
 	w = request("POST", "https://relay.example/v1/auth/claim", string(protocol.JSON(map[string]string{"id": id, "verifier": verifier})))
 	var c protocol.Credentials
