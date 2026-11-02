@@ -60,7 +60,8 @@ groups need a paid developer account.
 `HesperUI`:
 
 - `HesperDesign`: the Mac's Dusk/Daylight tokens, the square state mark, controls.
-- `HesperFeatures`: Inbox, Agents, Macs, Search, the agent view, New agent.
+- `HesperFeatures`: Inbox, Agents (with search and Later), Macs, the agent
+  view, and capture: the mic circle, dictation and the capture sheet.
 
 Wire models and design tokens come from the Mac app's `HesperCore`
 (`app/Package.swift` exports it), so the phone and the Mac decode the same
@@ -79,8 +80,11 @@ contract.
 - **Swift Testing**, `swift format` from the toolchain, no third-party
   packages.
 - **Plain SwiftUI**: `@Observable` model in the environment, one
-  `NavigationStack` per tab, `Tab(role: .search)`, New agent in
-  `tabViewBottomAccessory`, `#Preview` on fixtures.
+  `NavigationStack` per tab, `#Preview` on fixtures. One exception: on
+  iPhone the tab bar is drawn by the app (`CaptureBar`), because the system
+  bar has no slot for the mic circle.
+- **On-device dictation**: `SpeechTranscriber` for capture; nothing leaves
+  the phone but the text the owner sends.
 - **No background sockets**: the model follows the Macs only while the app
   is active; pushes and Live Activity updates carry the rest.
 
@@ -95,8 +99,8 @@ In the order of the concept's "Core work":
 3. Push: the notification extension decrypts ids into text; actionable
    Allow / Deny / Reply.
 4. Live Activity and widget pushes from the relay.
-5. Speech for New agent and replies (`SpeechTranscriber`), App Intents
-   and a Control Center control.
+5. Speech for replies in the agent view, App Intents and a Control Center
+   control that opens capture.
 6. An Icon Composer icon (`AppIcon.icon`); the current icon is the Mac's
    icon, cropped.
 7. String catalogs once the copy settles.

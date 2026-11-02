@@ -34,7 +34,7 @@ struct InboxScreen: View {
                     description: Text(
                         fleet.counts.working > 0
                             ? "\(fleet.counts.working) agents are working. You'll get a notification when one asks for you."
-                            : "Start an agent from the bar below.")
+                            : "Tap the mic to start an agent.")
                 )
             }
         }

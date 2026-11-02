@@ -49,7 +49,7 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Hesper listens while you hold the mic to dictate a task or a reply.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Hesper listens when you tap the mic to dictate a task or a reply.
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Hesper turns what you say into text on this iPhone.
 
   # Lock-screen widget and the one fleet Live Activity. Reads counts the
