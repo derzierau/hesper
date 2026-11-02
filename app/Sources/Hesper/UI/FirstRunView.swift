@@ -165,6 +165,7 @@ struct FirstRunView: View {
             } else {
                 note("On the other Mac run this, then approve its code here with hesperctl approve CODE:")
                 CommandText("hesperctl pair-host --machine \(model.localMachine)")
+                note("Your iPhone scans a code instead: Settings › iPhone.")
             }
         case .startFirstAgent:
             if done {

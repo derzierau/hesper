@@ -3,10 +3,10 @@ import HesperCore
 import SwiftUI
 
 /// ⌘,: one sidebar window. General (the wall, quick launch,
-/// notifications), Machines & pairing, Agents & profiles, Appearance
-/// (Dusk / Daylight / System, density), Shortcuts (rebinding) and Advanced
-/// (desks, the first run, hesperd). The sidebar is Rows, choices are
-/// segmented Pills; ⌘1…⌘6 switch panes.
+/// notifications), Machines & pairing, iPhone (the code a phone scans),
+/// Agents & profiles, Appearance (Dusk / Daylight / System, density),
+/// Shortcuts (rebinding) and Advanced (desks, the first run, hesperd). The
+/// sidebar is Rows, choices are segmented Pills; ⌘1…⌘7 switch panes.
 struct SettingsView: View {
     @Bindable var model: AppModel
     var onHotKeyChanged: () -> Void = {}
@@ -26,12 +26,13 @@ struct SettingsView: View {
     @State private var deskRefresh = 0
 
     enum Pane: String, CaseIterable, Identifiable {
-        case general, machines, agents, appearance, shortcuts, advanced
+        case general, machines, iphone, agents, appearance, shortcuts, advanced
         var id: String { rawValue }
         var title: String {
             switch self {
             case .general: return "General"
             case .machines: return "Machines & pairing"
+            case .iphone: return "iPhone"
             case .agents: return "Agents & profiles"
             case .appearance: return "Appearance"
             case .shortcuts: return "Shortcuts"
@@ -99,6 +100,7 @@ struct SettingsView: View {
         switch pane {
         case .general: general
         case .machines: machines
+        case .iphone: IPhonePane(hub: PhonePairingHub.shared(for: model))
         case .agents: profiles
         case .appearance: appearance
         case .shortcuts: shortcuts
@@ -179,7 +181,7 @@ struct SettingsView: View {
                     mark: m.online ? .done : .idle)
             }
         }
-        SettingsSection("Pair another Mac", footer: "Pairing runs in hesperctl on both Macs; Hesper never asks for your relay credentials. The new Mac shows up here once it's approved.") {
+        SettingsSection("Pair another Mac", footer: "Pairing runs in hesperctl on both Macs; Hesper never asks for your relay credentials. The new Mac shows up here once it's approved. For an iPhone, open Settings › iPhone.") {
             Text("On the other Mac, run:").font(DS.font(.chrome)).foregroundStyle(Theme.fg2)
             CommandText("hesperctl pair-host --machine \(local)")
             Text("then approve its code here:").font(DS.font(.chrome)).foregroundStyle(Theme.fg2)
@@ -395,6 +397,130 @@ struct SettingsView: View {
             } else {
                 Text(model.connectionMessage ?? "Not connected.").font(DS.font(.chrome)).foregroundStyle(Theme.dim)
             }
+        }
+    }
+}
+
+// MARK: iPhone
+
+/// Settings › iPhone (wireframe round 6, frame 9): the code an iPhone
+/// scans, renewed while the pane shows; the rights it grants, decided
+/// here before the scan; then "<name> connected". `PhonePairingHub` asks
+/// hesperd; the pane only shows its state.
+private struct IPhonePane: View {
+    @Bindable var hub: PhonePairingHub
+    static let codeSide: CGFloat = 180
+
+    var body: some View {
+        let state = hub.pairing.state
+        SettingsSection(hub.pairing.title, footer: Self.footer(state)) {
+            switch state {
+            case .paired(let p):
+                paired(p)
+            case .unsupported:
+                unsupported
+            case .starting, .waiting, .failed:
+                HStack(alignment: .top, spacing: DS.Spacing.xl) {
+                    VStack(spacing: DS.Spacing.s) {
+                        code
+                        Text("Renews every 2 minutes").font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+                    }
+                    VStack(alignment: .leading, spacing: DS.Spacing.m) {
+                        Text("Open Hesper on your iPhone and scan this code. It connects the iPhone to this Mac and your relay.")
+                            .font(DS.font(.body)).foregroundStyle(Theme.fg2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        rights
+                        status(state)
+                    }
+                }
+            }
+        }
+        .onAppear { hub.open() }
+        .onDisappear { hub.close() }
+        // The window is kept when closed: no code stays open behind it.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { n in
+            guard let w = n.object as? NSWindow, w.contentViewController is NSHostingController<SettingsView> else { return }
+            if w.occlusionState.contains(.visible) { hub.open() } else { hub.close() }
+        }
+    }
+
+    /// Dark modules on light, in both schemes: what every camera reads.
+    @ViewBuilder private var code: some View {
+        ZStack {
+            DS.Radius.shape(DS.Radius.control).fill(Theme.color(.tile, in: .daylight))
+            if let img = hub.code, case .waiting = hub.pairing.state {
+                Image(decorative: img, scale: 1)
+                    .renderingMode(.template)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(Theme.color(.text, in: .daylight))
+                    .padding(DS.Spacing.m)
+                    .accessibilityLabel("Pairing code for your iPhone")
+                    .accessibilityIdentifier("settings.iphone.code")
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .frame(width: Self.codeSide, height: Self.codeSide)
+    }
+
+    private var rights: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.s) {
+            ForEach(PhoneRights.Toggle.allCases, id: \.self) { t in
+                Toggle(isOn: Binding(get: { hub.pairing.rights[t] }, set: { on in
+                    var r = hub.pairing.rights
+                    r[t] = on
+                    hub.setRights(r)
+                })) {
+                    HStack(spacing: DS.Spacing.xs) {
+                        Text(t.title).foregroundStyle(Theme.fg)
+                        if let d = t.detail { Text("· \(d)").foregroundStyle(Theme.dim) }
+                    }
+                }
+                .accessibilityIdentifier("settings.iphone.right.\(t.rawValue)")
+            }
+        }
+    }
+
+    @ViewBuilder private func status(_ state: PhonePairing.State) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
+            switch state {
+            case .failed(let why):
+                StateMark(.error)
+                Text(why).foregroundStyle(Theme.dim)
+            case .waiting:
+                StateMark(.starting)
+                Text("Waiting for your iPhone").foregroundStyle(Theme.dim)
+            default:
+                StateMark(.starting)
+                Text("Making a code…").foregroundStyle(Theme.dim)
+            }
+        }
+        .font(DS.font(.chrome))
+        .accessibilityIdentifier("settings.iphone.status")
+    }
+
+    @ViewBuilder private func paired(_ p: PhonePaired) -> some View {
+        let granted = PhoneRights.summary(p.rights)
+        Row(title: p.name, subtitle: granted.isEmpty ? "Can watch agents" : granted.joined(separator: " · "), mark: .done)
+        Text("To remove it, run:").font(DS.font(.chrome)).foregroundStyle(Theme.fg2)
+        CommandText("hesperctl devices-local --revoke \(p.name)")
+        Button("Show another code") { hub.showAnother() }
+            .accessibilityIdentifier("settings.iphone.another")
+    }
+
+    @ViewBuilder private var unsupported: some View {
+        Text("This Mac's hesperd can't show a code yet. Update Hesper, or on the iPhone choose Enter address instead, pick this Mac and approve its code here:")
+            .font(DS.font(.chrome)).foregroundStyle(Theme.fg2)
+            .fixedSize(horizontal: false, vertical: true)
+        CommandText("hesperctl approve CODE")
+    }
+
+    static func footer(_ state: PhonePairing.State) -> String {
+        switch state {
+        case .paired: return "The iPhone can now reach this Mac through your relay. Its rights stay as they were when it scanned."
+        default: return "The code holds your relay's address, this Mac's key, the rights above and a one-time secret; it works once, for 5 minutes. Or run hesperctl phone in a terminal."
         }
     }
 }
