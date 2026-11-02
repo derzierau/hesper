@@ -70,7 +70,8 @@ func (s *HTTP) Handler() http.Handler {
 		if !allowed {
 			w.Header().Set("Retry-After", "60")
 			if strings.HasPrefix(r.URL.Path, "/auth/") {
-				s.refuse(w, r, "", rateProblem)
+				// Only the sign-in link names its enrollment before a handler runs.
+				s.refuse(w, r, r.URL.Query().Get("enrollment"), rateProblem)
 			} else {
 				http.Error(w, "Try again later", 429)
 			}
@@ -201,7 +202,7 @@ func (s *HTTP) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.Provider.Identify(r.Context(), r.URL.Query().Get("code"), f.Verifier)
 	if err != nil {
-		s.refuse(w, r, "", githubProblem)
+		s.refuse(w, r, f.EnrollmentID, githubProblem)
 		return
 	}
 	if !s.Policy.Allowed(p.ID) {
@@ -218,7 +219,7 @@ func (s *HTTP) callback(w http.ResponseWriter, r *http.Request) {
 	f.Principal = p
 	f.Expires = time.Now().Add(5 * time.Minute)
 	if s.Repository.PutFlow(r.Context(), f) != nil {
-		s.refuse(w, r, "", busyProblem)
+		s.refuse(w, r, f.EnrollmentID, busyProblem)
 		return
 	}
 	s.cookie(w, f.State)

@@ -26,13 +26,16 @@ import (
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 )
 
-type provider struct{ owner string }
+type provider struct {
+	owner string
+	err   error
+}
 
 func (p *provider) AuthorizationURL(state, verifier string) string {
 	return "https://github.test/authorize?state=" + state
 }
 func (p *provider) Identify(context.Context, string, string) (auth.Principal, error) {
-	return auth.Principal{ID: p.owner, Login: "octocat"}, nil
+	return auth.Principal{ID: p.owner, Login: "octocat"}, p.err
 }
 func TestBrowserApprovalAndRotation(t *testing.T) {
 	repo, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))

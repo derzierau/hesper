@@ -18,9 +18,14 @@ URLs. HTTP clients must not follow enrollment redirects with secrets attached.
    `<callback>?approved=1&enrollment=<id>&status=approved` after approval;
    `status=denied` (GitHub sign-in cancelled), `status=not_allowed` (the GitHub
    account is not on the allowlist) or `status=expired` (the enrollment or the
-   browser sign-in ran out, or was used up; start again) end the sign-in at the
+   browser sign-in ran out, or was used up; start again) or `status=failed`
+   (anything else: GitHub did not confirm the account, the relay is busy or
+   rate-limits the sign-in link; try again later) end the sign-in at the
    callback too, so an app's authentication session (`ASWebAuthenticationSession`)
-   never stays on an error page. Apps treat any other status as a failed sign-in.
+   does not stay on an error page. Apps treat any other status as `failed`. Only
+   failures before the relay knows the enrollment (sign-in opened in another
+   browser or with cookies blocked, an Approve from another site, an unknown
+   page) stay on a page.
    A second Approve of an approved enrollment (a double tap) returns
    `status=approved` again and changes nothing. `approved=1` is the older form of
    `status=approved`. The iPhone app's `hesper-ios://auth` is registered unless

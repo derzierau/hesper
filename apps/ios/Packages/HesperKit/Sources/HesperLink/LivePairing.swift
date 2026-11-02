@@ -94,7 +94,7 @@ public final class LivePairing: PairingService {
         case .denied: throw PairingError.cancelled
         case .notAllowed(let login): throw PairingError.notAllowed(login: login)
         case .expired: throw PairingError.failed(Self.expired)
-        case .other(let status): throw PairingError.failed("Sign-in ended: \(status)")
+        case .failed, .other: throw PairingError.failed(Self.failed)
         }
         while Date() < enrollment.expires {
             if var c = try await api.claim(id: enrollment.id, verifier: pkce.verifier) {
@@ -108,6 +108,7 @@ public final class LivePairing: PairingService {
     }
 
     static let expired = "The sign-in expired. Try again."
+    static let failed = "Sign-in didn't finish. Try again in a minute."
 
     public func pair(offer: PairingOffer) async throws(PairingError) -> PairResult {
         guard offer.expires > Date() else { throw .offerExpired }
