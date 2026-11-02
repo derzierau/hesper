@@ -32,6 +32,8 @@ targets:
         product: HesperFleet
       - package: HesperKit
         product: HesperFixtures
+      - package: HesperKit
+        product: HesperLink
       - target: HesperWidgets
       - target: NotificationService
     settings:
@@ -51,6 +53,8 @@ targets:
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
         INFOPLIST_KEY_NSMicrophoneUsageDescription: Hesper listens when you tap the mic to dictate a task or a reply.
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Hesper turns what you say into text on this iPhone.
+        INFOPLIST_KEY_NSCameraUsageDescription: Hesper scans the code your Mac shows, to connect to it.
+        INFOPLIST_KEY_NSFaceIDUsageDescription: Hesper uses Face ID before this iPhone types into a shell on your Mac.
 
   # Lock-screen widget and the one fleet Live Activity. Reads counts the
   # app wrote to the app group; never talks to a Mac.

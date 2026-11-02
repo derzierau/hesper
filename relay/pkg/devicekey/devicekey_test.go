@@ -456,3 +456,43 @@ func TestHardwareDeviceKey(t *testing.T) {
 		t.Fatal("hardware mode wrote a software key")
 	}
 }
+
+// Golden vector for re-enrollment: the golden key signs the RFC 7636 example
+// challenge for relay device DEVICE_ID. Digest checked with Python hashlib.
+const (
+	goldenReenrollID        = "DEVICE_ID"
+	goldenReenrollChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	goldenReenrollDigest    = "4eee5d0e5cbb4c57533ff78a028c6729288d933742cf1268831935839439e167"
+	goldenReenrollSig       = "MEUCIQD6cFeqZh3+VcLAMMtTdKt8H1UDwymYLPJ5jhCHHRzp8AIgTVR+RTia8JN+mnwbN2k/ejFG+F9rOyW2UxWFwvrJggA="
+)
+
+func TestReenrollGoldenVector(t *testing.T) {
+	digest := ReenrollDigest(goldenReenrollID, goldenReenrollChallenge)
+	if hex.EncodeToString(digest[:]) != goldenReenrollDigest {
+		t.Fatalf("digest %x", digest)
+	}
+	pub, _, _ := ParsePublicKey(goldenPublic)
+	if err := VerifyReenroll(pub, goldenReenrollID, goldenReenrollChallenge, goldenReenrollSig); err != nil {
+		t.Fatal(err)
+	}
+	for name, err := range map[string]error{
+		"id":        VerifyReenroll(pub, "DEVICE_ID2", goldenReenrollChallenge, goldenReenrollSig),
+		"challenge": VerifyReenroll(pub, goldenReenrollID, "F9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", goldenReenrollSig),
+		"newline":   VerifyReenroll(pub, "DEVICE_ID\nx", goldenReenrollChallenge, goldenReenrollSig),
+		"base64":    VerifyReenroll(pub, goldenReenrollID, goldenReenrollChallenge, strings.TrimRight(goldenReenrollSig, "=")),
+		"other key": VerifyReenroll(&randomKey(t).PublicKey, goldenReenrollID, goldenReenrollChallenge, goldenReenrollSig),
+	} {
+		if err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func randomKey(t *testing.T) *ecdsa.PrivateKey {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}

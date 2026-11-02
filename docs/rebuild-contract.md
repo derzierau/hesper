@@ -127,6 +127,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `hook` | `{agent, source: claude\|codex, event, payload}` | `{context?}` (what hook processes send; context: the tile-naming text on a tile agent's own SessionStart, see "As built — agent tree") |
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
 | `forwards.list` / `forwards.add` / `forwards.remove` | – / `{machine, port, local?}` / `{id}` (the local port, or `machine:port`) | `[Forward]` / `Forward` / `{}`: port forwards to other machines' loopback (added, see "As built — port forwarding"; a person only adds or removes) |
+| `devices.offer` / `devices.offerCancel` | `{rights?}` / `{id}` | `{payload, expires, id}` / `{}`: pairing offers of the host role, and the notification `devices.paired {offer, device, name, rights}` on `agents.subscribe` (added, see `relay/docs/protocol.md`, Pairing offers; a person only; `hesperctl phone`) |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
@@ -1347,7 +1348,15 @@ Launch; Notifications; Profiles per kind) of one fixed size on every
 pane (`SettingsView.size`, set by AppKit, never by a pane's fitting
 size): the sidebar shows each pane's title and ⌘N chip, a control row
 too wide for its column stacks under its label, and the pane scrolls
-instead of clipping. Focus ⌘↩ zooms the card to the
+instead of clipping. Settings › iPhone (after Machines & pairing) shows
+the QR code of a `devices.offer` with the rights chosen by its toggles
+(answer, type, start and stop; shells off by default), asks for a new
+one every 2 minutes while shown (earlier codes stay open until they
+expire; a rights change cancels them), cancels the open ones with
+`devices.offerCancel` when the pane or window goes, and turns into
+"<name> connected" on `devices.paired` (HesperCore `PhonePairing`; a
+hesperd without `devices.offer` gets the `hesperctl approve` hint).
+Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
 
 **One tile font; the PTY follows the tile.** Every wall tile uses the

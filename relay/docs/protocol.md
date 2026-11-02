@@ -14,7 +14,32 @@ URLs. HTTP clients must not follow enrollment redirects with secrets attached.
    `verificationURL`, `expires`, `interval` (poll seconds).
 3. Open `verificationURL` in the system authentication browser. GitHub callback
    is `/auth/github/callback`. The user checks the matching code and approves the
-   named device. A registered app callback carries only enrollment ID and status.
+   named device. A registered app callback carries only enrollment ID and status:
+   `<callback>?approved=1&enrollment=<id>&status=approved` after approval;
+   `status=denied` (GitHub sign-in cancelled), `status=not_allowed` (the GitHub
+   account is not on the allowlist) or `status=expired` (the enrollment or the
+   browser sign-in ran out, or was used up; start again) or `status=failed`
+   (anything else: GitHub did not confirm the account, the relay is busy or
+   rate-limits the sign-in link; try again later) end the sign-in at the
+   callback too, so an app's authentication session (`ASWebAuthenticationSession`)
+   does not stay on an error page. Apps treat any other status as `failed`. Only
+   failures before the relay knows the enrollment (sign-in opened in another
+   browser or with cookies blocked, an Approve from another site, an unknown
+   page) stay on a page.
+   A second Approve of an approved enrollment (a double tap) returns
+   `status=approved` again and changes nothing. `approved=1` is the older form of
+   `status=approved`. The iPhone app's `hesper-ios://auth` is registered unless
+   the relay's config lists its own `appCallbacks`.
+
+   The browser routes (`/auth/...`) answer in HTML: the approval page, "Device
+   approved" when there is no app callback, and a page per failure that says
+   what happened and what to do, with the same HTTP status as before (400
+   expired or cancelled, 403 wrong browser, cookie, origin or account, 404,
+   429 with `Retry-After`, 503 busy). The approval form posts `state` and
+   `enrollment`; the second only picks the page for an Approve that came after
+   the enrollment was approved. The pages carry one inline stylesheet, allowed
+   by its hash in the CSP (`style-src 'sha256-…'`), and no scripts or other
+   resources. The JSON API (`/v1/...`) keeps its JSON errors.
 4. Poll `POST /v1/auth/claim` with `id` and `verifier` no faster than the returned
    interval. HTTP 409 / `authorization_pending` means keep waiting. Other failures
    terminate the flow. Success returns credentials; claiming is single-use.
@@ -28,6 +53,48 @@ same credential shape. Access expiry is 15 minutes, capped by the 30-day absolut
 refresh-family expiry. Only one renewal may run per device. Persist the new pair
 before connecting. A lost response or persistence failure requires a new login;
 reusing a refresh token revokes the entire device and active connection.
+
+**Signing in again keeps the device ID.** Hosts keep approvals by relay
+device ID (`controllers.json`), so a controller whose refresh family ended
+enrolls with `previousDevice` to keep its ID and with it every approval:
+
+```json
+{"name":"iPhone","role":"controller","challenge":"…","callback":"hesper-ios://auth",
+ "previousDevice":{"id":"DEVICE_ID","key":"BASE64_DER_P256","sig":"BASE64_DER_ECDSA"}}
+```
+
+`key` is the device key (base64 DER SubjectPublicKeyInfo, as in
+`devices.request`) and `sig` its signature, standard base64 of DER ECDSA
+P-256 over SHA-256 of these lines joined by `\n` (no trailing newline):
+
+```text
+hesper-reenroll-v1
+<previous device ID>
+<this enrollment's challenge>
+```
+
+`pkg/devicekey` has the golden vector (`TestReenrollGoldenVector`). The
+relay accepts it only for a controller enrollment, a live (never revoked)
+controller, and the key the relay recorded for that device: the `key` of
+the first `devices.request` the device sent through the relay (later keys
+never replace it). Otherwise enroll answers 400 `invalid_previous_device`;
+a device that never sent `devices.request` has no recorded key and enrolls
+without `previousDevice` (a new ID). At claim the relay checks again, now
+that GitHub has named the owner: the same owner, still not revoked, the same
+key; otherwise 403 `previous_device_rejected`, and the client starts a plain
+enrollment. A successful claim returns credentials for the earlier device
+ID, takes the new `name`, keeps the push token, and deletes every earlier
+access and refresh credential of that device (presenting one later is not
+reuse; it is simply unknown). A revoked device never comes back this way.
+
+**Push token.** A controller registers its APNs device token with
+`POST /v1/devices/push` `{"token":"HEX","environment":"sandbox"|"production"}`
+and its access token as `Authorization: Bearer`. `token` is the hex APNs token
+(64 to 200 hex digits, stored lower case); a new registration replaces the
+device's earlier one, and revoking the device (also by refresh reuse) drops it.
+Answers: 200 `{"registered":true}`, 400 `invalid_request`, 401 `unauthorized`,
+403 `forbidden` for a host. The relay only keeps the token; it sends no
+notifications yet.
 
 Native JSON endpoints reject browser `Origin` headers. Browser approval uses a
 separate cookie-bound CSRF token and escaped HTML. Authentication requests share
@@ -147,7 +214,7 @@ the original client request ID before returning the result to that controller.
 | `ping` | `{}` (unsigned, right `observe`) | `{}`: controllers time the round trip (`hello`'s `rttMs`) |
 | `agents.*`, `projects.*`, `profiles.list`, `fs.stat` | see [Agents](#agents) | |
 | `transfer`, `agents.import`, `job`, `agents.export`, `download` | see [Moves](#moves) | |
-| `devices.request` | `name`, `key`, `strongKey`, `hardware`, `rights` (unsigned) | `{"status":"pending","code","expires","hostKey"}` or `{"status":"approved","name","rights","hostKey"}` |
+| `devices.request` | `name`, `key`, `strongKey`, `hardware`, `rights`, optional `e2eKey`, `e2eBinding`, `offerProof` (unsigned; see [Pairing offers](#pairing-offers)) | `{"status":"pending","code","expires","hostKey"}` or `{"status":"approved","name","rights","hostKey"}` |
 | `e2e.hello`, `e2e` | see [End-to-end channel](#end-to-end-channel) (unsigned; they carry the others) | |
 | `direct.offer` | `{}`, only inside the channel (unsigned) | see [Direct path](#direct-path) |
 
@@ -263,7 +330,9 @@ request (`pending-approvals.json`, at most 5, 10 minutes, one per controller,
 a controller at most every 5 s and 10 requests a minute in all: `busy`) and
 shows a macOS notification on the host. Asking again with the same keys
 returns the same pending request; a denied device is refused (`forbidden`)
-for 10 minutes. The result carries `hostKey`, the host's X25519 transfer
+for 10 minutes. The relay records the `key` of a controller's first
+`devices.request` for re-enrollment (see GitHub enrollment); hosts never
+rely on it. The result carries `hostKey`, the host's X25519 transfer
 key, and `code`, the first 30 bits of SHA-256(host key ‖ key DER ‖ strong
 key DER) in base32 as `ABC-DEF`. The controller computes the code itself
 from the keys it holds and the host key (pinned in `trusted-hosts.json` like
@@ -272,6 +341,76 @@ codes match, so a relay that swaps any key is caught. Approval happens only
 on the host: `hesperctl approve CODE|NAME` (or `--deny`),
 `hesperctl devices-local [--revoke NAME]`. A device
 without hardware keys is not granted `shell` unless `--allow-software-shell`.
+
+## Pairing offers
+
+The host can vouch for a device itself: someone at the host opens an
+offer, the host shows it as a code, the device scans it and proves it in
+`devices.request`, and the host approves the device at once with no code
+to compare (`hesperctl phone`, Hesper.app's Settings › iPhone; the
+iPhone app's onboarding, [docs/iphone/onboarding.md](../../docs/iphone/onboarding.md)).
+
+**Offers** live in hesperd's memory only: at most 3 open (a new one ends
+the oldest), 5 minutes each, single use, each with 16 random bytes of
+secret and the rights it grants. hesperd's local socket (never the relay)
+opens and ends them; only a person may, not an agent:
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `devices.offer` | `{rights?: [String]}` (default `observe, answer, type, transfer`; `shell` only on a host run with `--allow-shell`) | `{payload, expires, id}`: the code to show, Unix seconds, the offer's id |
+| `devices.offerCancel` | `{id}` | `{}` (`not_found` when no such offer is open) |
+
+Without the host role both answer `unavailable`. An `agents.subscribe`
+connection gets `devices.paired {offer, device, name, rights}` when an
+offer approved a device.
+
+**Pairing code.** `payload` is `HESPER1:` followed by base64url (no
+padding) of compact JSON, in this field order:
+
+```json
+{"v":1,"relay":"https://relay.example.com","machine":"MACHINE_ID","name":"studio",
+ "hostKey":"BASE64_X25519","rights":["observe","answer","type","transfer"],
+ "offer":"BASE64URL_16_BYTES","expires":1793650956}
+```
+
+`relay` is the origin of the host's credentials, `machine` its relay
+device ID, `name` its host name's first label, `hostKey` its X25519
+transfer key (standard base64; the device pins it in
+`trusted-hosts.json`), `offer` the secret. Anything else, or `v` other
+than 1, is not a pairing code. It is not a URL: credentials and pairing
+secrets never belong in URLs.
+
+**Offer proof.** `devices.request`'s `offerProof` is standard base64 of
+HMAC-SHA256, keyed with the 16 secret bytes, over these lines joined by
+`\n` (no trailing newline):
+
+```text
+hesper-offer-v1
+<host machine ID>
+<name>
+<key>
+<strongKey>
+<e2eKey, or empty>
+```
+
+`key`, `strongKey` and `e2eKey` exactly as sent in the request. The secret
+itself never leaves the device, so the relay, which sees the request,
+cannot reuse it for keys of its own. `pkg/devicekey` has the golden
+vectors (`offer_test.go`).
+
+**Host checks.** The host computes the proof of every open offer and
+compares in constant time. A match ends that offer and approves the
+device with the offer's rights, minus `shell` for a device without
+hardware keys: `controllers.json` gets it with `approvedBy: "offer"` (a
+name another device has gets a number: "iPhone 2"), a request of the same
+device waiting for approval is dropped, the macOS notification "Hesper:
+iPhone added" shows, the audit log gets `device.approved` with the offer's
+id, and the result is `{"status":"approved","name","rights","hostKey"}`.
+No match (wrong, used, cancelled or expired offer): `forbidden`, audited
+as `device.offer.refused`, and nothing waits for approval. Without
+`offerProof` the request works as before. A host older than this rejects
+the unknown field (`invalid_request`); a device then falls back to the
+code flow.
 
 ## End-to-end channel
 

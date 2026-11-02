@@ -21,6 +21,11 @@ type Config struct {
 	AppCallbacks     []string `json:"appCallbacks,omitempty"`
 }
 
+// DefaultAppCallbacks are the app callbacks a config without appCallbacks
+// allows: the iPhone app's sign-in callback. An explicit list, even an
+// empty one, replaces them.
+var DefaultAppCallbacks = []string{"hesper-ios://auth"}
+
 func LoadConfig(path string) (Config, error) {
 	var c Config
 	data, err := os.ReadFile(path)
@@ -40,6 +45,9 @@ func LoadConfig(path string) (Config, error) {
 		if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(id) {
 			return c, fmt.Errorf("allowlist entries must be numeric GitHub IDs")
 		}
+	}
+	if c.AppCallbacks == nil {
+		c.AppCallbacks = append([]string(nil), DefaultAppCallbacks...)
 	}
 	for _, callback := range c.AppCallbacks {
 		u, err := url.Parse(callback)

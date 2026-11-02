@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -54,6 +55,8 @@ type deviceWorld struct {
 	dir, hostDir, machine string
 	laptop, phone         string // credentials files
 	params                string // a key request's params file
+	offers                *host.Offers
+	daemon                string // the host's hesperd socket (pairing offers)
 }
 
 // newDeviceWorld is an in-process relay, one host that checks device keys
@@ -97,18 +100,28 @@ func newDeviceWorld(t *testing.T) deviceWorld {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth := &host.Authorizer{Store: host.Store{Dir: w.hostDir}, MachineID: hostCreds.DeviceID, HostKey: key.PublicKey().Bytes()}
+	w.offers = &host.Offers{}
+	w.offers.Configure(hostCreds.Relay, hostCreds.DeviceID, "mini", key.PublicKey().Bytes(), false)
+	auth := &host.Authorizer{Store: host.Store{Dir: w.hostDir}, MachineID: hostCreds.DeviceID, HostKey: key.PublicKey().Bytes(), Offers: w.offers}
 	link, err := client.Dial(ctx, hostCreds)
 	if err != nil {
 		t.Fatal(err)
 	}
 	channel := &host.E2E{Key: key, Auth: auth}
 	reg, err := agents.Open(agents.Options{StateDir: filepath.Join(dir, "agents"), ConfigDir: filepath.Join(dir, "config"), Machine: "mini",
-		Env: os.Environ(), LoginShell: "/bin/sh", Logf: t.Logf})
+		Env: os.Environ(), LoginShell: "/bin/sh", Logf: t.Logf, Devices: w.offers})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(reg.Close)
+	w.daemon = filepath.Join(shortDir(t), "hesperd.sock")
+	ln, err := agents.Listen(w.daemon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemon := agents.NewServer(reg)
+	go daemon.Serve(ln)
+	t.Cleanup(daemon.Close)
 	runner := &host.Runner{Service: &host.Service{Agents: reg, E2EKey: channel.PublicKey()}, Auth: auth, E2E: channel, Credentials: hostCreds, PollInterval: time.Hour}
 	done := make(chan struct{})
 	go func() { defer close(done); runner.Serve(ctx, link) }()
@@ -412,4 +425,129 @@ func shortDir(t *testing.T) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	return dir
+}
+
+// hesperctl phone shows an offer; an iPhone that proves it in
+// devices.request (through the relay) is approved at once and phone
+// exits with the pairing.
+func TestPhonePairsAnIPhone(t *testing.T) {
+	w := newDeviceWorld(t)
+	ctx := context.Background()
+	out, err := os.CreateTemp(t.TempDir(), "phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = out
+	done := make(chan error, 1)
+	go func() {
+		done <- run(ctx, []string{"phone", "--json", "--daemon-socket", w.daemon, "--rights", "observe,answer"})
+	}()
+	var offer host.OfferResult
+	for deadline := time.Now().Add(5 * time.Second); offer.ID == ""; time.Sleep(10 * time.Millisecond) {
+		data, _ := os.ReadFile(out.Name())
+		if line, _, ok := strings.Cut(string(data), "\n"); ok {
+			json.Unmarshal([]byte(line), &offer)
+		}
+		if time.Now().After(deadline) {
+			os.Stdout = saved
+			t.Fatalf("phone printed no offer: %q", data)
+		}
+	}
+	code, err := devicekey.ParsePairingCode(offer.Payload)
+	if err != nil || code.Machine != w.machine || code.Name != "mini" || strings.Join(code.Rights, ",") != "observe,answer" {
+		os.Stdout = saved
+		t.Fatalf("code %+v %v", code, err)
+	}
+
+	// The iPhone's side, with what it read from the code.
+	creds, _ := client.LoadCredentials(w.phone)
+	c, err := client.NewController(ctx, creds)
+	if err != nil {
+		os.Stdout = saved
+		t.Fatal(err)
+	}
+	defer c.Close()
+	key, strong := softwareKeys(t, filepath.Join(w.dir, "iphone-keys"))
+	secret, _ := code.Secret()
+	request := host.ApprovalRequest{Name: "iPhone", Key: key, StrongKey: strong, Rights: []string{devicekey.Observe},
+		OfferProof: devicekey.OfferProof(secret, code.Machine, "iPhone", key, strong, "")}
+	params, _ := devicekey.NormalizeParams(protocol.JSON(request))
+	raw, err := c.Forward(ctx, code.Machine, "devices.request", params, nil)
+	var status host.ApprovalStatus
+	json.Unmarshal(raw, &status)
+	select {
+	case err = <-done:
+	case <-time.After(5 * time.Second):
+		err = errors.New("phone did not exit")
+	}
+	os.Stdout = saved
+	data, _ := os.ReadFile(out.Name())
+	if err != nil || status.Status != "approved" || strings.Join(status.Rights, ",") != "observe,answer" {
+		t.Fatalf("phone: %v; status %+v; output %s", err, status, data)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	var paired host.Paired
+	if len(lines) != 2 || json.Unmarshal([]byte(lines[1]), &paired) != nil || paired.Offer != offer.ID || paired.Name != "iPhone" || paired.Device != creds.DeviceID {
+		t.Fatalf("phone printed %s", data)
+	}
+	list, _, _ := host.Store{Dir: w.hostDir}.LoadControllers()
+	if len(list.Controllers) != 1 || list.Controllers[0].ApprovedBy != "offer" {
+		t.Fatalf("controllers %+v", list)
+	}
+	// The same code again is refused, and nothing waits.
+	if _, err := c.Forward(ctx, code.Machine, "devices.request", params, nil); !isForbidden(err) {
+		t.Fatalf("offer used twice: %v", err)
+	}
+	if pending, _ := (host.Store{Dir: w.hostDir}).PendingRequests(time.Now()); len(pending) != 0 {
+		t.Fatalf("pending %+v", pending)
+	}
+}
+
+// pair-host --offer pairs with a code a host shows, without a code to
+// compare, and pins the code's host key.
+func TestPairHostWithOffer(t *testing.T) {
+	w := newDeviceWorld(t)
+	ctx := context.Background()
+	laptop := &devicekey.Software{Dir: filepath.Join(w.dir, "laptop-keys")}
+	offer, err := w.offers.Create([]string{devicekey.Observe, devicekey.Type})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withSigner(laptop, func() {
+		out, err := ctl(t, ctx, "pair-host", "--direct", "--json", "--credentials", w.laptop, "--offer", offer.Payload, "--name", "laptop")
+		var v struct {
+			Status string
+			Rights []string
+		}
+		if err != nil || json.Unmarshal([]byte(out), &v) != nil || v.Status != "approved" || strings.Join(v.Rights, ",") != "observe,type" {
+			t.Fatalf("pair-host --offer: %q %v", out, err)
+		}
+		if err := w.key(t, ctx, w.laptop, "--direct"); err != nil {
+			t.Fatalf("signed request after pairing: %v", err)
+		}
+		if _, err := ctl(t, ctx, "pair-host", "--direct", "--json", "--credentials", w.laptop, "--offer", offer.Payload, "--name", "laptop"); !isForbidden(err) {
+			t.Fatalf("the code again: %v", err)
+		}
+	})
+	code, _ := devicekey.ParsePairingCode(offer.Payload)
+	if trust, _ := loadTrust(trustPath()); trust.Hosts[w.machine].Key != code.HostKey {
+		t.Fatalf("pinned %+v, code's key %s", trust.Hosts[w.machine], code.HostKey)
+	}
+	if _, err := ctl(t, ctx, "pair-host", "--offer", "HESPER1:nope", "--credentials", w.laptop); err == nil || !strings.Contains(err.Error(), "not a Hesper pairing code") {
+		t.Fatalf("bad code: %v", err)
+	}
+}
+
+func softwareKeys(t *testing.T, dir string) (string, string) {
+	t.Helper()
+	s := &devicekey.Software{Dir: dir}
+	a, err := s.PublicKey(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := s.PublicKey(true)
+	ka, _ := devicekey.EncodePublicKey(a)
+	kb, _ := devicekey.EncodePublicKey(b)
+	return ka, kb
 }

@@ -22,9 +22,13 @@ type Enrollment struct {
 	Role      identity.Role `json:"role"`
 	Challenge string        `json:"challenge"`
 	Callback  string        `json:"callback,omitempty"`
-	Principal Principal     `json:"principal"`
-	Expires   time.Time     `json:"expires"`
-	Claimed   bool          `json:"claimed"`
+	// Previous is the device ID a re-enrolling controller keeps, after
+	// proving PreviousKey, that device's recorded key (previousDevice).
+	Previous    string    `json:"previous,omitempty"`
+	PreviousKey string    `json:"previousKey,omitempty"`
+	Principal   Principal `json:"principal"`
+	Expires     time.Time `json:"expires"`
+	Claimed     bool      `json:"claimed"`
 }
 type Flow struct {
 	State        string    `json:"state"`
@@ -45,8 +49,12 @@ func (e *ReplayError) Error() string { return "refresh credential was reused" }
 
 type Repository interface {
 	CreateEnrollment(context.Context, Enrollment) error
+	// Enrollment returns a live enrollment. One that expired or was
+	// claimed, while still stored, comes back with an "expired" error.
 	Enrollment(context.Context, string) (Enrollment, error)
 	PutFlow(context.Context, Flow) error
+	// TakeFlow consumes a live flow. An expired one, while still stored,
+	// comes back with the error, so its enrollment is known.
 	TakeFlow(context.Context, string) (Flow, error)
 	Approve(context.Context, string, Principal) error
 	Claim(context.Context, string, string, time.Duration, time.Duration) (identity.Device, protocol.Credentials, error)
@@ -57,6 +65,12 @@ type Repository interface {
 	// same successor (a lost response); any other reuse revokes the device.
 	Rotate(ctx context.Context, refresh, proof string, accessTTL time.Duration) (identity.Device, protocol.Credentials, error)
 	PruneAuth(context.Context) error
+	// Authenticate resolves an access token to its live device.
+	Authenticate(context.Context, string) (identity.Device, error)
+	// Device returns one device record, revoked or not.
+	Device(context.Context, string) (identity.Device, error)
+	// SetPush replaces the device's APNs registration.
+	SetPush(context.Context, string, identity.Push) error
 }
 type IdentityProvider interface {
 	AuthorizationURL(state, verifier string) string

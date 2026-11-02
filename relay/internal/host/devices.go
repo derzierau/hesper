@@ -375,25 +375,7 @@ func (s Store) Approve(query string, opts ApproveOptions, now time.Time) (Contro
 	}
 	c := Controller{Device: p.Device, Name: name, Key: p.Key, StrongKey: p.StrongKey, Hardware: p.Hardware,
 		Rights: SortRights(rights), Approved: now.Unix(), ApprovedBy: by, E2EKey: p.E2EKey}
-	if err := c.validate(); err != nil {
-		return Controller{}, "", err
-	}
-	list, _, err := s.LoadControllers()
-	if err != nil {
-		return Controller{}, "", err
-	}
-	kept := []Controller{}
-	for _, old := range list.Controllers {
-		if old.Device == c.Device {
-			continue // the same device with new keys or rights
-		}
-		if strings.EqualFold(old.Name, c.Name) {
-			return Controller{}, "", fmt.Errorf("a controller named %q exists; revoke it first or approve with --name", old.Name)
-		}
-		kept = append(kept, old)
-	}
-	list.Controllers = append(kept, c)
-	if err := s.saveControllers(list); err != nil {
+	if c, err = s.putController(c, false); err != nil {
 		return Controller{}, "", err
 	}
 	f.Pending = slices.Delete(f.Pending, i, i+1)
@@ -403,6 +385,75 @@ func (s Store) Approve(query string, opts ApproveOptions, now time.Time) (Contro
 	s.Audit("device.approved", map[string]any{"device": c.Device, "name": c.Name, "ok": true,
 		"detail": "rights " + strings.Join(c.Rights, ",") + " code " + p.Code})
 	return c, note, nil
+}
+
+// putController adds c to controllers.json, replacing an entry of the
+// same device. A name another device has is an error, or with rename the
+// first free "name 2" … "name 9". The devices lock is held.
+func (s Store) putController(c Controller, rename bool) (Controller, error) {
+	if err := c.validate(); err != nil {
+		return Controller{}, err
+	}
+	list, _, err := s.LoadControllers()
+	if err != nil {
+		return Controller{}, err
+	}
+	kept := []Controller{}
+	taken := map[string]string{}
+	for _, old := range list.Controllers {
+		if old.Device == c.Device {
+			continue // the same device with new keys or rights
+		}
+		taken[strings.ToLower(old.Name)] = old.Name
+		kept = append(kept, old)
+	}
+	if old, ok := taken[strings.ToLower(c.Name)]; ok {
+		if !rename {
+			return Controller{}, fmt.Errorf("a controller named %q exists; revoke it first or approve with --name", old)
+		}
+		base := c.Name
+		for n := 2; ; n++ {
+			if n > 9 {
+				return Controller{}, fmt.Errorf("controllers named %q exist; revoke one first", base)
+			}
+			suffix := fmt.Sprintf(" %d", n)
+			c.Name = strings.TrimSpace(string([]rune(base)[:min(len([]rune(base)), 40-len(suffix))])) + suffix
+			if _, ok := taken[strings.ToLower(c.Name)]; !ok {
+				break
+			}
+		}
+	}
+	list.Controllers = append(kept, c)
+	if err := s.saveControllers(list); err != nil {
+		return Controller{}, err
+	}
+	return c, nil
+}
+
+// ApproveOffered adds a controller approved by a pairing offer (offers.go)
+// and drops a request of the same device that waits for approval. A name
+// another controller has gets a number ("iPhone 2").
+func (s Store) ApproveOffered(c Controller, offer string, now time.Time) (Controller, error) {
+	unlock, err := s.lock()
+	if err != nil {
+		return Controller{}, err
+	}
+	defer unlock()
+	if c, err = s.putController(c, true); err != nil {
+		return Controller{}, err
+	}
+	f := s.loadPending(now)
+	if n := len(f.Pending); n > 0 {
+		f.Pending = slices.DeleteFunc(f.Pending, func(p Pending) bool { return p.Device == c.Device })
+		if len(f.Pending) != n {
+			if err := s.savePending(f); err != nil {
+				return c, err
+			}
+		}
+	}
+	s.Audit("device.approved", map[string]any{"device": c.Device, "name": c.Name, "ok": true,
+		"detail": "rights " + strings.Join(c.Rights, ",") + " offer " + offer})
+	return c, nil
 }
 
 // Deny drops a pending request.

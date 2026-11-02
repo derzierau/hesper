@@ -57,6 +57,11 @@ enum Theme {
         return NSColor(name: nil) { scheme($0) == .daylight ? daylight : dusk }
     }
     static func color(_ t: Token) -> Color { Color(nsColor: ns(t)) }
+    /// A token in one scheme whatever the appearance (a QR code stays
+    /// dark on light, so every camera reads it).
+    static func color(_ t: Token, in s: Scheme) -> Color {
+        Color(nsColor: srgb(s == .daylight ? t.schemes.daylight : t.schemes.dusk, 1))
+    }
 
     /// Hex colors: a token's `hex` (and the Tokyo Night chrome values that
     /// HesperCore still hands out, e.g. band defaults) resolve to the token;

@@ -31,6 +31,9 @@ final class Dictation {
     private(set) var language: String?
     /// Words to expect (Mac, project and agent names), for the model.
     var hints: [String] = []
+    /// The language picked on onboarding's language screen, before Done
+    /// saves it; tried first.
+    var chosen: String?
 
     /// Onboarding stores the owner's dictation language here.
     static let languageKey = "dictationLanguage"
@@ -70,10 +73,20 @@ final class Dictation {
     private func findLanguage() async {
         guard SpeechTranscriber.isAvailable else { return }
         let supported = await SpeechTranscriber.supportedLocales.map { $0.identifier(.bcp47) }
-        let chosen = UserDefaults.standard.string(forKey: Self.languageKey).map { [$0] } ?? []
+        let chosen = [self.chosen, UserDefaults.standard.string(forKey: Self.languageKey)].compactMap(\.self)
         let keyboards = UITextInputMode.activeInputModes.compactMap(\.primaryLanguage)
         language =
             SpeechLanguages.candidates(preferred: chosen + keyboards + Locale.preferredLanguages, supported: supported, limit: 1).first
+    }
+
+    /// Downloads the voice model for `language` in the background, so the
+    /// first capture does not wait; failures stay quiet (capture retries).
+    static func download(_ language: String) {
+        Task {
+            guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: language)) else { return }
+            let module = SpeechTranscriber(locale: locale, preset: .transcription)
+            try? await AssetInventory.assetInstallationRequest(supporting: [module])?.downloadAndInstall()
+        }
     }
 
     /// Starts listening; returns at once. `stop()` waits for the start.
@@ -116,6 +129,11 @@ final class Dictation {
         do {
             guard await AVAudioApplication.requestRecordPermission() else {
                 throw Failure("Hesper can't use the microphone. Allow it in Settings, or type.")
+            }
+            // A new pick on the language screen: find its model first.
+            if let chosen, chosen != language {
+                await preparing?.value
+                prepare()
             }
             if language == nil { prepare() }
             await preparing?.value
