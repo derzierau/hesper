@@ -3,11 +3,11 @@
 Hesper's Steward is a background Claude agent that keeps the loops records
 (`hesperctl loops`, `hesperctl goals`) up to date. It is off by default:
 `hesperctl steward on` (or Settings › Steward in Hesper) turns it on, on
-one Mac. It runs with a tool allowlist (`hesperctl loops|goals|steward|ls|
-show|result`, `hesperctl history search|show|brief|stats`, `hesperctl
-review ls`, `hesperctl drafts ls|save`, `gh pr view`, `gh release view`,
-and read-only file tools) and never with skipped permissions; it cannot
-delete or archive history, and removes only drafts it saved. hesperd
+one Mac. It runs in the background, where no one would see a permission
+prompt, so it always skips permission prompts (`--permission-mode
+bypassPermissions`). hesperd still refuses it what is a person's: turning
+it on or off, accepting milestones, closing loops, answering agents. Its
+instructions keep it to reading and to the loops records. hesperd
 wakes it with one short line, at most once a minute and 40 times a day by
 default, and starts it on a new session every day with a brief of the
 records.

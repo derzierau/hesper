@@ -5743,13 +5743,10 @@ keeps the copy identical).
 - **The agent.** `SpawnService(service steward)`: Claude, in the
   background, named "Steward", in `$STATE/steward` (0700), its first
   message a brief. Its options replace the profile's (`steward.Argv`):
-  `--permission-mode default`, `--allowedTools` with `Bash(hesperctl
-  loops:*)`, `goals`, `steward`, `ls`, `show`, `result`, `history search`,
-  `history show`, `history brief`, `history stats`, `review ls`, `drafts
-  ls`, `drafts save` (never `history delete|archive` nor `drafts rm`),
-  `Bash(gh pr view:*)`, `Bash(gh release view:*)`, `Read`, `Grep`,
-  `Glob`, and `--append-system-prompt` with `prompt.md`.
-  Anything else asks a person; permissions are never skipped. A Steward
+  `--permission-mode bypassPermissions` and `--append-system-prompt`
+  with `prompt.md`. It runs in the background, where no one would see a
+  permission prompt, so it always skips them; the socket policy
+  (person-only methods, level checks) still applies to it. A Steward
   agent the registry restored is adopted, never started twice. Its
   process ending, or a person closing it, restarts it (resume, else a new
   one) after 5 s, 30 s and 2 min; a fourth end within an hour leaves it

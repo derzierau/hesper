@@ -31,19 +31,13 @@ var (
 	PlanPrompt string
 )
 
-// Tools are the Steward's tool allowlist (Claude Code's --allowedTools);
-// PlanTools a planner's. Only read subcommands where a command also
-// deletes (history, drafts: never history delete or archive, drafts rm).
-// Anything else asks a person: permissions are never skipped.
-// skills/hesper/references/steward.md names the Steward's.
+// PlanTools are a planner's tool allowlist (Claude Code's --allowedTools):
+// only read subcommands where a command also deletes. Anything else asks
+// the person in the planner's tile. The Steward has none: it runs in the
+// background, where no one sees a permission prompt, so it skips them
+// (bypassPermissions); hesperd's policy still refuses what is a person's
+// (loopscall.go), whatever tools it runs.
 var (
-	Tools = []string{
-		"Bash(hesperctl loops:*)", "Bash(hesperctl goals:*)", "Bash(hesperctl steward:*)", "Bash(hesperctl ls:*)",
-		"Bash(hesperctl show:*)", "Bash(hesperctl result:*)", "Bash(hesperctl history search:*)",
-		"Bash(hesperctl history show:*)", "Bash(hesperctl history brief:*)", "Bash(hesperctl history stats:*)",
-		"Bash(hesperctl review ls:*)", "Bash(hesperctl drafts ls:*)", "Bash(hesperctl drafts save:*)",
-		"Bash(gh pr view:*)", "Bash(gh release view:*)", "Read", "Grep", "Glob",
-	}
 	PlanTools = []string{
 		"Bash(hesperctl goals ls:*)", "Bash(hesperctl goals new:*)", "Bash(hesperctl goals save:*)",
 		"Bash(hesperctl loops ls:*)", "Bash(hesperctl loops show:*)", "Bash(hesperctl ls:*)", "Bash(hesperctl show:*)",
@@ -54,14 +48,13 @@ var (
 )
 
 // Argv is a service agent's Claude options (agents.Options.ServiceArgv):
-// they replace its profile's, so a profile that skips permissions never
-// applies.
+// they replace its profile's. The Steward always skips permissions; a
+// planner never does, whatever its profile.
 func Argv(service string) []string {
-	tools, prompt := Tools, Prompt
 	if service == wire.ServicePlanner {
-		tools, prompt = PlanTools, PlanPrompt
+		return []string{"--permission-mode", "default", "--allowedTools", strings.Join(PlanTools, ","), "--append-system-prompt", PlanPrompt}
 	}
-	return []string{"--permission-mode", "default", "--allowedTools", strings.Join(tools, ","), "--append-system-prompt", prompt}
+	return []string{"--permission-mode", "bypassPermissions", "--append-system-prompt", Prompt}
 }
 
 // Store is the loops store's side the Steward uses (internal/loops.Store).
