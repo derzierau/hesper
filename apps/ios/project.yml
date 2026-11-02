@@ -32,6 +32,8 @@ targets:
         product: HesperFleet
       - package: HesperKit
         product: HesperFixtures
+      - package: HesperKit
+        product: HesperLink
       - target: HesperWidgets
       - target: NotificationService
     settings:
