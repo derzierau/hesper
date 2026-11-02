@@ -50,6 +50,7 @@ public final class DaemonClient: @unchecked Sendable {
     private var loop: Task<Void, Never>?
     private var extraNotifications: (@Sendable (String, JSONValue) -> Void)?
     private var reviewNotifications: (@Sendable (String, JSONValue) -> Void)?
+    private var deviceNotifications: (@Sendable (String, JSONValue) -> Void)?
 
     /// Shared history (sessions.*): notifications the agent events don't
     /// cover, delivered on the connection's reader thread (decode there,
@@ -64,6 +65,13 @@ public final class DaemonClient: @unchecked Sendable {
     public var onReviewNotification: (@Sendable (String, JSONValue) -> Void)? {
         get { lock.withLock { reviewNotifications } }
         set { lock.withLock { reviewNotifications = newValue } }
+    }
+
+    /// Settings › iPhone (`devices.*` notifications: `devices.paired`), on
+    /// the reader thread like `onOtherNotification`.
+    public var onDeviceNotification: (@Sendable (String, JSONValue) -> Void)? {
+        get { lock.withLock { deviceNotifications } }
+        set { lock.withLock { deviceNotifications = newValue } }
     }
 
     /// App control: hesperd's requests (app.state, app.open, …: hesperctl
@@ -136,6 +144,8 @@ public final class DaemonClient: @unchecked Sendable {
                         if let id = params["id"]?.stringValue { cont.yield(.groupRemoved(id)) }
                     case _ where method.hasPrefix("review."):
                         self?.onReviewNotification?(method, params)
+                    case _ where method.hasPrefix("devices."):
+                        self?.onDeviceNotification?(method, params)
                     default:
                         self?.onOtherNotification?(method, params) // shared history (sessions.*)
                     }
@@ -403,4 +413,18 @@ public final class DaemonClient: @unchecked Sendable {
     }
 
     public func removeGroup(_ id: String) async throws { _ = try await call("groups.remove", ["id": .string(id)]) }
+
+    // MARK: Pairing offers (Settings › iPhone; -32601: an older hesperd)
+
+    /// `devices.offer {rights}` → the code an iPhone scans.
+    public func phoneOffer(_ rights: PhoneRights) async throws -> PhoneOffer {
+        let v = try await call(PhonePairingRPC.offer, PhonePairingRPC.offerParams(rights), timeout: 20)
+        guard let o = PhoneOffer(json: v) else { throw RPCError(code: -32000, message: "devices.offer returned no code", kind: .remote) }
+        return o
+    }
+
+    /// `devices.offerCancel {id}`.
+    public func cancelPhoneOffer(_ id: String) async throws {
+        _ = try await call(PhonePairingRPC.cancel, PhonePairingRPC.cancelParams(id), timeout: 10)
+    }
 }
