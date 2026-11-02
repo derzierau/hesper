@@ -51,7 +51,7 @@ const (
 // mcpExecutable is the hesperctl a tool call runs (tests replace it).
 var mcpExecutable = os.Executable
 
-const mcpInstructions = `Hesper runs Claude Code, Codex and shell agents on the owner's Macs (hesperd). These tools are hesperctl's commands: each parameter is the command's flag or argument of that name, the result is the command's --json output (an action with no output returns {"ok":true}). Errors come back as isError with {"error":{"code","message"},"exitCode":N}; exit codes: 1 error, 2 usage, 3 not found, 4 hesperd or machine unavailable, 5 forbidden, 6 timeout, 7 exists. Agent ids are machine/local (mini/a7f3k2); the local id or a unique name works too. Inside a Hesper agent, agents you start are your children: you may steer them, answer them only with let-parent-answer, and you cannot answer your own approvals. Waiting tools take timeout (default and at most 10m). Resources: hesper://agents, hesper://needs-you, hesper://reference (the full CLI reference).`
+const mcpInstructions = `Hesper runs Claude Code, Codex and shell agents on the owner's Macs (hesperd). These tools are hesperctl's commands: each parameter is the command's flag or argument of that name, the result is the command's --json output (an action with no output returns {"ok":true}). Errors come back as isError with {"error":{"code","message"},"exitCode":N}; exit codes: 1 error, 2 usage, 3 not found, 4 hesperd or machine unavailable, 5 forbidden, 6 timeout, 7 exists. Agent ids are machine/local (mini/a7f3k2); the local id or a unique name works too. Inside a Hesper agent, agents you start are your children: you may steer them, answer them only with let-parent-answer, and you cannot answer your own approvals. Your work is recorded in a loop (loop "self"): put follow-ups there with hesper_loops_item_add, not only in your final message. Waiting tools take timeout (default and at most 10m). Resources: hesper://agents, hesper://needs-you, hesper://reference (the full CLI reference).`
 
 func init() {
 	register(Command{
@@ -299,12 +299,19 @@ func (t *mcpTool) schema() map[string]any {
 
 // argHint explains the common argument names.
 var argHint = map[string]string{
-	"ID":      "an agent's full id (mini/a7f3k2), local id (a7f3k2) or unique name; for history commands a session id machine:kind:sessionId",
-	"TASK":    "the new agent's first prompt",
-	"TEXT":    "the text to type",
-	"MACHINE": "a machine's short name",
-	"PROJECT": "a project id, unique name or folder",
-	"GROUP":   "a group id or unique name",
+	"ID":        "an agent's full id (mini/a7f3k2), local id (a7f3k2) or unique name; for history commands a session id machine:kind:sessionId",
+	"TASK":      "the new agent's first prompt",
+	"TEXT":      "the text to type",
+	"MACHINE":   "a machine's short name",
+	"PROJECT":   "a project id, unique name or folder",
+	"GROUP":     "a group id or unique name",
+	"LOOP":      "a loop id (lp-…), its title or a unique beginning of it, or self (your own loop)",
+	"INTO":      "the loop to keep: a loop id, title or unique beginning of it",
+	"FROM":      "the loop merged into the other: a loop id, title or unique beginning of it",
+	"ITEM":      "an item's number as loops show prints it (1, 2, …) or its id (it-…)",
+	"MILESTONE": "a milestone id (ms-…), its title or a unique beginning of it",
+	"SCOPE":     "the product: a project (id, unique name or folder) or a group (id or unique name)",
+	"LEVEL":     "watch, suggest or act",
 }
 
 func mcpDuration(d time.Duration) string {

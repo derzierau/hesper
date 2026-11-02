@@ -416,7 +416,7 @@ func (s *Service) resumeHere(ctx context.Context, rec *Record, fork bool, tree T
 		}
 	}
 	spawn := agents.SessionSpawn{Kind: rec.Kind, SessionID: rec.SID, Name: rec.Meta.Title, Task: rec.Meta.FirstPrompt, Branch: rec.Meta.Branch, Fork: fork,
-		Parent: tree.Parent, Depth: tree.Depth}
+		Parent: tree.Parent, Depth: tree.Depth, Source: rec.Key()}
 	if rec.Node == s.db.node {
 		dir, err := s.homeDir(ctx, rec)
 		if err != nil {
@@ -979,8 +979,8 @@ func (s *Service) continueHere(rec *Record, kind string, tree Tree) (wire.Agent,
 		return wire.Agent{}, wire.Errorf(wire.CodeNotFound, "the session's folder is not on this Mac")
 	}
 	name := "continue " + rec.Meta.Title
-	return reg.Spawn(wire.SpawnParams{Kind: kind, Project: dir, Task: s.brief(rec), Name: clip(oneLine(name), 60),
-		Parent: tree.Parent, Depth: tree.Depth})
+	return reg.SpawnFrom(wire.SpawnParams{Kind: kind, Project: dir, Task: s.brief(rec), Name: clip(oneLine(name), 60),
+		Parent: tree.Parent, Depth: tree.Depth}, rec.Key())
 }
 
 // --- archive, delete ---

@@ -57,6 +57,15 @@ import Testing
         #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["review": 7]) }
         #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["palette": ["query": 1]]) }
         #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["review": true, "palette": true]) }
+        // The loops sheets (hesperctl open loops | wrapup | product).
+        #expect(try AppOpenRequest.parse(["loops": true]).target == .loops(loop: nil))
+        #expect(try AppOpenRequest.parse(["loops": ["loop": "lp-1"]]).target == .loops(loop: "lp-1"))
+        #expect(try AppOpenRequest.parse(["wrapup": true]).target == .wrapUp)
+        #expect(try AppOpenRequest.parse(["product": true]).target == .product(scope: nil))
+        #expect(try AppOpenRequest.parse(["product": ["scope": "acme-apps"]]).target == .product(scope: "acme-apps"))
+        #expect(try !AppOpenRequest.parse(["wrapup": true]).target.showsWall)
+        #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["loops": true, "wrapup": true]) }
+        #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["wrapup": "yes"]) }
         #expect(throws: AppControlError.self) { try AppOpenRequest.parse(["review": true, "inbox": true]) }
     }
 

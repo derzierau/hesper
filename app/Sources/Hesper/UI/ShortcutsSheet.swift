@@ -46,6 +46,7 @@ enum ShortcutsSheetHost {
         if model.showPalette { return .palette }
         if let p = model.popover { return p == .attention ? .inbox : .popover }
         if ReviewPanelHost.isOpen(model) { return .review }
+        if let s = LoopsSheetHost.surface(model) { return s }
         if HistoryPanelHost.isOpen(model) { return .history }
         if keyWindow is AgentWindow { return .agentWindow }
         if keyWindow != nil, !(keyWindow is MainWindow) { return .settings }
@@ -230,7 +231,7 @@ final class ShortcutsPanel: NSView {
     /// The commands whose chord opens another sheet or overlay.
     static func passesThrough(_ id: CommandID) -> Bool {
         switch id {
-        case .palette, .history, .review, .nextAttention: return true
+        case .palette, .history, .review, .nextAttention, .loops, .product, .wrapUp: return true
         default: return false
         }
     }

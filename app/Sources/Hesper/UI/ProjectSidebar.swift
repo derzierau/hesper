@@ -33,6 +33,8 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
         var local: String?
         var scope: WallScope
         var historyAvailable: Bool
+        /// Open and on-you loops per project (LoopHub).
+        var loops = ProjectLoops()
         var now = Date()
     }
 
@@ -64,7 +66,7 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
         self.init(source: { [weak model] in
             guard let model else { return nil }
             return Snapshot(catalog: model.catalog, agents: model.unscopedWall, machines: model.machines, local: model.localMachine,
-                            scope: model.scope, historyAvailable: model.historyAvailable)
+                            scope: model.scope, historyAvailable: model.historyAvailable, loops: model.loopHub.projectLoops)
         })
         self.model = model
     }
@@ -138,8 +140,8 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
         var state = nav
         // The quiet project this wall shows offers "New agent here".
         if case .project(let p) = s.scope { state.selectedProject = p } else { state.selectedProject = nil }
-        let sections = ProjectNav.make(catalog: s.catalog, agents: s.agents, machines: s.machines, local: s.local, now: s.now,
-                                       state: state, historyAvailable: s.historyAvailable)
+        let sections = s.loops.apply(ProjectNav.make(catalog: s.catalog, agents: s.agents, machines: s.machines, local: s.local, now: s.now,
+                                                     state: state, historyAvailable: s.historyAvailable), catalog: s.catalog)
         let machines = SidebarMachines.make(s.machines, agents: s.agents)
         guard sections != lastSections || machines != lastMachines || lastScope != s.scope else { return }
         lastSections = sections
@@ -412,6 +414,17 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
                 return menu
             }
             let real = editable && !p.synthesized
+            // The same folder listed twice: removing the copy is the fix.
+            if let orig = p.duplicateOf {
+                let name = catalog.project(orig)?.name ?? orig
+                add("Remove Duplicate…", enabled: real) { [weak model] in
+                    guard Self.confirm("Remove this duplicate of \(name)?",
+                                       detail: "Only this second entry goes; \(name), its folder and its agents stay.",
+                                       action: "Remove Duplicate") else { return }
+                    model?.removeProject(pid)
+                }
+                menu.addItem(.separator())
+            }
             add("Rename…", enabled: real) { [weak model] in
                 guard let name = Self.ask("Rename project", value: p.name) else { return }
                 model?.renameProject(pid, to: name)
@@ -462,6 +475,17 @@ final class ProjectSidebar: NSView, NSTextFieldDelegate {
             break
         }
         return menu
+    }
+
+    /// A yes/no question before a removal (the sidebar's sheets are
+    /// NSAlerts, like `ask`); true: go ahead.
+    static func confirm(_ title: String, detail: String, action: String) -> Bool {
+        let a = NSAlert()
+        a.messageText = title
+        a.informativeText = detail
+        a.addButton(withTitle: action)
+        a.addButton(withTitle: "Cancel")
+        return a.runModal() == .alertFirstButtonReturn
     }
 
     /// A one-line question (rename, group name); nil: cancelled.
@@ -526,6 +550,28 @@ struct StateTallyView: View {
             }
         }
         .fixedSize()
+    }
+}
+
+/// A row's loops: the open count behind a loop glyph (dim), and the ones
+/// on the person as a question-toned square with its count (never
+/// signal: that is for approvals).
+struct LoopTallyView: View {
+    var tally: LoopTally
+    private static var glyph: Font { .system(size: DS.nsFont(.meta).pointSize, weight: .medium) }
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.xs) {
+            if tally.onYou > 0 {
+                StateMark(.question)
+                Text("\(tally.onYou)").font(DS.font(.meta)).monospacedDigit().foregroundStyle(Theme.fg)
+            }
+            Image(systemName: "arrow.triangle.2.circlepath").font(Self.glyph).foregroundStyle(Theme.dim)
+            Text("\(tally.open)").font(DS.font(.meta)).monospacedDigit().foregroundStyle(Theme.dim)
+        }
+        .fixedSize()
+        .help(tally.spoken)
+        .accessibilityIdentifier("sidebar.loops")
     }
 }
 
@@ -604,6 +650,12 @@ struct SidebarRowContent: View {
                         .layoutPriority(1)
                 }
             }
+            if r.duplicateOf != nil {
+                Image(systemName: "exclamationmark.triangle").font(Self.iconFont).foregroundStyle(Theme.dim)
+                    .help("Listed twice: the context menu's Remove Duplicate… fixes it")
+                    .accessibilityIdentifier("sidebar.duplicate")
+            }
+            if !r.loops.isEmpty { LoopTallyView(tally: r.loops).layoutPriority(3) }
             if !r.tally.isEmpty { StateTallyView(tally: r.tally).layoutPriority(3) }
             if r.kind == .allProjects {
                 Image(systemName: "chevron.right").font(.system(size: DS.Spacing.s + DS.Spacing.xxs, weight: .semibold)).foregroundStyle(Theme.dim)
@@ -704,7 +756,8 @@ final class SidebarRowView: NSView, NSDraggingSource {
         switch item {
         case .nav(let r):
             setAccessibilityIdentifier("sidebar.\(r.id)")
-            let parts = [r.title, r.suffix, r.meta, r.kept ? "kept" : nil, r.tally.isEmpty ? nil : r.tally.spoken,
+            let parts = [r.title, r.suffix, r.meta, r.kept ? "kept" : nil, r.duplicateOf != nil ? "duplicate" : nil,
+                         r.tally.isEmpty ? nil : r.tally.spoken, r.loops.isEmpty ? nil : r.loops.spoken,
                          r.expandable ? (r.expanded ? "expanded" : "collapsed") : nil].compactMap { $0 }
             setAccessibilityLabel(parts.joined(separator: ", "))
         case .machine(let m):

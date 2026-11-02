@@ -1,6 +1,6 @@
 ---
 name: hesper
-description: Drive Hesper (hesperd + hesperctl), which runs the user's Claude Code, Codex and shell agents on all their Macs. Use when the user mentions Hesper, hesperctl or hesperd; asks what their agents or sessions are doing or which ones need them (approvals, questions, errors); wants work fanned out to parallel agents or worktrees, delegated to another agent, or run on another Mac; wants to drive, answer, close or tidy agents; or wants to find, resume or hand over past Claude/Codex sessions (history).
+description: Drive Hesper (hesperd + hesperctl), which runs the user's Claude Code, Codex and shell agents on all their Macs. Use when the user mentions Hesper, hesperctl or hesperd; asks what their agents or sessions are doing or which ones need them (approvals, questions, errors); wants work fanned out to parallel agents or worktrees, delegated to another agent, or run on another Mac; wants to drive, answer, close or tidy agents; wants to find, resume or hand over past Claude/Codex sessions (history); or asks what is open, what they started or who acts next (loops, goals and milestones).
 ---
 
 # Hesper
@@ -36,6 +36,17 @@ Do not guess flags.
 - **Settled:** done, idle, exited, approval, question or error: the agent
   no longer works on its own. `wait --until settled` and `new --wait` stop
   there.
+- **Loops:** the lasting record of one piece of work: its agents and
+  sessions, files, URLs and other loops, and its items (steps, loose ends,
+  promises, questions, offers), each owned by `you` (the user), `agent` or
+  `others`. An agent joins its parent's loop (`loop` in the Agent object);
+  `next` says who acts next: `you`, `agents`, `others`, `parked`, `closed`.
+  Closing agents never closes a loop; only the user does. `self` names
+  your own loop.
+- **Goals and milestones** belong to a product (a project or a group); a
+  milestone has "done when" conditions and the loops filed under it.
+  **Steward:** a background agent that keeps loops up to date; off until
+  the user turns it on.
 
 ## Rules for every call
 
@@ -63,7 +74,10 @@ Inside an agent hesperd enforces a policy (refusals exit 5, `forbidden`):
 - reading (ls, show, screen, result, events, wait, history) is always allowed;
 - `history resume|fork|continue-as` started by you make your children too
   (same limits); `attach-file` only to your descendants;
-- closing one of your children gives its children to you.
+- closing one of your children gives its children to you;
+- in loops you may read everything and change only the items and links of
+  your own loop; closing loops, removing goals, accepting plans, the loop
+  settings and the Steward are the user's.
 
 On exit 5, do not look for a way around it: report it to the user.
 
@@ -77,6 +91,28 @@ describes (a new phase, such as from investigating to fixing, or a new
 request); you decide when. Never rename it for each step, and don't
 mention the renaming to the user. If the command prints `kept`, the user
 named the tile: leave the name.
+
+### Keep track of your work
+
+Hesper keeps a loop for your work; the user sees it on the board (⌘L) and
+in "Your move". Use it instead of burying follow-ups in your final message:
+- **Follow-ups go in your loop as items**: what the user must do
+  (`--owner you`: merge, review, decide), what you promised to do later
+  (`--owner agent --kind promise`), what waits on someone else
+  (`--owner others`). Tick off what you finished.
+- **Children report back**: start them with `--report-to-parent`; when a
+  child's turn ends you get one line `[hesper] child ID settled: …` and
+  read it with `hesperctl result ID`. They join your loop by themselves.
+- **File work under a milestone** when the user names one:
+  `new --milestone M` (or `goals file M LOOP`).
+- Link what the work produced: `loops link self --url PR-URL`.
+
+```sh
+hesperctl loops item add self --owner you --json merge PR 482 once CI is green
+hesperctl loops item check self 2 --json
+hesperctl new --report-to-parent --json "Write the failing test for the login redirect"
+hesperctl loops ls --json | jq -r '.[] | select(.next=="you") | "\(.id) \(.title): \(.nextText)"'
+```
 
 ## Safety
 
@@ -151,6 +187,9 @@ hesperctl history resume SESSION --json      # new agent; exit 7 if it runs alre
 hesperctl history continue-as SESSION --kind codex --json   # hand a Claude session to Codex
 hesperctl history brief SESSION              # a brief to paste into another agent
 ```
+
+**Loops and milestones:** `loops ls|show|graph`, `goals ls`; details in
+[references/recipes.md](references/recipes.md#loops-and-milestones).
 
 **App layout:** if available (`hesperctl help open`), `open`, `wall` and
 `desk` show agents and arrange the app's windows.

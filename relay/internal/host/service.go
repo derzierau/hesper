@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
+	"github.com/derzierau/hesper/relay/internal/loops"
 	"github.com/derzierau/hesper/relay/internal/projects"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
@@ -63,6 +64,9 @@ type Service struct {
 	// Sessions (optional; shared history): the sessions.* host methods
 	// and change hints on links (sessions.go).
 	Sessions SessionsHost
+	// Loops (optional): the loops store, loops.pull / loops.sync and its
+	// hints on links (loops.go).
+	Loops *loops.Store
 
 	links       links
 	fwdLimits   forwardLimits // forward.go
@@ -164,6 +168,8 @@ func (s *Service) Execute(ctx context.Context, m protocol.Message) (json.RawMess
 	case "sessions.pull", "sessions.transcript", "sessions.plan", "sessions.changes", "sessions.resume", "sessions.fork", "sessions.continueAs",
 		"checkpoints.restore": // move work
 		return s.sessions(ctx, m) // shared history
+	case "loops.pull", "loops.sync":
+		return s.loops(ctx, m) // loops.go
 	}
 	if s.Agents == nil {
 		return nil, protocol.Err("unsupported", "Host serves no agents")

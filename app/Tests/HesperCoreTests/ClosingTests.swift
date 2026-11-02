@@ -106,6 +106,18 @@ struct ClosingTests {
         #expect(AutoTidy.nextDue([all[2]], now: now) == nil)
     }
 
+    @Test func serviceAgentsAreNeverTidied() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        var steward = agent("st", .idle, since: now.addingTimeInterval(-3600), project: "p")
+        steward.service = "steward"
+        var planner = agent("pl", .done, since: now.addingTimeInterval(-3600), project: "p")
+        planner.service = "planner"
+        let all = [steward, planner, agent("d", .done, since: now.addingTimeInterval(-3600), project: "p")]
+        #expect(TidyUp.select(all, band: nil, bandOf: { $0.projectId }).map(\.id) == ["d"])
+        #expect(AutoTidy.due(all, now: now).map(\.id) == ["d"])
+        #expect(AutoTidy.nextDue([steward, planner], now: now) == nil)
+    }
+
     // MARK: Reopen stack
 
     @Test func reopenStackIsLIFODedupedAndCapped() {

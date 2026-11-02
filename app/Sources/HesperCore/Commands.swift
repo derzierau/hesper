@@ -35,6 +35,12 @@ public enum Surface: Hashable, Sendable, CaseIterable {
     case history
     /// The Review sheet (⌘R).
     case review
+    /// The Loops sheet (⌘L): the board, a loop's detail, the map.
+    case loops
+    /// The evening wrap-up (⇧⌘E).
+    case wrapUp
+    /// A product's page (⇧⌘L) and its planning view.
+    case product
     case agentWindow
     /// Settings, First Run, the Design Gallery: plain windows.
     case settings
@@ -56,6 +62,9 @@ public enum Surface: Hashable, Sendable, CaseIterable {
         case .inbox: return "Needs You"
         case .history: return "History"
         case .review: return "Review"
+        case .loops: return "Loops"
+        case .wrapUp: return "Wrap-up"
+        case .product: return "Product"
         case .agentWindow: return "Agent window"
         case .settings: return "Settings"
         }
@@ -112,6 +121,12 @@ public struct CommandContext: Equatable, Sendable {
     public var historySupported: Bool
     public var historyOpen: Bool
     public var reviewOpen: Bool
+    /// The Loops, Wrap-up or Product sheet is up.
+    public var loopsOpen: Bool
+    public var wrapUpOpen: Bool
+    public var productOpen: Bool
+    /// hesperd has loops.* (the Loops items show).
+    public var loopsSupported: Bool
     public var paletteOpen: Bool
     public var popoverOpen: Bool
     /// The keyboard shortcuts sheet (⌘/) is up.
@@ -123,11 +138,13 @@ public struct CommandContext: Equatable, Sendable {
 
     public init(selectedState: AgentState? = nil, selectedRunning: Bool = false, mode: AppMode = .wall, keyWindow: KeyWindowKind = .wall,
                 hasDraft: Bool = false, reviewCount: Int = 0, wallEmpty: Bool = true, canReopen: Bool = false, canUndo: Bool = false,
-                historySupported: Bool = true, historyOpen: Bool = false, reviewOpen: Bool = false, paletteOpen: Bool = false, popoverOpen: Bool = false,
+                historySupported: Bool = true, historyOpen: Bool = false, reviewOpen: Bool = false, loopsOpen: Bool = false, wrapUpOpen: Bool = false,
+                productOpen: Bool = false, loopsSupported: Bool = true, paletteOpen: Bool = false, popoverOpen: Bool = false,
                 shortcutsOpen: Bool = false, isHomeWall: Bool = false, inFullScreen: Bool = false) {
         self.selectedState = selectedState; self.selectedRunning = selectedRunning; self.mode = mode; self.keyWindow = keyWindow
         self.hasDraft = hasDraft; self.reviewCount = reviewCount; self.wallEmpty = wallEmpty; self.canReopen = canReopen; self.canUndo = canUndo
         self.historySupported = historySupported; self.historyOpen = historyOpen; self.reviewOpen = reviewOpen
+        self.loopsOpen = loopsOpen; self.wrapUpOpen = wrapUpOpen; self.productOpen = productOpen; self.loopsSupported = loopsSupported
         self.paletteOpen = paletteOpen; self.popoverOpen = popoverOpen; self.shortcutsOpen = shortcutsOpen
         self.isHomeWall = isHomeWall; self.inFullScreen = inFullScreen
     }
@@ -140,7 +157,7 @@ public struct CommandContext: Equatable, Sendable {
 
     /// A sheet or overlay is over the wall: ⌘W is bound in none of their
     /// surfaces (the tray's is closeTrayItem), so Close is nobody's there.
-    var overlayOpen: Bool { historyOpen || reviewOpen || paletteOpen || popoverOpen || shortcutsOpen }
+    var overlayOpen: Bool { historyOpen || reviewOpen || loopsOpen || wrapUpOpen || productOpen || paletteOpen || popoverOpen || shortcutsOpen }
 
     /// What File ▸ Close (⌘W) acts on: the selected agent or draft on a
     /// wall; the window everywhere else (an agent window closes and its
@@ -164,7 +181,7 @@ public enum CommandID: Hashable, Sendable {
     case toggleFocus, exitFocus, nextAttention
     case answer(Decision), denyWithMessage
     case backgroundAgent, killAgent, tidyUp, reopenClosed, moveAgent, renameAgent, resumeAgent
-    case palette, history, review, routines, toggleSidebar, wallScope
+    case palette, history, review, routines, loops, product, wrapUp, toggleSidebar, wallScope
     case arrangement(Int), cycleArrangement, toggleDense
     case stepPrevious, stepNext, jumpBand(Int)
     case showWall, makeHomeWall, desks, deskPicker, saveDeskAs
@@ -173,6 +190,8 @@ public enum CommandID: Hashable, Sendable {
     case select(WallMove), activate(WallMove), activateTile
     // Composer.
     case startDraft, startDraftAndNew, toggleWorktree, leaveDraft
+    // The composer's start strip (a task that looks like an open loop).
+    case composerAddToLoop, composerDraftInLoop
     // The overlay family (palette, popovers, inbox, History, Review).
     case moveUp, moveDown, closeOverlay
     case overlayActivate, overlayAlternate, overlayActOn, overlayBack, overlayDeleteBackward, closeTrayItem
@@ -185,6 +204,13 @@ public enum CommandID: Hashable, Sendable {
     case reviewAccept, reviewSendBack, reviewProvenance, reviewToggleFold
     case reviewNextHunk, reviewPreviousHunk, reviewNextFile, reviewPreviousFile
     case reviewSeen, reviewReject, reviewNote, reviewBulkAccept
+    // Loops verbs (the board and a loop's detail; D P X also the wrap-up's).
+    case loopsOpen, loopsDone, loopsPark, loopsDrop, loopsMerge, loopsNextAgent, loopsStartDraft, loopsMap
+    case loopsCheck, loopsAddStep, loopsTrigger, loopsPreviousColumn, loopsNextColumn, loopsSwitchScope
+    // Wrap-up verbs.
+    case wrapUpAccept, wrapUpNextStep, wrapUpUndo, wrapUpApply
+    // Product verbs (the page and its planning view).
+    case productFile, productPlan, productSavePlan, productDropProposal, productNextScope
 
     /// A stable string ("arrangement(2)"): palette row ids, accessibility
     /// identifiers.
@@ -435,12 +461,14 @@ public enum CommandRegistry {
     private static let agentViews: Set<Surface> = [.wall, .focus, .activeTile, .agentWindow]
     private static let composers: Set<Surface> = [.composer, .quickLaunch]
     private static let overlaySurfaces: Set<Surface> = [.palette, .popover]
-    private static let lists: Set<Surface> = [.palette, .popover, .inbox, .history, .review]
+    private static let lists: Set<Surface> = [.palette, .popover, .inbox, .history, .review, .loops, .wrapUp, .product]
 
     // Availability.
     private static let always: @Sendable (CommandContext) -> Availability = { _ in .enabled }
     private static let onWall: @Sendable (CommandContext) -> Availability = { $0.keyWindow == .other ? .disabled("Bring a wall in front") : .enabled }
     private static let selected: @Sendable (CommandContext) -> Availability = { $0.hasSelection ? .enabled : .disabled("Select an agent first") }
+    /// The loops sheets show while hesperd has loops.* (an older one: hidden).
+    private static let loopsShown: @Sendable (CommandContext) -> Availability = { $0.loopsSupported ? .enabled : .hidden }
     private static let awaitingApproval: @Sendable (CommandContext) -> Availability = {
         $0.hasSelection && $0.selectedState == .approval ? .enabled : .disabled("The selected agent isn't waiting for an approval")
     }
@@ -524,6 +552,11 @@ public enum CommandRegistry {
         Command(.review, "Review", menu: MenuPath(.view, 0, 2), chord: .cmd("r"), surfaces: [.everywhere], palette: true),
         // A placeholder for the routines branch (hidden until it fills it in).
         Command(.routines, "Routines", menu: MenuPath(.view, 0, 3), chord: .cmd("r", shift: true), surfaces: [.everywhere], availability: { _ in .hidden }),
+        Command(.loops, "Loops", menu: MenuPath(.view, 0, 4), chord: .cmd("l"), surfaces: [.everywhere], palette: true, availability: loopsShown),
+        Command(.product, "Product", menu: MenuPath(.view, 0, 5), chord: .cmd("l", shift: true), surfaces: [.everywhere], palette: true,
+                availability: loopsShown),
+        Command(.wrapUp, "Wrap-up", menu: MenuPath(.view, 0, 6), chord: .cmd("e", shift: true), surfaces: [.everywhere], palette: true,
+                availability: loopsShown),
         Command(.toggleSidebar, "Project Sidebar", menu: MenuPath(.view, 1, 0), chord: .cmd("0"), surfaces: [.everywhere], palette: true, availability: onWall),
         Command(.wallScope, "Wall Scope…", menu: MenuPath(.view, 1, 1), chord: .cmd("s", control: true), surfaces: [.everywhere]),
     ]
@@ -588,6 +621,11 @@ public enum CommandRegistry {
         Command(.startDraftAndNew, "Start and write the next one", chord: .plain(.enter, option: true), surfaces: composers),
         Command(.toggleWorktree, "Worktree on / off", chord: .cmd("b", option: true), surfaces: composers),
         Command(.leaveDraft, "Leave the draft", chord: .plain(.escape), surfaces: composers),
+        // The start strip's keys; the router passes them to the composer's
+        // text view (no AppCommand), which asks StartStrip.choice. The
+        // quick launch panel keeps no drafts: no Draft in loop there.
+        Command(.composerAddToLoop, "Start in the matching loop", chord: .cmd(.enter, shift: true), surfaces: composers),
+        Command(.composerDraftInLoop, "Save as a draft in the matching loop", chord: .cmd("d"), surfaces: [.composer]),
     ]
 
     private static let overlays: [Command] = [
@@ -647,6 +685,32 @@ public enum CommandRegistry {
         Command(.reviewReject, "Reject the hunk", chord: .plain("x"), surfaces: [.review]),
         Command(.reviewNote, "Note", chord: .plain("c"), surfaces: [.review]),
         Command(.reviewBulkAccept, "Accept everything eligible", chord: .plain("a", shift: true), surfaces: [.review]),
+
+        Command(.loopsOpen, "Open the loop", chord: .plain(.enter), surfaces: [.loops, .product]),
+        Command(.loopsDone, "Done", chord: .plain("d"), surfaces: [.loops, .wrapUp]),
+        Command(.loopsPark, "Park", chord: .plain("p"), surfaces: [.loops, .wrapUp]),
+        Command(.loopsDrop, "Drop", chord: .plain("x"), surfaces: [.loops, .wrapUp]),
+        Command(.loopsMerge, "Merge into another loop", chord: .plain("m"), surfaces: [.loops]),
+        Command(.loopsNextAgent, "New agent in this loop", chord: .plain("n"), surfaces: [.loops]),
+        Command(.loopsStartDraft, "Start the drafted next agent", chord: .cmd(.enter), surfaces: [.loops]),
+        Command(.loopsMap, "Map / board", chord: .plain("g"), surfaces: [.loops]),
+        Command(.loopsCheck, "Check off the step", chord: .plain(" "), surfaces: [.loops]),
+        Command(.loopsAddStep, "Add a step", chord: .plain("a"), surfaces: [.loops]),
+        Command(.loopsTrigger, "Set the step's trigger", chord: .plain("t"), surfaces: [.loops]),
+        Command(.loopsPreviousColumn, "Previous column", chord: .plain(.left), surfaces: [.loops]),
+        Command(.loopsNextColumn, "Next column", chord: .plain(.right), surfaces: [.loops]),
+        Command(.loopsSwitchScope, "All loops / this project", chord: .plain(.tab), surfaces: [.loops]),
+
+        Command(.wrapUpAccept, "Take the suggestion", chord: .plain(.enter), surfaces: [.wrapUp]),
+        Command(.wrapUpNextStep, "Next step", chord: .plain("n"), surfaces: [.wrapUp]),
+        Command(.wrapUpUndo, "Undo the decision", chord: .plain("u"), surfaces: [.wrapUp]),
+        Command(.wrapUpApply, "Save the decisions", chord: .cmd(.enter), surfaces: [.wrapUp]),
+
+        Command(.productFile, "File under a milestone", chord: .plain("y"), surfaces: [.product]),
+        Command(.productPlan, "Plan with the Steward", chord: .plain("p"), surfaces: [.product]),
+        Command(.productSavePlan, "Save the plan", chord: .cmd(.enter), surfaces: [.product]),
+        Command(.productDropProposal, "Drop the proposed milestone", chord: .plain("x"), surfaces: [.product]),
+        Command(.productNextScope, "Next product", chord: .plain(.tab), surfaces: [.product]),
     ]
 }
 

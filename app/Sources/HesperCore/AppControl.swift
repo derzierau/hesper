@@ -174,6 +174,13 @@ public struct AppOpenRequest: Equatable, Sendable {
         case review(agent: String?)
         /// The ⌘K palette, with `query` in its search field.
         case palette(query: String?)
+        /// The Loops sheet (⌘L), on `loop`'s detail when it is open.
+        case loops(loop: String?)
+        /// The evening wrap-up (⇧⌘E).
+        case wrapUp
+        /// A product's page (⇧⌘L) of a project or group (id or name; nil:
+        /// the wall's).
+        case product(scope: String?)
 
         /// The wall it shows leaves its focus view first (⌘Esc): showing
         /// a wall or a composer means the wall, not the focused agent.
@@ -181,7 +188,7 @@ public struct AppOpenRequest: Equatable, Sendable {
             switch self {
             case .wall, .composer: return true
             case .agent(_, let mode): return mode == .wall
-            case .history, .inbox, .review, .palette: return false
+            case .history, .inbox, .review, .palette, .loops, .wrapUp, .product: return false
             }
         }
     }
@@ -190,7 +197,7 @@ public struct AppOpenRequest: Equatable, Sendable {
     public init(target: Target) { self.target = target }
 
     /// `{agent?, mode?, wall?, scope?, newWall?, composer?, history?, inbox?,
-    /// review?, palette?}`.
+    /// review?, palette?, loops?, wrapup?, product?}`.
     public static func parse(_ p: JSONValue) throws -> AppOpenRequest {
         try p.checkObject()
         let agent = try p.string("agent")
@@ -209,11 +216,17 @@ public struct AppOpenRequest: Equatable, Sendable {
         let history = try p.sheet("history", text: "query")
         let review = try p.sheet("review", text: "agent")
         let palette = try p.sheet("palette", text: "query")
+        let loops = try p.sheet("loops", text: "loop")
+        let wrapUp = try p.bool("wrapup") ?? false
+        let product = try p.sheet("product", text: "scope")
         var composer: ComposerPrefill?
         if let c = p["composer"], c != .null { composer = try ComposerPrefill.parse(c) }
 
-        let picked = [agent != nil, composer != nil, history != nil, inbox, review != nil, palette != nil].filter { $0 }.count
-        guard picked <= 1 else { throw AppControlError.invalid("open one thing: agent, composer, history, inbox, review or palette") }
+        let picked = [agent != nil, composer != nil, history != nil, inbox, review != nil, palette != nil, loops != nil, wrapUp, product != nil]
+            .filter { $0 }.count
+        guard picked <= 1 else {
+            throw AppControlError.invalid("open one thing: agent, composer, history, inbox, review, palette, loops, wrapup or product")
+        }
         if let agent {
             return AppOpenRequest(target: .agent(agent, mode ?? .focus))
         }
@@ -222,6 +235,9 @@ public struct AppOpenRequest: Equatable, Sendable {
         if inbox { return AppOpenRequest(target: .inbox) }
         if let review { return AppOpenRequest(target: .review(agent: review)) }
         if let palette { return AppOpenRequest(target: .palette(query: palette)) }
+        if let loops { return AppOpenRequest(target: .loops(loop: loops)) }
+        if wrapUp { return AppOpenRequest(target: .wrapUp) }
+        if let product { return AppOpenRequest(target: .product(scope: product)) }
         if let mode, mode != .wall { throw AppControlError.invalid("mode \(mode.rawValue) needs an agent") }
         return AppOpenRequest(target: .wall(wallText.map(WallRef.init), scope: scope, newWall: try p.bool("newWall") ?? false))
     }

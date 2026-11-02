@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -73,6 +74,9 @@ type Term struct {
 	replies chan []byte
 	done    chan struct{}
 	stopped bool
+	// typed: when a read-write viewer last typed (Unix nanoseconds; 0
+	// never), LastInput.
+	typed atomic.Int64
 }
 
 // Default size of a new PTY.
@@ -240,6 +244,15 @@ func (t *Term) Foreground() (int, error) {
 }
 
 var errExited = errors.New("the program has exited")
+
+// LastInput is when a read-write viewer last typed into the program
+// (zero: never). Input from Input calls (hesperd's own) does not count.
+func (t *Term) LastInput() time.Time {
+	if n := t.typed.Load(); n != 0 {
+		return time.Unix(0, n)
+	}
+	return time.Time{}
+}
 
 // Input writes terminal input to the program.
 func (t *Term) Input(p []byte) error {

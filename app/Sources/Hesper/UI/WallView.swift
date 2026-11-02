@@ -115,8 +115,11 @@ final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
     /// more for a two-row approval, which then covers the terminal's
     /// bottom rows instead of shrinking it.
     func bandHeight(width: CGFloat) -> CGFloat {
-        max(Metrics.footer, AttentionBar.height(shown, width: width, confirming: model?.closeConfirm?.id == agent.id || model?.moveConfirm?.id == agent.id))
+        max(Metrics.footer, AttentionBar.height(shown, width: width, confirming: model?.closeConfirm?.id == agent.id || model?.moveConfirm?.id == agent.id,
+                                                tagged: loopTag != nil))
     }
+    /// The band's loop tag, from LoopHub's chips when the band refreshes.
+    private var loopTag: TileLoopTag? { model.flatMap { TileLoopTag.of(agent, chips: $0.loopHub.chips) } }
     /// On the shelf: header and one line, no terminal.
     private(set) var onShelf = false
 
@@ -236,7 +239,8 @@ final class TileView: NSView, TerminalDropTarget, TerminalMenuHost {
             moveStrip: Self.moveStrip(a, model: model, tight: AttentionBar.isTight(width: w)),
             moveProgress: Self.moveProgress(a, model: model),
             moveOffer: isSelected || hovering ? Self.moveOffer(a, model: model) : nil,
-            reviewReady: Self.reviewReady(a, model: model))
+            reviewReady: Self.reviewReady(a, model: model),
+            loopTag: loopTag)
         alphaValue = moving != nil ? Self.movingAlpha : (a.isRunning ? 1 : Self.stoppedAlpha)
     }
 
@@ -592,6 +596,8 @@ final class WallView: NSView {
     /// The next layout animates its frame changes (an agent came, went,
     /// moved to or from the shelf, the arrangement changed).
     private var animateNext = false
+    /// The loop chips the tiles' bands were last built from (LoopHub).
+    private var shownChips: [String: LoopChip] = [:]
 
     // Projects (views): bands, their headers and frames, the home wall's
     // needs-you strip.
@@ -646,6 +652,25 @@ final class WallView: NSView {
         NotificationCenter.default.addObserver(forName: DS.densityDidChange, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.densityChanged() }
         }
+        observeChanges { [weak self] in self?.loopChipsChanged() }
+    }
+
+    /// LoopHub rebuilt its chips (once per batch of loop changes): only
+    /// the bands whose loop's chip changed refresh; a band that gains or
+    /// loses its line (a done tile's tag) re-lays out.
+    private func loopChipsChanged() {
+        guard let model else { return }
+        let chips = model.loopHub.chips
+        guard chips != shownChips else { return }
+        let old = shownChips
+        shownChips = chips
+        var relayout = false
+        for t in tiles.values {
+            guard let id = t.agent.loop, old[id] != chips[id] else { continue }
+            relayout = relayout || (old[id] == nil) != (chips[id] == nil)
+            t.refreshBand()
+        }
+        if relayout { needsLayout = true }
     }
 
     /// The density changed: every card and band heading re-lays out (once,
@@ -700,7 +725,7 @@ final class WallView: NSView {
                     t.apply(a, connected: model.isConnected)
                 } else {
                     let t = TileView(agent: a, model: model)
-                    t.onShownChanged = { [weak self] old, new in self?.shownStateChanged(old, new) }
+                    t.onShownChanged = { [weak self, weak t] old, new in self?.shownStateChanged(old, new, service: t?.agent.isService ?? false) }
                     t.terminal.visible = renderingVisible
                     t.terminal.onCellMeasured = { [weak self] in self?.needsLayout = true }
                     tiles[a.id] = t
@@ -771,10 +796,12 @@ final class WallView: NSView {
 
     /// A card's shown state changed: the shelf, treemap weights and the
     /// main slot follow it.
-    private func shownStateChanged(_ old: AgentState, _ new: AgentState) {
+    private func shownStateChanged(_ old: AgentState, _ new: AgentState, service: Bool) {
         guard let model else { return }
-        let quietChanged = WallTileInput(grid: GridSize(cols: 1, rows: 1), state: old).isQuiet
-            != WallTileInput(grid: GridSize(cols: 1, rows: 1), state: new).isQuiet
+        func quiet(_ s: AgentState) -> Bool {
+            WallTileInput(grid: GridSize(cols: 1, rows: 1), state: s, shelved: service && !s.needsAttention).isQuiet
+        }
+        let quietChanged = quiet(old) != quiet(new)
         if quietChanged || model.arrangement == .treemap || model.arrangement == .mainStack {
             animateNext = true
             needsLayout = true
@@ -855,7 +882,8 @@ final class WallView: NSView {
     private func input(_ id: String) -> WallTileInput {
         if ghostTiles[id] != nil { return WallTileInput(grid: GridSize(cols: 120, rows: 40), state: .exited) } // shared history: shelf
         if let t = tiles[id] {
-            return WallTileInput(grid: t.agent.size ?? GridSize(cols: 120, rows: 40), state: t.shown.state, band: Metrics.footer)
+            return WallTileInput(grid: t.agent.size ?? GridSize(cols: 120, rows: 40), state: t.shown.state, band: Metrics.footer,
+                                 shelved: WallTileInput.shelves(t.shown))
         }
         // A draft: an active card while written, quiet (the shelf) when left.
         let d = draftTiles[id]

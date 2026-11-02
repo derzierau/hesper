@@ -181,6 +181,10 @@ struct AttentionBar: View {
     /// Review: "Ready to review · 3 files · tests ✓ · Review ⏎" on a
     /// finished agent with changes (ReviewParts).
     var reviewReady: ReviewReady? = nil
+    /// The agent's loop (its short title and who acts next) or, for a
+    /// service agent, its role: right of the one line, never on an
+    /// action strip (TileLoopTag, from LoopHub's chips).
+    var loopTag: TileLoopTag? = nil
 
     struct DenyField {
         var text: Binding<String>
@@ -240,6 +244,9 @@ struct AttentionBar: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .animation(DS.animation(.quick, reduceMotion: reduceMotion), value: contentKey)
+            if let loopTag, !agent.state.needsAttention {
+                LoopTagView(tag: loopTag, tight: tight)
+            }
             if reviewReady != nil, agent.state == .done || agent.state == .idle {
                 EmptyView() // the review line has its own button
             } else if let moveOffer, MoveRules.showsOnStrip(agent) {
@@ -418,10 +425,12 @@ struct AttentionBar: View {
 }
 
 extension AttentionBar {
-    static func hasContent(_ a: Agent) -> Bool {
+    /// `tagged`: the band shows a loop tag (TileLoopTag), which a done or
+    /// idle agent without a summary needs the line for.
+    static func hasContent(_ a: Agent, tagged: Bool = false) -> Bool {
         switch a.state {
         case .approval, .question, .error, .exited: return true
-        case .done, .idle: return !(a.summary ?? "").isEmpty
+        case .done, .idle: return tagged || !(a.summary ?? "").isEmpty
         default: return false
         }
     }
@@ -450,14 +459,37 @@ extension AttentionBar {
     static let exitedRow: CGFloat = 42
     static let summaryRow: CGFloat = 34
 
-    static func height(_ a: Agent, width: CGFloat, inFocus: Bool = false, confirming: Bool = false) -> CGFloat {
+    static func height(_ a: Agent, width: CGFloat, inFocus: Bool = false, confirming: Bool = false, tagged: Bool = false) -> CGFloat {
         if confirming { return oneRow }
         switch a.state {
         case .approval, .question, .error: return isWide(a, width: width, inFocus: inFocus) ? oneRow : twoRows
         case .exited: return exitedRow
-        case .done, .idle: return hasContent(a) ? summaryRow : 0
+        case .done, .idle: return hasContent(a, tagged: tagged) ? summaryRow : 0
         default: return 0
         }
+    }
+}
+
+/// A tile's loop tag: who acts next as a StateMark, the loop's short
+/// title, and the word ("Your move"); a tight band keeps the mark and
+/// title. A service agent's tag is its role alone. Dim, never a button.
+struct LoopTagView: View {
+    var tag: TileLoopTag
+    var tight = false
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.xs) {
+            if let m = tag.mark { StateMark(m) }
+            Text(tag.text).font(.ds(.meta)).foregroundStyle(Theme.fg2).lineLimit(1).truncationMode(.tail)
+            if let n = tag.next, !tight {
+                Text("· \(n)").font(.ds(.meta)).foregroundStyle(Theme.dim).lineLimit(1).fixedSize()
+            }
+        }
+        .fixedSize(horizontal: tight ? false : true, vertical: false)
+        .help(tag.help ?? tag.next ?? tag.text)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(tag.next.map { "Loop \(tag.text), \($0)" } ?? tag.text)
+        .accessibilityIdentifier("tile.loop")
     }
 }
 

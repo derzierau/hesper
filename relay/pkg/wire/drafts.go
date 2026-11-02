@@ -40,7 +40,10 @@ type Draft struct {
 	// id); empty: the end of its machine's tiles.
 	After string `json:"after,omitempty"`
 	// Parked: left with Esc, a quiet tile (the shelf) until edited again.
-	Parked  bool      `json:"parked,omitempty"`
+	Parked bool `json:"parked,omitempty"`
+	// SavedBy is the agent that saved the draft (hesperd sets it; empty:
+	// a person). An agent removes or replaces only the drafts it saved.
+	SavedBy string    `json:"savedBy,omitempty"`
 	Created time.Time `json:"created"`
 	Updated time.Time `json:"updated"`
 }

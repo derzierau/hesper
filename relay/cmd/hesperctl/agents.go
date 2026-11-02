@@ -41,10 +41,13 @@ func init() {
 				"(else carried whole); another folder copied without node_modules, .build, DerivedData, target, dist, .venv, __pycache__ " +
 				"(at most 5 GB, settings.json maxTransferMB). It lands at the same place under MACHINE's home (a repository with a remote outside ~/projects and ~/scratch: " +
 				"in its projects folder). Refused, nothing written: exists (MACHINE has that folder already: start there without --bring), " +
-				"too-large, tool-missing, offline. Progress: agents.bringing events (see events).",
+				"too-large, tool-missing, offline. Progress: agents.bringing events (see events). " +
+				"The agent joins --loop (" + loopRefHelp + "), else a new loop filed under --milestone, else its parent's loop, else a new one. " +
+				"--report-to-parent (inside an agent) tells the parent one line each time this agent's turn ends. A hesperd without loops refuses these flags (exit 2).",
 			Output: "Agent",
 			Examples: []string{"hesperctl new --project ~/src/app fix the flaky login test", "hesperctl new --kind codex --branch fix-login fix the login", "echo 'review the diff' | hesperctl new --json -", "hesperctl new --scratch try the csv parser on the export",
-				"hesperctl new --machine mini --bring --project ~/projects/app fix the flaky login test"}},
+				"hesperctl new --machine mini --bring --project ~/projects/app fix the flaky login test",
+				"hesperctl new --report-to-parent --loop self write the failing test first"}},
 		{Name: "send", Summary: "Type text into an agent and press Enter", Usage: "send ID TEXT… [--no-submit]",
 			Help:     idHelp + " TEXT - reads stdin. The text is pasted, then submitted unless --no-submit.",
 			Examples: []string{"hesperctl send a7f3k2 now run the tests", "git diff | hesperctl send mini/a7f3k2 -"}},
@@ -259,8 +262,13 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 	var to *string
 	var fork, interrupt, leave, scratch *bool
 	bring, clean := new(bool), new(bool)
+	var loop, milestone *string
+	var reportToParent *bool
 	if command == "new" {
 		scratch = f.Bool("scratch", false, "Start in a new scratch project named from the task (not --project)")
+		loop = f.String("loop", "", "Join this loop (default: the parent's loop, else a new one)")
+		milestone = f.String("milestone", "", "Start a new loop filed under this milestone")
+		reportToParent = f.Bool("report-to-parent", false, "Inside an agent: tell it (one line) each time this agent's turn ends")
 		bring = f.Bool("bring", false, "Bring --project from this Mac to --machine first (with its uncommitted work)")
 		clean = f.Bool("clean", false, "With --bring: the last commit only, without the uncommitted work")
 	}
@@ -349,7 +357,10 @@ func agentCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 			}
 		}
 		p := wire.SpawnParams{Machine: *machine, Profile: *profile, Kind: *kind, Project: *project, Task: task, Name: *name, Branch: *branch,
-			LetParentAnswer: *tree.letParentAnswer, Track: *tree.track, Scratch: *scratch}
+			LetParentAnswer: *tree.letParentAnswer, Track: *tree.track, Scratch: *scratch, ReportToParent: *reportToParent}
+		if err := spawnLoop(ctx, c, *loop, *milestone, &p); err != nil {
+			return err
+		}
 		if *bring {
 			// bring the folder: from this Mac (the daemon's own).
 			p.Bring = &wire.Bring{Path: *project, Changes: wire.BringWith}

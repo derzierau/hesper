@@ -26,6 +26,8 @@ type link struct {
 	forwards map[uint32]*fwdConn // port forwards' connections (forward.go)
 	next     uint32
 	moved    bool // its bridges went to a newer link
+
+	loopsKick chan struct{} // its loops worker's (loops.go; under f.mu)
 }
 
 // linkSetup bounds opening a link.
@@ -187,6 +189,10 @@ func (l *link) read() {
 				l.f.sessionsEvent(l, e.Sessions)
 				continue
 			}
+			if len(e.Loops) > 0 { // loops.go
+				l.f.loopsEvent(l, e.Loops)
+				continue
+			}
 			l.f.event(l, e)
 		case agentlink.KindData:
 			if c := l.forward(ch); c != nil {
@@ -264,9 +270,21 @@ func (f *Fleet) event(l *link, e agentlink.Event) {
 	switch {
 	case e.Full:
 		m.hostShort = e.Machine
+		if e.Node != "" && e.Node != m.node {
+			if m.backfill {
+				f.renameStandInLocked(m, e.Node) // loops.go
+			}
+			m.node = e.Node
+		}
+		listed := map[string]bool{}
+		for _, a := range e.List {
+			listed[localID(a.ID)] = true
+		}
+		isHost := func(local string) bool { return listed[local] }
 		fresh := map[string]wire.Agent{}
 		for _, a := range e.List {
-			a = m.named(a)
+			a = m.namedIn(a, isHost)
+			a.Loop = f.loopOfLocked(m, localID(a.ID)) // loops.go
 			fresh[localID(a.ID)] = a
 		}
 		for local, a := range m.agents {
@@ -278,10 +296,13 @@ func (f *Fleet) event(l *link, e agentlink.Event) {
 		for _, a := range e.List {
 			f.emitChangedLocked(fresh[localID(a.ID)])
 		}
+		f.armBackfillLocked(m) // loops.go
 	case e.Changed != nil:
 		a := m.named(*e.Changed)
+		a.Loop = f.loopOfLocked(m, localID(a.ID)) // loops.go
 		m.agents[localID(a.ID)] = a
 		f.emitChangedLocked(a)
+		f.backfillLoopsLocked(m) // loops.go
 	case e.Removed != "":
 		local := localID(e.Removed)
 		if a, ok := m.agents[local]; ok {

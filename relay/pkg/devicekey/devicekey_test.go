@@ -279,6 +279,16 @@ func TestMethodRights(t *testing.T) {
 			t.Errorf("projects.sync %s needs %s", p, r)
 		}
 	}
+	// Loops: pulling observes, sending records transfers.
+	for p, want := range map[string]string{`{}`: Observe, `{"records":[]}`: Observe, `{"records":null}`: Observe,
+		`{"records":[{"loop":{"id":"lp-0123456789ab"}}]}`: Transfer, `garbage`: Transfer} {
+		if r, _, ok := MethodRight("loops.sync", []byte(p)); !ok || r != want {
+			t.Errorf("loops.sync %s needs %s", p, r)
+		}
+	}
+	if r, _, ok := MethodRight("loops.pull", []byte(`{"since":3}`)); !ok || r != Observe {
+		t.Errorf("loops.pull needs %s", r)
+	}
 	if r, _, _ := MethodRight("projects.promote", []byte(`{}`)); r != Transfer {
 		t.Errorf("projects.promote needs %s", r)
 	}

@@ -11,6 +11,10 @@ import Testing
         #expect(DesignTokens.Weight.allCases.map(\.rawValue) == [400, 500, 600])
         #expect(DesignTokens.Chrome.maxHeight == 28)
         #expect(DesignTokens.Chrome.focusRing == 1)
+        #expect(DesignTokens.Chrome.hairline == 1)
+        // A tone's opacities over a surface, lightest first.
+        let a = [DesignTokens.Alpha.banner, DesignTokens.Alpha.tint, DesignTokens.Alpha.quiet, DesignTokens.Alpha.edge]
+        #expect(a == [0.1, 0.14, 0.6, 0.7] && a == a.sorted())
     }
 
     @Test func density() {

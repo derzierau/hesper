@@ -61,7 +61,8 @@ func TestNormalizeRemote(t *testing.T) {
 
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	// Unsigned: a global commit.gpgsign would sign (and fail) here.
+	cmd := exec.Command("git", append([]string{"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", "-C", dir}, args...)...)
 	cmd.Env = append(gitEnv(os.Environ()), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@x", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@x")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
@@ -256,6 +257,58 @@ func TestAgentInPackageJoinsThePackage(t *testing.T) {
 	gitRun(t, repo, "worktree", "add", "-q", "-b", "x", wt)
 	if got := s.Resolve(filepath.Join(wt, "packages", "ui")); got != pkgID {
 		t.Fatalf("worktree package %s, want %s", got, pkgID)
+	}
+}
+
+// A repository listed before it had a remote (a generated identity) and
+// again after (its remote's): the first names the second as its
+// duplicate; nothing else does.
+func TestDuplicateOfLocalIdentity(t *testing.T) {
+	root, state := tempDir(t), t.TempDir()
+	repo := newRepo(t, filepath.Join(root, "app"), "", map[string]string{"a": "b"})
+	other := newRepo(t, filepath.Join(root, "other"), "", map[string]string{"a": "b"})
+	s := openStore(t, state, "L")
+	localID, otherID := s.Resolve(repo), s.Resolve(other)
+	s.Close()
+	gitRun(t, repo, "remote", "add", "origin", "git@github.com:acme/app.git")
+	s = openStore(t, state, "L")
+	s.Resolve(repo)
+	remoteID := ProjectID(wire.ProjectIdentity{Remote: "github.com/acme/app"})
+	if _, err := s.Get(remoteID); err != nil || !strings.HasPrefix(localID, "p-") {
+		t.Fatalf("ids %s %s: %v (the test proves nothing)", localID, remoteID, err)
+	}
+	want := map[string]string{localID: remoteID, remoteID: "", otherID: ""}
+	for _, p := range s.List() {
+		if dup, ok := want[p.ID]; ok && p.DuplicateOf != dup {
+			t.Errorf("%s (%+v): duplicateOf %q, want %q", p.ID, p.Identity, p.DuplicateOf, dup)
+		}
+		delete(want, p.ID)
+	}
+	if len(want) > 0 {
+		t.Fatalf("not listed: %v", want)
+	}
+	if p, _ := s.Get(localID); p.DuplicateOf != remoteID {
+		t.Fatalf("get %+v", p)
+	}
+}
+
+// Two projects with the same folder: the folder resolves to the one with
+// the remote identity, every time, never to its duplicate.
+func TestResolvePrefersRemoteIdentity(t *testing.T) {
+	root, state := tempDir(t), t.TempDir()
+	repo := newRepo(t, filepath.Join(root, "app"), "", map[string]string{"a": "b"})
+	s := openStore(t, state, "L")
+	s.Resolve(repo)
+	s.Close()
+	gitRun(t, repo, "remote", "add", "origin", "git@github.com:acme/app.git")
+	s = openStore(t, state, "L")
+	want := ProjectID(wire.ProjectIdentity{Remote: "github.com/acme/app"})
+	for i := 0; i < 50; i++ {
+		for _, dir := range []string{repo, filepath.Join(repo, "src")} {
+			if got := s.Resolve(dir); got != want {
+				t.Fatalf("try %d: %s → %s, want %s", i, dir, got, want)
+			}
+		}
 	}
 }
 

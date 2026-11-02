@@ -1,101 +1,22 @@
 package projects
 
 import (
-	"bytes"
-	"encoding/json"
 	"time"
 
+	"github.com/derzierau/hesper/relay/internal/crdt"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
 // Shared data between Macs: every field of a project or group is a
-// last-writer-wins register stamped with a hybrid logical clock (wall
-// milliseconds, a counter, the writing node). Merging takes the newer
-// stamp per field; equal stamps (two machines writing the same default)
-// fall back to comparing the values, so every machine converges to the
-// same state whatever order changes arrive in. Removal is a field too
+// last-writer-wins register (internal/crdt). Removal is a field too
 // (Deleted, a tombstone), so a removed project stays removed when an
 // older copy arrives, and a later promote revives it.
 
-// Stamp is a hybrid logical clock reading.
-type Stamp struct {
-	T int64  `json:"t,omitempty"` // Unix milliseconds
-	C int    `json:"c,omitempty"`
-	N string `json:"n,omitempty"` // node
-}
-
-// Less orders stamps: time, counter, node.
-func (s Stamp) Less(o Stamp) bool {
-	if s.T != o.T {
-		return s.T < o.T
-	}
-	if s.C != o.C {
-		return s.C < o.C
-	}
-	return s.N < o.N
-}
-
-// hlc is a hybrid logical clock.
-type hlc struct {
-	node string
-	now  func() time.Time
-	last Stamp
-}
-
-func (h *hlc) tick() Stamp {
-	t := h.now().UnixMilli()
-	if t > h.last.T {
-		h.last = Stamp{T: t}
-	} else {
-		h.last.C++
-	}
-	return Stamp{T: h.last.T, C: h.last.C, N: h.node}
-}
-
-// observe moves the clock past a stamp seen from another node (a stamp
-// more than a day ahead of this clock is not followed).
-func (h *hlc) observe(s Stamp) {
-	if s.T > h.now().Add(24*time.Hour).UnixMilli() {
-		return
-	}
-	if s.T > h.last.T || s.T == h.last.T && s.C > h.last.C {
-		h.last.T, h.last.C = s.T, s.C
-	}
-}
-
-// Field is a last-writer-wins register.
-type Field[T any] struct {
-	V T     `json:"v"`
-	S Stamp `json:"s"`
-}
-
-// merge takes o when it is newer (or equal-stamped with a larger value).
-func (f *Field[T]) merge(o Field[T]) bool {
-	if f.S.Less(o.S) {
-		*f = o
-		return true
-	}
-	if f.S == o.S {
-		a, _ := json.Marshal(f.V)
-		b, _ := json.Marshal(o.V)
-		if bytes.Compare(a, b) < 0 {
-			*f = o
-			return true
-		}
-	}
-	return false
-}
-
-// set writes a value with a stamp when it differs (changed: it did).
-func (f *Field[T]) set(v T, s Stamp) bool {
-	a, _ := json.Marshal(f.V)
-	b, _ := json.Marshal(v)
-	if bytes.Equal(a, b) {
-		return false
-	}
-	f.V, f.S = v, s
-	return true
-}
+// Stamp and Field are internal/crdt's.
+type (
+	Stamp        = crdt.Stamp
+	Field[T any] = crdt.Field[T]
+)
 
 // Record is a project as stored and replicated. Identity (and so ID) never
 // changes; Paths are per node (a machine's daemon), each its own register.
@@ -136,11 +57,11 @@ func (r *Record) merge(o *Record) (changed, paths bool) {
 	if r.ParentID == "" && o.ParentID != "" {
 		r.ParentID, changed = o.ParentID, true
 	}
-	changed = r.Name.merge(o.Name) || changed
-	changed = r.Color.merge(o.Color) || changed
-	changed = r.Kind.merge(o.Kind) || changed
-	changed = r.Defaults.merge(o.Defaults) || changed
-	if r.Deleted.merge(o.Deleted) {
+	changed = r.Name.Merge(o.Name) || changed
+	changed = r.Color.Merge(o.Color) || changed
+	changed = r.Kind.Merge(o.Kind) || changed
+	changed = r.Defaults.Merge(o.Defaults) || changed
+	if r.Deleted.Merge(o.Deleted) {
 		changed, paths = true, true
 	}
 	if r.Paths == nil {
@@ -153,7 +74,7 @@ func (r *Record) merge(o *Record) (changed, paths bool) {
 			changed, paths = true, true
 			continue
 		}
-		if cur.merge(f) {
+		if cur.Merge(f) {
 			r.Paths[node] = cur
 			changed, paths = true, true
 		}
@@ -200,11 +121,11 @@ type GroupRecord struct {
 }
 
 func (g *GroupRecord) merge(o *GroupRecord) bool {
-	changed := g.Name.merge(o.Name)
-	changed = g.ProjectIDs.merge(o.ProjectIDs) || changed
-	changed = g.Order.merge(o.Order) || changed
-	changed = g.Color.merge(o.Color) || changed
-	changed = g.Deleted.merge(o.Deleted) || changed
+	changed := g.Name.Merge(o.Name)
+	changed = g.ProjectIDs.Merge(o.ProjectIDs) || changed
+	changed = g.Order.Merge(o.Order) || changed
+	changed = g.Color.Merge(o.Color) || changed
+	changed = g.Deleted.Merge(o.Deleted) || changed
 	return changed
 }
 

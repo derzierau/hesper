@@ -95,6 +95,9 @@ public enum AppCommand: Equatable, Sendable {
     /// ⌘R: the review sheet (finished work on every Mac); ⏎ on a finished
     /// tile that is ready to review opens it there.
     case review
+    /// ⌘L the loops board, ⇧⌘L the product page of the wall's scope, ⇧⌘E
+    /// the evening wrap-up.
+    case loops, product, wrapUp
     /// Belongs to the terminal (focus mode).
     case passThrough
     case none
@@ -137,6 +140,9 @@ public enum KeyRouter {
         case .toggleSidebar: return .toggleSidebar
         case .history: return .history
         case .review: return .review
+        case .loops: return .loops
+        case .product: return .product
+        case .wrapUp: return .wrapUp
         case .select(let m): return .select(m)
         case .activate(let m): return .activate(m)
         case .activateTile: return .activateTile

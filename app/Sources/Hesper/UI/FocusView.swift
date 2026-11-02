@@ -179,7 +179,8 @@ final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
                                     killed: model.isKilled(a), onClose: { [weak model] in model?.requestClose(a) },
                                     moveStrip: TileView.moveStrip(a, model: model, tight: AttentionBar.isTight(width: cardWidth)),
                                     moveProgress: TileView.moveProgress(a, model: model),
-                                    moveOffer: TileView.moveOffer(a, model: model))
+                                    moveOffer: TileView.moveOffer(a, model: model),
+                                    loopTag: TileLoopTag.of(a, chips: model.loopHub.chips))
         let asks = model.closeConfirm?.id == a.id || model.moveConfirm?.id == a.id
         if barChanged || confirming != asks { needsLayout = true }
         confirming = asks

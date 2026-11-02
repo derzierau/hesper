@@ -49,7 +49,7 @@ public enum ShortcutsSheet {
 
     /// The display order of the surfaces.
     public static let order: [Surface] = [.everywhere, .wall, .focus, .activeTile, .composer, .quickLaunch, .palette, .popover, .inbox,
-                                          .history, .review, .agentWindow, .settings]
+                                          .history, .review, .loops, .wrapUp, .product, .agentWindow, .settings]
 
     /// The accessibility identifier of a row ("shortcuts.row.closeAgent").
     public static func rowIdentifier(_ id: CommandID) -> String { "shortcuts.row.\(id.key)" }

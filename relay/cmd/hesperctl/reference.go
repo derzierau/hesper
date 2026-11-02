@@ -106,6 +106,33 @@ each a Git repository: ` + "`new --scratch TASK`" + ` starts an agent in a new o
 they are archived after 14 days without agents and deleted 30 days later,
 unless kept (see the scratch commands); promote one to keep it as a project.
 
+**Loops**: a loop is the lasting record of one piece of work: the agents
+and sessions that worked on it (who started or continued whom), the files,
+URLs and other loops it links, and its items: steps, loose ends, promises,
+questions and offers, each owned by you (the person), an agent or others.
+An agent joins its parent's loop, the one ` + "`new --loop`" + ` names, or a new one;
+` + "`loop`" + ` in the Agent object is its loop's id. ` + "`next`" + ` says who acts next: you
+(an item of yours is open, a member waits for you, or the loop looks done),
+agents (a member works), others (an item of others, a loop it waits for),
+parked or closed. Closing or tidying agents never closes a loop: only a
+person does (` + "`loops close --done|--drop`" + `). Inside an agent, ` + "`self`" + ` names your
+own loop: put follow-ups there as items (` + "`loops item add self …`" + `) and
+start children with ` + "`new --report-to-parent`" + ` to hear when their turn ends.
+
+**Goals and milestones** belong to a product: a project or a group. A goal
+is an outcome; a milestone a release or result with "done when"
+conditions (` + "`goals check`" + ` ticks them off), a due date and the loops filed
+under it (` + "`goals file`" + `, or ` + "`new --milestone`" + `). A planning session
+(` + "`goals plan`" + `) proposes milestones; a person accepts them (` + "`goals accept`" + `).
+
+**Steward**: a background agent on one of the owner's Macs that keeps the
+loops up to date: off until a person turns it on (` + "`steward on`" + `), at a level
+of watch (keeps the records), suggest (also drafts next steps, the
+default) or act (also starts ready drafts, merges and splits loops). It
+never closes loops, accepts plans or answers agents. Loops, goals and the
+Steward's settings are shared between the owner's Macs end to end
+encrypted; the relay sees none of them.
+
 **Machines**: the owner's Macs, connected through the relay. A machine has
 an id, a short name (used in agent ids and --machine) and a full name.
 hesperctl machines lists them; agents on other machines are reached
@@ -177,7 +204,7 @@ func init() {
 		Name: "reference", ReadOnly: true, Group: groupHelp,
 		Summary: "Print the whole CLI as Markdown, for LLM agents",
 		Usage:   "reference [--json]",
-		Help:    "Concepts (agents, ids, states, attention, projects, machines), the exit codes and every command with its flags, output and examples. Generated from the commands themselves.",
+		Help:    "Concepts (agents, ids, states, attention, projects, loops, goals and milestones, the Steward, machines), the exit codes and every command with its flags, output and examples. Generated from the commands themselves.",
 		Output:  "{concepts, agent, exitCodes:[{code, name, meaning}], commands:[the help --json of each]}",
 		Examples: []string{
 			"hesperctl reference > hesperctl.md",

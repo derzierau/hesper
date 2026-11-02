@@ -22,11 +22,14 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
+	"github.com/derzierau/hesper/relay/internal/endings"
 	"github.com/derzierau/hesper/relay/internal/handoff"
 	"github.com/derzierau/hesper/relay/internal/host"
+	"github.com/derzierau/hesper/relay/internal/loops"
 	"github.com/derzierau/hesper/relay/internal/projects"
 	"github.com/derzierau/hesper/relay/internal/remote"
 	"github.com/derzierau/hesper/relay/internal/sessions"
+	"github.com/derzierau/hesper/relay/internal/steward"
 	"github.com/derzierau/hesper/relay/pkg/client"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
@@ -93,6 +96,10 @@ type Daemon struct {
 	Registry *agents.Registry
 	// Projects is the project registry (projects step 1).
 	Projects *projects.Store
+	// Loops is the loops store (internal/loops); Steward runs the Steward
+	// when the store's configuration names this Mac (internal/steward).
+	Loops   *loops.Store
+	Steward *steward.Steward
 	// History is the shared history (internal/sessions); nil with
 	// NoHistory.
 	History *sessions.Service
@@ -151,6 +158,13 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	d.Projects = projects.Open(projects.Options{StateDir: opt.StateDir, Machine: opt.Machine, Home: opt.Home, Logf: opt.Logf,
 		ScratchRoot: scratch, ProjectsRoot: opt.ProjectsRoot, ConfigDir: opt.ConfigDir})
 	opt.Projects = d.Projects
+	// loops: before the agents (restored agents keep their loops); its
+	// node is the projects store's.
+	d.Loops = loops.Open(loops.Options{StateDir: opt.StateDir, Node: d.Projects.Node(), Machine: opt.Machine, Logf: opt.Logf})
+	d.Loops.SetClassify(endings.Classify) // loose ends from final messages
+	opt.Loops = d.Loops
+	d.Steward = d.newSteward(opt.StateDir, opt.Logf) // steward.go
+	opt.Steward, opt.ServiceArgv = d.Steward, steward.Argv
 	// shared history: before the agents (the socket serves sessions.*).
 	if !cfg.NoHistory {
 		h := cfg.History
@@ -174,7 +188,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 		}
 		d.Fleet = remote.New(remote.Options{Credentials: cfg.ControllerCredentials, HostDeviceID: hostID, ConfigDir: opt.ConfigDir,
 			StateDir: cfg.KeysDir, Signer: cfg.Signer, Direct: cfg.ControllerDirect, ControlSocket: cfg.ControlSocket, Grace: cfg.Grace, Logf: logf,
-			Projects: d.Projects})
+			Projects: d.Projects, Loops: d.Loops})
 		opt.Remote = d.Fleet
 	} else {
 		logf("controller role off: no %s (hesperctl login --role controller)", cfg.ControllerCredentials)
@@ -184,6 +198,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 		var err error
 		if ln, err = agents.Listen(opt.Socket); err != nil {
 			d.closeHistory()
+			d.closeLoops()
 			d.Projects.Close()
 			cancel()
 			return nil, err
@@ -193,6 +208,7 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	if err != nil {
 		ln.Close()
 		d.closeHistory()
+		d.closeLoops()
 		d.Projects.Close()
 		cancel()
 		return nil, err
@@ -200,6 +216,8 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	d.Registry = reg
 	d.wireProjects()
 	d.wireHistory() // shared history
+	d.wireLoops(ctx)
+	d.wireSteward(ctx) // steward.go
 	d.Server = agents.NewServer(reg)
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.Server.Serve(ln) }()
@@ -324,7 +342,7 @@ func (d *Daemon) startHost(ctx context.Context, cfg Config, logf func(string, ..
 		return errors.New("direct must be on, off or auto")
 	}
 	d.Service = &host.Service{Agents: reg, Handoff: d.Handoff, Machine: &host.MachineMonitor{},
-		AllowShell: cfg.AllowShell, AllowForward: cfg.AllowForward, E2EKey: channel.PublicKey(), Direct: direct, Audit: auth.Audit, Projects: d.Projects}
+		AllowShell: cfg.AllowShell, AllowForward: cfg.AllowForward, E2EKey: channel.PublicKey(), Direct: direct, Audit: auth.Audit, Projects: d.Projects, Loops: d.Loops}
 	if d.History != nil { // shared history
 		d.Service.Sessions = d.History
 		d.History.SetHostKey(key)
@@ -375,11 +393,15 @@ func (d *Daemon) Close() {
 		if d.Server != nil {
 			d.Server.Close()
 		}
+		if d.Steward != nil {
+			d.Steward.Close() // before the registry: it calls it
+		}
 		if d.Registry != nil {
 			d.Registry.Close()
 		}
 		d.wg.Wait()
 		d.closeHistory()
+		d.closeLoops()
 		if d.Projects != nil {
 			d.Projects.Close()
 		}

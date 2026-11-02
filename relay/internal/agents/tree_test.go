@@ -250,6 +250,37 @@ func TestAgentTreePersistsAndResult(t *testing.T) {
 	}
 }
 
+// A Mac renamed between daemon starts renames its agents' parents on it;
+// a parent on another Mac keeps its name.
+func TestAgentTreeParentAfterMachineRename(t *testing.T) {
+	h := newHarness(t)
+	parent := h.spawn(wire.SpawnParams{Task: "small job"})
+	child, err := h.spawnAs(parent.ID, wire.SpawnParams{Task: "small job"})
+	allowed(t, "spawn", err)
+	other := h.spawn(wire.SpawnParams{Task: "small job"})
+	h.close()
+	path := filepath.Join(h.state, "agents.json")
+	var f stateFile
+	data, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(data, &f) != nil {
+		t.Fatalf("agents.json: %v", err)
+	}
+	for i := range f.Agents {
+		if f.Agents[i].ID == other.ID {
+			f.Agents[i].Parent = "M/abc123" // started by another Mac's agent
+		}
+	}
+	writeJSON(t, path, f)
+	h.opt.Machine = "K"
+	h.open()
+	for id, want := range map[string]string{child.ID: "K/" + strings.TrimPrefix(parent.ID, "L/"), other.ID: "M/abc123"} {
+		got, err := h.reg.Get("K/" + strings.TrimPrefix(id, "L/"))
+		if err != nil || got.Parent != want {
+			t.Errorf("%s after the rename: parent %q (%v), want %q", id, got.Parent, err, want)
+		}
+	}
+}
+
 // The caller hesperd finds by the peer's process wins over what it claims.
 func TestAgentTreeVerifiedCaller(t *testing.T) {
 	if _, err := parentPID(os.Getpid()); err != nil {

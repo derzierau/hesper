@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.buildMenu()
         }
 
-        automated = env.values["perf-out"] != nil || env.values["selftest-out"] != nil || env.values["layout-out"] != nil || env.values["windows-test-out"] != nil || env.values["walls-perf-out"] != nil || env.values["projects-test-out"] != nil || env.values["desks-test-out"] != nil || env.values["history-test-out"] != nil || env.values["history-perf-out"] != nil
+        automated = env.values["perf-out"] != nil || env.values["selftest-out"] != nil || env.values["layout-out"] != nil || env.values["windows-test-out"] != nil || env.values["walls-perf-out"] != nil || env.values["projects-test-out"] != nil || env.values["desks-test-out"] != nil || env.values["history-test-out"] != nil || env.values["history-perf-out"] != nil || env.values["loops-test-out"] != nil
         let ql = QuickLaunchController(model: model)
         quickLaunch = ql
         model.onQuickLaunch = { [weak self] in self?.quickLaunch?.toggle() }
@@ -93,7 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showWindow()
         windows.restorer.restoreWalls()
 
-        if let out = env.values["history-test-out"] { // shared history
+        if let out = env.values["loops-test-out"] { // loops sheets
+            harness = LoopsSelfTest(manager: windows, out: out, env: env)
+        } else if let out = env.values["history-test-out"] { // shared history
             harness = HistorySelfTest(manager: windows, out: out, env: env)
         } else if let out = env.values["history-perf-out"] {
             harness = HistoryPerf(manager: windows, out: out, env: env)

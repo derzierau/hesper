@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/agents"
+	"github.com/derzierau/hesper/relay/internal/loops"
 	"github.com/derzierau/hesper/relay/internal/projects"
 	"github.com/derzierau/hesper/relay/internal/sessions"
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -24,7 +25,8 @@ const (
 )
 
 // fullEnv is hesperd as gateway wires it, minus other machines: the
-// registry with the project store and the shared history. Its claude and
+// registry with the project store, the loops store and the shared
+// history; a Steward only when steward is given. Its claude and
 // codex profiles are cat; the history holds internal/sessions' two
 // synthetic transcripts, in project.
 type fullEnv struct {
@@ -35,7 +37,7 @@ type fullEnv struct {
 	root    string // the projects root (clone)
 }
 
-func fullDaemon(t *testing.T) *fullEnv {
+func fullDaemon(t *testing.T, steward ...agents.Steward) *fullEnv {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "gctl")
 	if err != nil {
@@ -72,19 +74,34 @@ func fullDaemon(t *testing.T) *fullEnv {
 	store := projects.Open(projects.Options{StateDir: state, Machine: "L", Home: home, Logf: t.Logf,
 		ScratchRoot: filepath.Join(home, "scratch"), ProjectsRoot: e.root, ConfigDir: config, GH: filepath.Join(dir, "no-gh"),
 		GitEnv: append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")})
+	loopStore := loops.Open(loops.Options{StateDir: state, Node: store.Node(), Machine: "L", Logf: t.Logf})
 	hist, err := sessions.Open(sessions.Options{StateDir: state, ConfigDir: config, ClaudeHome: claude, CodexHome: codex, UserHome: home, Machine: "L",
 		Foreground: true, ScanEvery: 30 * time.Millisecond, FullScanEvery: 100 * time.Millisecond, Logf: t.Logf, Projects: store})
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.sock = filepath.Join(state, "hesperd.sock")
-	reg, err := agents.Open(agents.Options{StateDir: state, ConfigDir: config, Socket: e.sock, Machine: "L",
+	var st agents.Steward
+	if len(steward) > 0 {
+		st = steward[0]
+	}
+	reg, err := agents.Open(agents.Options{StateDir: state, ConfigDir: config, Socket: e.sock, Machine: "L", Steward: st,
 		Env: os.Environ(), LoginShell: "/bin/sh", ClaudeConfig: filepath.Join(dir, "claude.json"), ClaudeHome: claude, CodexHome: codex, Home: home,
-		WorktreeRoot: filepath.Join(dir, "wt"), ProjectsRoot: e.root, StopGrace: time.Second, Logf: t.Logf, Projects: store, Sessions: hist})
+		WorktreeRoot: filepath.Join(dir, "wt"), ProjectsRoot: e.root, StopGrace: time.Second, Logf: t.Logf, Projects: store, Sessions: hist, Loops: loopStore})
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.SetMachine(reg.Machine())
+	loopStore.SetMachine(reg.Machine())
+	loopStore.SetNames(store.NodeOf, store.MachineOf)
+	loopStore.SetSessionsNode(hist.Node)
+	loopStore.SetAgents(reg.List)
+	sub, done := reg.Subscribe(), make(chan struct{})
+	go func() {
+		for sub.Wait(done) != nil {
+			loopStore.AgentsChanged()
+		}
+	}()
 	store.SetReproject(reg.Reproject)
 	store.SetAgents(reg.List)
 	hist.SetRegistry(reg)
@@ -94,7 +111,15 @@ func fullDaemon(t *testing.T) *fullEnv {
 	}
 	srv := agents.NewServer(reg)
 	go srv.Serve(ln)
-	t.Cleanup(func() { srv.Close(); reg.Close(); hist.Close(); store.Close() })
+	t.Cleanup(func() {
+		close(done)
+		reg.Unsubscribe(sub)
+		srv.Close()
+		reg.Close()
+		loopStore.Close()
+		hist.Close()
+		store.Close()
+	})
 	e.reg = reg
 	return e
 }

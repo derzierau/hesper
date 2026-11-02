@@ -158,6 +158,16 @@ enum DS {
     static let bandGap = CGFloat(DesignTokens.Chrome.bandGap)
     /// The focus ring of a strip that has the keyboard.
     static let focusRing = CGFloat(DesignTokens.Chrome.focusRing)
+    /// A 1 pt border or divider.
+    static let hairline = CGFloat(DesignTokens.Chrome.hairline)
+
+    /// A tone's opacity over a surface: banner 0.1 · tint 0.14 · quiet 0.6 · edge 0.7.
+    enum Alpha {
+        static let banner = CGFloat(DesignTokens.Alpha.banner)
+        static let tint = CGFloat(DesignTokens.Alpha.tint)
+        static let quiet = CGFloat(DesignTokens.Alpha.quiet)
+        static let edge = CGFloat(DesignTokens.Alpha.edge)
+    }
 
     /// The wall's density (Settings; AppSettings keeps it in sync).
     @MainActor static var density: Density = .default {

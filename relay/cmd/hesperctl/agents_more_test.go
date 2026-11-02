@@ -454,3 +454,21 @@ func TestAttachFile(t *testing.T) {
 		t.Fatalf("quote %q", got)
 	}
 }
+
+// TestTidySkipsServiceAgents: the Steward (a service agent) is never
+// tidied away, done or not.
+func TestTidySkipsServiceAgents(t *testing.T) {
+	w := newMoreWorld(t)
+	s, err := w.reg.SpawnService(wire.SpawnParams{Project: w.project, Task: "watch"}, wire.ServiceSteward)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "running", func() bool { g, _ := w.reg.Get(s.ID); return g.PID != 0 })
+	w.hook(s.ID, "Stop")
+	if st := w.state(s.ID); st != wire.StateDone {
+		t.Fatalf("state %s", st)
+	}
+	if out := w.out("tidy", "--dry-run"); strings.Contains(out, s.ID) {
+		t.Fatalf("tidy would close the Steward:\n%s", out)
+	}
+}

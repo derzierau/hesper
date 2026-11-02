@@ -5,8 +5,9 @@ import SwiftUI
 /// ⌘,: one sidebar window. General (the wall, quick launch,
 /// notifications), Machines & pairing, Agents & profiles, Appearance
 /// (Dusk / Daylight / System, density), Shortcuts (rebinding) and Advanced
-/// (desks, the first run, hesperd). The sidebar is Rows, choices are
-/// segmented Pills; ⌘1…⌘6 switch panes.
+/// (desks, the first run, hesperd), Steward (the loops' background
+/// agent). The sidebar is Rows, choices are segmented Pills; ⌘1…⌘7
+/// switch panes.
 struct SettingsView: View {
     @Bindable var model: AppModel
     var onHotKeyChanged: () -> Void = {}
@@ -24,9 +25,12 @@ struct SettingsView: View {
     /// The wall whose layout the Wall section edits.
     private var wall: AppModel { front?.model ?? model }
     @State private var deskRefresh = 0
+    /// Steward: the last steward.set's error, and one in flight.
+    @State private var stewardError: String?
+    @State private var stewardBusy = false
 
     enum Pane: String, CaseIterable, Identifiable {
-        case general, machines, agents, appearance, shortcuts, advanced
+        case general, machines, agents, appearance, shortcuts, advanced, steward
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -36,6 +40,7 @@ struct SettingsView: View {
             case .appearance: return "Appearance"
             case .shortcuts: return "Shortcuts"
             case .advanced: return "Advanced"
+            case .steward: return "Steward"
             }
         }
     }
@@ -103,6 +108,7 @@ struct SettingsView: View {
         case .appearance: appearance
         case .shortcuts: shortcuts
         case .advanced: advanced
+        case .steward: steward
         }
     }
 
@@ -350,6 +356,95 @@ struct SettingsView: View {
 
     static func resetHelp(_ id: CommandID) -> String {
         CommandRegistry.defaults.command(id)?.chord.map { "Reset to \($0.label)" } ?? "Reset (no shortcut)"
+    }
+
+    // MARK: Steward
+
+    /// What each level lets the Steward do, from the least (the trust
+    /// ladder: watch, suggest, act).
+    static let stewardLadder: [StewardLevel: String] = [
+        .watch: "Reads what agents did and keeps each loop's next step, loose ends and links current. It changes nothing else.",
+        .suggest: "Also drafts the next agent for a loop (you start it with ⌘↩) and proposes milestones. The default.",
+        .act: "Also starts drafts that are ready and merges or splits loops. Each change is audited.",
+    ]
+
+    /// What it never does, at any level: the person-only calls.
+    static let stewardNever = [
+        "mark a loop or a milestone done, or drop one",
+        "accept a plan (⌘↩ in the planning view is yours) or remove a goal",
+        "change its own settings or the loop settings",
+        "answer an agent's approval or question for you",
+        "push, open a pull request or skip permissions",
+    ]
+
+    @ViewBuilder private var steward: some View {
+        let hub = model.loopHub
+        let st = StewardSettings(status: hub.steward, machines: model.machines, local: model.localMachine)
+        if !hub.available {
+            SettingsSection("Steward") {
+                Text("This hesperd has no loops yet: update it on this Mac to use the Steward.").font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+            }
+        } else {
+            SettingsSection("Steward", footer: "A background Claude agent that keeps your loops up to date: it wakes when an agent settles or closes, at most once a minute and \(hub.settings.maxWakesPerDay) times a day, and costs tokens while it runs. One Mac runs it for all of them.") {
+                SettingsLine("Steward") {
+                    VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+                        Toggle("Keep my loops up to date", isOn: Binding(get: { st.enabled }, set: { on in setSteward(st.setEnabled(on)) }))
+                            .disabled(stewardBusy)
+                            .accessibilityIdentifier("settings.steward.enabled")
+                        Text(st.summary).font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+                            .accessibilityIdentifier("settings.steward.summary")
+                        if let note = st.stoppedNote {
+                            Text(note).font(DS.font(.chrome)).foregroundStyle(Theme.color(.error))
+                                .accessibilityIdentifier("settings.steward.stopped")
+                        }
+                    }
+                }
+                SettingsLine("Level") {
+                    VStack(alignment: .leading, spacing: DS.Spacing.s) {
+                        Segments(StewardSettings.levels.map { ($0.level, $0.title, nil as String?) },
+                                 selection: Binding(get: { st.level }, set: { l in setSteward(st.setLevel(l)) }))
+                            .accessibilityIdentifier("settings.steward.level")
+                        Text(Self.stewardLadder[st.level] ?? "").font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                SettingsLine("Runs on") {
+                    Segments(st.machines.map { ($0.machine, $0.online ? $0.title : "\($0.title) (offline)", nil as String?) },
+                             selection: Binding(get: { st.machine }, set: { m in setSteward(st.setMachine(m)) }))
+                        .accessibilityIdentifier("settings.steward.machine")
+                }
+                if let e = stewardError {
+                    HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
+                        StateMark(.error)
+                        Text(e).font(DS.font(.chrome)).foregroundStyle(Theme.dim).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityIdentifier("settings.steward.error")
+                }
+            }
+            SettingsSection("It never", footer: "These stay yours at every level; hesperd refuses them from any agent.") {
+                VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+                    ForEach(Self.stewardNever, id: \.self) { t in
+                        Text("· \(t)").font(DS.font(.chrome)).foregroundStyle(Theme.fg2)
+                    }
+                }
+                .accessibilityIdentifier("settings.steward.never")
+            }
+            SettingsSection("From a terminal") {
+                CommandText("hesperctl steward on")
+                CommandText("hesperctl steward level suggest")
+            }
+        }
+    }
+
+    private func setSteward(_ patch: StewardPatch?) {
+        guard let patch else { return }
+        stewardBusy = true
+        stewardError = nil
+        let hub = model.loopHub
+        Task {
+            stewardError = await hub.stewardSet(patch)
+            stewardBusy = false
+        }
     }
 
     // MARK: Advanced

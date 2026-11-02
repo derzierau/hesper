@@ -146,6 +146,7 @@ the original client request ID before returning the result to that controller.
 | `snapshot` | `{}` (unsigned) | The relay-visible snapshot |
 | `ping` | `{}` (unsigned, right `observe`) | `{}`: controllers time the round trip (`hello`'s `rttMs`) |
 | `agents.*`, `projects.*`, `profiles.list`, `fs.stat` | see [Agents](#agents) | |
+| `projects.sync`, `loops.pull`, `loops.sync` | see [Shared state](#shared-state) | |
 | `transfer`, `agents.import`, `job`, `agents.export`, `download` | see [Moves](#moves) | |
 | `devices.request` | `name`, `key`, `strongKey`, `hardware`, `rights` (unsigned) | `{"status":"pending","code","expires","hostKey"}` or `{"status":"approved","name","rights","hostKey"}` |
 | `e2e.hello`, `e2e` | see [End-to-end channel](#end-to-end-channel) (unsigned; they carry the others) | |
@@ -228,10 +229,10 @@ appends a line to `~/.local/state/hesper/audit.log`:
 
 | Right | Methods |
 | --- | --- |
-| `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.screen`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat` (and the unsigned `snapshot`, `ping`) |
+| `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.screen`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat`, `projects.sync` without `state`, `loops.pull`, `loops.sync` without records (and the unsigned `snapshot`, `ping`) |
 | `answer` | `agents.answer` |
 | `type` | `agents.input`, `agents.attach` with mode `rw` |
-| `transfer` | `agents.spawn`, `agents.stop`, `agents.resume`, `agents.remove`, `agents.rename`, `agents.import`, `transfer`, `projects.clone`, `projects.promote`, `projects.scratch`, `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete` |
+| `transfer` | `agents.spawn`, `agents.stop`, `agents.resume`, `agents.remove`, `agents.rename`, `agents.import`, `transfer`, `projects.clone`, `projects.promote`, `projects.scratch`, `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete`, `projects.sync` with a `state`, `loops.sync` with records |
 | `shell` | `agents.spawn` of a shell (kind `shell`, or no kind and a profile named like one; **strong key only**); every method and link event about a shell agent, in addition to its own right (and only on a host started with `--allow-shell`); `ports.open` (only on a host started with `--allow-forward`, for its ports) |
 
 `snapshot` is never signed and stays open to every controller the relay
@@ -457,7 +458,7 @@ renames to its own machine naming.
 | `agents.plan` | `{id}` | `{project, home, commits, projectId?, remote?, remoteHead?, git?, processes?}` (a move's source: commits the target may have; its Git remote; processes the agent started) |
 | `agents.probe` | `{path, home, commits, projectId?, kind?}` | `{exists, has, path?, tool?}` (a move's target: where the project is there, whether it has the tool) |
 | `agents.checkpoint` | `{id}` | `{checkpoint}` (null outside Git; right `transfer`) |
-| `agents.close` | `{id, reason?: "moved", to?}` | as locally (a move closes its source with reason `moved`) |
+| `agents.close` | `{id, reason?: "moved", to?, toRef?}` | as locally (a move closes its source with reason `moved`; `toRef` is the loops ref `<node>/<local id>` of the agent it became, which the host uses for the loop's link, as it may not resolve `to`, the controller's name, itself; a host without `toRef` answers `invalid_request` and gets the close without it) |
 | `checkpoints.restore` | `{key, ref, commit}` | `{path, branch}`: a worktree from a session's checkpoint (right `transfer`) |
 | `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?, alt?}`: the terminal as plain text (right `observe`) |
 | `projects.clone` | `{url}` | `{path}` |
@@ -486,7 +487,7 @@ kind (1 byte) | channel (uint32 BE) | length (uint32 BE) | payload (≤ 1 MiB)
 
 | Kind | Channel | Direction | Payload |
 | --- | --- | --- | --- |
-| `E` | 0 | host → controller | JSON event: first `{"machine","list":[Agent…],"full":true}`, then `{"changed":Agent}` or `{"removed":"id"}` at every change |
+| `E` | 0 | host → controller | JSON event: first `{"machine","node","list":[Agent…],"full":true}` (`node`: the host's projects node, the first half of its agent refs; older controllers ignore it), then `{"changed":Agent}` or `{"removed":"id","reason"?,"to"?}` at every change; besides, events that carry only `{"projects":State}`, `{"sessions":{node,seq}}` or `{"loops":{node,epoch,seq}}` (see [Shared state](#shared-state); the shared history's hint starts its `sessions.pull`) |
 | `D` | > 0 | both | an attach connection's bytes, exactly the local attach protocol after the request line: the host's reply line and frames, the controller's frames |
 | `X` | > 0 | both | the attach (or byte stream) on this channel ended |
 | `W` | > 0 | both | a byte-stream channel's window: the receiver grants the sender this many more bytes (uint32 BE) |
@@ -510,6 +511,130 @@ waits for a slow connection and a bulk transfer never queues more than
 the channel both ways after the sender sent what it had; there is no
 half-close. A controller sends `W` only on such channels, and only to a
 host that announced them (an older host ends a link on an unknown kind).
+
+## Shared state
+
+The owner's Macs share their projects and loops. Each Mac is a host and a
+controller (part R), so every pair exchanges both ways over its link and
+the end-to-end channel; the relay sees none of it (no ids, names, titles
+or methods in plaintext). Hosts without one of these stores answer
+`unsupported`, which controllers ignore.
+
+**Projects** (`internal/projects`; detail in the
+[rebuild contract](../../docs/rebuild-contract.md), "As built —
+projects"). The host sends its whole state as a link event
+`{"projects": State}` when the link opens and at most 100 ms after each
+change. The controller sends its own with the host method below when a
+link opens and at most 150 ms after each change, and merges the answer.
+`State = {node, short?, nodes?, projects: [Record], groups:
+[GroupRecord]}`, every field a register `{v, s: {t, c, n}}` (last writer
+wins; `internal/projects/testdata/state.golden.json` pins the shape).
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `projects.sync` | `{state?}`: the controller's `State` (right `transfer`); without it a read (right `observe`) | the host's `State` |
+
+**Loops** (`internal/loops`). Records: a loop, a goal, a milestone, the
+Steward's configuration and the loop settings, each sent alone as
+`Record = {loop?|goal?|milestone?|steward?|settings?}` (exactly one), every
+field a register as above and every link, item and condition an entry of
+a map keyed by id with its own `deleted` register. The host sends a hint
+`{"loops": {node, epoch, seq}}` as a link event when the link opens and at
+most 100 ms after each change; the first hint on a link is the host's
+`loops` capability (it travels inside the channel; the relay-visible
+snapshot does not carry it). A controller behind that hint pulls, then
+pushes its own changes, one exchange per link at a time, again at most
+150 ms after each local change and 5 s after a failure. Batches carry at
+most 512 KiB of records; records whose every write came from the asking
+Mac are not sent back; each record merges by itself, so an exchange
+settles after one round. A new `epoch` (a new `loops.json`) starts over
+from 0. Separate from `projects.sync`: older hosts decode its `State`
+strictly.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `loops.pull` | `{since, epoch?, from?}`: the changes after sequence number `since` of `epoch` (another epoch: all), for node `from` (right `observe`) | `{node, epoch, next, more?, records: [Record]}`: ask after `next` while `more` |
+| `loops.sync` | `{from?, records: [Record]}` (right `transfer`; empty `records` `observe`) | `{node, epoch, seq, changed?}`: the host's hint after the merge |
+
+A spawn on a host without the `loops` capability goes without `loop`,
+`milestone` and `reportToParent` (hosts decode params strictly); the
+controller records the new agent's loop itself.
+
+### Loops on the local socket
+
+Types in `relay/pkg/wire/loops.go`. A person may call every method.
+Agent callers follow the agent tree's policy:
+
+- a person's only: `steward.set`, `goals.accept`, `goals.remove`,
+  `loops.settings.set`; the status rule covers loops, goals and
+  milestones alike: no agent sets a loop's, goal's or milestone's
+  status to `done` or `dropped`, nor a goal's or milestone's to `open`
+  (accepting, reopening); a milestone an agent creates is `proposed`;
+- `loops.merge` and `loops.split`: the Steward at level `act`;
+- `steward.plan`: the Steward at level `suggest` or `act` (never a
+  planner);
+- `steward.inbox` and the other writes: service agents (the Steward, its
+  planners);
+- any other agent reads everything and changes only the items and links
+  of its own loop, agent links only for itself and the agents it
+  started.
+
+Refusals are `forbidden`. A member link added for an agent or session
+(`loops.link`, or a spawn into another loop) removes its member links in
+other loops.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `loops.list` | `{status?, milestone?, project?, agent?}` (no `status`: open and parked; `"all"`: every loop; `agent`: that agent's loop) | `[Loop]`, merged loops left out, newest change first, at most 2,000 |
+| `loops.get` | `{id}` | `Loop` (merged loops too, with `mergedInto`) |
+| `loops.save` | `LoopSaveParams` (no `id`: a new loop; else the fields given) | the `Loop` |
+| `loops.link` | `{id, link, remove?}`: an agent link may name the agent by its id here (`link.agent`); `rel` defaults to `member` (`touches` for projects, `blockedBy` for loops) | the `Loop` |
+| `loops.item` | `{id, item, remove?}` (`item.id` empty: a new item; else its non-empty fields change; `"check": {"kind": ""}` clears the item's check) | the `Loop` |
+| `loops.merge` | `{into, from}` | the `Loop` `into` (`from`'s links and items moved, `from.mergedInto` set) |
+| `loops.split` | `{id, ref, title?}` | the new `Loop` (the link `ref`, the agents it started or that continued it, and their items) |
+| `loops.settings.get` | `{}` | `LoopSettings` |
+| `loops.settings.set` | `LoopSettings` (non-zero fields change) | `LoopSettings` |
+| `goals.list` | `{scope?}` | `{goals: [Goal], milestones: [Milestone]}` by order |
+| `goals.save` | `{goal}` or `{milestone}` (patches; no `id`: new) | `{goal: Goal}` or `{milestone: Milestone}` |
+| `goals.remove` | `{id}` (a goal or a milestone; a milestone's loops are unfiled) | `{}` |
+| `goals.item` | `{id, item, remove?}`: a milestone's "done when" condition (as `loops.item`; `"check": {"kind": ""}` clears its check) | the `Milestone` |
+| `goals.file` | `{milestone, loop, remove?}` | the `Milestone` |
+| `goals.accept` | `{scope, ids?}` | `{accepted: N}`: proposed milestones opened |
+| `steward.status` | `{}` | `StewardStatus`: the shared `{enabled, level, node, machine}`, and on the Mac that runs it `agent`, `session`, `queued`, today's `wakes`, `lastWake`, `dropped` (events the full queue dropped) and `stopped` (why it does not run although it is on: it ended 3 times within an hour) |
+| `steward.set` | `{enabled?, level?, machine?}` (`enabled` without a machine: this Mac, unless one is set; `enabled: true` again clears `stopped`) | `StewardStatus` |
+| `steward.inbox` | `{}` (a person or a service agent; never another agent) | `[StewardEvent]`: the waiting events, oldest first, one per agent (or loop); the queue is emptied |
+| `steward.plan` | `{scope, prompt?}` (a project or group id; a person, or the Steward at level `suggest` or `act`) | `Agent`: the planning session (service `planner`, a child of the Steward when it runs here); while the scope's planner runs, that one (one per scope) |
+
+Ids: loops `lp-`, goals `gl-`, milestones `ms-` + 12 hex; items `it-` + 8
+hex. Refs: an agent `<node>/<local id>` (`node` is the projects store's
+node of the Mac the agent runs on), a session `<sessions node>:<kind>:<id>`.
+Errors: `not_found`, `invalid`, `forbidden`, `unavailable` (no store).
+
+**Notifications** on `agents.subscribe` connections, coalesced per id:
+first `loops.changed {loop}` for every open and parked loop, `goals.changed
+{goal}` or `{milestone}` for every goal and milestone, and
+`steward.changed {steward}`; then `loops.changed`, `loops.removed {id}` (a
+merged loop), `goals.changed`, `goals.removed {id}` and `steward.changed`
+at each change (the Steward's: its configuration, its agent starting or
+stopping, a wake, its inbox emptied; at most every 250 ms). A loop's view changes with its members' live state too.
+
+**Computed fields** (in hesperd, one place): `Loop.next` is `parked` or
+`closed` for those statuses; else `you` when a member agent waits in
+approval or question, a quiet member's last turn asks the person or names
+their step, or an item is open for the person (offers never count);
+`agents` while a member works; `others` for an open item of others or an
+open loop it is `blockedBy`; else `you` with `looksDone`. `nextText` says
+what; `counts`, `projects` and items' `ready` (every item in `after`
+done) come with it. Milestones carry their `loops`, conditions `done` of
+`total` (dropped ones left out), `nextText` and `stalled` (open, no change
+to it or its loops in `stallDays`). Views cap a loop at 64 links (live
+agents first, then the newest) and 100 items (open ones first).
+
+**Agent fields:** `loop` (from the store, never persisted with the
+agent), `service` (`steward`, `planner`), `reportToParent`, `ending`
+(`asks`, `yourStep`, `offer`, `waits`, `done`). **SpawnParams:** `loop`,
+`milestone`, `reportToParent`; sent to a host only with the `loops`
+capability.
 
 ## Moves
 

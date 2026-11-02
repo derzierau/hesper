@@ -107,6 +107,17 @@ type Agent struct {
 	// by review.accept. Claude and Codex agents in Git folders only.
 	// Persisted.
 	ReviewBase string `json:"reviewBase,omitempty"`
+	// Loop (loops.go) is the loop the agent works in, from the loops
+	// store (its links are the source of truth; never persisted here).
+	// Service: an agent hesperd runs itself (ServiceSteward,
+	// ServicePlanner); persisted. ReportToParent: when its turn ends,
+	// hesperd tells its parent (hesperctl new --report-to-parent);
+	// persisted. Ending: how its last turn ended (Ending* constants), from
+	// its final message; persisted.
+	Loop           string `json:"loop,omitempty"`
+	Service        string `json:"service,omitempty"`
+	ReportToParent bool   `json:"reportToParent,omitempty"`
+	Ending         string `json:"ending,omitempty"`
 }
 
 // EndedKilled is Agent.Ended after agents.kill.
@@ -201,6 +212,14 @@ type SpawnParams struct {
 	// in agents.bringing (bring.draft says the same). Never sent on to a
 	// host.
 	Draft string `json:"draft,omitempty"`
+	// Loop and Milestone (loops.go): the agent joins loop Loop, or a new
+	// loop filed under Milestone; neither: its parent's loop, its source
+	// session's, or a new one. ReportToParent: see Agent. Sent to a host
+	// only when it has the "loops" capability; otherwise the controller
+	// links the agent itself.
+	Loop           string `json:"loop,omitempty"`
+	Milestone      string `json:"milestone,omitempty"`
+	ReportToParent bool   `json:"reportToParent,omitempty"`
 }
 
 // AgentResult is agents.result's (agent tree): the agent's last turn's

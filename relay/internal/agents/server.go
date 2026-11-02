@@ -343,6 +343,8 @@ func (c *ctrl) subscribe(id json.RawMessage, wg *sync.WaitGroup) {
 	go func() { defer wg.Done(); c.watchProjects() }() // projects step 1
 	wg.Add(1)
 	go func() { defer wg.Done(); c.watchSessions() }() // shared history
+	wg.Add(1)
+	go func() { defer wg.Done(); c.watchLoops() }() // loops (loophook.go)
 	ctx, cancel := context.WithCancel(context.Background())
 	if remote := c.s.reg.opt.Remote; remote != nil {
 		// review: a remote agent that settles may be ready for review.
@@ -409,7 +411,12 @@ func decode(params json.RawMessage, v any) error {
 // dispatch runs one method of control connection c: the agent tree's
 // policy (tree.go) first for the methods that start or change agents.
 func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, error) {
-	if method != "agents.spawn" && !treeMutating[method] && !treeStarting[method] && !treeFiles[method] && !treePerson[method] {
+	if isLoopMethod(method) {
+		return s.loopsDispatch(c, method, params) // loopscall.go
+	}
+	_, person := treePerson[method]
+	drafts := method == "drafts.save" || method == "drafts.remove"
+	if method != "agents.spawn" && !drafts && !treeMutating[method] && !treeStarting[method] && !treeFiles[method] && !person {
 		return s.call(method, params)
 	}
 	caller, t, err := s.callerOf(c, method, params)
@@ -420,12 +427,27 @@ func (s *Server) dispatch(c *ctrl, method string, params json.RawMessage) (any, 
 	switch {
 	case method == "agents.spawn":
 		return s.spawn(caller, params, t)
+	case drafts && caller == "":
+		return s.call(method, params)
+	case drafts:
+		// loops: the Steward saves drafts from level suggest on
+		if refused := s.draftsAllowed(t[caller]); method == "drafts.save" && refused != nil {
+			s.auditCall(caller, method, "", refused, nil)
+			return nil, refused
+		}
+		res, err := s.drafts.call(method, params, caller) // only the drafts it saved
+		s.auditCall(caller, method, resultID(res, "id"), nil, err)
+		return res, err
+	case treeStarting[method] && caller != "" && t[caller].Service != "":
+		refused := s.serviceSpawn(t[caller], method, wire.SpawnParams{}) // loopscall.go
+		s.auditCall(caller, method, "", refused, nil)
+		return nil, refused
 	case treeStarting[method]:
 		return s.startSession(caller, method, params, t) // tree.go
 	case treeFiles[method]:
 		return s.files(caller, method, params, t) // tree.go
-	case treePerson[method] && caller != "":
-		err := wire.Errorf(wire.CodeForbidden, "agent %s may not %s: a person does (hesperctl %s)", caller, method, strings.ReplaceAll(method, ".", " "))
+	case person && caller != "":
+		err := wire.Errorf(wire.CodeForbidden, "agent %s may not %s: a person does (%s)", caller, method, treePerson[method])
 		s.auditCall(caller, method, "", err, nil)
 		return nil, err
 	}
@@ -454,6 +476,13 @@ func (s *Server) spawn(caller string, params json.RawMessage, t treeView) (any, 
 		return nil, err
 	}
 	p.Caller, p.Parent, p.Depth = "", "", 0
+	if a := t[caller]; caller != "" && a.Service != "" {
+		// loops: what the Steward and its planners may start (loopscall.go)
+		if refused := s.serviceSpawn(a, "agents.spawn", p); refused != nil {
+			s.auditCall(caller, "agents.spawn", "", refused, nil)
+			return nil, refused
+		}
+	}
 	if caller != "" {
 		depth, release, err := s.spawnTree(caller, t)
 		if err != nil {
@@ -738,7 +767,7 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		}
 		return reg.Files().Chunk(p, false)
 	case "drafts.list", "drafts.save", "drafts.remove":
-		return s.drafts.call(method, params)
+		return s.drafts.call(method, params, "")
 	case "forwards.list", "forwards.add", "forwards.remove":
 		// port forwards (internal/remote): agents may list them only
 		// (dispatch, treePerson)

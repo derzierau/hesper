@@ -36,7 +36,10 @@ import (
 //     letParentAnswer — never itself, never another agent's;
 //   - every other method that changes an agent (treeMutating), and rw
 //     attaches (verified callers only): the caller's descendants only;
-//   - adding or removing a port forward (treePerson): never.
+//   - adding or removing a port forward, deleting or archiving history
+//     (treePerson): never;
+//   - drafts.save and drafts.remove: only drafts the caller saved (or a
+//     new one).
 
 // Agent tree limits (settings.json maxAgentDepth, maxAgentChildren).
 const (
@@ -303,9 +306,14 @@ var treeStarting = map[string]bool{"sessions.resume": true, "sessions.fork": tru
 // descendants.
 var treeFiles = map[string]bool{"files.put": true, "files.chunk": true}
 
-// treePerson are the methods only a person may call: a port forward opens
-// this Mac to another machine's services without Touch ID.
-var treePerson = map[string]bool{"forwards.add": true, "forwards.remove": true}
+// treePerson are the methods only a person may call, with the command a
+// person uses: a port forward opens this Mac to another machine's
+// services without Touch ID; deleting or archiving history hides a
+// person's past work.
+var treePerson = map[string]string{
+	"forwards.add": "hesperctl forwards add", "forwards.remove": "hesperctl forwards rm",
+	"sessions.delete": "hesperctl history delete", "sessions.archive": "hesperctl history archive",
+}
 
 // startSession runs a session start (treeStarting): an agent's makes its
 // child (parent the caller, depth the caller's + 1, within the limits,

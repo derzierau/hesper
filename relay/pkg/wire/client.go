@@ -244,15 +244,23 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 // CarriesCaller: the methods whose params carry "caller" (agent tree):
 // agents.*, the session starts (sessions.resume, sessions.fork,
 // sessions.continueAs), files.put / files.chunk and the review methods
-// that change an agent's folder or type into it, and adding or removing
-// a port forward (only a person may).
+// that change an agent's folder or type into it, adding or removing a
+// port forward (only a person may), drafts.save and drafts.remove,
+// sessions.delete and sessions.archive (a person's), and the loops, goals
+// and steward methods (loops.go: who calls decides what is allowed).
 func CarriesCaller(method string) bool {
 	switch method {
 	case "sessions.resume", "sessions.fork", "sessions.continueAs", "files.put", "files.chunk",
-		"review.accept", "review.reject", "review.sendBack", "forwards.add", "forwards.remove":
+		"review.accept", "review.reject", "review.sendBack", "forwards.add", "forwards.remove", "drafts.save",
+		"drafts.remove", "sessions.delete", "sessions.archive":
 		return true
 	}
-	return strings.HasPrefix(method, "agents.")
+	for _, prefix := range []string{"agents.", "loops.", "goals.", "steward."} {
+		if strings.HasPrefix(method, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // withCaller adds "caller" to the params object of a method that carries

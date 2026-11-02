@@ -54,6 +54,9 @@ var methodRights = map[string]string{
 	// scratch projects: their folders made, archived, restored, deleted
 	// on their home.
 	"projects.scratch": Transfer, "projects.scratchArchive": Transfer, "projects.scratchRestore": Transfer, "projects.scratchDelete": Transfer,
+	// loops: pulling the shared loops observes; sending records
+	// (loops.sync with records) changes the host's loops: transfer.
+	"loops.pull": Observe, "loops.sync": Observe,
 	// shared history: reading the index, transcripts, a session's plan
 	// or changes observes; starting a session there needs transfer.
 	"sessions.pull": Observe, "sessions.transcript": Observe, "sessions.plan": Observe, "sessions.changes": Observe,
@@ -128,6 +131,14 @@ func MethodRight(method string, params []byte) (right string, strong, ok bool) {
 			State json.RawMessage `json:"state"`
 		}
 		if json.Unmarshal(params, &p) != nil || len(p.State) > 0 && string(p.State) != "null" {
+			return Transfer, false, true
+		}
+	case "loops.sync":
+		// Sending records changes the host's loops.
+		var p struct {
+			Records json.RawMessage `json:"records"`
+		}
+		if json.Unmarshal(params, &p) != nil || len(p.Records) > 0 && string(p.Records) != "null" && string(p.Records) != "[]" {
 			return Transfer, false, true
 		}
 	}

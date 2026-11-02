@@ -175,6 +175,7 @@ func (v *viewer) read(r *bufio.Reader) {
 			if v.t.Input(p) != nil {
 				continue
 			}
+			v.t.typed.Store(start.UnixNano()) // LastInput
 			perf.Host.Since(StageInput, start)
 		case wire.FrameResize:
 			cols, rows, ok := wire.ParseSize(p)
