@@ -50,6 +50,15 @@ public enum Samples {
         """,
     ]
 
+    /// Tasks kept for later, as `drafts.list` returns them.
+    public static let drafts: [String: [Draft]] = [
+        "studio": [
+            Draft(
+                id: "d-flaky1", text: "Look into the flaky relay reconnect test", machine: "studio", project: "hesper", parked: true,
+                created: ISO8601DateFormatter().date(from: "2026-10-30T18:12:00Z"))
+        ]
+    ]
+
     /// When `air` dropped off, in the samples.
     public static let airLost = ISO8601DateFormatter().date(from: "2026-10-31T08:40:00Z")!
 
@@ -62,6 +71,7 @@ public enum Samples {
             if let json = listEvents[m.short], let event = try? LinkEvent.decode(Data(json.utf8)) {
                 updates.append(.event(event, machine: m.short))
             }
+            if m.online { updates.append(.drafts(drafts[m.short] ?? [], machine: m.short)) }
         }
         return updates
     }
@@ -73,7 +83,8 @@ public enum Samples {
             switch u {
             case .event(let e, let m): f.apply(e, from: m)
             case .reachability(let r, let m): f.setReachability(r, for: m)
-            case .macs: break
+            case .drafts(let list, let m): f.setDrafts(list, on: m)
+            case .macs, .draftChanged, .draftRemoved: break
             }
         }
         return f

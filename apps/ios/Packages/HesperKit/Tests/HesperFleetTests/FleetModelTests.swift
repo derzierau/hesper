@@ -55,4 +55,39 @@ import Testing
         #expect(a?.project == "hesper")
         model.stop()
     }
+
+    @Test func aKeptTaskIsAParkedDraftOnThatMac() async throws {
+        let link = FixtureLink()
+        let model = FleetModel(link: link)
+        model.start()
+        await eventually { model.fleet.later.count == 1 }
+        let kept = try #require(await model.keep("Add a dark mode toggle", at: Destination(project: "hesper", machine: "mini")))
+        #expect(kept.draft.parked)
+        #expect(kept.draft.machine == "mini")
+        await eventually { model.fleet.later.count == 2 }
+        #expect(model.fleet.later.first?.id == kept.id)
+        model.stop()
+    }
+
+    @Test func startingAKeptTaskSpawnsItAndRemovesTheDraft() async throws {
+        let link = FixtureLink()
+        let model = FleetModel(link: link)
+        model.start()
+        await eventually { model.fleet.later.count == 1 }
+        let kept = try #require(model.fleet.later.first)
+        await model.start(kept)
+        await eventually { model.fleet.later.isEmpty }
+        #expect(model.fleet.later.isEmpty)
+        #expect(link.sent.last == .removeDraft(id: "d-flaky1", machine: "studio"))
+        let spawned = model.fleet.agents["studio/new1"]
+        #expect(spawned?.project == "hesper")
+        #expect(spawned?.task == "Look into the flaky relay reconnect test")
+        model.stop()
+    }
+
+    @Test func discardingAMissingDraftSaysSo() async {
+        let model = FleetModel(link: FixtureLink())
+        await model.discard(KeptTask(machine: "mini", draft: Draft(id: "d-gone")))
+        #expect(model.failure == "No draft d-gone on mini.")
+    }
 }

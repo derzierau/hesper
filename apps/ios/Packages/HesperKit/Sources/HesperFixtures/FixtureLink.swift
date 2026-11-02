@@ -9,6 +9,7 @@ import Synchronization
 public final class FixtureLink: LinkClient {
     private struct State {
         var agents: [String: Agent] = [:]
+        var drafts: [String: [String: Draft]] = [:]
         var continuations: [UUID: AsyncStream<LinkUpdate>.Continuation] = [:]
         var sent: [LinkCommand] = []
         var nextID = 1
@@ -22,6 +23,9 @@ public final class FixtureLink: LinkClient {
         state.withLock { s in
             for case .event(.list(_, let agents, _), _) in updates {
                 for a in agents { s.agents[a.id] = a }
+            }
+            for case .drafts(let list, let machine) in updates {
+                for d in list { s.drafts[machine, default: [:]][d.id] = d }
             }
         }
     }
@@ -67,9 +71,19 @@ public final class FixtureLink: LinkClient {
                 s.nextID += 1
                 s.agents[a.id] = a
                 return .event(.changed(a), machine: machine)
+            case .saveDraft(var draft, let machine):
+                draft.updated = .now
+                s.drafts[machine, default: [:]][draft.id] = draft
+                return .draftChanged(draft, machine: machine)
+            case .removeDraft(let id, let machine):
+                guard s.drafts[machine]?.removeValue(forKey: id) != nil else { return nil }
+                return .draftRemoved(id: id, machine: machine)
             }
         }
-        guard let update else { throw FixtureError.unknownAgent(command.agent ?? "") }
+        guard let update else {
+            if case .removeDraft(let id, let machine) = command { throw FixtureError.unknownDraft(id, machine: machine) }
+            throw FixtureError.unknownAgent(command.agent ?? "")
+        }
         broadcast(update)
     }
 
@@ -95,9 +109,11 @@ public final class FixtureLink: LinkClient {
 
 public enum FixtureError: Error, Equatable, CustomStringConvertible {
     case unknownAgent(String)
+    case unknownDraft(String, machine: String)
     public var description: String {
         switch self {
         case .unknownAgent(let id): "No agent \(id) on the sample Macs."
+        case .unknownDraft(let id, let machine): "No draft \(id) on \(machine)."
         }
     }
 }
