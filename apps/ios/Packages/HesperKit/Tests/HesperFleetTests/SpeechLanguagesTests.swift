@@ -26,6 +26,13 @@ import Testing
         #expect(got == ["de-DE", "en-US"])
     }
 
+    @Test func eachLanguageInItsOwnName() {
+        #expect(SpeechLanguages.displayName("de-DE") == "Deutsch")
+        #expect(SpeechLanguages.displayName("en-US") == "English (US)")
+        #expect(SpeechLanguages.displayName("de-CH") == "Deutsch (CH)")
+        #expect(SpeechLanguages.displayName("fr_FR") == "Français")
+    }
+
     @Test func fleetWordsAreHints() {
         let hints = Samples.fleet.speechHints
         #expect(hints.prefix(3) == ["air", "mini", "studio"])

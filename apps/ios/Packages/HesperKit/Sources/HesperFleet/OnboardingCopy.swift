@@ -52,3 +52,20 @@ extension PairingError {
         }
     }
 }
+
+/// What a Mac lets this phone do, in words: "Can answer, type and start
+/// agents · no shells" (rights from docs/remote-shell-contract.md: answer
+/// is answering prompts, type is typing, transfer covers starting and
+/// stopping agents).
+public enum RightsCopy {
+    public static func summary(_ rights: [String]) -> String {
+        let verbs = [("answer", "answer"), ("type", "type"), ("transfer", "start")].filter { rights.contains($0.0) }.map(\.1)
+        let can: String
+        switch verbs.count {
+        case 0: can = "Can watch agents"
+        case 1: can = "Can \(verbs[0]) agents"
+        default: can = "Can \(verbs.dropLast().joined(separator: ", ")) and \(verbs.last!) agents"
+        }
+        return can + (rights.contains("shell") ? " and shells" : " · no shells")
+    }
+}

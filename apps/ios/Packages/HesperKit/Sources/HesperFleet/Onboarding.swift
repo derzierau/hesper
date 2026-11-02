@@ -242,11 +242,6 @@ public final class OnboardingModel {
         choose(Machine(short: p.machine, name: p.name))
     }
 
-    public var pendingExpired: Bool {
-        guard let pending else { return false }
-        return pending.expires <= now()
-    }
-
     /// Back to the viewfinder, with nothing scanned.
     public func scanAgain() {
         offer = nil

@@ -58,6 +58,8 @@ public enum Theme {
     public static let question = Token.question.color
     public static let done = Token.done.color
     public static let error = Token.error.color
+    /// The evening glow behind onboarding, low on the screen.
+    public static let horizon = Token.horizon.color
 
     /// A state mark's tone as a colour.
     public static func tone(_ tone: StateMarkKind.Tone) -> Color {

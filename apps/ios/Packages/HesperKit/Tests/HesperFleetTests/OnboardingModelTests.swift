@@ -323,6 +323,13 @@ import Testing
         #expect(PairingError.cancelled.message() == nil)
     }
 
+    @Test func rightsInWords() {
+        #expect(RightsCopy.summary(["observe", "answer", "type", "transfer"]) == "Can answer, type and start agents · no shells")
+        #expect(RightsCopy.summary(["observe", "answer", "type", "transfer", "shell"]) == "Can answer, type and start agents and shells")
+        #expect(RightsCopy.summary(["observe", "answer"]) == "Can answer agents · no shells")
+        #expect(RightsCopy.summary(["observe"]) == "Can watch agents · no shells")
+    }
+
     @Test func theNudgeNamesTheAgentThatWaitedLongest() {
         let away = Date(timeIntervalSince1970: 1000)
         let now = away.addingTimeInterval(20 * 60)
