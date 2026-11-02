@@ -17,10 +17,15 @@ public enum E2E {
         Data("ghosty-e2e-v1\0\(machine)\0\(controller)".utf8)
     }
 
-    /// What the device key signs to bind its static X25519 key: SHA-256 of
-    /// "ghosty-e2e-bind-v1\n" + base64(static).
+    /// What the device key signs to bind its static X25519 key:
+    /// "ghosty-e2e-bind-v1\n" + base64(static). ECDSA hashes it with SHA-256.
+    public static func bindingMessage(static: Data) -> Data {
+        Data("ghosty-e2e-bind-v1\n\(`static`.base64EncodedString())".utf8)
+    }
+
+    /// SHA-256 of `bindingMessage`: Go's `e2e.BindingDigest`.
     public static func bindingDigest(static: Data) -> Data {
-        Data(SHA256.hash(data: Data("ghosty-e2e-bind-v1\n\(`static`.base64EncodedString())".utf8)))
+        Data(SHA256.hash(data: bindingMessage(static: `static`)))
     }
 }
 

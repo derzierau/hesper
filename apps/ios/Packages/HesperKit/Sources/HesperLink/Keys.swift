@@ -135,7 +135,7 @@ public struct DeviceKeys: Sendable {
     /// Loads the keys from `store`, creating the missing ones. With
     /// `enclave` (the default where there is one) new P-256 keys are made
     /// in the Secure Enclave and the store keeps their encrypted blobs.
-    public static func load(from store: any SecretStore, enclave: Bool = SecureEnclave.isAvailable) throws -> DeviceKeys {
+    public static func load(from store: any SecretStore, enclave: Bool = enclaveAvailable) throws -> DeviceKeys {
         let device = try signingKey(store, account: Account.device, enclave: enclave, biometry: false)
         let strong = try signingKey(store, account: Account.strong, enclave: enclave, biometry: true)
         let e2e: Curve25519.KeyAgreement.PrivateKey
@@ -147,6 +147,9 @@ public struct DeviceKeys: Sendable {
         }
         return DeviceKeys(device: device.key, strong: strong.key, e2e: e2e, hardware: device.hardware && strong.hardware)
     }
+
+    /// Whether this device has a Secure Enclave (not the simulator).
+    public static var enclaveAvailable: Bool { SecureEnclave.isAvailable }
 
     /// Forgets every key.
     public static func delete(from store: any SecretStore) throws {
@@ -191,14 +194,6 @@ public struct DeviceKeys: Sendable {
     /// `binding`: the device key's signature of the end-to-end key, so a
     /// host accepts the key only from the device it approved.
     public func binding() throws -> String {
-        try device.signature(for: E2EBinding.message(static: e2ePublic)).base64EncodedString()
-    }
-}
-
-/// What `binding` signs: `"ghosty-e2e-bind-v1\n" + base64(static key)`;
-/// the signature hashes it with SHA-256.
-public enum E2EBinding {
-    public static func message(static key: Data) -> Data {
-        Data(("ghosty-e2e-bind-v1\n" + key.base64EncodedString()).utf8)
+        try device.signature(for: E2E.bindingMessage(static: e2ePublic)).base64EncodedString()
     }
 }

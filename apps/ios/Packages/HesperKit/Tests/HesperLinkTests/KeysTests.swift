@@ -24,7 +24,7 @@ import Testing
         let sig = try P256.Signing.ECDSASignature(derRepresentation: Data(base64Encoded: try keys.binding())!)
         let device = try P256.Signing.PublicKey(derRepresentation: keys.device.publicKeyDER)
         let strong = try P256.Signing.PublicKey(derRepresentation: keys.strong.publicKeyDER)
-        let message = E2EBinding.message(static: keys.e2ePublic)
+        let message = E2E.bindingMessage(static: keys.e2ePublic)
         #expect(device.isValidSignature(sig, for: message))
         #expect(!strong.isValidSignature(sig, for: message))
         #expect(String(decoding: message, as: UTF8.self) == "ghosty-e2e-bind-v1\n" + keys.e2ePublic.base64EncodedString())
