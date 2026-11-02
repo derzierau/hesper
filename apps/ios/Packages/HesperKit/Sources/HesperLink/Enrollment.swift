@@ -194,22 +194,23 @@ public struct RelayAPI: Sendable {
 }
 
 /// The proof of an earlier device key for re-enrollment
-/// (docs/iphone/onboarding.md, "Interfaces"): the relay keeps `id` when
-/// `sig` verifies with that device's key. The device key signs
-/// `"hesper-reenroll-v1\n" + id + "\n" + challenge + "\n" + ts`.
+/// (relay/docs/protocol.md, "GitHub enrollment"): the relay keeps `id`,
+/// and with it the Macs' approvals, when `sig` verifies with the key it
+/// recorded for that device. The device key signs
+/// `"hesper-reenroll-v1\n" + id + "\n" + challenge`.
 public struct PreviousDevice: Codable, Equatable, Sendable {
     public var id: String
-    public var ts: Int64
+    /// The device key, base64 DER SubjectPublicKeyInfo.
+    public var key: String
     public var sig: String
 
-    public static func message(id: String, challenge: String, ts: Int64) -> Data {
-        Data(["hesper-reenroll-v1", id, challenge, String(ts)].joined(separator: "\n").utf8)
+    public static func message(id: String, challenge: String) -> Data {
+        Data(["hesper-reenroll-v1", id, challenge].joined(separator: "\n").utf8)
     }
 
-    public static func sign(id: String, challenge: String, key: any SigningKey, now: Date = Date()) throws -> PreviousDevice {
-        let ts = Int64((now.timeIntervalSince1970 * 1000).rounded(.down))
-        let sig = try key.signature(for: message(id: id, challenge: challenge, ts: ts))
-        return PreviousDevice(id: id, ts: ts, sig: sig.base64EncodedString())
+    public static func sign(id: String, challenge: String, key: any SigningKey) throws -> PreviousDevice {
+        let sig = try key.signature(for: message(id: id, challenge: challenge))
+        return PreviousDevice(id: id, key: key.publicKeyDER.base64EncodedString(), sig: sig.base64EncodedString())
     }
 }
 

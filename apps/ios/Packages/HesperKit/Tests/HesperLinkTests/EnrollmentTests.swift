@@ -141,10 +141,19 @@ import Testing
         #expect(status("hesper-ios://auth?enrollment=enr-2&status=approved") == nil)
     }
 
-    @Test func previousDeviceIsSignedByTheDeviceKey() throws {
-        let key = SoftwareSigningKey()
-        let proof = try PreviousDevice.sign(id: "dev-1", challenge: "c", key: key)
+    /// relay/pkg/devicekey TestReenrollGoldenVector, with the golden key.
+    @Test func previousDeviceGoldenVector() throws {
+        let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        let message = PreviousDevice.message(id: "DEVICE_ID", challenge: challenge)
+        #expect(Data(SHA256.hash(data: message)).hex == "4eee5d0e5cbb4c57533ff78a028c6729288d933742cf1268831935839439e167")
+        let golden = try P256.Signing.ECDSASignature(
+            derRepresentation: Data(
+                base64Encoded: "MEUCIQD6cFeqZh3+VcLAMMtTdKt8H1UDwymYLPJ5jhCHHRzp8AIgTVR+RTia8JN+mnwbN2k/ejFG+F9rOyW2UxWFwvrJggA=")!)
+        let key = try RequestSigningTests.goldenKey()
+        #expect(key.publicKey.isValidSignature(golden, for: message))
+        let proof = try PreviousDevice.sign(id: "DEVICE_ID", challenge: challenge, key: SoftwareSigningKey(key))
+        #expect(proof.key == RequestSigningTests.publicKey)
         let sig = try P256.Signing.ECDSASignature(derRepresentation: Data(base64Encoded: proof.sig)!)
-        #expect(key.key.publicKey.isValidSignature(sig, for: PreviousDevice.message(id: "dev-1", challenge: "c", ts: proof.ts)))
+        #expect(key.publicKey.isValidSignature(sig, for: message))
     }
 }
