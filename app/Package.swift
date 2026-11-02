@@ -22,7 +22,11 @@ let libghosttyTargets: [Target] = vendoredGhosttyKit.map { [.binaryTarget(name: 
 
 let package = Package(
     name: "Hesper",
-    platforms: [.macOS(.v14)],
+    // iOS only for HesperCore, which the iPhone app (apps/ios) links.
+    platforms: [.macOS(.v14), .iOS(.v26)],
+    products: [
+        .library(name: "HesperCore", targets: ["HesperCore"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/Lakr233/libghostty-spm.git", exact: "2.2.2026100501"),
     ],
