@@ -32,12 +32,38 @@ public struct ProjectGroup: Equatable, Sendable, Identifiable {
     public var id: String { project ?? "" }
 }
 
+/// A task kept for later: a parked draft on one Mac. It shows on that
+/// Mac's wall too, and starts from either.
+public struct KeptTask: Equatable, Sendable, Identifiable {
+    public var machine: String
+    public var draft: Draft
+    public var id: String { "\(machine)/\(draft.id)" }
+
+    public init(machine: String, draft: Draft) {
+        self.machine = machine
+        self.draft = draft
+    }
+}
+
+/// Where a new task runs: a project on a Mac.
+public struct Destination: Hashable, Sendable {
+    public var project: String
+    public var machine: String
+
+    public init(project: String, machine: String) {
+        self.project = project
+        self.machine = machine
+    }
+}
+
 /// Everything the phone knows about every paired Mac: the result of
 /// folding each Mac's link events. A value: the app's model owns one and
 /// the extensions read its counts.
 public struct Fleet: Equatable, Sendable {
     public private(set) var macs: [String: MacStatus] = [:]
     public private(set) var agents: [String: Agent] = [:]
+    /// Every Mac's drafts, by `KeptTask.id`.
+    public private(set) var drafts: [String: KeptTask] = [:]
 
     public init(macs: [Machine] = []) {
         for m in macs { self.macs[m.short] = MacStatus(machine: m) }
@@ -55,6 +81,40 @@ public struct Fleet: Equatable, Sendable {
         case .removed(let id):
             agents[id] = nil
         }
+    }
+
+    /// A Mac's whole draft list replaces what it had.
+    public mutating func setDrafts(_ list: [Draft], on machine: String) {
+        drafts = drafts.filter { $0.value.machine != machine }
+        for d in list { saveDraft(d, on: machine) }
+    }
+
+    public mutating func saveDraft(_ draft: Draft, on machine: String) {
+        let kept = KeptTask(machine: machine, draft: draft)
+        drafts[kept.id] = kept
+    }
+
+    public mutating func removeDraft(id: String, on machine: String) {
+        drafts[KeptTask(machine: machine, draft: Draft(id: id)).id] = nil
+    }
+
+    /// Tasks kept for later on every Mac: parked drafts, newest first.
+    /// Drafts still open on a Mac's wall are that Mac's, not listed.
+    public var later: [KeptTask] {
+        func when(_ k: KeptTask) -> Date { k.draft.updated ?? k.draft.created ?? .distantPast }
+        return drafts.values.filter(\.draft.parked).sorted { (when($0), $0.id) > (when($1), $1.id) }
+    }
+
+    /// Where a new task can run: projects with agents on a reachable Mac,
+    /// the busiest first. A stand-in for `projects.recent` across Macs.
+    public var destinations: [Destination] {
+        var seen: [Destination: Int] = [:]
+        for a in agents.values where isReachable(a) {
+            if let p = a.project, !p.isEmpty { seen[Destination(project: p, machine: a.machine), default: 0] += 1 }
+        }
+        return seen.sorted { l, r in
+            (r.value, l.key.project, l.key.machine) < (l.value, r.key.project, r.key.machine)
+        }.map(\.key)
     }
 
     public mutating func setReachability(_ r: Reachability, for machine: String) {
@@ -106,6 +166,19 @@ public struct Fleet: Equatable, Sendable {
             case (nil, _): return false
             case (_, nil): return true
             }
+        }
+    }
+
+    /// `groups` with only the agents whose name, project, branch or task
+    /// contains `query`; empty groups dropped. An empty query keeps all.
+    public func groups(matching query: String) -> [ProjectGroup] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return groups }
+        return groups.compactMap { g in
+            let hits = g.agents.filter { a in
+                [a.name, a.project, a.branch, a.task].compactMap(\.self).contains { $0.localizedStandardContains(q) }
+            }
+            return hits.isEmpty ? nil : ProjectGroup(project: g.project, agents: hits)
         }
     }
 

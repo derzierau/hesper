@@ -6,7 +6,10 @@ import UIKit
 /// (app/Sources/Hesper/UI/Theme.swift, docs/design-system.md). The only
 /// place the app names a colour.
 public enum Theme {
-    public enum Token: CaseIterable, Sendable {
+    // nonisolated: UIKit and SwiftUI resolve dynamic colours on their render
+    // thread too (glass tints while animating), so the provider closure must
+    // not be main-actor.
+    public nonisolated enum Token: CaseIterable, Sendable {
         case background, surface, tile, line, text, text2, dim, dim2, signal, working, question, done, error, horizon
 
         /// (Dusk, Daylight) as sRGB hex; the same values as the Mac.
@@ -37,7 +40,7 @@ public enum Theme {
         }
     }
 
-    static func srgb(_ v: UInt32) -> UIColor {
+    nonisolated static func srgb(_ v: UInt32) -> UIColor {
         UIColor(red: CGFloat((v >> 16) & 0xff) / 255, green: CGFloat((v >> 8) & 0xff) / 255, blue: CGFloat(v & 0xff) / 255, alpha: 1)
     }
 

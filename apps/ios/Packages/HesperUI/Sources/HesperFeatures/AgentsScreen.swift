@@ -4,13 +4,19 @@ import HesperFleet
 import SwiftUI
 
 /// Everything that runs, grouped by project like the Mac's bands. Rows
-/// carry the agent's own activity line, never a terminal preview.
+/// carry the agent's own activity line, never a terminal preview. The
+/// search field finds agents by name, project, branch or task (past
+/// sessions join with `sessions.search`, concept Core work 5); Later lists
+/// the tasks kept on every Mac.
 struct AgentsScreen: View {
     @Environment(FleetModel.self) private var model
+    @State private var query = ""
 
     var body: some View {
+        let groups = model.fleet.groups(matching: query)
+        let later = query.isEmpty ? model.fleet.later : []
         List {
-            ForEach(model.fleet.groups) { group in
+            ForEach(groups) { group in
                 Section(group.project ?? "Scratch") {
                     ForEach(group.agents) { agent in
                         NavigationLink(value: AgentRoute(id: agent.id)) { AgentRow(agent: agent) }
@@ -19,14 +25,52 @@ struct AgentsScreen: View {
                     }
                 }
             }
-        }
-        .overlay {
-            if model.fleet.agents.isEmpty {
-                ContentUnavailableView("No agents", systemImage: "square.grid.2x2", description: Text("Start one from the bar below."))
+            if !later.isEmpty {
+                Section("Later · \(later.count)") {
+                    ForEach(later) { kept in
+                        KeptRow(kept: kept).themedRow()
+                    }
+                }
             }
         }
+        .overlay {
+            if !query.isEmpty && groups.isEmpty {
+                ContentUnavailableView.search(text: query)
+            } else if model.fleet.agents.isEmpty && later.isEmpty {
+                ContentUnavailableView("No agents", systemImage: "square.grid.2x2", description: Text("Tap the mic to start one."))
+            }
+        }
+        .searchable(text: $query, prompt: "Agents and projects")
         .themedList()
         .navigationTitle("Agents")
+    }
+}
+
+/// A task kept for later: its text, where it would run, and Start. Swipe
+/// to throw it away.
+private struct KeptRow: View {
+    let kept: KeptTask
+    @Environment(FleetModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.m) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .strokeBorder(Theme.dim, style: StrokeStyle(lineWidth: 1.5, dash: [2, 1.5]))
+                .frame(width: DS.markSide, height: DS.markSide)
+            VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                Text(kept.draft.text).lineLimit(2)
+                MetaLine(
+                    mac: [model.fleet.macName(kept.machine), kept.draft.project].compactMap(\.self).joined(separator: " · "),
+                    since: kept.draft.updated ?? kept.draft.created)
+            }
+            Spacer(minLength: 0)
+            Button("Start") { Task { await model.start(kept) } }
+                .secondaryAction()
+                .controlSize(.small)
+        }
+        .swipeActions(edge: .trailing) {
+            Button("Discard", systemImage: "trash", role: .destructive) { Task { await model.discard(kept) } }
+        }
     }
 }
 

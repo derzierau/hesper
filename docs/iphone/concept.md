@@ -1,7 +1,8 @@
 # Hesper for iPhone: concept
 
-Status: concept, 31 Oct 2026. Wireframes in [`wireframes/`](wireframes/)
-(round 4 draws the writable terminal and iPad), critique between rounds
+Status: concept, 31 Oct 2026; capture updated 2 Nov 2026. Wireframes in
+[`wireframes/`](wireframes/) (round 4 draws the writable terminal and iPad,
+round 5 the mic circle that replaced the Search tab), critique between rounds
 in [`critique.md`](critique.md), the writable terminal researched in
 [`writable-terminal.md`](writable-terminal.md).
 
@@ -38,7 +39,7 @@ Three rules hold the design together:
 |---|---|---|---|
 | 1 | See what needs me, across every Mac | Inbox tab, lock screen, Live Activity, widget | `agents.link` events (channel 0) |
 | 2 | Answer or approve | Inbox row, agent dock, notification action | `agents.answer`, `agents.input` (digit for choices) |
-| 3 | Start an agent on any Mac and project | New agent accessory, Siri / Action button | `agents.spawn`, `projects.recent`, `profiles.list` |
+| 3 | Start an agent, or keep a task for later, on any Mac and project | Mic circle next to the tabs, Siri / Action button | `agents.spawn`, `drafts.save`, `projects.recent`, `profiles.list` |
 | 4 | Follow and steer | Agent view: live writable terminal plus reply dock | `agents.attach` `rw` (`owner: false`; `owner: true` after Fit to iPhone), `agents.input` for the reply field |
 | 5 | Stop, resume, close | Agent menu, swipe on rows | `agents.stop`, `agents.resume`, `agents.close` |
 | 6 | Judge the result | Review sheet from the Inbox | `review.list`, `review.diff`, `review.evidence`, `review.accept`, `review.sendBack` |
@@ -52,19 +53,20 @@ should not reimplement.
 ## Information architecture
 
 ```
-Tab bar (Liquid Glass, minimizes on scroll)
+Tab bar (Liquid Glass)
 ├── Inbox        what waits for me: Needs you, then Ready to review
-├── Agents       everything that runs, grouped by project, Mac as meta
-├── Macs         machines, their health, pairing
-└── Search       (role: search) agents, projects, past sessions
-Bottom accessory: "New agent" with a mic button, on every tab
+├── Agents       everything that runs, grouped by project, Mac as meta;
+│                a search field (agents, projects, past sessions) and
+│                Later (tasks kept for later, parked drafts on every Mac)
+└── Macs         machines, their health, pairing
+Mic circle       beside the tabs: say or type a task, start it or keep it
 Agent view       pushed from any row; live writable terminal + dock;
                  portrait and landscape (iPad: the detail column)
-Sheets           New agent · Review · Deny with a message · Pair a Mac
+Sheets           Capture · Review · Deny with a message · Pair a Mac
 System surfaces  notifications · one fleet Live Activity · widgets · controls · App Intents
 ```
 
-Why four tabs:
+Why three tabs and a mic:
 
 - **Inbox** is the Mac's ⌘J and ⌘R in one place: things that wait for the
   owner. It can be empty, and empty is the goal ("Nothing needs you").
@@ -81,14 +83,22 @@ Why four tabs:
   closed, offline, unpaired). A plain status line beats a dot: Tailscale
   found that an activity dot "caused more confusion"
   ([forum](https://forum.tailscale.com/t/online-status-in-app/2107)).
-- **Search** uses `Tab(role: .search)`, so the field takes the place of the
-  tab bar ([WWDC25-323](https://developer.apple.com/videos/play/wwdc2025/323/)).
+- **Search** is the field at the top of Agents (`.searchable`). On a phone
+  the owner drops tasks far more often than they search, so search gave
+  its place to capture (decided, round 5).
 
-**New agent** is a `tabViewBottomAccessory`: it is a persistent feature, not
-an action of one screen, which is what Apple reserves the accessory for
-([WWDC25-356](https://developer.apple.com/videos/play/wwdc2025/356/)). The
-tab bar holds navigation only; tabs are never actions
-([HIG tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars.md)).
+**The mic circle** sits where the Search circle was: a glass circle in the
+accent beside the tab capsule. It listens from the moment it is touched:
+a tap opens the capture sheet still listening; holding is push-to-talk
+(the words show at the top of the screen, letting go opens the sheet with them,
+sliding off the circle cancels). The sheet has a keyboard button. It is a button, not a tab, so the tab bar still holds
+navigation only ([HIG tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars.md)).
+The system bar has no slot for an action (the search-role tab is drawn
+inside the capsule on current iOS), so on iPhone the app draws the bar
+itself under the three root screens; pushed screens such as the agent view
+have no bar. iPad keeps the system tabs with a "New task" item.
+It replaces the New agent accessory: one way in, and the lists keep the
+space the accessory covered.
 The Inbox tab badge shows the needs-you count; nothing else is badged.
 
 ## Key flows
@@ -119,20 +129,33 @@ with a short undo window that only covers the local send, not the agent.
 A question with choices shows its choices as buttons (up to 4 on the row,
 more in the agent view). A question with no options says "Open to answer".
 
-### 3. Start an agent from anywhere (20 seconds)
+### 3. Drop a task from anywhere (20 seconds)
 
-1. Tap **New agent** in the accessory, or hold the mic in it to speak.
-2. One sheet: a large text field first, then one destination line
+1. Hold the **mic circle** and speak, then let go; or tap it and speak
+   until Done. Typing is one button away in the sheet.
+2. One sheet: the text first (live while listening, editable after), then
+   one destination line
    "hesper on mini" (the last-used or most recent project from
    `projects.recent` across Macs), then the agent kind ("Claude"). Options
    (profile, worktree, branch) sit behind **Options**, collapsed.
-3. **Start** sends `agents.spawn`. The sheet closes into the agent view in
-   `starting`. If the Mac is asleep or offline, the destination line says
-   so before Start, and offers the other Macs that have the project.
+3. **Start now** sends `agents.spawn`. The sheet closes into the agent view
+   in `starting`. If the Mac is asleep or offline, the destination line
+   says so before Start, and offers the other Macs that have the project.
+4. **Keep for later** sends `drafts.save` with `parked: true` to that Mac:
+   the task waits on its wall as a parked draft and under Later in Agents,
+   with Start. "Kept on mini" shows for a few seconds with Undo. Kept tasks
+   never count toward the badge.
 
 Voice uses on-device `SpeechTranscriber`: volatile text dimmed, final text
 solid, editable before sending
 ([WWDC25-277](https://developer.apple.com/videos/play/wwdc2025/277/)).
+It listens in one language, which the owner picks in onboarding. Until
+then it is the owner's first language the model knows: the keyboard's
+dictation languages, then the preferred languages, not the phone's region
+(English on a phone in Germany is `en-US`, a bare "de" is `de-DE`). There is
+no language switch in capture and no choice of model. Mac, project and agent
+names are passed to the model as words to expect. A task goes to the agent
+in the language it was said in.
 
 ### 4. Follow and steer
 
@@ -214,7 +237,8 @@ Buttons in widgets do not approve: they are inactive while locked anyway
 ([interactivity doc](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities.md)).
 
 **Controls and intents.** A Control Center / Action button control
-"New agent" that opens straight into dictation. App Intents: "Start an
+"New task" that opens straight into dictation; Keep for later works
+without unlocking, Start now asks for Face ID. App Intents: "Start an
 agent", "Show what needs me", "Stop agent". Any intent that approves asks
 for confirmation (`requestConfirmation`,
 [WWDC25-275](https://developer.apple.com/videos/play/wwdc2025/275/)).
@@ -286,7 +310,7 @@ bar and the foreground-only attach answer both.
 
 In scope (decided). One app, adaptive:
 
-- **Layout**: a split view with Inbox / Agents / Search in the sidebar and
+- **Layout**: a split view with Inbox / Agents / Macs / New task in the sidebar and
   the agent view as the detail column. On a narrow window or in Slide
   Over it is the iPhone layout.
 - **Windows**: each window is its own scene. In iPadOS windowing and Stage
@@ -314,7 +338,7 @@ The Mac's design system, adapted to iOS 26:
   question amber, done green, error red.
 - **State marks are squares**, 8 pt on the phone, needs-you pulses (not
   under Reduce Motion). Same shape on the Mac and phone.
-- **Glass only for navigation**: tab bar, accessory, toolbars, the agent
+- **Glass only for navigation**: tab bar, mic circle, toolbars, the agent
   dock and sheets. Lists and the terminal stay solid; no glass on glass;
   tint only the primary action
   ([WWDC25-219](https://developer.apple.com/videos/play/wwdc2025/219/)).
@@ -331,7 +355,7 @@ The Mac's design system, adapted to iOS 26:
 |---|---|---|
 | Wall of live terminal tiles, bands, layouts | List with activity lines | Tiles at phone size are unreadable and each costs a stream |
 | Desks | Out | Window arrangements have no meaning on a phone |
-| Palette (⌘K) | Search tab | Search covers the finding; verbs live on rows |
+| Palette (⌘K) | Search in Agents | Search covers the finding; verbs live on rows |
 | Projects and groups management (colours, rename, move, promote) | Out; projects are picked, not managed | Rare, careful work |
 | Scratch lifecycle (keep, archive, promote) | Only "new scratch" when starting | Same |
 | History: fork, continue as, archive, delete | Search and Resume only | Resume is the phone job |
@@ -339,7 +363,7 @@ The Mac's design system, adapted to iOS 26:
 | Move between Macs | Later, through a Mac | Decided |
 | Starting shell agents | Later, behind Face ID and the strong key | Highest risk right; typing into an existing shell is in (Face ID once per attach) |
 | Attach files | Later (photo of a screen or sketch) | Nice, not core |
-| Drafts | Out; an unsent New agent text is kept on the phone | Drafts are a Mac wall concept |
+| Drafts | Parked drafts only: Keep for later makes one, Later lists them | Ideas dropped on the phone wait on the Mac's wall |
 | Density, themes beyond Dusk / Daylight | Out | System settings cover it |
 
 ## Performance
@@ -375,7 +399,7 @@ ProMotion runs high only while scrolling.
   disabled, saying why.
 - Mutations are never retried automatically; a timed-out answer shows
   "Sent, waiting for mini" until the next event confirms or denies it.
-- An unsent New agent text survives app kills.
+- An unsent capture text survives app kills.
 - On foreground: reconnect, take a fresh inventory, rebuild. Direct path
   first on the same network, relay as fallback.
 
@@ -392,8 +416,8 @@ What core Hesper (`main`) needs before this app can ship, in order:
 3. **Live Activity and widget pushes** from the relay, counts only.
 4. **A prompt id** on `attention`, so an answer can never land on a newer
    prompt than the one the owner saw.
-5. **`sessions.search` and `sessions.resume` over the relay** for Search and
-   Resume (today History is local to each Mac).
+5. **`sessions.search` and `sessions.resume` over the relay** for search
+   and Resume (today History is local to each Mac).
 6. **`agents.result` over the relay** (or the last message in
    `ReviewItem`) for the Review sheet and Done rows.
 7. **`agents.move` driven by a Mac on the phone's behalf** (later).
@@ -409,6 +433,12 @@ What core Hesper (`main`) needs before this app can ship, in order:
 10. **The Mac yields to a remote owner**: while `sizeOwner` names another
     device, `SizeOwnership` makes that agent's panes fit views marked "On
     iPhone"; a keystroke or click takes the size back.
+11. **Drafts over the relay**: `drafts.list`, `drafts.save`,
+    `drafts.remove` and the `drafts.changed` / `drafts.removed` events on a
+    phone's link, for Keep for later and Later (today drafts are local to
+    each Mac's hesperd). The phone names the project; hesperd resolves it
+    to the project's folder on that Mac, as `hesperctl drafts save
+    --project` does.
 
 ## Open decisions
 
@@ -417,7 +447,9 @@ What core Hesper (`main`) needs before this app can ship, in order:
   more than five agents.
 - Should Allow from a notification require Face ID every time, or only for
   commands the Mac flags as risky?
-- Which project does New agent default to: last used on the phone, or the
+- Which project does capture default to: last used on the phone, or the
   most recently active on any Mac?
+- Does a kept task need a Mac and project, or can it stay unassigned until
+  it is started?
 - Does finished work notify at all (passive), or only show in the Inbox and
   Live Activity?

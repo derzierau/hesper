@@ -107,6 +107,43 @@ import Testing
         #expect(fleet.isReachable(fleet.agents["mini/m2"]!))
         #expect(fleet.macList.map(\.id) == ["air", "mini", "studio"])
     }
+
+    @Test func laterListsParkedDraftsNewestFirst() {
+        var f = fleet
+        #expect(f.later.map(\.draft.text) == ["Look into the flaky relay reconnect test"])
+        let old = Date(timeIntervalSince1970: 1_000)
+        f.saveDraft(Draft(id: "d-new", text: "Newer", parked: true, created: old, updated: .now), on: "mini")
+        f.saveDraft(Draft(id: "d-open", text: "Still on the wall", parked: false), on: "mini")
+        #expect(f.later.map(\.id) == ["mini/d-new", "studio/d-flaky1"])
+        f.removeDraft(id: "d-new", on: "mini")
+        #expect(f.later.map(\.id) == ["studio/d-flaky1"])
+    }
+
+    @Test func aDraftListReplacesOnlyThatMac() {
+        var f = fleet
+        f.saveDraft(Draft(id: "d-a", text: "a", parked: true), on: "mini")
+        f.setDrafts([], on: "studio")
+        #expect(f.later.map(\.id) == ["mini/d-a"])
+    }
+
+    @Test func destinationsAreReachableProjectsBusiestFirst() {
+        // hesper has 4 agents on mini and 2 on studio; website is only on
+        // air, which is unreachable.
+        #expect(
+            fleet.destinations == [
+                Destination(project: "hesper", machine: "mini"),
+                Destination(project: "hesper", machine: "studio"),
+            ])
+    }
+
+    @Test func searchKeepsMatchingAgentsInTheirGroups() {
+        #expect(fleet.groups(matching: "").map(\.project) == fleet.groups.map(\.project))
+        let hits = fleet.groups(matching: "pricing")
+        #expect(hits.map(\.project) == ["website"])
+        #expect(hits[0].agents.map(\.name) == ["pricing-copy"])
+        #expect(fleet.groups(matching: "fix/hub").flatMap(\.agents).map(\.name) == ["relay-tests"])
+        #expect(fleet.groups(matching: "nothing like this").isEmpty)
+    }
 }
 
 @Suite struct SharedCountsTests {
