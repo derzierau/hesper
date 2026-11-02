@@ -219,6 +219,8 @@ public enum EnrollmentCallback: Equatable, Sendable {
     case approved
     case denied
     case notAllowed(login: String)
+    /// The sign-in ran out or was used up on the relay; start again.
+    case expired
     case other(String)
 
     /// Reads `hesper-ios://auth?enrollment=…&status=…` (or the older
@@ -231,6 +233,7 @@ public enum EnrollmentCallback: Equatable, Sendable {
         case "approved": self = .approved
         case "denied": self = .denied
         case "not_allowed": self = .notAllowed(login: query["login"] ?? "")
+        case "expired": self = .expired
         case let s: self = .other(s)
         }
     }

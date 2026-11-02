@@ -93,6 +93,7 @@ public final class LivePairing: PairingService {
         case .approved, nil: break
         case .denied: throw PairingError.cancelled
         case .notAllowed(let login): throw PairingError.notAllowed(login: login)
+        case .expired: throw PairingError.failed(Self.expired)
         case .other(let status): throw PairingError.failed("Sign-in ended: \(status)")
         }
         while Date() < enrollment.expires {
@@ -103,8 +104,10 @@ public final class LivePairing: PairingService {
             }
             try await Task.sleep(for: .seconds(max(1, enrollment.interval)))
         }
-        throw PairingError.failed("The sign-in expired. Try again.")
+        throw PairingError.failed(Self.expired)
     }
+
+    static let expired = "The sign-in expired. Try again."
 
     public func pair(offer: PairingOffer) async throws(PairingError) -> PairResult {
         guard offer.expires > Date() else { throw .offerExpired }
