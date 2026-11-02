@@ -1348,7 +1348,15 @@ Launch; Notifications; Profiles per kind) of one fixed size on every
 pane (`SettingsView.size`, set by AppKit, never by a pane's fitting
 size): the sidebar shows each pane's title and ⌘N chip, a control row
 too wide for its column stacks under its label, and the pane scrolls
-instead of clipping. Focus ⌘↩ zooms the card to the
+instead of clipping. Settings › iPhone (after Machines & pairing) shows
+the QR code of a `devices.offer` with the rights chosen by its toggles
+(answer, type, start and stop; shells off by default), asks for a new
+one every 2 minutes while shown (earlier codes stay open until they
+expire; a rights change cancels them), cancels the open ones with
+`devices.offerCancel` when the pane or window goes, and turns into
+"<name> connected" on `devices.paired` (HesperCore `PhonePairing`; a
+hesperd without `devices.offer` gets the `hesperctl approve` hint).
+Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
 
 **One tile font; the PTY follows the tile.** Every wall tile uses the

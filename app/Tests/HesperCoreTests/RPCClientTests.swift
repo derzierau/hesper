@@ -97,6 +97,10 @@ private func standard(_ req: JSONValue, _ s: ScriptedServer, _ fd: Int32) {
     case "agents.list": s.reply(fd, req, result: [agentJSON])
     case "agents.move": s.replyError(fd, req, code: -32000, message: "remote agents arrive with part R", dataCode: "unavailable")
     case "agents.input": s.reply(fd, req, result: [:])
+    case "devices.offer":
+        s.reply(fd, req, result: ["payload": "HESPER1:abc", "expires": 1_793_650_956, "id": "o1"])
+        s.send(fd, ["jsonrpc": "2.0", "method": "devices.paired", "params": ["offer": "o1", "device": "d1", "name": "iPhone", "rights": ["observe"]]])
+    case "devices.offerCancel": s.reply(fd, req, result: [:])
     case "nope": s.replyError(fd, req, code: -32601, message: "method not found", dataCode: "not_found")
     default: break  // never answers: timeouts
     }
@@ -151,6 +155,27 @@ private func collect(_ client: DaemonClient, until: @escaping ([DaemonEvent]) ->
         try await client.input("L/aaaaaa", text: "hi", paste: true, submit: true)
         let input = server.received.last { $0["method"] == "agents.input" }
         #expect(input?["params"] == ["id": "L/aaaaaa", "text": "hi", "paste": true, "submit": true])
+        client.stop()
+    }
+
+    @Test func pairingOffersAndTheirEvent() async throws {
+        let server = try ScriptedServer()
+        defer { server.stop() }
+        server.handler = standard
+        let client = DaemonClient(socketPath: server.path)
+        let (paired, cont) = AsyncStream.makeStream(of: PhonePaired.self)
+        client.onDeviceNotification = { method, params in
+            if method == PhonePairingRPC.paired, let p = PhonePaired(params: params) { cont.yield(p) }
+        }
+        client.start()
+        _ = await collect(client) { $0.contains { if case .reconciled = $0 { return true }; return false } }
+        let o = try await client.phoneOffer(PhoneRights(shell: true))
+        #expect(o == PhoneOffer(id: "o1", payload: "HESPER1:abc", expires: Date(timeIntervalSince1970: 1_793_650_956)))
+        #expect(server.received.last { $0["method"] == "devices.offer" }?["params"] == ["rights": ["observe", "answer", "type", "transfer", "shell"]])
+        var it = paired.makeAsyncIterator()
+        #expect(await it.next() == PhonePaired(offer: "o1", device: "d1", name: "iPhone", rights: ["observe"]))
+        try await client.cancelPhoneOffer("o1")
+        #expect(server.received.last { $0["method"] == "devices.offerCancel" }?["params"] == ["id": "o1"])
         client.stop()
     }
 
