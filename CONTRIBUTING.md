@@ -9,6 +9,8 @@ you write the code.
 - `relay/`: Go. `hesperd` (the per-Mac daemon), `hesperctl`, `hesper-relay`
   and the Secure Enclave helper `hesper-keys`.
 - `app/`: Hesper.app, the native macOS client (SwiftPM, no Xcode project).
+- `apps/ios/`: the iPhone and iPad app (SwiftUI, an Xcode project generated
+  by XcodeGen from `project.yml`).
 - `install.sh`, `scripts/`: the installer and its tests.
 - `docs/`: the contracts the code is built against.
 
@@ -17,6 +19,7 @@ you write the code.
 - macOS with Xcode 26 (the app builds with its toolchain).
 - Go 1.25.
 - tmux, for the relay's terminal emulator tests.
+- XcodeGen 2.46 or newer, for the iPhone app (`brew install xcodegen`).
 
 ## Build and test
 
@@ -40,6 +43,12 @@ make -C app test-ui               # launches the app against the fake daemon
 
 `make -C app test` runs every UI smoke test; `app/Makefile` lists the rest.
 None of them touch your real hesperd, its state or your agents.
+
+iPhone and iPad app (headless; no simulator window):
+
+```sh
+make -C apps/ios check   # swift format lint, logic tests, unsigned simulator build
+```
 
 Installer:
 

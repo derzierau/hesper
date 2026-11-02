@@ -1,0 +1,42 @@
+name: Hesper iOS
+on:
+  push:
+    branches: ["**"]
+    paths: ["apps/ios/**", "app/Package.swift", "app/Package.resolved", "app/Sources/HesperCore/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["apps/ios/**", "app/Package.swift", "app/Package.resolved", "app/Sources/HesperCore/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+# Read-only token; no secrets and no signing, so pull requests from forks
+# run the same job safely.
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  ios:
+    # The same image and Xcode selection as app.yml.
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select Xcode 26
+        run: |
+          xcode=$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' -print | sort -V | tail -1)
+          test -n "$xcode"
+          echo "DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+      # XcodeGen generates the project; pinned by version and checksum.
+      - name: XcodeGen 2.46.0
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: Lint
+        run: make -C apps/ios lint
+      - name: Logic tests
+        run: make -C apps/ios test
+      - name: Build the app and extensions (simulator, unsigned)
+        run: make -C apps/ios build

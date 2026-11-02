@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hesper iPhone wireframes, round 2</title>
+<style>
+  /* Round 2: mid fidelity. Real copy and structure, greys plus the state colours only. */
+  :root {
+    --ink: #1b1d33; --mid: #6b6f8a; --soft: #e3e3ea; --box: #f3f3f7; --bg: #fafafa; --white: #fff;
+    --signal: #c9305c; --question: #8c6300; --working: #4b55d6; --done: #17804f; --error: #d93636;
+    --term: #1a1b26; --termtext: #a9b1d6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px 48px; font: 13px/1.35 -apple-system, system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lede { color: var(--mid); margin: 0 0 24px; max-width: 70ch; }
+  .strip { display: flex; flex-wrap: wrap; gap: 28px; }
+  figure { margin: 0; width: 300px; }
+  figcaption { font-size: 12px; color: var(--mid); margin-top: 8px; }
+  figcaption b { color: var(--ink); }
+  .phone { width: 300px; height: 650px; border: 2px solid var(--ink); border-radius: 40px; position: relative; background: var(--white); overflow: hidden; display: flex; flex-direction: column; }
+  .phone::before { content: ""; position: absolute; top: 10px; left: 50%; width: 84px; height: 24px; margin-left: -42px; border-radius: 12px; background: #000; z-index: 3; }
+  .status { height: 40px; flex: none; }
+  .content { flex: 1; min-height: 0; padding: 0 14px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .large { font-size: 26px; font-weight: 700; margin: 2px 0 4px; }
+  .sec { font-size: 11px; font-weight: 600; color: var(--mid); margin: 8px 0 0; display: flex; gap: 6px; align-items: center; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .grow { flex: 1; min-width: 0; }
+  .card { background: var(--box); border-radius: 12px; padding: 9px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .line { border-bottom: 1px solid var(--soft); padding: 7px 0; display: flex; align-items: center; gap: 8px; }
+  .t { font-weight: 600; }
+  .s { color: var(--mid); font-size: 11px; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  .m { width: 8px; height: 8px; flex: none; border-radius: 1.5px; }
+  .m.signal { background: var(--signal); } .m.question { background: var(--question); } .m.working { background: var(--working); }
+  .m.done { background: var(--done); } .m.error { background: var(--error); } .m.idle { border: 1.5px solid var(--mid); }
+  .btn { border-radius: 99px; padding: 5px 10px; font-size: 12px; text-align: center; background: var(--soft); white-space: nowrap; }
+  .btn.p { background: var(--ink); color: var(--white); }
+  .btn.sig { background: var(--signal); color: var(--white); }
+  .tabbar { flex: none; margin: 0 10px 18px; display: flex; flex-direction: column; gap: 6px; }
+  .acc { border: 1px solid var(--soft); background: var(--box); border-radius: 99px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .tabs { border: 1px solid var(--soft); background: var(--box); border-radius: 99px; display: flex; padding: 6px 4px; }
+  .tabs span { flex: 1; text-align: center; font-size: 10px; color: var(--mid); }
+  .tabs span.on { color: var(--working); font-weight: 600; }
+  .badge { display: inline-block; background: var(--signal); color: #fff; border-radius: 99px; font-size: 9px; padding: 0 4px; margin-left: 2px; }
+  .nav { display: flex; align-items: center; gap: 6px; padding: 0 12px 6px; }
+  .nav .c { flex: 1; text-align: center; }
+  .term { flex: 1; min-height: 0; background: var(--term); color: var(--termtext); font: 6.6px/1.3 ui-monospace, Menlo, monospace; padding: 6px 6px; white-space: pre; overflow: hidden; }
+  .term b { color: #c0caf5; font-weight: 600; } .term i { color: #e0af68; font-style: normal; } .term u { color: #9ece6a; text-decoration: none; } .term em { color: #7aa2f7; font-style: normal; }
+  .dock { flex: none; border-top: 1px solid var(--soft); background: var(--box); padding: 10px 12px 22px; display: flex; flex-direction: column; gap: 8px; }
+  .field { background: var(--white); border: 1px solid var(--soft); border-radius: 99px; padding: 7px 12px; color: var(--mid); }
+  .chip { border: 1px solid var(--soft); border-radius: 99px; padding: 3px 9px; font-size: 11px; white-space: nowrap; }
+  .sheet { position: absolute; inset: 70px 0 0; background: var(--white); border-radius: 22px 22px 0 0; box-shadow: 0 -2px 18px rgba(0,0,0,.18); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--soft); margin: 0 auto 4px; }
+  .dim { position: absolute; inset: 0; background: rgba(0,0,0,.25); }
+  .lock { background: linear-gradient(#5a6077, #2b2f45); color: #fff; }
+  .lock .s { color: #d0d3e3; }
+  .clock { font-size: 60px; font-weight: 600; text-align: center; letter-spacing: -1px; }
+  .date { text-align: center; font-size: 14px; }
+  .glass { background: rgba(255,255,255,.18); border-radius: 18px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .glass .btn { background: rgba(255,255,255,.25); color: #fff; }
+  .bar { height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden; display: flex; }
+</style>
+</head>
+<body>
+<h1>Round 2: structure fixed, real copy</h1>
+<p class="lede">Applies the round 1 critique: Inbox and Agents split, New agent in the tab bar accessory, one dock at the bottom of the agent view, the terminal fitted to width, triage review gated by evidence, counts-only Live Activity. Greys plus the state colours from the Mac's design system. Critique of this round: <code>../critique.md</code>.</p>
+
+<div class="strip">
+
+<!-- 1 Inbox -->
+<figure>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="content">
+      <div class="large">Inbox</div>
+      <div class="sec"><span class="m signal"></span>Needs you · 3</div>
+      <div class="card">
+        <div class="row"><span class="m signal"></span><span class="t grow">migrations</span><span class="s">mini · 2m</span></div>
+        <div>Wants to run <span class="mono">npm run db:migrate</span></div>
+        <div class="row"><span class="s grow">Risky: changes the database</span><span class="btn p">Open</span></div>
+      </div>
+      <div class="card">
+        <div class="row"><span class="m signal"></span><span class="t grow">relay-tests</span><span class="s">studio · 4m</span></div>
+        <div>Wants to edit <span class="mono">internal/hub_test.go</span></div>
+        <div class="row"><span class="btn sig grow">Allow</span><span class="btn grow">Always</span><span class="btn grow">Deny</span></div>
+      </div>
+      <div class="card">
+        <div class="row"><span class="m question"></span><span class="t grow">api-docs</span><span class="s">studio · 9m</span></div>
+        <div>Which format should the docs use?</div>
+        <div class="row"><span class="btn grow">OpenAPI</span><span class="btn grow">Markdown</span></div>
+      </div>
+      <div class="sec"><span class="m done"></span>Ready to review · 2</div>
+      <div class="line"><span class="m done"></span><div class="grow"><div class="t">fix-login</div><div class="s">mini · hesper · 4 files · tests fresh</div></div><span class="s">›</span></div>
+      <div class="line"><span class="m done"></span><div class="grow"><div class="t">pricing-copy</div><div class="s">air · website · 2 files · no tests</div></div><span class="s">›</span></div>
+    </div>
+    <div class="tabbar">
+      <div class="acc"><span>＋</span><span class="grow">New agent</span><span>🎙</span></div>
+      <div class="tabs"><span class="on">Inbox<span class="badge">3</span></span><span>Agents</span><span>Macs</span><span>⌕</span></div>
+    </div>
+  </div>
+  <figcaption><b>1 · Inbox.</b> Only what waits for you. Risky approvals show Open, not Allow.</figcaption>
+</figure>
+
+<!-- 2 Agents -->
+<figure>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="content">
+      <div class="large">Agents</div>
+      <div class="sec">hesper</div>
+      <div class="line"><span class="m signal"></span><div class="grow"><div class="t">migrations</div><div class="s">Needs you · mini</div></div><span class="s">2m</span></div>
+      <div class="line"><span class="m working"></span><div class="grow"><div class="t">search-index</div><div class="s">Running go test ./internal/… · mini</div></div><span class="s">12m</span></div>
+      <div class="line"><span class="m working"></span><div class="grow"><div class="t">relay-tests</div><div class="s">Editing hub_test.go · studio</div></div><span class="s">31m</span></div>
+      <div class="line"><span class="m done"></span><div class="grow"><div class="t">fix-login</div><div class="s">Done · 4 files changed · mini</div></div><span class="s">1h</span></div>
+      <div class="sec">website</div>
+      <div class="line"><span class="m working"></span><div class="grow"><div class="t">hero-image</div><div class="s">Thinking · air</div></div><span class="s">3m</span></div>
+      <div class="line"><span class="m done"></span><div class="grow"><div class="t">pricing-copy</div><div class="s">Done · 2 files · air</div></div><span class="s">40m</span></div>
+      <div class="sec">scratch</div>
+      <div class="line"><span class="m idle"></span><div class="grow"><div class="t">regex-help</div><div class="s">Idle · mini</div></div><span class="s">2h</span></div>
+      <div class="line" style="opacity:.5"><span class="m idle"></span><div class="grow"><div class="t">bench-notes</div><div class="s">Exited · swipe to resume</div></div><span class="s">5h</span></div>
+    </div>
+    <div class="tabbar">
+      <div class="acc"><span>＋</span><span class="grow">New agent</span><span>🎙</span></div>
+      <div class="tabs"><span>Inbox<span class="badge">3</span></span><span class="on">Agents</span><span>Macs</span><span>⌕</span></div>
+    </div>
+  </div>
+  <figcaption><b>2 · Agents.</b> The Wall as a list: grouped by project, the agent's activity line, the Mac as meta.</figcaption>
+</figure>
+
+<!-- 3 Agent needs you -->
+<figure>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="nav"><span>‹ Inbox</span><div class="c"><div class="t">relay-tests</div><div class="s">studio · hesper · ~fix/hub</div></div><span>⋯</span></div>
+    <div class="term"><b>⏺</b> The hub test races on the reconnect path. I'll
+  make the second dial wait for the first close.
+
+<b>⏺</b> <em>Update</em>(internal/relay/hub_test.go)
+  ⎿  Updated hub_test.go with 6 additions, 2 removals
+     88   func TestHubReplace(t *testing.T) {
+     89 <u>+     first := dial(t, h)</u>
+     90 <u>+     <-first.closed</u>
+     91         second := dial(t, h)
+
+<b>⏺</b> <em>Edit</em>(internal/relay/hub.go)
+
+ ╭──────────────────────────────────────────────╮
+ │ Edit file                                    │
+ │ internal/relay/hub.go                        │
+ │ <i>Do you want to make this edit to hub.go?</i>     │
+ │ ❯ 1. Yes                                     │
+ │   2. Yes, allow all edits during this session│
+ │   3. No, and tell Claude what to do (esc)    │
+ ╰──────────────────────────────────────────────╯</div>
+    <div class="dock">
+      <div class="row"><span class="m signal"></span><span class="grow">Edit <span class="mono">internal/relay/hub.go</span>?</span></div>
+      <div class="row"><span class="btn sig grow">Allow</span><span class="btn grow">Always</span><span class="btn grow">Deny…</span></div>
+    </div>
+  </div>
+  <figcaption><b>3 · Agent, needs you.</b> Terminal fitted to width, decision as native buttons in the dock.</figcaption>
+</figure>
+
+<!-- 4 Agent working -->
+<figure>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="nav"><span>‹ Agents</span><div class="c"><div class="t">search-index</div><div class="s">mini · hesper · main</div></div><span>⋯</span></div>
+    <div class="term"><b>⏺</b> <em>Bash</em>(go test ./internal/index/...)
+  ⎿  ok   hesper/relay/internal/index   2.41s
+     ok   hesper/relay/internal/index/fts  0.88s
+
+<b>⏺</b> Both packages pass. Next I'll wire the index into
+  history search and add a benchmark for 10k sessions.
+
+<b>⏺</b> <em>Read</em>(internal/history/search.go)
+  ⎿  Read 214 lines
+
+<b>⏺</b> <em>Update</em>(internal/history/search.go)
+  ⎿  Updated search.go with 31 additions, 12 removals
+
+<i>✻ Wiring index into search… (2m 14s · ↓ 3.1k tokens)</i>
+
+
+ ────────────────────────────────────────────────
+ &gt;
+ ────────────────────────────────────────────────
+   ⏵⏵ accept edits on (shift+tab to cycle)</div>
+    <div class="dock">
+      <div class="row"><span class="field grow">Message search-index</span><span class="btn">🎙</span></div>
+      <div class="row" style="gap:6px"><span class="chip">esc</span><span class="chip">⇥</span><span class="chip">↑</span><span class="chip">↓</span><span class="chip">⏎</span><span class="chip">^C</span><span class="chip">1</span><span class="chip">2</span></div>
+    </div>
+  </div>
+  <figcaption><b>4 · Agent, working.</b> Reply field and a key strip; text goes in without resizing the Mac's terminal.</figcaption>
+</figure>
+
+<!-- 5 New agent -->
+<figure>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="content"><div class="large">Agents</div></div>
+    <div class="dim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="row"><span class="btn">Cancel</span><span class="t grow" style="text-align:center">New agent</span><span class="btn p">Start</span></div>
+      <div style="font-size:17px; min-height:110px; padding:4px 2px">Add a benchmark for history search with 10k sessions and keep it under 50 ms<span style="color:var(--working)">|</span></div>
+      <div class="row" style="flex-wrap:wrap"><span class="chip">📁 hesper on mini ⌄</span><span class="chip">Claude ⌄</span><span class="chip">Options</span></div>
+      <div class="s">Last used · mini is online · new worktree</div>
+      <div style="flex:1"></div>
+      <div style="background:var(--box); border-radius:8px; height:150px; display:grid; place-items:center; color:var(--mid)">keyboard</div>
+    </div>
+  </div>
+  <figcaption><b>5 · New agent.</b> Task first; destination and kind default from the last start.</figcaption>
+</figure>
+
+<!-- 6 Review -->
+<figure>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="content"><div class="large">Inbox</div></div>
+    <div class="dim"></div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="row"><span class="m done"></span><span class="t grow">fix-login</span><span class="s">mini · hesper</span></div>
+      <div class="card"><div class="s">Last message</div><div>Fixed the token refresh race: the second refresh now waits for the first. Added a test for the expired-token path.</div></div>
+      <div class="sec">Evidence</div>
+      <div class="line"><span class="m done"></span><span class="grow mono">go test ./auth/...</span><span class="s">passed · fresh</span></div>
+      <div class="line"><span class="m question"></span><span class="grow mono">make lint</span><span class="s">not run</span></div>
+      <div class="sec">4 files · +86 −12</div>
+      <div class="line"><span class="grow mono">auth/refresh.go</span><span class="s">+40 −9 ›</span></div>
+      <div class="line"><span class="grow mono">auth/refresh_test.go</span><span class="s">+38 ›</span></div>
+      <div class="line"><span class="grow mono">docs/auth.md</span><span class="s">+8 −3 ›</span></div>
+      <div style="flex:1"></div>
+      <div class="row"><span class="btn grow">Send back…</span><span class="btn p grow">Accept &amp; commit</span></div>
+      <div class="s" style="text-align:center; padding-bottom:14px">Tests fresh · no risky files</div>
+    </div>
+  </div>
+  <figcaption><b>6 · Review.</b> Last message, evidence, files, then a verdict that follows the evidence.</figcaption>
+</figure>
+
+<!-- 7 Macs -->
+<figure>
+  <div class="phone">
+    <div class="status"></div>
+    <div class="content">
+      <div class="row"><div class="large grow">Macs</div><span class="btn">Add Mac</span></div>
+      <div class="card">
+        <div class="row"><span class="m done"></span><span class="t grow">mini</span><span class="s">6 agents</span></div>
+        <div class="s">Online · same network · 3 ms</div>
+        <div class="row"><span class="s grow">Memory</span><div class="bar grow"><span style="width:62%; background:var(--mid)"></span></div></div>
+      </div>
+      <div class="card">
+        <div class="row"><span class="m done"></span><span class="t grow">studio</span><span class="s">3 agents</span></div>
+        <div class="s">Online · via relay · 48 ms</div>
+        <div class="row"><span class="s grow">Memory</span><div class="bar grow"><span style="width:35%; background:var(--mid)"></span></div></div>
+      </div>
+      <div class="card">
+        <div class="row"><span class="m idle"></span><span class="t grow">air</span><span class="s">2 agents</span></div>
+        <div class="s">Asleep · lid closed since 18:40 · battery 41%</div>
+        <div class="s">Its agents pause until it wakes.</div>
+      </div>
+      <div class="sec">This iPhone</div>
+      <div class="line"><span class="grow">Allowed on 3 Macs</span><span class="s">›</span></div>
+      <div class="line"><span class="grow">Notifications</span><span class="s">›</span></div>
+    </div>
+    <div class="tabbar">
+      <div class="acc"><span>＋</span><span class="grow">New agent</span><span>🎙</span></div>
+      <div class="tabs"><span>Inbox<span class="badge">3</span></span><span>Agents</span><span class="on">Macs</span><span>⌕</span></div>
+    </div>
+  </div>
+  <figcaption><b>7 · Macs.</b> Plain status lines instead of dots; settings for this iPhone at the bottom.</figcaption>
+</figure>
+
+<!-- 8 Lock -->
+<figure>
+  <div class="phone lock">
+    <div class="status"></div>
+    <div class="date">Friday 31 October</div>
+    <div class="clock">9:41</div>
+    <div style="padding:0 12px; display:flex; flex-direction:column; gap:8px; margin-top:14px">
+      <div class="glass">
+        <div class="row"><span class="m signal"></span><span class="t grow">3 need you</span><span class="s">5 working</span></div>
+        <div class="s">Hesper · oldest waiting 9 min</div>
+        <div class="row"><span class="btn grow">Open next</span></div>
+      </div>
+      <div class="glass">
+        <div class="row"><span class="t grow">relay-tests on studio</span><span class="s">now</span></div>
+        <div>Wants to edit internal/relay/hub.go</div>
+        <div class="row"><span class="btn grow">Allow</span><span class="btn grow">Deny</span><span class="btn grow">Reply</span></div>
+      </div>
+      <div class="glass">
+        <div class="row"><span class="t grow">migrations on mini</span><span class="s">2m</span></div>
+        <div>Wants to run npm run db:migrate</div>
+        <div class="s">Risky · open Hesper to answer</div>
+      </div>
+    </div>
+  </div>
+  <figcaption><b>8 · Lock screen.</b> Counts-only Live Activity, one notification per prompt, risky ones without Allow.</figcaption>
+</figure>
+
+</div>
+</body>
+</html>

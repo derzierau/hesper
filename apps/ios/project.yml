@@ -1,0 +1,106 @@
+# XcodeGen spec for the iPhone and iPad app. `make project` writes
+# Hesper.xcodeproj (generated, git-ignored). The targets stay thin: logic is
+# in Packages/HesperKit, screens in Packages/HesperUI.
+name: Hesper
+options:
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+packages:
+  # The Mac app's package, for HesperCore (wire models, design tokens).
+  app:
+    path: ../../app
+  HesperKit:
+    path: Packages/HesperKit
+  HesperUI:
+    path: Packages/HesperUI
+targets:
+  Hesper:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: HesperUI
+        product: HesperFeatures
+      - package: HesperKit
+        product: HesperFleet
+      - package: HesperKit
+        product: HesperFixtures
+      - target: HesperWidgets
+      - target: NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HESPER_BUNDLE_PREFIX).ios
+        PRODUCT_NAME: Hesper
+        CODE_SIGN_ENTITLEMENTS: App/Hesper.entitlements
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: App/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Hesper
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Hesper listens while you hold the mic to dictate a task or a reply.
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Hesper turns what you say into text on this iPhone.
+
+  # Lock-screen widget and the one fleet Live Activity. Reads counts the
+  # app wrote to the app group; never talks to a Mac.
+  HesperWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widgets
+    dependencies:
+      - package: HesperKit
+        product: HesperSurfaces
+      - package: HesperUI
+        product: HesperDesign
+      - package: app
+        product: HesperCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HESPER_BUNDLE_PREFIX).ios.widgets
+        CODE_SIGN_ENTITLEMENTS: Widgets/HesperWidgets.entitlements
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Widgets/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Hesper
+        SKIP_INSTALL: YES
+
+  # Writes a push's real text before it shows. Today it only falls back to
+  # the hidden-preview text; decrypting ids end to end comes with the
+  # mobile link library. Not main-actor: its callbacks are not.
+  NotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(HESPER_BUNDLE_PREFIX).ios.notifications
+        CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: NotificationService/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Hesper
+        SKIP_INSTALL: YES
+
+schemes:
+  Hesper:
+    build:
+      targets:
+        Hesper: all
+    run:
+      config: Debug
+    archive:
+      config: Release
