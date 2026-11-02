@@ -311,3 +311,35 @@ func Verify(key *ecdsa.PublicKey, machineID, method string, params []byte, auth 
 	}
 	return nil
 }
+
+// ReenrollLabel starts the message a device key signs to keep its relay
+// device ID when the controller enrolls again (protocol.md, GitHub
+// enrollment, previousDevice).
+const ReenrollLabel = "hesper-reenroll-v1"
+
+// ReenrollDigest is SHA-256 of "hesper-reenroll-v1\n<id>\n<challenge>": what
+// the device key of relay device id signs for the enrollment whose S256
+// challenge is challenge.
+func ReenrollDigest(id, challenge string) [32]byte {
+	return sha256.Sum256([]byte(ReenrollLabel + "\n" + id + "\n" + challenge))
+}
+
+// VerifyReenroll checks sig, standard base64 of a DER ECDSA signature like
+// auth.sig, of ReenrollDigest(id, challenge) with key.
+func VerifyReenroll(key *ecdsa.PublicKey, id, challenge, sig string) error {
+	if !validField(id) || !validField(challenge) {
+		return invalid("re-enrollment id or challenge is invalid")
+	}
+	if len(sig) == 0 || len(sig) > maxSignature {
+		return invalid("re-enrollment signature has an invalid length")
+	}
+	der, err := base64.StdEncoding.Strict().DecodeString(sig)
+	if err != nil || base64.StdEncoding.EncodeToString(der) != sig {
+		return invalid("re-enrollment signature is not canonical base64")
+	}
+	digest := ReenrollDigest(id, challenge)
+	if key == nil || !ecdsa.VerifyASN1(key, digest[:], der) {
+		return errors.New("re-enrollment signature does not verify")
+	}
+	return nil
+}

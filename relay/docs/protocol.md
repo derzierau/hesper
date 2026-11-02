@@ -36,6 +36,39 @@ refresh-family expiry. Only one renewal may run per device. Persist the new pair
 before connecting. A lost response or persistence failure requires a new login;
 reusing a refresh token revokes the entire device and active connection.
 
+**Signing in again keeps the device ID.** Hosts keep approvals by relay
+device ID (`controllers.json`), so a controller whose refresh family ended
+enrolls with `previousDevice` to keep its ID and with it every approval:
+
+```json
+{"name":"iPhone","role":"controller","challenge":"…","callback":"hesper-ios://auth",
+ "previousDevice":{"id":"DEVICE_ID","key":"BASE64_DER_P256","sig":"BASE64_DER_ECDSA"}}
+```
+
+`key` is the device key (base64 DER SubjectPublicKeyInfo, as in
+`devices.request`) and `sig` its signature, standard base64 of DER ECDSA
+P-256 over SHA-256 of these lines joined by `\n` (no trailing newline):
+
+```text
+hesper-reenroll-v1
+<previous device ID>
+<this enrollment's challenge>
+```
+
+`pkg/devicekey` has the golden vector (`TestReenrollGoldenVector`). The
+relay accepts it only for a controller enrollment, a live (never revoked)
+controller, and the key the relay recorded for that device: the `key` of
+the first `devices.request` the device sent through the relay (later keys
+never replace it). Otherwise enroll answers 400 `invalid_previous_device`;
+a device that never sent `devices.request` has no recorded key and enrolls
+without `previousDevice` (a new ID). At claim the relay checks again, now
+that GitHub has named the owner: the same owner, still not revoked, the same
+key; otherwise 403 `previous_device_rejected`, and the client starts a plain
+enrollment. A successful claim returns credentials for the earlier device
+ID, takes the new `name`, keeps the push token, and deletes every earlier
+access and refresh credential of that device (presenting one later is not
+reuse; it is simply unknown). A revoked device never comes back this way.
+
 **Push token.** A controller registers its APNs device token with
 `POST /v1/devices/push` `{"token":"HEX","environment":"sandbox"|"production"}`
 and its access token as `Authorization: Bearer`. `token` is the hex APNs token
@@ -279,7 +312,9 @@ request (`pending-approvals.json`, at most 5, 10 minutes, one per controller,
 a controller at most every 5 s and 10 requests a minute in all: `busy`) and
 shows a macOS notification on the host. Asking again with the same keys
 returns the same pending request; a denied device is refused (`forbidden`)
-for 10 minutes. The result carries `hostKey`, the host's X25519 transfer
+for 10 minutes. The relay records the `key` of a controller's first
+`devices.request` for re-enrollment (see GitHub enrollment); hosts never
+rely on it. The result carries `hostKey`, the host's X25519 transfer
 key, and `code`, the first 30 bits of SHA-256(host key ‖ key DER ‖ strong
 key DER) in base32 as `ABC-DEF`. The controller computes the code itself
 from the keys it holds and the host key (pinned in `trusted-hosts.json` like

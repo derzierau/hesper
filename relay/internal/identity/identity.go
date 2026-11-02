@@ -18,11 +18,14 @@ const Controller Role = "controller"
 func (r Role) Valid() bool { return r == Host || r == Controller }
 
 type Device struct {
-	ID                  string    `json:"id"`
-	Owner               string    `json:"owner"`
-	Role                Role      `json:"role"`
-	Name                string    `json:"name"`
-	Revoked             bool      `json:"revoked"`
+	ID      string `json:"id"`
+	Owner   string `json:"owner"`
+	Role    Role   `json:"role"`
+	Name    string `json:"name"`
+	Revoked bool   `json:"revoked"`
+	// Key is the first device key a controller asked a host to approve
+	// (devices.request); re-enrollment that proves it keeps this ID.
+	Key                 string    `json:"key,omitempty"`
 	Push                *Push     `json:"push,omitempty"`
 	CredentialExpiresAt time.Time `json:"-"`
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/identity"
+	"github.com/derzierau/hesper/relay/pkg/devicekey"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 )
 
@@ -94,6 +95,13 @@ func (s *HTTP) enroll(w http.ResponseWriter, r *http.Request) {
 		Role      identity.Role `json:"role"`
 		Challenge string        `json:"challenge"`
 		Callback  string        `json:"callback"`
+		// PreviousDevice keeps a controller's relay device ID: its recorded
+		// device key signs devicekey.ReenrollDigest(id, challenge).
+		PreviousDevice *struct {
+			ID  string `json:"id"`
+			Key string `json:"key"`
+			Sig string `json:"sig"`
+		} `json:"previousDevice"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -115,6 +123,20 @@ func (s *HTTP) enroll(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	e := Enrollment{ID: identity.Secret(), Name: req.Name, Role: req.Role, Challenge: req.Challenge, Callback: req.Callback, Expires: time.Now().Add(10 * time.Minute)}
+	if p := req.PreviousDevice; p != nil {
+		// The owner is checked again at claim, once GitHub has named them.
+		key, _, err := devicekey.ParsePublicKey(p.Key)
+		if err != nil || req.Role != identity.Controller || devicekey.VerifyReenroll(key, p.ID, req.Challenge, p.Sig) != nil {
+			fail(w, 400, "invalid_previous_device")
+			return
+		}
+		d, err := s.Repository.Device(r.Context(), p.ID)
+		if err != nil || d.Revoked || d.Role != identity.Controller || d.Key == "" || d.Key != p.Key {
+			fail(w, 400, "invalid_previous_device")
+			return
+		}
+		e.Previous, e.PreviousKey = d.ID, d.Key
+	}
 	if s.Repository.CreateEnrollment(r.Context(), e) != nil {
 		fail(w, 503, "busy")
 		return
@@ -272,6 +294,10 @@ func (s *HTTP) claim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d, c, err := s.Repository.Claim(r.Context(), req.ID, req.Verifier, 15*time.Minute, 30*24*time.Hour)
+	if protocol.PublicError(err).Code == "previous_device_rejected" {
+		fail(w, 403, "previous_device_rejected")
+		return
+	}
 	if err != nil {
 		fail(w, 400, "expired")
 		return

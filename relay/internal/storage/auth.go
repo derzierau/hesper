@@ -139,6 +139,19 @@ func (s *Bolt) Claim(ctx context.Context, id, verifier string, accessTTL, refres
 			return protocol.Err("authorization_pending", "Waiting for browser approval")
 		}
 		d = identity.Device{ID: identity.Secret(), Owner: e.Principal.ID, Role: e.Role, Name: e.Name}
+		if e.Previous != "" {
+			// Re-enrollment keeps the device ID only for the same owner's
+			// live controller whose recorded key signed the enrollment.
+			var old identity.Device
+			if json.Unmarshal(tx.Bucket(devices).Get([]byte(e.Previous)), &old) != nil || old.Revoked || old.Owner != e.Principal.ID || old.Role != identity.Controller || old.Key == "" || old.Key != e.PreviousKey || e.Role != identity.Controller {
+				return protocol.Err("previous_device_rejected", "The earlier device cannot be signed in again")
+			}
+			if err := dropCredentials(tx, old.ID); err != nil {
+				return err
+			}
+			d = old
+			d.Name = e.Name
+		}
 		if err := tx.Bucket(devices).Put([]byte(d.ID), protocol.JSON(d)); err != nil {
 			return err
 		}
@@ -151,6 +164,31 @@ func (s *Bolt) Claim(ctx context.Context, id, verifier string, accessTTL, refres
 		return b.Put([]byte(id), protocol.JSON(e))
 	})
 	return d, credentials, err
+}
+
+// dropCredentials deletes every access and refresh credential of a device.
+func dropCredentials(tx *bolt.Tx, id string) error {
+	for _, name := range [][]byte{tokens, refreshes} {
+		b := tx.Bucket(name)
+		var keys [][]byte
+		if err := b.ForEach(func(k, v []byte) error {
+			var row struct {
+				DeviceID string `json:"deviceId"`
+			}
+			if string(v) == id || (json.Unmarshal(v, &row) == nil && row.DeviceID == id) {
+				keys = append(keys, append([]byte(nil), k...))
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		for _, k := range keys {
+			if err := b.Delete(k); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 func (s *Bolt) Rotate(ctx context.Context, token, proof string, accessTTL time.Duration) (identity.Device, protocol.Credentials, error) {
 	var d identity.Device
