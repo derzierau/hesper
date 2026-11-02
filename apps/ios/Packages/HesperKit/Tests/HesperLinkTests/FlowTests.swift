@@ -186,6 +186,9 @@ import Testing
         await #expect(throws: PairingError.notAllowed(login: "")) {
             try await pairing.signIn(relay: api.origin) { _, _, _ in URL(string: "hesper-ios://auth?enrollment=e&status=not_allowed")! }
         }
+        await #expect(throws: PairingError.failed("The sign-in expired. Try again.")) {
+            try await pairing.signIn(relay: api.origin) { _, _, _ in URL(string: "hesper-ios://auth?enrollment=e&status=expired")! }
+        }
         await #expect(throws: PairingError.cancelled) {
             try await pairing.signIn(relay: api.origin) { _, _, _ in throw CancellationError() }
         }
