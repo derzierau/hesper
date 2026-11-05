@@ -424,7 +424,8 @@ that, `kill -QUIT` the daemon: it writes every goroutine to the log.
   ⇧⌘M moves it to another machine. Every key and menu item is one entry
   in the command registry: see "As built — commands".
 - Tokyo Night palette; Ghostty's font settings (read the user's Ghostty config
-  for font family/size where possible).
+  for font family/size where possible). Lines sit 10% further apart than the
+  font's own cell height (`adjust-cell-height = 10%`).
 - Performance budget (from the proposal): local keystroke→screen < 5 ms;
   16 live tiles at 120 Hz without dropped frames on an M1 Max; state change →
   ring < 100 ms. Hidden or offscreen tiles must not render.
