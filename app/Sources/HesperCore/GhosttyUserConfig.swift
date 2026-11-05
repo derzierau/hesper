@@ -75,6 +75,7 @@ public enum TerminalConfigText {
         if let t = user.fontThicken { lines.append("font-thicken = \(t)") }
         for f in user.fontFeatures { lines.append("font-feature = \(f)") }
         lines += [
+            "adjust-cell-height = 10%",
             "background = \(TokyoNight.background)",
             "foreground = \(TokyoNight.foreground)",
             "cursor-color = \(TokyoNight.foreground)",
