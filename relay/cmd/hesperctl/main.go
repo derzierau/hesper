@@ -48,6 +48,11 @@ func init() {
 			Output: "{approved, note} or {denied}"},
 		{Name: "devices-local", Summary: "List or revoke the controllers this host approved", Usage: "devices-local [--revoke NAME] [--json]",
 			Output: "{controllers, pending, enforcing}, with --revoke {revoked}"},
+		{Name: "forget", Destructive: true, Summary: "Remove a device from the relay and this Mac", Usage: "forget NAME|ID [--local-only] [--json]",
+			Help: "Revokes the device on the relay (it is signed out everywhere), then drops its approval on this host, its pinned key and its machines.json entry, through hesperd. " +
+				"Removing a Mac's host also signs out its offline controller record of the same name. This Mac itself is refused. " +
+				"Without a reachable relay nothing changes; --local-only (for a relay too old to remove devices) forgets it here only.",
+			Output: "{relay, approval, trust, names, signedOut?}: each \"done\", \"skipped\" or the step's error"},
 		{Name: "login", NoMCP: true, Summary: "Enroll this device with the relay (GitHub sign-in)", Usage: "login --name NAME --out FILE [--role R] [--relay URL]",
 			Help: relayHelp, Output: "{deviceId, role, credentialsFile}"},
 		{Name: "pair", NoMCP: true, Summary: "Enroll with an invitation (development relays)", Usage: "pair [--relay URL] --name NAME --out FILE [--invitation-file F]",
@@ -101,6 +106,8 @@ func relayCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		return approveCommand(f, args[1:])
 	case "devices-local":
 		return devicesLocalCommand(f, args[1:])
+	case "forget":
+		return forgetCommand(ctx, f, args[1:])
 	case "invite", "devices", "revoke":
 		socket := f.String("admin-socket", ".state/admin.sock", "Local relay admin socket")
 		owner := f.String("owner", "personal", "Owner namespace")
