@@ -77,8 +77,10 @@ link: when the link breaks or moves to the direct path the controller
 resets it, and the next connection uses the new link.
 
 Relay pings active peers every 15 seconds with a 10-second timeout. Either
-peer closing ends the stream. Credential expiry, revocation, allowlist
-removal, host control disconnection and relay shutdown close streams.
+peer closing ends the stream. Revocation of either device, allowlist
+removal, host control disconnection and relay shutdown close streams; the relay
+checks each device record and the allowlist every second. Access-token expiry
+does not: the token only governs opening.
 
 ## Latency
 

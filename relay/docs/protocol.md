@@ -613,8 +613,11 @@ and reconnect policy. Host agents renew their access credential two minutes
 before it expires and dial a new connection while the old one still serves; the
 relay replaces the old connection, so the host stays online. Requests in flight
 on the old connection may be lost. A host's links (`agents.link`) do not end
-with its hub connection, but their terminal streams are sockets too. Active
-sockets close at access expiry, and removed users cannot renew or reconnect.
+with its hub connection. Hub connections close at access expiry. A terminal
+stream (`/v1/terminal`) needs a valid access token only to open; it then stays
+open while both devices stay active and closes within a second of a revocation
+or policy change. Revocation and policy are the controls; token expiry only
+governs opening. Removed users cannot renew or reconnect.
 
 
 ## Terminal streams

@@ -162,12 +162,10 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	}
 	b.mu.Unlock()
 	defer conn.CloseNow()
-	expiry := time.NewTimer(24 * time.Hour)
-	if !d.CredentialExpiresAt.IsZero() {
-		expiry.Reset(max(time.Until(d.CredentialExpiresAt), 0))
-	}
-	defer expiry.Stop()
-	// Repository checks also cover callers that revoke directly, independent of
+	// The access token only governs opening. An open stream lives while its
+	// device stays active: the check reads the device record, so the stream
+	// outlives token expiry and still closes within a second of a revocation
+	// or policy change, including callers that revoke directly, independent of
 	// the HTTP administration and GitHub token-reuse callbacks.
 	check := time.NewTicker(time.Second)
 	defer check.Stop()
@@ -197,10 +195,8 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-p.ctx.Done():
 			return
-		case <-expiry.C:
-			return
 		case <-check.C:
-			if _, e := s.Repository.Authenticate(p.ctx, token); e != nil {
+			if !s.active(p.ctx, d) {
 				return
 			}
 			if s.Policy != nil && !s.Policy.Allowed(d.Owner) {
@@ -208,6 +204,21 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// active reports whether device d is still enrolled under its owner, in its
+// role and not revoked. A repository error counts as inactive.
+func (s *Server) active(ctx context.Context, d identity.Device) bool {
+	devices, err := s.Repository.Devices(ctx, d.Owner)
+	if err != nil {
+		return false
+	}
+	for _, v := range devices {
+		if v.ID == d.ID {
+			return v.Owner == d.Owner && v.Role == d.Role && !v.Revoked
+		}
+	}
+	return false
 }
 func (s *Server) bridge(p *terminalPair) {
 	timer := time.NewTimer(15 * time.Second)
