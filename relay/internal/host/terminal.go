@@ -41,8 +41,10 @@ const (
 // linkWatch is how often a link checks that its device is still approved.
 var linkWatch = 5 * time.Second
 
-// terminalManager opens the links of one host connection (the relay's
-// or the direct path's). Losing that connection ends its links.
+// terminalManager opens the links of the relay path or of one direct
+// connection. The relay's lives as long as Runner.Run: its links' streams
+// are relay sockets of their own, so they outlive a hub reconnection.
+// Losing a direct connection ends its links.
 type terminalManager struct {
 	ctx   context.Context
 	r     *Runner

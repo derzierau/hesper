@@ -202,7 +202,14 @@ func shellQuote(s string) string {
 // file, fsync, rename, directory fsync). Every failure leaves it as it was:
 // transient failures return ErrRenewalPostponed together with the stored
 // credentials, and an explicit relay rejection returns a SignInRequiredError.
+// It renews when less than a minute is left.
 func FreshCredentials(ctx context.Context, path string) (protocol.Credentials, error) {
+	return RenewCredentials(ctx, path, time.Minute)
+}
+
+// RenewCredentials is FreshCredentials renewing when less than within is
+// left: a long-lived connection renews ahead of its expiry.
+func RenewCredentials(ctx context.Context, path string, within time.Duration) (protocol.Credentials, error) {
 	var c protocol.Credentials
 	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
@@ -228,7 +235,7 @@ func FreshCredentials(ctx context.Context, path string) (protocol.Credentials, e
 	if err != nil {
 		return c, err
 	}
-	if c.ExpiresAt.IsZero() || time.Until(c.ExpiresAt) > time.Minute {
+	if c.ExpiresAt.IsZero() || time.Until(c.ExpiresAt) > within {
 		return c, nil
 	}
 	if c.RefreshToken == "" {
