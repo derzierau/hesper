@@ -132,8 +132,10 @@ Code: `relay/macos/hesper-keys/main.swift` (helper), `relay/pkg/devicekey`
   holds no signer for a caller and never signs for one; an unsigned caller
   gets `forbidden` from an enforcing host.
 - **Replay cache**: `nonces.log` (0600) lines `<expiry ms> <device>
-  <nonce>`, appended (no fsync) before the request runs, reloaded on start,
-  compacted; at most 200 000 live nonces (then refused). Clocks must agree
+  <nonce>`, appended (no fsync) before the request runs, reloaded on start
+  at any size (the 4 MiB limit for keys does not apply), compacted once it
+  holds twice the nonces the last compaction kept (and at least 4096
+  lines); at most 200 000 live nonces (then refused). Clocks must agree
   within 60 s; a Touch ID prompt answered after more than 60 s fails as
   expired.
 - **API for N** (`internal/host`): `(*Authorizer).Authorize(ctx, msg)

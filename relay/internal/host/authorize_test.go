@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -281,6 +282,54 @@ func TestReplayIsRefusedAlsoAfterRestart(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(filepath.Join(h.dir, NoncesFile)); strings.Count(string(data), "\n") != 1 {
 		t.Fatalf("expired nonces kept:\n%s", data)
+	}
+}
+
+func TestOversizedNonceFileIsReadAndRewritten(t *testing.T) {
+	// A file past the 4 MiB limit for keys is still the host's own cache:
+	// it is read, expired lines are dropped and a small file is left.
+	path := filepath.Join(t.TempDir(), NoncesFile)
+	now := time.UnixMilli(1_700_000_000_000)
+	var b strings.Builder
+	for i := 0; b.Len() <= 4<<20; i++ {
+		fmt.Fprintf(&b, "%d laptop-1 %064d\n", now.Add(-time.Minute).UnixMilli(), i)
+	}
+	fmt.Fprintf(&b, "%d laptop-1 live\n", now.Add(time.Minute).UnixMilli())
+	if err := os.WriteFile(path, []byte(b.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := openNonces(path, now)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := c.add("laptop-1 live", now); !errors.Is(err, errReplay) {
+		t.Fatalf("live nonce forgotten: %v", err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Size() > 1024 {
+		t.Fatalf("not rewritten: %v %v", info, err)
+	}
+}
+
+func TestNonceFileStaysBounded(t *testing.T) {
+	// Steady traffic with few live nonces must not let the file grow.
+	path := filepath.Join(t.TempDir(), NoncesFile)
+	now := time.UnixMilli(1_700_000_000_000)
+	c, err := openNonces(path, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 60_000 {
+		now = now.Add(time.Second)
+		if err := c.add(fmt.Sprintf("laptop-1 %064d", i), now); err != nil {
+			t.Fatal(err)
+		}
+		// About 600 nonces are live; the file is rewritten past 4096 lines.
+		if c.lines > 4096+1 {
+			t.Fatalf("after %d adds the file has %d lines", i+1, c.lines)
+		}
+	}
+	if info, err := os.Stat(path); err != nil || info.Size() > 4<<20 {
+		t.Fatalf("nonces file: %v %v", info, err)
 	}
 }
 

@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
@@ -379,13 +380,16 @@ type nonceCache struct {
 	path  string
 	seen  map[string]int64
 	lines int
+	kept  int // entries left by the last rewrite
 	file  *os.File
 }
 
 func openNonces(path string, now time.Time) (*nonceCache, error) {
 	c := &nonceCache{path: path, seen: map[string]int64{}}
-	if data, err := devicekey.ReadPrivateFile(path); err == nil {
-		scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	if f, err := openOwnFile(path); err == nil {
+		// Read line by line and with no size limit: the file is the host's
+		// own state, and one it cannot read would refuse every request.
+		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			fields := strings.Fields(scanner.Text())
 			if len(fields) != 3 {
@@ -397,6 +401,9 @@ func openNonces(path string, now time.Time) (*nonceCache, error) {
 			}
 			c.seen[fields[1]+" "+fields[2]] = expiry
 		}
+		// A read error or an overlong line ends the scan early. What was
+		// not read is forgotten: timestamps still bound a replay to MaxSkew.
+		f.Close()
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -404,6 +411,25 @@ func openNonces(path string, now time.Time) (*nonceCache, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// openOwnFile opens a regular file only this user can read, with the checks
+// of devicekey.ReadPrivateFile but not its size limit.
+func openOwnFile(path string) (*os.File, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		return nil, fmt.Errorf("%s is accessible to other users; expected mode 0600", path)
+	}
+	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
+		return nil, fmt.Errorf("%s belongs to another user", path)
+	}
+	return os.Open(path)
 }
 
 // rewrite drops expired entries and starts a fresh file.
@@ -427,7 +453,7 @@ func (c *nonceCache) rewrite(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	c.file, c.lines = f, len(c.seen)
+	c.file, c.lines, c.kept = f, len(c.seen), len(c.seen)
 	return nil
 }
 
@@ -435,7 +461,9 @@ func (c *nonceCache) add(key string, now time.Time) error {
 	if expiry, ok := c.seen[key]; ok && expiry > now.UnixMilli() {
 		return errReplay
 	}
-	if c.lines > 4096 && c.lines > 2*len(c.seen) {
+	// Compare with what the last rewrite kept, not with seen: seen also
+	// holds expired entries until a rewrite, so it grows with the file.
+	if c.lines > 4096 && c.lines > 2*c.kept {
 		if err := c.rewrite(now); err != nil {
 			return err
 		}
