@@ -44,6 +44,7 @@ struct ScopeBar: View {
         .padding(.top, DS.Spacing.l)
         .padding(.bottom, DS.Spacing.xs)
         .background(Theme.background)
+        .dynamicTypeSize(...DS.chromeTypeLimit)
     }
 
     private func segment(_ s: HomeScope) -> some View {

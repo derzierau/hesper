@@ -36,6 +36,7 @@ struct Console: View {
         .overlay(alignment: .top) {
             Rectangle().fill(Theme.line).frame(height: DS.Edge.line)
         }
+        .dynamicTypeSize(...DS.chromeTypeLimit)
     }
 
     private var speak: some View {
@@ -50,6 +51,7 @@ struct Console: View {
         .frame(maxWidth: .infinity, minHeight: DS.Size.console)
         .background(away ? Theme.muted : Theme.accent, in: shape)
         .popoverTip(MicTip(), arrowEdge: .bottom)
+        .tipBackground(Theme.surface)
         .scaleEffect(holding ? 0.97 : 1)
         .animation(.snappy, value: holding)
         .contentShape(shape)
@@ -79,7 +81,7 @@ struct Console: View {
         } label: {
             HStack(spacing: DS.Spacing.s) {
                 Image(systemName: "keyboard").font(.system(size: icon))
-                Text("Type").font(.headline)
+                Text("Type").font(.headline).lineLimit(1).fixedSize()
             }
             .frame(minWidth: DS.Size.typeButton, minHeight: DS.Size.console)
         }

@@ -47,11 +47,16 @@ struct AgentsScreen: View {
                 ContentUnavailableView("No agents", systemImage: "square.grid.2x2", description: Text("Tap the mic to start one."))
             }
         }
-        .searchable(text: $query, prompt: "Agents and projects")
-        .tint(Theme.accent)
-        .searchFocused($searchFocused)
-        .task { if focusSearch { searchFocused = true } }
         .themedList()
+        // A Neon field on top, not `searchable`'s glass capsule.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            NeonSearchField(text: $query, prompt: "Agents and projects")
+                .focused($searchFocused)
+                .padding(.horizontal, DS.Spacing.xl)
+                .padding(.vertical, DS.Spacing.m)
+                .background(Theme.background)
+        }
+        .task { if focusSearch { searchFocused = true } }
         .navigationTitle("Agents")
     }
 }

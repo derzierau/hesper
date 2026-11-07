@@ -24,9 +24,13 @@ struct MacsScreen: View {
                             .foregroundStyle(Theme.accent)
                         Text("Made up, to look around.").font(.subheadline).foregroundStyle(Theme.text2)
                         Spacer()
-                        Button("Connect yours") { Task { await onboarding.connectYours() } }
-                            .primaryAction()
-                            .controlSize(.small)
+                        Button {
+                            Task { await onboarding.connectYours() }
+                        } label: {
+                            Text("Connect yours").lineLimit(1).fixedSize()
+                        }
+                        .primaryAction()
+                        .controlSize(.small)
                     }
                     .themedRow()
                 }

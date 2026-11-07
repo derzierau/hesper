@@ -13,7 +13,7 @@ struct AgentScreen: View {
     var body: some View {
         if let agent = model.agent(id) {
             TerminalPlaceholder(agent: agent)
-                .safeAreaInset(edge: .bottom) { Dock(agent: agent) }
+                .safeAreaInset(edge: .bottom, spacing: 0) { Dock(agent: agent) }
                 .navigationTitle(agent.name)
                 .navigationSubtitle(subtitle(agent))
                 .toolbarTitleDisplayMode(.inline)
@@ -53,7 +53,7 @@ private struct TerminalPlaceholder: View {
     }
 }
 
-/// The dock under the terminal, a Neon panel: the priority card's numbered
+/// The dock under the terminal, a Neon bar: the priority card's numbered
 /// options when the agent needs you (a risky Yes asks first, No… opens the
 /// deny sheet), a reply field while it works, Resume once it exited.
 private struct Dock: View {
@@ -110,7 +110,7 @@ private struct Dock: View {
         .disabled(model.pending.contains(agent.id) || !model.fleet.isReachable(agent))
         .padding(DS.Spacing.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .neonPanel()
+        .neonBar()
         .decisions()
     }
 

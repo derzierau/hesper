@@ -60,8 +60,9 @@ struct TaskCard: View {
             }
             .buttonStyle(.plain)
             Spacer(minLength: DS.Spacing.xs)
-            HStack(spacing: DS.Spacing.s) {
-                ForEach(DecisionOptions.gridActions(for: agent)) { button($0) }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: DS.Spacing.s) { actions }
+                VStack(spacing: DS.Spacing.s) { actions }
             }
             .controlSize(.small)
             .font(.subheadline)
@@ -108,6 +109,10 @@ struct TaskCard: View {
         case .working: "working"
         case .readyToReview: agent.state == .idle ? "idle" : "done"
         }
+    }
+
+    private var actions: some View {
+        ForEach(DecisionOptions.gridActions(for: agent)) { button($0) }
     }
 
     /// Open is a link (it pushes); everything else goes through `decide`.

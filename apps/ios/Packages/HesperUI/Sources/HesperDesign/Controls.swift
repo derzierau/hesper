@@ -7,10 +7,11 @@ extension View {
         buttonStyle(NeonButtonStyle(.primary, square: square))
     }
 
-    /// A list on the console's surfaces instead of the system greys: the
-    /// background behind, surfaces for the rows (`themedRow()`).
+    /// A list on the console's surfaces instead of the system greys: plain
+    /// and edge to edge (no rounded inset sections), the background
+    /// behind, surfaces for the rows (`themedRow()`).
     public func themedList() -> some View {
-        scrollContentBackground(.hidden).background(Theme.background)
+        listStyle(.plain).scrollContentBackground(.hidden).background(Theme.background)
     }
 
     /// A list row on `surface`, with `line` between the rows.
@@ -44,6 +45,53 @@ extension View {
             .overlay { shape.strokeBorder(Theme.line, lineWidth: 1) }
             .overlay(alignment: .top) { Rectangle().fill(edge).frame(height: edgeWidth) }
             .clipShape(shape)
+    }
+}
+
+extension View {
+    /// A bar at the bottom of a screen (the agent view's dock): surface
+    /// fill down into the home-indicator area and a 1 pt `line` edge on
+    /// top only, like the console.
+    public func neonBar() -> some View {
+        background(Theme.surface, ignoresSafeAreaEdges: .bottom)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: DS.Edge.line) }
+    }
+}
+
+/// A search field in the console's shape: surface, 1 pt accent border,
+/// square corners. The system's `searchable` field is a glass capsule.
+public struct NeonSearchField: View {
+    @Binding var text: String
+    let prompt: String
+
+    public init(text: Binding<String>, prompt: String) {
+        _text = text
+        self.prompt = prompt
+    }
+
+    public var body: some View {
+        HStack(spacing: DS.Spacing.m) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.accent)
+            TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(Theme.muted))
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+            if !text.isEmpty {
+                Button("Clear", systemImage: "xmark.circle.fill") { text = "" }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(Theme.muted)
+                    .buttonStyle(.plain)
+            }
+        }
+        .foregroundStyle(Theme.text)
+        .tint(Theme.accent)
+        .padding(.horizontal, DS.Spacing.l)
+        .frame(minHeight: DS.Size.control)
+        .background(Theme.surface)
+        .overlay {
+            RoundedRectangle(cornerRadius: DS.Radius.console).strokeBorder(Theme.accent, lineWidth: DS.Edge.line)
+        }
     }
 }
 

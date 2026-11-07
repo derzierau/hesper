@@ -113,6 +113,12 @@ public enum DS {
         public static let sheetAction: CGFloat = 58
     }
 
+    /// The largest text size for fixed chrome (the scope bar, the
+    /// console): at accessibility sizes their words broke mid-word and
+    /// the bars took most of the screen. Content keeps scaling; the
+    /// system's own tab and tool bars stop growing the same way.
+    public static let chromeTypeLimit = DynamicTypeSize.xxxLarge
+
     /// The phone's state mark is a little larger than the Mac's 7 pt.
     public static let markSide: CGFloat = 8
 
