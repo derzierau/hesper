@@ -296,6 +296,21 @@ func statusCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 			}
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", m.Short, m.Name, online, rtt, orDash(m.Route))
 		}
-		return tw.Flush()
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+		if line := relaySessionLine(h.RelaySession); line != "" {
+			fmt.Printf("\n%s\n", line)
+		}
+		return nil
 	})
+}
+
+// relaySessionLine tells the host role's dropped relay sessions; "" when
+// none has dropped.
+func relaySessionLine(s *wire.RelaySession) string {
+	if s == nil || s.LastReason == "" {
+		return ""
+	}
+	return fmt.Sprintf("relay session: dropped %d× in 5 min, last: %s at %s", s.Drops5m, s.LastReason, s.LastAt.Local().Format("15:04:05"))
 }

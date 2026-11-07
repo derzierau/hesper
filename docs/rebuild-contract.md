@@ -107,7 +107,7 @@ directory 0700. Peer credentials checked: same uid only.
 
 | Method | Params | Result |
 |---|---|---|
-| `hello` | `{client, version}` | `{daemon, version, machine, machines:[{short,name,online,rttMs,route}]}` |
+| `hello` | `{client, version}` | `{daemon, version, machine, machines:[{short,name,online,rttMs,route}], relaySession?:{drops5m,lastReason,lastAt}}` |
 | `agents.list` | – | `[Agent]` |
 | `agents.subscribe` | – | result `{}` then notifications `agents.changed {agent}` / `agents.removed {id}` (first an `agents.changed` for every agent) |
 | `agents.spawn` | `{machine?, profile?, kind?, project, task, name?, worktree?: true\|path, branch?, letParentAnswer?}` | `Agent` (inside an agent: its child, see "As built — agent tree") |
@@ -237,7 +237,7 @@ one like any command.
 | `drafts ls` / `rm ID` | `drafts.list` / `drafts.remove` |
 | `drafts save [TASK…\|-] [--id D] [--project P] [--machine M] [--kind K] [--profile P] [--worktree] [--branch B]` | `drafts.save`: a project (id or name) sets `band` and the project's folder on the machine (its default machine, else the first with a folder) and its default profile, as the app's "New Agent in …"; a folder sets `project`; `--machine` sets `machineExplicit` (this Mac's name is stored as none); `--kind` picks the kind's default profile; `--id` changes only what is given |
 | `profiles` | `profiles.list` |
-| `status` | `hello`: daemon, version, machine, machines with online, RTT and route |
+| `status` | `hello`: daemon, version, machine, machines with online, RTT and route; after a dropped relay session `relay session: dropped N× in 5 min, last: REASON at HH:MM:SS` |
 
 Projects are addressed by id, unique name (exact, else ignoring case; a
 real project wins a tie with scratch folders) or folder; groups by id or
@@ -2704,7 +2704,12 @@ unreachable machine's agents stay listed for 60 s, then `agents.removed`.
 **hello.** `machines` lists this Mac (`route: "local"`), then every other
 machine of the owner: `online` (relay presence while connected), `route`
 (`direct`/`relay` while online, `""` offline), `rttMs` (median of the last
-five pings on that route, 0 until measured).
+five pings on that route, 0 until measured). `relaySession` (host role,
+after its first dropped relay session): `drops5m` (sessions that ended
+without hesperd stopping in the last five minutes), `lastReason` (why the
+last one ended, e.g. `relay closed the connection: …` with the relay's
+close status, the same text as the log's `host disconnected; reconnecting
+error=`) and `lastAt`.
 
 **agents.move `{id, to}`**, between any two machines (this one included):
 stop the agent on the source and wait for its exit; source's plan (project,

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
@@ -52,6 +53,7 @@ type Runner struct {
 	setup     sync.Once
 	termSlots chan struct{} // links of both paths
 	changed   chan struct{} // an operation changed published state
+	drops     dropTracker   // relay sessions that ended (hello's relaySession)
 }
 
 func (r *Runner) init() {
@@ -160,10 +162,12 @@ func (r *Runner) Run(ctx context.Context) error {
 		} else {
 			err = errors.New("waiting for the relay to renew credentials")
 		}
+		served := false
 		if err == nil {
 			r.Logger.Info("host connected", "device", r.Credentials.DeviceID)
 			err = r.Serve(ctx, link)
 			link.Close()
+			served = true
 		}
 		var fault *protocol.Error
 		if errors.As(err, &fault) && fault.Code == "unauthorized" {
@@ -174,6 +178,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 		if ctx.Err() != nil {
 			return nil
+		}
+		if served {
+			r.drops.record(time.Now(), err.Error())
 		}
 		r.Logger.Warn("host disconnected; reconnecting", "error", err)
 		if time.Since(started) > time.Minute {
@@ -225,8 +232,21 @@ func (r *Runner) openE2E(m protocol.Message) (protocol.Message, *hostSession, st
 
 // Serve executes one operation at a time. The reader remains active for protocol
 // heartbeats; bounded queues and request deadlines prevent unbounded stale work.
-func (r *Runner) Serve(parent context.Context, link *client.Link) error {
+//
+// When the session ends because the reader stopped (the relay closed the
+// connection, the request queue overflowed), Serve returns that cause,
+// not the cancellation the reader left behind.
+func (r *Runner) Serve(parent context.Context, link *client.Link) (err error) {
 	r.init()
+	// lost is written only by the reader before it closes readDone and
+	// read in this defer, which runs after <-readDone (defers run last
+	// in, first out): the channel orders the two.
+	var lost error
+	defer func() {
+		if lost != nil && parent.Err() == nil {
+			err = lost
+		}
+	}()
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	defer link.Close()
@@ -240,6 +260,10 @@ func (r *Runner) Serve(parent context.Context, link *client.Link) error {
 		for {
 			m, err := link.Read(ctx)
 			if err != nil {
+				// No cause when Serve itself is ending (ctx cancelled).
+				if ctx.Err() == nil {
+					lost = fmt.Errorf("relay closed the connection: %w", err)
+				}
 				return
 			}
 			if m.Type != "request" {
@@ -248,6 +272,7 @@ func (r *Runner) Serve(parent context.Context, link *client.Link) error {
 			select {
 			case requests <- m:
 			default:
+				lost = fmt.Errorf("more than %d requests waiting; connection dropped", cap(requests))
 				return
 			}
 		}
