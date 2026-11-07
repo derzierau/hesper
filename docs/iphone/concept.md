@@ -53,13 +53,13 @@ should not reimplement.
 ## Information architecture
 
 ```
-Tab bar (Liquid Glass)
-├── Inbox        what waits for me: Needs you, then Ready to review
+Home             scope bar (All · Needs you · Working) + menu (Agents,
+│                Macs, Search, Settings); the priority decision; task grids
 ├── Agents       everything that runs, grouped by project, Mac as meta;
 │                a search field (agents, projects, past sessions) and
 │                Later (tasks kept for later, parked drafts on every Mac)
 └── Macs         machines, their health, pairing
-Mic circle       beside the tabs: say or type a task, start it or keep it
+Console          Speak (push-to-talk) and Type at the bottom
 Agent view       pushed from any row; live writable terminal + dock;
                  portrait and landscape (iPad: the detail column)
 Sheets           Capture · Review · Deny with a message · Pair a Mac
@@ -329,25 +329,18 @@ In scope (decided). One app, adaptive:
 
 ## Visual language
 
-The Mac's design system, adapted to iOS 26:
+The Neon control console, the owner's Figma direction; tokens, type and
+layout are in [neon.md](neon.md), which supersedes this section's
+earlier Liquid Glass version:
 
-- **Colours**: the `Theme` tokens in Dusk and Daylight
-  ([design system](../design-system.md)). Signal red only on the
-  needs-you marks and the Inbox badge, never on buttons; the primary
-  action (Allow, Start, Accept) is tinted with the accent (`working`);
-  question amber, done green, error red.
-- **State marks are squares**, 8 pt on the phone, needs-you pulses (not
-  under Reduce Motion). Same shape on the Mac and phone.
-- **Glass only for navigation**: tab bar, mic circle, toolbars, the agent
-  dock and sheets. Lists and the terminal stay solid; no glass on glass;
-  tint only the primary action
-  ([WWDC25-219](https://developer.apple.com/videos/play/wwdc2025/219/)).
-- **Type**: SF Pro for UI at Dynamic Type sizes (Geist is a Mac choice; on
-  iOS the system face scales with accessibility settings for free), SF Mono
-  for meta and commands. Weights 400/500/600.
-- **Shapes**: capsules for buttons, concentric corners for sheets and the
-  dock, terminals edge to edge.
-- **Motion**: calm, no springs, off under Reduce Motion.
+- **Neon tokens**: dark background, cyan accent for action, magenta
+  signal for "needs you"; every colour comes from `Theme`.
+- **Square corners**: 2 pt on everything; the state marks stay 8 pt
+  squares.
+- **No glass**: surfaces are solid with 1 pt borders.
+- **Type**: Space Grotesk Bold for headlines, JetBrains Mono for commands,
+  counts and captions, SF Pro for the rest, all at Dynamic Type sizes.
+- **Dark only** for now.
 
 ## What the phone leaves out
 

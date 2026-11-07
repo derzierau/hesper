@@ -51,6 +51,7 @@ groups need a paid developer account.
 | `NotificationService/` | Writes a push's text before it shows |
 | `Packages/HesperKit/` | Logic, no views; `swift test` runs it on a Mac |
 | `Packages/HesperUI/` | The screens (iOS only) |
+| `Packages/HesperUI/Sources/HesperFeatures/Home/` | Home: scope bar, priority card, task grids, the Speak / Type console |
 
 `HesperKit`:
 
