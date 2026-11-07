@@ -79,7 +79,7 @@ request ID. A missing `machines` field represents an empty inventory.
         "attention":"approval","attentionSince":1791036424,
         "columns":120,"rows":40,"exited":false
       }],
-      "capabilities":{"agents":true,"transfer":true,"spawn":true,"shell":false,"e2e":true,"direct":true,"ping":true},
+      "capabilities":{"agents":true,"transfer":true,"spawn":true,"shell":false,"e2e":true,"direct":true,"ping":true,"sizeOwner":true},
       "transferKey":"BASE64_X25519_PUBLIC_KEY",
       "e2eKey":"BASE64_X25519_PUBLIC_KEY",
       "machine":{"agents":4,"memoryUsed":0.62,"battery":0.18,"onBattery":true,"lidClosed":false}
@@ -93,7 +93,10 @@ attention texts, branches, paths or terminal output**: each agent is a
 terminal whose `terminalId` is its local id, `role` its kind, `state` its
 state, `attention` its attention kind (`approval`, `question`, `error`)
 with `attentionSince` (the Unix second it entered that state), and its PTY
-size. `short` is the host's own short name. Everything else about agents
+size. `short` is the host's own short name. `capabilities.sizeOwner: true`
+says the host publishes who owns each agent's terminal size (below,
+[Size owner](#size-owner)); a controller takes a terminal over only on a
+host that sets it. Everything else about agents
 travels only inside the [end-to-end channel](#end-to-end-channel), as
 results of the [agents methods](#agents) and on [links](#links).
 
@@ -499,6 +502,28 @@ SIZE and a fresh redraw, EXIT last). One link per pair keeps within the
 relay's four streams per host however many tiles show remote agents.
 A host keeps at most four links per device (the oldest goes) and 256
 channels per link.
+
+#### Size owner
+
+The `Agent` objects in `agents.list`, the link's `E` events (`list`,
+`changed`) and the local socket's `agents.changed` notes carry two
+optional fields (omitted when empty):
+
+```json
+{"id":"M/a7f3k2", "size":{"cols":46,"rows":19}, "sizeOwner":"DEVICE_ID", "sizeOwnerName":"iPhone"}
+```
+
+`sizeOwner` is the controller device id whose `agents.attach` (`rw`,
+`owner: true`) owns the PTY's size; `sizeOwnerName` is that device's name
+in the host's `controllers.json` (absent while enforcement is off). Both
+are absent while the size is owned on the host itself (a local
+`hesperd attach --owner`, a Hesper.app tile) or by nobody. The host sends
+a `changed` event (locally an `agents.changed` note) whenever they change:
+a remote owner attaches, it detaches (`X`; the size stays, fits apply as
+before) or a newer owner takes over (the latest owner wins, a local one
+included). They are not persisted: a restarted host starts with none. A
+controlling hesperd shows its own device's ownership as local (it omits
+both fields when `sizeOwner` is its own device id).
 
 A byte-stream channel (a port forward) carries raw bytes in `D` frames of
 at most 32 KiB and has flow control: each side may send 256 KiB, and the

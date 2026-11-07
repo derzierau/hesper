@@ -59,10 +59,16 @@ func (v *viewer) push(it item) {
 	}
 }
 
-// Attach serves an attach connection whose request line was read (r holds
-// what followed it). It answers the request, then runs until either side
-// ends; it closes conn.
+// Attach serves a local attach connection whose request line was read (r
+// holds what followed it). It answers the request, then runs until either
+// side ends; it closes conn.
 func (t *Term) Attach(conn net.Conn, r *bufio.Reader, req wire.AttachRequest) {
+	t.AttachFrom(conn, r, req, Origin{})
+}
+
+// AttachFrom is Attach for a connection from origin: a size owner records
+// it (Term.SizeOwner) until it detaches or another owner takes over.
+func (t *Term) AttachFrom(conn net.Conn, r *bufio.Reader, req wire.AttachRequest, origin Origin) {
 	defer conn.Close()
 	rw := req.Mode == wire.ModeRW
 	if req.Mode != wire.ModeRW && req.Mode != wire.ModeRO {
@@ -80,9 +86,12 @@ func (t *Term) Attach(conn net.Conn, r *bufio.Reader, req wire.AttachRequest) {
 	v := &viewer{t: t, conn: conn, rw: rw, wake: make(chan struct{}, 1)}
 	start := time.Now()
 	t.mu.Lock()
-	resized := false
+	resized, ownerChanged := false, false
 	if rw && req.Owner {
 		t.owner = v
+		if t.ownerFrom != origin {
+			t.ownerFrom, ownerChanged = origin, true
+		}
 		if t.exit == nil && req.Cols > 0 && req.Rows > 0 {
 			resized, _ = t.resizeLocked(req.Cols, req.Rows)
 		}
@@ -106,6 +115,9 @@ func (t *Term) Attach(conn net.Conn, r *bufio.Reader, req wire.AttachRequest) {
 	perf.Host.Since(StageRedraw, start)
 	if resized && t.cfg.OnResize != nil {
 		t.cfg.OnResize(cols, rows)
+	}
+	if ownerChanged && t.cfg.OnOwner != nil {
+		t.cfg.OnOwner()
 	}
 	select {
 	case v.wake <- struct{}{}:
@@ -139,12 +151,19 @@ func Refuse(conn net.Conn, err *wire.Error) {
 func (t *Term) detach(v *viewer) {
 	t.mu.Lock()
 	delete(t.viewers, v)
+	ownerChanged := false
 	if t.owner == v {
 		// The size stays, unless view attaches ask for a fit.
 		t.owner = nil
 		t.scheduleFit()
+		if t.ownerFrom != (Origin{}) {
+			t.ownerFrom, ownerChanged = Origin{}, true
+		}
 	}
 	t.mu.Unlock()
+	if ownerChanged && t.cfg.OnOwner != nil {
+		t.cfg.OnOwner()
+	}
 	v.mu.Lock()
 	v.closed, v.queue = true, nil
 	v.mu.Unlock()

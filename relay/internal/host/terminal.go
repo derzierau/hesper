@@ -23,6 +23,7 @@ import (
 
 	"github.com/derzierau/hesper/relay/internal/identity"
 	"github.com/derzierau/hesper/relay/internal/perf"
+	"github.com/derzierau/hesper/relay/internal/ptyhost"
 	"github.com/derzierau/hesper/relay/pkg/agentlink"
 	"github.com/derzierau/hesper/relay/pkg/client"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
@@ -461,7 +462,10 @@ func (s *Service) attach(ctx context.Context, m protocol.Message) (json.RawMessa
 	link.mu.Unlock()
 	req.Attach = a.ID
 	req.Owner = req.Owner && req.Mode == wire.ModeRW
-	go term.Attach(near, bufio.NewReader(near), req)
+	// A size owner attached here is the calling controller (agent info
+	// sizeOwner, sizeOwnerName).
+	caller, _ := CallerFrom(ctx)
+	go term.AttachFrom(near, bufio.NewReader(near), req, ptyhost.Origin{Device: m.ControllerID, Name: caller.Name})
 	go func() {
 		// The agent's side to the controller.
 		buf := make([]byte, 32<<10)

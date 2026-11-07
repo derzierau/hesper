@@ -86,6 +86,8 @@ type Options struct {
 type Fleet struct {
 	opt     Options
 	control *controlsock.Server
+	// device is this Mac's controller device id (machine.self).
+	device string
 
 	mu       sync.Mutex
 	c        *client.Controller
@@ -112,6 +114,9 @@ type machine struct {
 	lost            *time.Timer           // drops agents after the grace
 	rtts            []time.Duration
 	rttRoute        string
+	// self is this Mac's own controller device id: a host's sizeOwner
+	// equal to it is this Mac's own attach, local in this Mac's view.
+	self string
 }
 
 type watcher struct {
@@ -132,7 +137,7 @@ func New(opt Options) *Fleet {
 	}
 	f := &Fleet{opt: opt, machines: map[string]*machine{}, watchers: map[*watcher]struct{}{}, changed: make(chan struct{}), ready: make(chan struct{})}
 	if c, err := client.LoadCredentials(opt.Credentials); err == nil {
-		f.control = controlsock.New(c.DeviceID)
+		f.control, f.device = controlsock.New(c.DeviceID), c.DeviceID
 	}
 	return f
 }
@@ -296,7 +301,7 @@ func (f *Fleet) inventory(c *client.Controller, list []protocol.Machine) {
 		seen[pm.ID] = true
 		m := f.machines[pm.ID]
 		if m == nil {
-			m = &machine{id: pm.ID, agents: map[string]wire.Agent{}}
+			m = &machine{id: pm.ID, self: f.device, agents: map[string]wire.Agent{}}
 			f.machines[pm.ID] = m
 		}
 		m.name, m.online = pm.Name, pm.Online
@@ -440,6 +445,10 @@ func (f *Fleet) dropAgentsLocked(m *machine) {
 func (m *machine) named(a wire.Agent) wire.Agent {
 	a.ID = m.short + "/" + localID(a.ID)
 	a.Machine = m.short
+	if a.SizeOwner != "" && a.SizeOwner == m.self {
+		// The host's size owner is this Mac's own tile: local here.
+		a.SizeOwner, a.SizeOwnerName = "", ""
+	}
 	return a
 }
 

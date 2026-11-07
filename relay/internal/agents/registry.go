@@ -624,6 +624,7 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 	cfg := ptyhost.Config{
 		Argv: argv, Env: env, Dir: a.Dir(), Cols: a.Size.Cols, Rows: a.Size.Rows,
 		OnResize: func(cols, rows int) { r.resized(local, gen, cols, rows) },
+		OnOwner:  func() { r.ownerChanged(local, gen) },
 		OnExit:   func(e *wire.Exit) { r.exited(local, gen, e) },
 	}
 	a.watch, a.shell = nil, nil
@@ -640,7 +641,8 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		return err
 	}
 	a.term, a.PID, a.Exit, a.running, a.stopping = term, term.PID(), nil, true, false
-	a.Ended = "" // runs again: no longer "killed"
+	a.SizeOwner, a.SizeOwnerName = "", "" // a new PTY: nobody remote owns it
+	a.Ended = ""                          // runs again: no longer "killed"
 	a.started, a.respawn, a.cameBack, a.answered = time.Now(), false, false, false
 	a.endedTurn, a.codexHooks, a.fromScreen, a.approvalKey = "", false, false, ""
 	a.expectPrompt = !resume && a.Task != "" && a.Kind != wire.KindShell && !deliverLater
@@ -673,6 +675,25 @@ func (r *Registry) resized(local string, gen, cols, rows int) {
 		a.Size = wire.Size{Cols: cols, Rows: rows}
 		r.changed(a)
 	}
+}
+
+// ownerChanged publishes who owns the PTY's size now (Term.SizeOwner).
+func (r *Registry) ownerChanged(local string, gen int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a := r.agents[local]
+	if a == nil || a.gen != gen || a.term == nil {
+		return
+	}
+	o := a.term.SizeOwner()
+	if o.Device == "" {
+		o.Name = ""
+	}
+	if o.Device == a.SizeOwner && o.Name == a.SizeOwnerName {
+		return
+	}
+	a.SizeOwner, a.SizeOwnerName = o.Device, o.Name
+	r.changed(a)
 }
 
 func (r *Registry) exited(local string, gen int, e *wire.Exit) {

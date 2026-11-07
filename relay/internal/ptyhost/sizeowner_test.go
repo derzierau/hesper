@@ -1,7 +1,11 @@
 package ptyhost
 
 import (
+	"bufio"
+	"io"
+	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -71,4 +75,73 @@ func vtText(s *vt.Screen) []string {
 		out[y] = strings.TrimRight(s.Text(y), " ")
 	}
 	return out
+}
+
+// Who owns the size (agent info sizeOwner): a remote owner's origin is
+// recorded once per attach, cleared when it detaches, and replaced by a
+// local owner that takes over (latest owner wins).
+func TestOwnerOrigin(t *testing.T) {
+	tm := start(t, "lines", 80, 24)
+	var calls atomic.Int32
+	tm.mu.Lock()
+	tm.cfg.OnOwner = func() { calls.Add(1) }
+	tm.mu.Unlock()
+	waitFor(t, "prompt", func() bool { return screenHas(tm, "prompt>") })
+	phone := Origin{Device: "phone-1", Name: "iPhone"}
+	expect := func(what string, want Origin, n int32) {
+		t.Helper()
+		waitFor(t, what, func() bool { return tm.SizeOwner() == want && calls.Load() == n })
+	}
+
+	// Neither a remote non-owner nor a remote read-only attach owns it.
+	attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Cols: 46, Rows: 19}, phone)
+	attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRO, Owner: true, Cols: 46, Rows: 19}, phone)
+	expect("no owner", Origin{}, 0)
+
+	// A remote owner: its origin, one call.
+	owner := attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 46, Rows: 19}, phone)
+	expect("the phone owns", phone, 1)
+	if c, r := tm.Size(); c != 46 || r != 19 {
+		t.Fatalf("size %dx%d", c, r)
+	}
+	// It lets go: cleared, the size stays.
+	owner.Close()
+	expect("cleared on detach", Origin{}, 2)
+	if c, r := tm.Size(); c != 46 || r != 19 {
+		t.Fatalf("size after detach %dx%d", c, r)
+	}
+
+	// A local owner takes over from the phone: cleared at once.
+	attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 46, Rows: 19}, phone)
+	expect("the phone owns again", phone, 3)
+	_, local := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 80, Rows: 24})
+	expect("the Mac took it back", Origin{}, 4)
+	// The local owner's detach changes nothing.
+	local.Close()
+	waitFor(t, "local detached", func() bool { return tm.Viewers() == 3 })
+	time.Sleep(50 * time.Millisecond)
+	expect("still nobody remote", Origin{}, 4)
+}
+
+// attachFrom attaches from origin and drains the connection; closing the
+// returned conn detaches.
+func attachFrom(t *testing.T, tm *Term, req wire.AttachRequest, origin Origin) net.Conn {
+	t.Helper()
+	server, client := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tm.AttachFrom(server, bufio.NewReader(server), req, origin)
+	}()
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		io.Copy(io.Discard, client)
+	}()
+	t.Cleanup(func() {
+		client.Close()
+		<-done
+		<-drained
+	})
+	return client
 }

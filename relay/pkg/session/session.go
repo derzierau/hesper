@@ -44,6 +44,10 @@ type Capabilities struct {
 	// on its links, with W frames (pkg/agentlink). Controllers send
 	// neither to a host without it.
 	Forward bool `json:"forward,omitempty"`
+	// SizeOwner: the host publishes its agents' sizeOwner and
+	// sizeOwnerName (who owns a terminal's size). Controllers take a
+	// terminal over (attach rw owner) only on a host that sets it.
+	SizeOwner bool `json:"sizeOwner,omitempty"`
 }
 type Snapshot struct {
 	RuntimeID    string       `json:"runtimeId"`
