@@ -25,7 +25,7 @@ struct AddMacSection: View {
                 Text(message).font(.footnote).foregroundStyle(Theme.dim).themedRow()
             }
         } header: {
-            if !model.unpaired.isEmpty { Text("On your relay · not paired") }
+            if !model.unpaired.isEmpty { Text("On your relay · not paired").listHeading() }
         }
         Section {
             Button("Scan a code", systemImage: "qrcode.viewfinder") { scanning = true }.themedRow()

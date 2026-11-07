@@ -2,9 +2,9 @@ import SwiftUI
 
 extension View {
     /// The primary action of a row, dock or sheet: an accent fill. One per
-    /// place.
-    public func primaryAction() -> some View {
-        buttonStyle(NeonButtonStyle(.primary))
+    /// place. `square` makes an icon button a 44 pt square.
+    public func primaryAction(square: Bool = false) -> some View {
+        buttonStyle(NeonButtonStyle(.primary, square: square))
     }
 
     /// A list on the console's surfaces instead of the system greys: the
@@ -13,18 +13,27 @@ extension View {
         scrollContentBackground(.hidden).background(Theme.background)
     }
 
+    /// A list row on `surface`, with `line` between the rows.
     public func themedRow() -> some View {
         listRowBackground(Theme.surface)
+            .listRowSeparatorTint(Theme.line)
+            .listSectionSeparator(.hidden)
+    }
+
+    /// A list section's header in the heading face, not the system's
+    /// small grey capitals.
+    public func listHeading() -> some View {
+        font(Typeface.heading()).foregroundStyle(Theme.text).textCase(nil)
     }
 
     /// Secondary actions next to a primary one: an accent border.
-    public func secondaryAction() -> some View {
-        buttonStyle(NeonButtonStyle(.secondary))
+    public func secondaryAction(square: Bool = false) -> some View {
+        buttonStyle(NeonButtonStyle(.secondary, square: square))
     }
 
     /// An action that ends or refuses something: a signal border.
-    public func destructiveAction() -> some View {
-        buttonStyle(NeonButtonStyle(.destructive))
+    public func destructiveAction(square: Bool = false) -> some View {
+        buttonStyle(NeonButtonStyle(.destructive, square: square))
     }
 
     /// A Neon panel: surface fill, 1 pt line border, square corners, and
@@ -44,20 +53,26 @@ public struct NeonButtonStyle: ButtonStyle {
     public enum Kind: Sendable { case primary, secondary, destructive }
 
     let kind: Kind
+    /// An icon button as a square of the control's height (the agent
+    /// view's Send, the capture sheet's header).
+    let square: Bool
     @Environment(\.isEnabled) private var isEnabled
     /// Small: a grid card's 32 pt action buttons.
     @Environment(\.controlSize) private var controlSize
 
-    public init(_ kind: Kind) {
+    public init(_ kind: Kind, square: Bool = false) {
         self.kind = kind
+        self.square = square
     }
 
     public func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: DS.Radius.console)
+        let side = small ? DS.Size.gridAction : DS.Size.control
         configuration.label
             .foregroundStyle(label)
-            .padding(.horizontal, small ? DS.Spacing.m : DS.Spacing.l)
-            .frame(minHeight: small ? DS.Size.gridAction : DS.Size.control)
+            .padding(.horizontal, square ? 0 : small ? DS.Spacing.m : DS.Spacing.l)
+            .frame(width: square ? side : nil, height: square ? side : nil)
+            .frame(minHeight: side)
             .background(fill, in: shape)
             .overlay {
                 if let border { shape.strokeBorder(border, lineWidth: 1) }

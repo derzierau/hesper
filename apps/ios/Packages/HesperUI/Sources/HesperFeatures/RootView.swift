@@ -38,6 +38,17 @@ public struct RootView: View {
                 _capture = State(initialValue: Capture(opening: .typing))
             default: break
             }
+            // `HESPER_OPEN=agent:<id>` (or `agents`, `macs`, `settings`)
+            // pushes that screen at launch, for the same screenshots.
+            if let open = ProcessInfo.processInfo.environment["HESPER_OPEN"] {
+                var path = NavigationPath()
+                if open.hasPrefix("agent:") {
+                    path.append(AgentRoute(id: String(open.dropFirst("agent:".count))))
+                } else if let route = MenuRoute.allCases.first(where: { "\($0)" == open }) {
+                    path.append(route)
+                }
+                _path = State(initialValue: path)
+            }
         #endif
     }
 

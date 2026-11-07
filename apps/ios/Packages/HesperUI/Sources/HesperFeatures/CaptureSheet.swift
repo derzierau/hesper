@@ -33,66 +33,40 @@ struct CaptureSheet: View {
     @FocusState private var typing: Bool
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: DS.Spacing.l) {
-                if dictation.isListening {
-                    listening
-                } else {
-                    TextField("What should happen?", text: $text, axis: .vertical)
-                        .font(.title3)
-                        .lineLimit(3...8)
-                        .focused($typing)
-                    if case .unavailable(let why) = dictation.phase {
-                        Text(why).font(.footnote).foregroundStyle(Theme.muted)
-                    }
-                }
-                destinationRow
-                Spacer(minLength: 0)
-                HStack(spacing: DS.Spacing.m) {
-                    Button {
-                        Task { await keep() }
-                    } label: {
-                        Text("Keep for later").frame(maxWidth: .infinity, minHeight: DS.Size.sheetAction)
-                    }
-                    .secondaryAction()
-                    Button {
-                        Task { await start() }
-                    } label: {
-                        Text("Start now").frame(maxWidth: .infinity, minHeight: DS.Size.sheetAction)
-                    }
-                    .primaryAction()
-                }
-                .font(.headline)
-                .disabled(!canSend)
-            }
-            .padding(DS.Spacing.l)
-            .background(Theme.surface)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Discard", systemImage: "xmark", role: .cancel) {
-                        dictation.cancel()
-                        dismiss()
-                    }
-                }
-                ToolbarItemGroup(placement: .confirmationAction) {
-                    if dictation.isListening {
-                        Button("Type", systemImage: "keyboard") {
-                            Task {
-                                await stopListening()
-                                typing = true
-                            }
-                        }
-                        Button("Done", systemImage: "stop.fill") { Task { await stopListening() } }
-                            .tint(Theme.accent)
-                    } else {
-                        Button("Record", systemImage: "mic.fill") {
-                            typing = false
-                            dictation.start()
-                        }
-                    }
+        VStack(alignment: .leading, spacing: DS.Spacing.l) {
+            header
+            if dictation.isListening {
+                listening
+            } else {
+                TextField("What should happen?", text: $text, axis: .vertical)
+                    .font(.title3)
+                    .lineLimit(3...8)
+                    .focused($typing)
+                if case .unavailable(let why) = dictation.phase {
+                    Text(why).font(.footnote).foregroundStyle(Theme.muted)
                 }
             }
+            destinationRow
+            Spacer(minLength: 0)
+            HStack(spacing: DS.Spacing.m) {
+                Button {
+                    Task { await keep() }
+                } label: {
+                    Text("Keep for later").frame(maxWidth: .infinity, minHeight: DS.Size.sheetAction)
+                }
+                .secondaryAction()
+                Button {
+                    Task { await start() }
+                } label: {
+                    Text("Start now").frame(maxWidth: .infinity, minHeight: DS.Size.sheetAction)
+                }
+                .primaryAction()
+            }
+            .font(.headline)
+            .disabled(!canSend)
         }
+        .padding(DS.Spacing.l)
+        .background(Theme.surface)
         .neonPanel(edge: Theme.accent)
         .presentationBackground(Theme.surface)
         .presentationDetents([.medium, .large])
@@ -111,6 +85,38 @@ struct CaptureSheet: View {
             if case .unavailable = phase { typing = true }
         }
         .onDisappear { dictation.cancel() }
+    }
+
+    /// Discard on the left; Type and Done while listening, else Record,
+    /// on the right. Square Neon buttons, not the toolbar's glass circles.
+    private var header: some View {
+        HStack(spacing: DS.Spacing.grid) {
+            Button("Discard", systemImage: "xmark", role: .cancel) {
+                dictation.cancel()
+                dismiss()
+            }
+            .secondaryAction(square: true)
+            Spacer(minLength: 0)
+            if dictation.isListening {
+                Button("Type", systemImage: "keyboard") {
+                    Task {
+                        await stopListening()
+                        typing = true
+                    }
+                }
+                .secondaryAction(square: true)
+                Button("Done", systemImage: "stop.fill") { Task { await stopListening() } }
+                    .primaryAction(square: true)
+            } else {
+                Button("Record", systemImage: "mic.fill") {
+                    typing = false
+                    dictation.start()
+                }
+                .primaryAction(square: true)
+            }
+        }
+        .labelStyle(.iconOnly)
+        .font(.body.weight(.semibold))
     }
 
     /// The live transcript: settled text solid, the guess dimmed.

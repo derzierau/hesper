@@ -97,6 +97,8 @@ pass it as `SIMCTL_CHILD_HESPER_HOME_SCOPE=working xcrun simctl launch …`)
 opens Home on that scope. `HESPER_CAPTURE` (`listening`, `typing`) opens
 the capture sheet at launch, `listening` with a sample transcript and no
 microphone, since nobody can press Speak on a headless simulator.
+`HESPER_OPEN` (`agent:<id>`, `agents`, `macs`, `settings`) pushes that
+screen over Home at launch, for example `agent:studio/s1`.
 
 ## Choices
 

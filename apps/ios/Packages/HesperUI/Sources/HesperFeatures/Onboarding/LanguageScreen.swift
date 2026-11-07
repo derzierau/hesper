@@ -74,9 +74,9 @@ struct LanguageScreen: View {
             .frame(maxWidth: .infinity, minHeight: 48)
             Image(systemName: "mic.fill")
                 .font(.title)
-                .foregroundStyle(Theme.background)
-                .frame(width: 64, height: 64)
-                .glassEffect(.regular.tint(Theme.accent).interactive(), in: .circle)
+                .foregroundStyle(Theme.onAccent)
+                .frame(width: DS.Size.console, height: DS.Size.console)
+                .background(Theme.accent, in: .rect(cornerRadius: DS.Radius.console))
                 .scaleEffect(holding ? 1.12 : 1)
                 .animation(.snappy, value: holding)
                 .gesture(

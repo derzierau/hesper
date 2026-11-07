@@ -53,8 +53,9 @@ private struct TerminalPlaceholder: View {
     }
 }
 
-/// The dock under the terminal: decisions when the agent needs you, a
-/// reply field while it works, Resume once it exited.
+/// The dock under the terminal, a Neon panel: the priority card's numbered
+/// options when the agent needs you (a risky Yes asks first, No… opens the
+/// deny sheet), a reply field while it works, Resume once it exited.
 private struct Dock: View {
     let agent: Agent
     @Environment(FleetModel.self) private var model
@@ -66,28 +67,20 @@ private struct Dock: View {
             case .approval, .question:
                 HStack(spacing: DS.Spacing.s) {
                     StateMark(agent.state)
-                    Text(AgentCopy.headline(agent)).font(.subheadline).lineLimit(2)
+                    Text(AgentCopy.headline(agent)).font(.subheadline).foregroundStyle(Theme.text).lineLimit(2)
                 }
-                if agent.state == .approval {
-                    HStack(spacing: DS.Spacing.s) {
-                        Button("Allow") { send(.answer(agent: agent.id, .allow)) }.primaryAction()
-                        Button("Always") { send(.answer(agent: agent.id, .always)) }.secondaryAction()
-                        Button("Deny") { send(.answer(agent: agent.id, .deny)) }.secondaryAction()
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    DecisionButtons(agent: agent)
-                }
+                DockOptions(agent: agent)
                 if let next = model.fleet.next(after: agent.id) {
                     NavigationLink(value: AgentRoute(id: next.id)) {
                         Label("Next: \(next.name) on \(model.fleet.macName(next.machine))", systemImage: "chevron.right")
                             .font(.footnote)
+                            .foregroundStyle(Theme.accent)
                     }
                 }
             case .exited, .error:
                 HStack(spacing: DS.Spacing.s) {
                     Button("Resume") { send(.resume(agent: agent.id)) }.primaryAction()
-                    Button("Close") { send(.close(agent: agent.id)) }.secondaryAction()
+                    Button("Close") { send(.close(agent: agent.id)) }.destructiveAction()
                 }
                 .frame(maxWidth: .infinity)
             default:
@@ -97,13 +90,18 @@ private struct Dock: View {
                         .textFieldStyle(.plain)
                         .padding(.horizontal, DS.Spacing.l)
                         .padding(.vertical, DS.Spacing.m)
-                        .glassEffect(.regular, in: .capsule)
+                        .frame(minHeight: DS.Size.control)
+                        .background(Theme.surface)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: DS.Radius.console).strokeBorder(Theme.line, lineWidth: DS.Edge.line)
+                        }
                     Button("Send", systemImage: "arrow.up") {
                         send(.reply(agent: agent.id, text: reply))
                         reply = ""
                     }
                     .labelStyle(.iconOnly)
-                    .primaryAction()
+                    .font(.body.weight(.semibold))
+                    .primaryAction(square: true)
                     .disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -111,10 +109,33 @@ private struct Dock: View {
         .controlSize(.large)
         .disabled(model.pending.contains(agent.id) || !model.fleet.isReachable(agent))
         .padding(DS.Spacing.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .neonPanel()
+        .decisions()
     }
 
     private func send(_ command: LinkCommand) {
         Task { await model.perform(command) }
+    }
+}
+
+/// The dock's numbered options, from `DecisionOptions.rows(for:)` like the
+/// priority card's; the dock's `decisions()` confirms and sends them.
+private struct DockOptions: View {
+    let agent: Agent
+    @Environment(\.decide) private var decide
+
+    var body: some View {
+        let rows = DecisionOptions.rows(for: agent)
+        if rows.isEmpty {
+            Text("Open it to answer.").font(.footnote).foregroundStyle(Theme.muted)
+        } else {
+            VStack(spacing: DS.Spacing.xs) {
+                ForEach(rows) { row in
+                    OptionRow(row: row) { decide(agent, row.action) }
+                }
+            }
+        }
     }
 }
 

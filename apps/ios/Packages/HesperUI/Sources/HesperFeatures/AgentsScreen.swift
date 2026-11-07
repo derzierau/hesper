@@ -20,19 +20,23 @@ struct AgentsScreen: View {
         let later = query.isEmpty ? model.fleet.later : []
         List {
             ForEach(groups) { group in
-                Section(group.project ?? "Scratch") {
+                Section {
                     ForEach(group.agents) { agent in
                         NavigationLink(value: AgentRoute(id: agent.id)) { AgentRow(agent: agent) }
                             .agentSwipeActions(agent)
                             .themedRow()
                     }
+                } header: {
+                    Text(group.project ?? "Scratch").listHeading()
                 }
             }
             if !later.isEmpty {
-                Section("Later · \(later.count)") {
+                Section {
                     ForEach(later) { kept in
                         KeptRow(kept: kept).themedRow()
                     }
+                } header: {
+                    Text("Later · \(later.count)").listHeading()
                 }
             }
         }
@@ -44,6 +48,7 @@ struct AgentsScreen: View {
             }
         }
         .searchable(text: $query, prompt: "Agents and projects")
+        .tint(Theme.accent)
         .searchFocused($searchFocused)
         .task { if focusSearch { searchFocused = true } }
         .themedList()
@@ -74,7 +79,7 @@ private struct KeptRow: View {
                 .controlSize(.small)
         }
         .swipeActions(edge: .trailing) {
-            Button("Discard", systemImage: "trash", role: .destructive) { Task { await model.discard(kept) } }
+            Button("Discard", systemImage: "trash", role: .destructive) { Task { await model.discard(kept) } }.tint(Theme.signal)
         }
     }
 }
@@ -95,9 +100,9 @@ private struct AgentSwipeActions: ViewModifier {
         content
             .swipeActions(edge: .trailing) {
                 if agent.isRunning {
-                    Button("Stop", systemImage: "stop.fill") { confirmStop = true }.tint(Theme.error)
+                    Button("Stop", systemImage: "stop.fill") { confirmStop = true }.tint(Theme.signal)
                 } else {
-                    Button("Close", systemImage: "xmark") { send(.close(agent: agent.id)) }
+                    Button("Close", systemImage: "xmark") { send(.close(agent: agent.id)) }.tint(Theme.signal)
                 }
             }
             .swipeActions(edge: .leading) {

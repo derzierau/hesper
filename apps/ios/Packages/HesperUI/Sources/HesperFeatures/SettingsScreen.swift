@@ -17,12 +17,14 @@ struct SettingsScreen: View {
     var body: some View {
         List {
             if let account = onboarding.account {
-                Section("This iPhone") {
+                Section {
                     LabeledContent("Relay", value: account.relay.host() ?? account.relay.absoluteString).themedRow()
                     LabeledContent("Signed in as", value: account.login).themedRow()
+                } header: {
+                    Text("This iPhone").listHeading()
                 }
             }
-            Section("Notifications") {
+            Section {
                 HStack {
                     Text(notificationsLine).foregroundStyle(Theme.text2)
                     Spacer()
@@ -35,14 +37,24 @@ struct SettingsScreen: View {
                     }
                 }
                 .themedRow()
-            }
-            Section("Voice") {
-                LabeledContent("Language", value: language.map(SpeechLanguages.displayName) ?? "Your keyboard's").themedRow()
+            } header: {
+                Text("Notifications").listHeading()
             }
             Section {
-                Button("Reset this iPhone", role: .destructive) { confirmReset = true }.themedRow()
+                LabeledContent("Language", value: language.map(SpeechLanguages.displayName) ?? "Your keyboard's").themedRow()
+            } header: {
+                Text("Voice").listHeading()
+            }
+            Section {
+                Button(role: .destructive) {
+                    confirmReset = true
+                } label: {
+                    Text("Reset this iPhone").frame(maxWidth: .infinity)
+                }
+                .destructiveAction()
+                .themedRow()
             } footer: {
-                Text("Deletes this iPhone's keys and sign-in, and starts over.")
+                Text("Deletes this iPhone's keys and sign-in, and starts over.").foregroundStyle(Theme.muted)
             }
         }
         .themedList()
