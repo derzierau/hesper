@@ -266,12 +266,12 @@ and scrolling.
 never garbles, and the Mac's tile is untouched.
 
 - **Readable** (default when the PTY is wider than about 90 columns): a
-  fixed font of about 9 pt, a "120 cols →" label, pan for the rest. **Fit
+  fixed font of about 18 pt, a "120 cols →" label, pan for the rest. **Fit
   width** (default for narrower PTYs): the font scales so every column
   fits. Double tap toggles; pinch zooms. While typing, the view follows
   the cursor.
-- **Landscape** (decided). The agent view rotates, and at about 9 pt a
-  120-column terminal fits the width. The dock moves to the side. The rest
+- **Landscape** (decided). The agent view rotates and shows more
+  columns at the same font. The dock moves to the side. The rest
   of the app stays portrait on iPhone.
 - **Bottom-anchored**: the newest line sits just above the dock or the
   keyboard.

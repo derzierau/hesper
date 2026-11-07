@@ -6,7 +6,7 @@ import CoreGraphics
 ///
 /// The grid is never resized to fit the phone (the Mac owns it), so the
 /// phone scales it down instead: `.fitWidth` shows every column,
-/// `.readable` draws text at about 9 pt and pans sideways. A pinch
+/// `.readable` draws text at about 18 pt and pans sideways. A pinch
 /// zooms between the two limits: never smaller than fit width, never
 /// magnified past 1.0, where the text would blur.
 public struct Viewport: Equatable, Sendable {
@@ -15,11 +15,12 @@ public struct Viewport: Equatable, Sendable {
         case fitWidth
     }
 
-    /// The cell width `.readable` aims for, in points: a 9 pt monospace
+    /// The cell width `.readable` aims for, in points: an 18 pt monospace
     /// font's advance (0.6 em). Width, not height: the height holds the
-    /// font's line spacing (JetBrains Mono's is 1.32 em), so a 9 pt tall
-    /// cell is a 7 pt font, and a 97-column grid would barely need a pan.
-    public static let readableCellWidth: CGFloat = 5.4
+    /// font's line spacing (JetBrains Mono's is 1.32 em), so a cell as tall
+    /// as a font size is a smaller font. Never magnified: on a surface
+    /// whose cell is narrower than this, readable is its unscaled size.
+    public static let readableCellWidth: CGFloat = 10.8
     /// Grids up to this many columns fit the width by default.
     public static let fitWidthColumns = 90
 
