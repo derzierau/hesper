@@ -26,5 +26,10 @@ SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES
 ENABLE_USER_SCRIPT_SANDBOXING = YES
 STRING_CATALOG_GENERATE_SYMBOLS = YES
 LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+// Warnings are errors in the app's own targets. Not on the xcodebuild
+// command line: there it reaches remote packages too, which Xcode builds
+// with -suppress-warnings, and the two flags conflict. The local packages
+// set it in their manifests (treatAllWarnings).
+SWIFT_TREAT_WARNINGS_AS_ERRORS = YES
 
 #include? "Local.xcconfig"

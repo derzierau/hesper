@@ -13,7 +13,8 @@ export DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 
 DERIVED ?= build/DerivedData
 DESTINATION ?= generic/platform=iOS Simulator
-SOURCES := App Widgets NotificationService Packages/HesperKit/Sources Packages/HesperKit/Tests Packages/HesperUI/Sources
+SOURCES := App Widgets NotificationService Packages/HesperKit/Sources Packages/HesperKit/Tests Packages/HesperUI/Sources \
+	Packages/HesperTerminal/Sources Packages/HesperTerminal/Tests
 
 .PHONY: project test build lint format check clean
 
@@ -23,11 +24,12 @@ project:
 
 test:
 	swift test --package-path Packages/HesperKit
+	swift test --package-path Packages/HesperTerminal
 
 build: project
 	set -o pipefail; xcodebuild build -project Hesper.xcodeproj -scheme Hesper \
 		-destination '$(DESTINATION)' -derivedDataPath $(DERIVED) \
-		CODE_SIGNING_ALLOWED=NO SWIFT_TREAT_WARNINGS_AS_ERRORS=YES -quiet
+		CODE_SIGNING_ALLOWED=NO -quiet
 
 lint:
 	swift format lint --strict --recursive --parallel $(SOURCES)

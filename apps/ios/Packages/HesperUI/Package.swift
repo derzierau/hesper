@@ -16,6 +16,8 @@ let settings: [SwiftSetting] = [
     .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("MemberImportVisibility"),
+    // `make build` relies on this: Config/Base.xcconfig.
+    .treatAllWarnings(as: .error),
 ]
 
 let package = Package(

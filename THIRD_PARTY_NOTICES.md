@@ -11,8 +11,9 @@ This file ships inside `Hesper.app/Contents/Resources/THIRD_PARTY_NOTICES.md`.
 
 | Component | Version | License | Distributed in |
 |---|---|---|---|
-| Ghostty (libghostty) | commit 35a81a980bb9 | MIT | Hesper.app |
-| libghostty-spm (GhosttyKit.xcframework) | 2.2.2026100501 | MIT | Hesper.app |
+| Ghostty (libghostty) | commit 35a81a980bb9 | MIT | Hesper.app; Hesper for iPhone |
+| libghostty-spm (GhosttyKit.xcframework) | 2.2.2026100501 | MIT | Hesper.app; Hesper for iPhone (also GhosttyTerminal) |
+| DisplayLink (Lakr233) | 3.0.1 | MIT | Hesper for iPhone |
 | Zig standard library and compiler-rt | as used by Ghostty | MIT | Hesper.app |
 | libxev | as pinned by Ghostty | MIT | Hesper.app |
 | zig-objc | as pinned by Ghostty | MIT | Hesper.app |
@@ -46,6 +47,26 @@ This file ships inside `Hesper.app/Contents/Resources/THIRD_PARTY_NOTICES.md`.
 | modernc.org/mathutil | v1.7.1 | BSD-3-Clause | hesperd |
 | modernc.org/memory | v1.11.0 | BSD-3-Clause | hesperd |
 | modernc.org/sqlite (incl. SQLite) | v1.56.0 | BSD-3-Clause, public domain | hesperd |
+
+---
+
+## Hesper for iPhone
+
+The agent view draws a Mac's terminal with libghostty through
+libghostty-spm's `GhosttyTerminal` library (package
+`apps/ios/Packages/HesperTerminal`). It links the same prebuilt
+`GhosttyKit.xcframework` (its iOS slices) as Hesper.app, so the libraries
+listed for libghostty under Hesper for macOS apply to it as well; that list
+was made from the macOS slice and has not been checked separately against
+the iOS slices. `GhosttyTerminal` depends on DisplayLink.
+
+### DisplayLink
+
+- Version: 3.0.1 (revision 41bea2661e04bebcb1c4f15fc0b6197850100fdd)
+- URL: https://github.com/Lakr233/DisplayLink
+- License: MIT
+- Copyright (c) 2024 Lakr Aream
+- Full text: [MIT License](#mit-license)
 
 ---
 

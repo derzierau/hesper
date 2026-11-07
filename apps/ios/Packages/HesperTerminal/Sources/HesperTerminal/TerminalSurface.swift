@@ -1,0 +1,171 @@
+// The surface is libghostty's UIKit view; a Mac never builds it.
+#if os(iOS)
+    import Foundation
+    import GhosttyTerminal
+    import UIKit
+
+    /// A Mac's terminal drawn on the phone by libghostty, read only.
+    ///
+    /// The bytes come from the Mac's PTY (`feed`), never from a local
+    /// process; what the terminal itself would send back (keys, query
+    /// replies) is dropped, since a watcher does not type. The Mac owns the
+    /// grid: `resize(cols:rows:)` sizes the view so that libghostty lays out
+    /// exactly that many cells, and the phone scales the view to fit
+    /// (`Viewport`). The view does not take touches: its own pinch would
+    /// change the font size and with it the grid. Gestures belong to the
+    /// screen that holds it.
+    public final class TerminalSurface {
+        /// Rows kept above the screen, at most.
+        public static let maxScrollback = 10_000
+        /// The font size the grid is drawn at, before `Viewport` scales it.
+        public static let fontSize: Float = 13
+
+        /// The view, top-left anchored (`layer.anchorPoint` is `.zero`):
+        /// `resize` changes its bounds and leaves its position alone, so a
+        /// holder places it with `layer.position` (the pan) and scales it
+        /// with `transform` (the zoom) without the corner moving.
+        public var view: UIView { terminal }
+        /// The grid libghostty lays out now; `(0, 0)` until it has drawn.
+        public private(set) var grid: (cols: Int, rows: Int) = (0, 0)
+        /// One cell of the unscaled grid, in points, as libghostty measured
+        /// it; `.zero` until it has drawn.
+        public private(set) var cell: CGSize = .zero
+        /// Rows kept above the screen.
+        public var scrollback: Int { Self.maxScrollback }
+        /// The newest line is on screen.
+        public private(set) var isAtBottom = true
+        /// Called after `grid`, `cell` or `isAtBottom` changed.
+        public var onChange: (() -> Void)?
+
+        private let terminal: UITerminalView
+        // Sendable (libghostty: `receive` may be called from any thread),
+        // so `feed` needs no hop to the main actor.
+        private nonisolated let session: InMemoryTerminalSession
+        /// The grid the Mac asked for.
+        private var target: (cols: Int, rows: Int)?
+        /// Re-layouts since the last `resize`, to stop chasing a grid
+        /// libghostty cannot reach.
+        private var corrections = 0
+
+        /// Padding off, so the grid is the view's pixels divided by the cell:
+        /// with libghostty's default padding the grid came out one short.
+        /// `scrollback-limit` is a byte budget in Ghostty, not rows: 10 000
+        /// rows of 160 cells of 8 bytes. An estimate (rows also hold styles
+        /// and graphemes); the exact row count is libghostty's.
+        private static let controller = TerminalController(
+            configuration: TerminalConfiguration(startingFrom: .default) {
+                $0.withFontSize(fontSize)
+                $0.withWindowPaddingX(0)
+                $0.withWindowPaddingY(0)
+                $0.withCustom("window-padding-balance", "false")
+                $0.withCursorStyleBlink(false)
+                $0.withCustom("scrollback-limit", String(maxScrollback * 160 * 8))
+            }
+        )
+
+        /// Used to size the view before libghostty has measured a cell.
+        private static let estimatedCell = CGSize(
+            width: CGFloat(fontSize) * 0.6,
+            height: CGFloat(fontSize) * 1.25
+        )
+        /// Reaching the grid takes one pass with a measured cell; more
+        /// means the Mac's grid cannot be drawn here.
+        private static let maxCorrections = 3
+
+        public init() {
+            session = InMemoryTerminalSession(write: { _ in }, resize: { _ in })
+            terminal = UITerminalView(frame: .zero)
+            terminal.layer.anchorPoint = .zero
+            terminal.isUserInteractionEnabled = false
+            terminal.controller = Self.controller
+            terminal.configuration = TerminalSurfaceOptions(
+                backend: .inMemory(session),
+                fontSize: Self.fontSize
+            )
+            terminal.delegate = self
+        }
+
+        /// Hands the Mac's output to the terminal. Any thread; bytes that
+        /// arrive before the view is on screen are buffered (1 MiB).
+        public nonisolated func feed(_ data: Data) {
+            session.receive(data)
+        }
+
+        /// Sizes the view so that libghostty lays out exactly `cols` by
+        /// `rows` cells: the cell it measured times the grid, plus half a
+        /// cell so pixel rounding cannot drop a column. Until it has
+        /// measured, an estimate places the view, and the first report
+        /// corrects it.
+        public func resize(cols: Int, rows: Int) {
+            guard cols > 0, rows > 0 else { return }
+            target = (cols, rows)
+            corrections = 0
+            layoutTarget()
+        }
+
+        /// Shows the newest line.
+        public func scrollToBottom() {
+            terminal.surface?.performBindingAction("scroll_to_bottom")
+            setAtBottom(true)
+        }
+
+        /// Scrolls the scrollback by whole rows; negative goes back in time.
+        public func scroll(rows: Int) {
+            guard rows != 0 else { return }
+            terminal.surface?.performBindingAction("scroll_page_lines:\(rows)")
+        }
+
+        private func layoutTarget() {
+            guard let target else { return }
+            let unit = cell == .zero ? Self.estimatedCell : cell
+            let size = CGSize(
+                width: (CGFloat(target.cols) + 0.5) * unit.width,
+                height: (CGFloat(target.rows) + 0.5) * unit.height
+            )
+            guard terminal.bounds.size != size else { return }
+            terminal.bounds = CGRect(origin: .zero, size: size)
+            terminal.setNeedsLayout()
+        }
+
+        private func setAtBottom(_ value: Bool) {
+            guard value != isAtBottom else { return }
+            isAtBottom = value
+            onChange?()
+        }
+
+        private var displayScale: CGFloat {
+            let scale = terminal.traitCollection.displayScale
+            return scale > 0 ? scale : 1
+        }
+    }
+
+    extension TerminalSurface: TerminalSurfaceGridResizeDelegate, TerminalSurfaceScrollbarDelegate {
+        public func terminalDidResize(_ size: TerminalGridMetrics) {
+            guard size.columns > 0, size.rows > 0 else { return }
+            let scale = displayScale
+            if size.cellWidthPixels > 0, size.cellHeightPixels > 0 {
+                cell = CGSize(
+                    width: CGFloat(size.cellWidthPixels) / scale,
+                    height: CGFloat(size.cellHeightPixels) / scale
+                )
+            } else {
+                // No cell in the report: with no padding, the view's pixels
+                // over the grid, rounded down, is the cell.
+                cell = CGSize(
+                    width: (CGFloat(size.widthPixels) / CGFloat(size.columns)).rounded(.down) / scale,
+                    height: (CGFloat(size.heightPixels) / CGFloat(size.rows)).rounded(.down) / scale
+                )
+            }
+            grid = (Int(size.columns), Int(size.rows))
+            if let target, grid != target, corrections < Self.maxCorrections {
+                corrections += 1
+                layoutTarget()
+            }
+            onChange?()
+        }
+
+        public func terminalDidUpdateScrollbar(_ scrollbar: TerminalScrollbar) {
+            setAtBottom(scrollbar.offset + scrollbar.len >= scrollbar.total)
+        }
+    }
+#endif

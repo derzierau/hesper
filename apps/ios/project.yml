@@ -1,6 +1,7 @@
 # XcodeGen spec for the iPhone and iPad app. `make project` writes
 # Hesper.xcodeproj (generated, git-ignored). The targets stay thin: logic is
-# in Packages/HesperKit, screens in Packages/HesperUI.
+# in Packages/HesperKit, screens in Packages/HesperUI, the terminal in
+# Packages/HesperTerminal.
 name: Hesper
 options:
   deploymentTarget:
@@ -19,6 +20,8 @@ packages:
     path: Packages/HesperKit
   HesperUI:
     path: Packages/HesperUI
+  HesperTerminal:
+    path: Packages/HesperTerminal
 targets:
   Hesper:
     type: application
@@ -36,6 +39,8 @@ targets:
         product: HesperFixtures
       - package: HesperKit
         product: HesperLink
+      - package: HesperTerminal
+        product: HesperTerminal
       - target: HesperWidgets
       - target: NotificationService
     settings:
