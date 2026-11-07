@@ -4,19 +4,37 @@ import HesperFleet
 import SwiftUI
 
 /// The agent view: the live terminal, and under it a dock that follows the
-/// state (concept, flow 4). The terminal is a placeholder until the mobile
-/// link library opens `agents.attach` and libghostty draws it.
+/// state (concept, flow 4). In landscape the dock is a column on the right.
 struct AgentScreen: View {
     let id: String
     @Environment(FleetModel.self) private var model
 
+    /// The dock's width as a column, in landscape.
+    private static let dockColumn: CGFloat = 320
+
     var body: some View {
         if let agent = model.agent(id) {
-            TerminalPlaceholder(agent: agent)
-                .safeAreaInset(edge: .bottom, spacing: 0) { Dock(agent: agent) }
-                .navigationTitle(agent.name)
-                .navigationSubtitle(subtitle(agent))
-                .toolbarTitleDisplayMode(.inline)
+            GeometryReader { geometry in
+                let wide = geometry.size.width > geometry.size.height
+                // One layout for both, so turning the phone keeps the
+                // terminal (and its attach) instead of making a new one.
+                let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+                layout {
+                    TerminalView(agent: agent)
+                    if wide {
+                        Dock(agent: agent)
+                            .frame(width: Self.dockColumn)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                            .background(Theme.surface, ignoresSafeAreaEdges: .bottom)
+                            .overlay(alignment: .leading) { Rectangle().fill(Theme.line).frame(width: DS.Edge.line) }
+                    } else {
+                        Dock(agent: agent)
+                    }
+                }
+            }
+            .navigationTitle(agent.name)
+            .navigationSubtitle(subtitle(agent))
+            .toolbarTitleDisplayMode(.inline)
         } else {
             ContentUnavailableView("Agent closed", systemImage: "xmark.square", description: Text("It is no longer on any Mac."))
         }
@@ -24,32 +42,6 @@ struct AgentScreen: View {
 
     private func subtitle(_ a: Agent) -> String {
         [model.fleet.macName(a.machine), a.project, a.branch].compactMap(\.self).joined(separator: " · ")
-    }
-}
-
-/// Where the terminal goes: bottom-anchored, edge to edge, always dark.
-private struct TerminalPlaceholder: View {
-    let agent: Agent
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.s) {
-            Spacer()
-            if let size = agent.size {
-                Text("Mac's size · \(size.cols) × \(size.rows)")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Theme.dim)
-            }
-            Text(AgentCopy.headline(agent))
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(Theme.text)
-            Text("The live terminal arrives with the mobile link library.")
-                .font(.caption2.monospaced())
-                .foregroundStyle(Theme.dim)
-        }
-        .padding(DS.Spacing.l)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .background(Theme.background)
-        .environment(\.colorScheme, .dark)
     }
 }
 

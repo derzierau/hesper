@@ -104,4 +104,15 @@ public final class FleetModel {
     }
 
     public func agent(_ id: String) -> Agent? { fleet.agents[id] }
+
+    /// The grid asked for when the Mac has not reported the agent's size.
+    public static let fallbackSize = GridSize(cols: 80, rows: 24)
+
+    /// Watches an agent's terminal at the Mac's current grid size
+    /// (`fallbackSize` when it has not said). Throws when the Mac refused
+    /// it or is not linked.
+    public func attach(_ agent: Agent) async throws -> any AttachStream {
+        let size = agent.size ?? Self.fallbackSize
+        return try await link.attach(agent: agent.id, cols: size.cols, rows: size.rows)
+    }
 }

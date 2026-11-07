@@ -6,7 +6,8 @@ import PackageDescription
 //
 //   HesperDesign    the Neon console's colours, type, state marks and
 //                   controls (docs/iphone/neon.md)
-//   HesperFeatures  the tabs, the agent view, New agent and the root view
+//   HesperFeatures  the tabs, the agent view (its terminal from
+//                   ../HesperTerminal), New agent and the root view
 
 // UI code is main-actor by default (SE-0466), with the same upcoming
 // features as HesperKit.
@@ -30,6 +31,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../HesperKit"),
+        .package(path: "../HesperTerminal"),
         .package(path: "../../../../app"),
     ],
     targets: [
@@ -49,6 +51,8 @@ let package = Package(
                 .product(name: "HesperFleet", package: "HesperKit"),
                 .product(name: "HesperFixtures", package: "HesperKit"),
                 .product(name: "HesperSurfaces", package: "HesperKit"),
+                .product(name: "HesperTerminal", package: "HesperTerminal"),
+                .product(name: "TerminalModel", package: "HesperTerminal"),
             ],
             swiftSettings: settings
         ),

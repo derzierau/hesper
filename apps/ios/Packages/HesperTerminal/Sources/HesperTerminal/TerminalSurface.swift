@@ -161,6 +161,9 @@
                 corrections += 1
                 layoutTarget()
             }
+            #if DEBUG
+                print("hesper-terminal: grid \(grid.cols)x\(grid.rows) cell \(cell.width)x\(cell.height)")
+            #endif
             onChange?()
         }
 
