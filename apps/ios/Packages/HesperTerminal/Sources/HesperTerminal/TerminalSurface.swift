@@ -52,16 +52,26 @@
         /// `scrollback-limit` is a byte budget in Ghostty, not rows: 10 000
         /// rows of 160 cells of 8 bytes. An estimate (rows also hold styles
         /// and graphemes); the exact row count is libghostty's.
-        private static let controller = TerminalController(
-            configuration: TerminalConfiguration(startingFrom: .default) {
-                $0.withFontSize(fontSize)
-                $0.withWindowPaddingX(0)
-                $0.withWindowPaddingY(0)
-                $0.withCustom("window-padding-balance", "false")
-                $0.withCursorStyleBlink(false)
-                $0.withCustom("scrollback-limit", String(maxScrollback * 160 * 8))
-            }
-        )
+        /// The background goes in the theme as well: the controller applies
+        /// its theme over the configuration, and the default theme's
+        /// background would win.
+        private static func controller(background: String) -> TerminalController {
+            var theme = TerminalTheme.default
+            theme.light = theme.light.background(background)
+            theme.dark = theme.dark.background(background)
+            return TerminalController(
+                configuration: TerminalConfiguration(startingFrom: .default) {
+                    $0.withBackground(background)
+                    $0.withFontSize(fontSize)
+                    $0.withWindowPaddingX(0)
+                    $0.withWindowPaddingY(0)
+                    $0.withCustom("window-padding-balance", "false")
+                    $0.withCursorStyleBlink(false)
+                    $0.withCustom("scrollback-limit", String(maxScrollback * 160 * 8))
+                },
+                theme: theme
+            )
+        }
 
         /// Used to size the view before libghostty has measured a cell.
         private static let estimatedCell = CGSize(
@@ -72,12 +82,14 @@
         /// means the Mac's grid cannot be drawn here.
         private static let maxCorrections = 3
 
-        public init() {
+        /// `background` fills the cells the Mac's output leaves at the
+        /// default colour, and the rest of the view.
+        public init(background: UIColor) {
             session = InMemoryTerminalSession(write: { _ in }, resize: { _ in })
             terminal = UITerminalView(frame: .zero)
             terminal.layer.anchorPoint = .zero
             terminal.isUserInteractionEnabled = false
-            terminal.controller = Self.controller
+            terminal.controller = Self.controller(background: Self.hex(background))
             terminal.configuration = TerminalSurfaceOptions(
                 backend: .inMemory(session),
                 fontSize: Self.fontSize
@@ -109,6 +121,15 @@
             setAtBottom(true)
         }
 
+        /// The last row of the view with text on it, counted from the top;
+        /// nil when the view is blank or not drawn yet. Reads every row's
+        /// text, so a caller throttles it.
+        public func lastTextRow() -> Int? {
+            guard let text = session.readViewportText() else { return nil }
+            let rows = text.split(separator: "\n", omittingEmptySubsequences: false)
+            return rows.lastIndex { $0.contains { !$0.isWhitespace } }
+        }
+
         /// Scrolls the scrollback by whole rows; negative goes back in time.
         public func scroll(rows: Int) {
             guard rows != 0 else { return }
@@ -131,6 +152,17 @@
             guard value != isAtBottom else { return }
             isAtBottom = value
             onChange?()
+        }
+
+        /// `#rrggbb`, as Ghostty's config takes a colour.
+        private static func hex(_ color: UIColor) -> String {
+            var r: CGFloat = 0
+            var g: CGFloat = 0
+            var b: CGFloat = 0
+            var a: CGFloat = 0
+            color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            let byte = { (v: CGFloat) in Int((min(1, max(0, v)) * 255).rounded()) }
+            return String(format: "#%02x%02x%02x", byte(r), byte(g), byte(b))
         }
 
         private var displayScale: CGFloat {
@@ -161,9 +193,6 @@
                 corrections += 1
                 layoutTarget()
             }
-            #if DEBUG
-                print("hesper-terminal: grid \(grid.cols)x\(grid.rows) cell \(cell.width)x\(cell.height)")
-            #endif
             onChange?()
         }
 

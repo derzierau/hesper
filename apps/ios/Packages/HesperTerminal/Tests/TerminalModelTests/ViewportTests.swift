@@ -99,4 +99,18 @@ import Testing
         #expect(v.contentSize == .zero)
         #expect(v.panRange.x == 0...0)
     }
+
+    @Test func followKeepsTheLastWrittenRowAboveTheDock() {
+        // 56 rows at 9 pt (cell 8x9 at scale 1) are 504 pt; the view shows 300.
+        let v = Viewport(
+            grid: (cols: 40, rows: 56), view: CGSize(width: 402, height: 300), cell: CGSize(width: 8, height: 9), mode: .fitWidth)
+        #expect(v.panRange.y.upperBound == 204)
+        // Text down to row 13: the grid's top shows, nothing to move.
+        #expect(v.followOffset(lastTextRow: 13) == 0)
+        // Row 39's bottom (360 pt) sits at the view's bottom.
+        #expect(v.followOffset(lastTextRow: 39) == 60)
+        // A full screen, or a blank one, follows the grid's bottom.
+        #expect(v.followOffset(lastTextRow: 55) == 204)
+        #expect(v.followOffset(lastTextRow: nil) == 204)
+    }
 }

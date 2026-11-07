@@ -105,6 +105,17 @@ public struct Viewport: Equatable, Sendable {
         return (x: 0...Self.overflow(content.width, view.width), y: 0...Self.overflow(content.height, view.height))
     }
 
+    /// The vertical pan that keeps `row` (counted from the grid's top)
+    /// on screen with its bottom edge at the view's bottom, as near as the
+    /// pan range allows. With no row (a blank screen) it is the grid's
+    /// bottom, as for a full screen, whose last row is the grid's last.
+    public func followOffset(lastTextRow row: Int?) -> CGFloat {
+        let range = panRange.y
+        guard let row else { return range.upperBound }
+        let bottom = CGFloat(min(max(row, 0), max(rows - 1, 0)) + 1) * cell.height * scale
+        return min(range.upperBound, max(range.lowerBound, bottom - view.height))
+    }
+
     /// How much `content` is longer than `room`; a rounding error's worth
     /// (fit width multiplies and divides by the same width) counts as none.
     private static func overflow(_ content: CGFloat, _ room: CGFloat) -> CGFloat {

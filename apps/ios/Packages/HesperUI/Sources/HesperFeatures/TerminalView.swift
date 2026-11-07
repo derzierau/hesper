@@ -137,7 +137,7 @@ final class TerminalWatch {
     }
 
     private(set) var phase: Phase = .loading
-    private(set) var surface = TerminalSurface()
+    private(set) var surface = TerminalWatch.makeSurface()
     private(set) var viewport = Viewport(grid: (0, 0), view: .zero, cell: .zero, mode: .fitWidth)
     /// How far the grid's top-left corner is moved left and up, within
     /// `viewport.panRange`.
@@ -154,6 +154,14 @@ final class TerminalWatch {
     @ObservationIgnored private var scrollRemainder: CGFloat = 0
     /// The surface has been fed: a new attach starts on a fresh one.
     @ObservationIgnored private var used = false
+    /// The last written row of the screen, read after output settles.
+    @ObservationIgnored private var lastTextRow: Int?
+    /// A read of the last written row is due.
+    @ObservationIgnored private var pendingRead: Task<Void, Never>?
+
+    /// How long output settles before the last written row is read: at
+    /// most one read of the whole screen per interval.
+    static let readInterval: Duration = .milliseconds(100)
 
     /// Wait before attaching again after the link broke.
     static let backoff: Duration = .seconds(1)
@@ -205,7 +213,7 @@ final class TerminalWatch {
             case .data(let data):
                 await feeder.push(data)
                 phase = .live
-                followIfIdle()
+                scheduleRead()
             case .exit:
                 await feeder.flush()
                 return true
@@ -290,19 +298,33 @@ final class TerminalWatch {
 
     // MARK: Placement
 
-    /// New output: back to the newest line and the bottom left of the
-    /// grid, unless the owner moved the view within `FollowRule.idle`.
-    /// The surface reports no cursor, so the bottom of the grid stands in
-    /// for it (an agent's prompt and its newest output are there).
+    /// New output: once it has settled (`readInterval`), the last written
+    /// row is read and followed. One read per interval, however many
+    /// frames arrive in it.
+    private func scheduleRead() {
+        guard pendingRead == nil else { return }
+        pendingRead = Task { [weak self] in
+            try? await Task.sleep(for: Self.readInterval)
+            guard let self, !Task.isCancelled else { return }
+            self.pendingRead = nil
+            self.followIfIdle()
+        }
+    }
+
+    /// Back to the newest line and the last written row at the left,
+    /// unless the owner moved the view within `FollowRule.idle`. The
+    /// surface reports no cursor; the last row with text stands in for
+    /// it, and on a full screen that is the grid's bottom.
     private func followIfIdle() {
         guard FollowRule().shouldFollow(lastPan: lastPan, now: .now) else { return }
         if !isAtBottom { surface.scrollToBottom() }
+        lastTextRow = surface.lastTextRow()
         follow()
     }
 
     private func follow() {
         scrollRemainder = 0
-        setPan(CGPoint(x: 0, y: viewport.panRange.y.upperBound))
+        setPan(CGPoint(x: 0, y: viewport.followOffset(lastTextRow: lastTextRow)))
     }
 
     private func setPan(_ wanted: CGPoint) {
@@ -318,11 +340,18 @@ final class TerminalWatch {
     /// its history again: a fresh one starts clean.
     private func replaceSurface() {
         surface.onChange = nil
-        surface = TerminalSurface()
+        surface = Self.makeSurface()
+        pendingRead?.cancel()
+        pendingRead = nil
+        lastTextRow = nil
         observeSurface()
         if viewport.cols > 0 { surface.resize(cols: viewport.cols, rows: viewport.rows) }
         isAtBottom = true
         onPlace?()
+    }
+
+    private static func makeSurface() -> TerminalSurface {
+        TerminalSurface(background: Theme.uiColor(.background))
     }
 
     private func observeSurface() {
