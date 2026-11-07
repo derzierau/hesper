@@ -24,6 +24,8 @@ struct SettingsView: View {
     /// The wall whose layout the Wall section edits.
     private var wall: AppModel { front?.model ?? model }
     @State private var deskRefresh = 0
+    /// Machines › devices.list and Remove… (made when the pane shows).
+    @State private var devices: DevicesModel?
 
     enum Pane: String, CaseIterable, Identifiable {
         case general, machines, iphone, agents, appearance, shortcuts, advanced
@@ -168,17 +170,59 @@ struct SettingsView: View {
 
     @ViewBuilder private var machines: some View {
         let local = model.localMachine
-        SettingsSection("Machines") {
-            if model.machines.isEmpty {
-                Text(model.isConnected ? "Only this Mac." : (model.connectionMessage ?? "Not connected to hesperd."))
-                    .font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+        let groups = devices?.groups
+        SettingsSection("Machines", footer: groups == nil ? nil : "Remove… takes a Mac off your relay and this Mac in one step.") {
+            if let groups {
+                ForEach(groups.macs) { d in
+                    let m = model.machines.first { $0.short == d.short }
+                    let n = model.registry.agents.values.filter { $0.machine == d.short }.count
+                    DeviceRow(device: d, model: devices,
+                              title: d.isSelf ? "\(m?.displayName ?? d.name) (this Mac)" : (m?.displayName ?? d.name),
+                              subtitle: m.map(Self.route) ?? (d.online ? "online" : "offline"),
+                              meta: d.short.map { "\($0) · \(n) agent\(n == 1 ? "" : "s")" })
+                }
+            } else {
+                if model.machines.isEmpty {
+                    Text(model.isConnected ? "Only this Mac." : (model.connectionMessage ?? "Not connected to hesperd."))
+                        .font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+                }
+                ForEach(model.machines, id: \.short) { m in
+                    let n = model.registry.agents.values.filter { $0.machine == m.short }.count
+                    Row(title: m.short == local ? "\(m.displayName) (this Mac)" : m.displayName,
+                        subtitle: Self.route(m),
+                        meta: "\(m.short) · \(n) agent\(n == 1 ? "" : "s")",
+                        mark: m.online ? .done : .idle)
+                }
             }
-            ForEach(model.machines, id: \.short) { m in
-                let n = model.registry.agents.values.filter { $0.machine == m.short }.count
-                Row(title: m.short == local ? "\(m.displayName) (this Mac)" : m.displayName,
-                    subtitle: Self.route(m),
-                    meta: "\(m.short) · \(n) agent\(n == 1 ? "" : "s")",
-                    mark: m.online ? .done : .idle)
+            if let groups, !groups.otherSignIns.isEmpty {
+                Text("Other sign-ins").font(DS.font(.chrome, .semibold)).foregroundStyle(Theme.dim)
+                    .padding(.top, DS.Spacing.s)
+                ForEach(groups.otherSignIns) { d in
+                    DeviceRow(device: d, model: devices, title: d.name, subtitle: d.online ? "online" : "offline", meta: nil)
+                }
+            }
+            DevicesLine(model: devices)
+        }
+        .onAppear {
+            if devices == nil { devices = DevicesModel(client: model.client) }
+            devices?.refresh()
+        }
+        SettingsSection("iPhones", footer: "An iPhone signs in to your relay when you pair it. Remove… signs it out and this Mac forgets it.") {
+            switch devices?.state {
+            case .loaded(let g)?:
+                if g.iPhones.isEmpty {
+                    Text("No iPhone is signed in.").font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+                }
+                ForEach(g.iPhones) { d in
+                    DeviceRow(device: d, model: devices, title: d.name, subtitle: d.online ? "online" : "offline", meta: nil)
+                }
+            case .unsupported?:
+                Text("To remove an iPhone, run:").font(DS.font(.chrome)).foregroundStyle(Theme.fg2)
+                CommandText("hesperctl devices-local --revoke NAME")
+            case .failed(let why)?:
+                Text(why).font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+            case .loading?, nil:
+                ProgressView().controlSize(.small)
             }
         }
         SettingsSection("Pair another Mac", footer: "Pairing runs in hesperctl on both Macs; Hesper never asks for your relay credentials. The new Mac shows up here once it's approved. For an iPhone, open Settings › iPhone.") {
@@ -719,6 +763,50 @@ struct ShortcutRecorder: View {
         KeyRecorder(label: chord ?? "None", accessibilityLabel: "Shortcut for \(title)", identifier: identifier) { e in
             let k = KeyChord(event: e)
             return onRecord(k.key == .delete && k.plain && !k.shift ? .unbound : .chord(k))
+        }
+    }
+}
+
+// MARK: Devices
+
+/// A device in Settings › Machines: its Row, and a trailing Remove…
+/// shown on hover (never on this Mac's own rows).
+private struct DeviceRow: View {
+    var device: Device
+    var model: DevicesModel?
+    var title: String
+    var subtitle: String?
+    var meta: String?
+    @State private var hover = false
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.m) {
+            Row(title: title, subtitle: subtitle, meta: meta, mark: device.online ? .done : .idle)
+            if device.removable, let model {
+                Button("Remove…") { model.confirmRemove(device) }
+                    .disabled(model.busy.contains(device.id))
+                    .opacity(hover || model.busy.contains(device.id) ? 1 : 0)
+                    .accessibilityLabel("Remove \(device.name)")
+                    .accessibilityIdentifier("settings.devices.remove.\(device.id)")
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hover = $0 }
+    }
+}
+
+/// The last removal's result, for 5 s.
+private struct DevicesLine: View {
+    var model: DevicesModel?
+
+    var body: some View {
+        if let line = model?.line {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
+                StateMark(line.isError ? .error : .done)
+                Text(line.text).foregroundStyle(Theme.dim)
+            }
+            .font(DS.font(.chrome))
+            .accessibilityIdentifier("settings.devices.result")
         }
     }
 }

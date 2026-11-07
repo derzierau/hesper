@@ -1360,6 +1360,21 @@ hesperd without `devices.offer` gets the `hesperctl approve` hint).
 Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
 
+**Removing a device (Settings › Machines & pairing).** The pane lists
+`devices.list`: Machines are the hosts (this Mac first, no Remove on
+it), then "Other sign-ins" (a Mac's controller records that are not
+this Mac's); iPhones are their own list (name, online mark). A trailing
+Remove… shows on hover and asks `Remove “<name>”?` ("It can no longer
+reach this Mac, this Mac forgets it, and it is signed out of your
+relay. Pair it again to bring it back.", Remove / Cancel). The result
+line shows for 5 s: "Removed" (plus "also signed out its controller
+record" when `signedOut` is set) or the first step that failed. A relay
+that is down changes nothing ("Not removed: the relay is unreachable.
+Try again later."); a relay too old to revoke asks `Remove here only?`
+and then runs `devices.remove` with `localOnly`. An older hesperd
+(`-32601`) keeps the plain Machines list and shows `hesperctl
+devices-local --revoke NAME` for iPhones, with no Remove buttons.
+
 **One tile font; the PTY follows the tile.** Every wall tile uses the
 same font (Settings › Font size, default the user's Ghostty font, 9–16
 pt; HesperCore `TerminalFont`, stored as `terminalFontSize`, an earlier

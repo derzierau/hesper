@@ -228,6 +228,20 @@ public final class DaemonClient: @unchecked Sendable {
 
     public func list() async throws -> [Agent] { try await call("agents.list").decode([Agent].self) }
 
+    // MARK: Devices (see Devices.swift)
+
+    /// devices.list: every device of the owner. RPCError -32601 on an
+    /// older hesperd (DevicesFailure.unsupportedDaemon).
+    public func devices() async throws -> [Device] {
+        try await call(DevicesRPC.list, nil, timeout: 20).decode(DevicesList.self).devices
+    }
+
+    /// devices.remove: the relay first (unless `localOnly`), then this
+    /// Mac's files.
+    public func removeDevice(_ id: String, localOnly: Bool = false) async throws -> RemoveOutcome {
+        try await call(DevicesRPC.remove, DevicesRPC.removeParams(id, localOnly: localOnly), timeout: 30).decode(RemoveOutcome.self)
+    }
+
     /// A spawn that brings its folder first waits like a move (transfer).
     public func spawn(_ req: SpawnRequest) async throws -> Agent {
         if req.bring != nil { return try await call("agents.spawn", req.params, timeout: Self.transferTimeout).decode(Agent.self) }
