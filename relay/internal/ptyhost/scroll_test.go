@@ -143,3 +143,31 @@ func TestReadWriteAttachGetsTheScrollback(t *testing.T) {
 		t.Fatal("ro attach got the scrollback")
 	}
 }
+
+// A read-only attach that asks for the scrollback (history: true) gets
+// it: observe already shows the whole screen, so this grants nothing new.
+func TestReadOnlyAttachGetsTheScrollbackWhenAsked(t *testing.T) {
+	tm := start(t, "lines", 80, 24)
+	waitFor(t, "prompt", func() bool { return screenHas(tm, "prompt>") })
+	yes := true
+	r, c := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRO, History: &yes})
+	typ, p := readFrame(t, r, c)
+	if typ != wire.FrameData {
+		t.Fatalf("frame %d", typ)
+	}
+	term := vt.New(80, 24)
+	term.Write(p)
+	if term.HistoryLen() != 7 || !strings.HasPrefix(vt.ClipANSI(term.HistoryLine(0), 0), "line 01") ||
+		!strings.HasPrefix(vt.ClipANSI(term.HistoryLine(6), 0), "line 07") {
+		t.Fatalf("history %d first %q", term.HistoryLen(), term.HistoryLine(0))
+	}
+	if got := strings.TrimRight(term.Text(23), " "); got != "prompt>" {
+		t.Fatalf("screen bottom %q", got)
+	}
+	// history: false stays without it.
+	no := false
+	r2, c2 := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRO, History: &no})
+	if _, p2 := readFrame(t, r2, c2); strings.Contains(string(p2), "line 01") {
+		t.Fatal("ro attach with history: false got the scrollback")
+	}
+}

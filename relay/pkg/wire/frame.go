@@ -63,9 +63,10 @@ type AttachRequest struct {
 	// the PTY follows the largest fit of all view attaches (debounced,
 	// never below 80x24); a RESIZE from such a view updates its fit.
 	Fit *Size `json:"fit,omitempty"`
-	// History: false asks a read-write attach not to get the scrollback
-	// before its redraw (a reattach that only resyncs); nil or true: it
-	// does (at most HistoryPreambleLines / Bytes of it).
+	// History: whether the attach gets the scrollback before its redraw
+	// (at most HistoryPreambleLines / Bytes of it). nil: read-write
+	// attaches do, read-only ones do not; false: none (a reattach that
+	// only resyncs); true: either mode does. View attaches ignore it.
 	History *bool `json:"history,omitempty"`
 }
 

@@ -670,7 +670,8 @@ tracking (mouse, focus, kitty keyboard flags, cursor shape), `Resize` and
   restores both saved cursors, scroll region, cursor keys/keypad/bracketed
   paste, mouse tracking and encoding, focus reports, kitty keyboard flags
   (stack included), cursor shape and visibility, pen, charsets and the
-  cursor (a pending wrap included). No scrollback is sent.
+  cursor (a pending wrap included). No scrollback is sent (but see
+  "Scrollback" under "As built — drafts, overlays, …": `history`).
 - A viewer that falls 4 MiB behind gets, in place of what it missed, a SIZE
   frame and a fresh redraw (then live output). A viewer that takes nothing
   for 30 s is dropped.
@@ -1130,7 +1131,11 @@ in tiles, scrolling back).
   clears it; ED 2 does not add to it; a reset keeps it. **Read-write
   attaches** get it before the redraw (printed from the top of a cleared
   screen, then one newline per line still on it), so the focus view's and
-  the active tile's own terminal scroll back natively.
+  the active tile's own terminal scroll back natively. The attach
+  request's `history` decides: absent, read-write attaches get it and
+  read-only ones do not; `false`, none does (a resync); `true`, a
+  read-only (non-view) attach gets it too (the iPhone watching; `observe`
+  already shows the whole screen). View attaches never do.
 - `hesperd attach --view|--fit`: its terminal's input (otherwise dropped)
   may carry `S+N;` / `S-N;` / `S=N;` → SCROLL; the daemon's state comes
   back as the terminal's title `hesper-scroll {json}` (a view never shows
