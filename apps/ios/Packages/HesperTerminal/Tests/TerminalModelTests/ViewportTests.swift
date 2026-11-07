@@ -29,18 +29,27 @@ import Testing
         #expect(v.scale == 1)
     }
 
-    @Test func readableDrawsANinePointCell() {
+    @Test func readableDrawsANinePointFont() {
         let v = Viewport(grid: (cols: 200, rows: 56), view: phone, cell: cell, mode: .readable)
-        #expect(abs(v.scale - 9.0 / 17.0) < 1e-9)
-        #expect(abs(v.contentSize.height - 56 * 9) < 1e-9)
-        // 200 columns at 9/17 are wider than the phone: it pans sideways.
-        let width = 200 * 8 * 9.0 / 17.0
-        #expect(abs(v.panRange.x.upperBound - (width - 402)) < 1e-9)
+        #expect(abs(v.scale - 5.4 / 8) < 1e-9)
+        #expect(abs(v.contentSize.width - 200 * 5.4) < 1e-9)
+        // 200 columns at 5.4 pt are wider than the phone: it pans sideways.
+        #expect(abs(v.panRange.x.upperBound - (200 * 5.4 - 402)) < 1e-9)
         #expect(v.panRange.x.lowerBound == 0)
     }
 
+    @Test func readableIsSetByTheCellWidthNotItsLineHeight() {
+        // The surface's real cell (13 pt JetBrains Mono, 1.32 em lines):
+        // 97 columns at a 9 pt tall cell would fit the phone; at a 9 pt
+        // font they pan.
+        let tall = CGSize(width: 31 / 3.0, height: 23)
+        let v = Viewport(grid: (cols: 97, rows: 56), view: phone, cell: tall, mode: .readable)
+        #expect(abs(v.scale - 5.4 / tall.width) < 1e-9)
+        #expect(v.panRange.x.upperBound > 100)
+    }
+
     @Test func readableIsNeverSmallerThanFitWidth() {
-        // A tiny cell: 9 pt would be a magnification, fit width is larger still.
+        // A tiny cell: 5.4 pt wide would be a magnification, fit width is larger still.
         let v = Viewport(grid: (cols: 40, rows: 10), view: phone, cell: CGSize(width: 4, height: 6), mode: .readable)
         #expect(v.scale == 1)
     }
