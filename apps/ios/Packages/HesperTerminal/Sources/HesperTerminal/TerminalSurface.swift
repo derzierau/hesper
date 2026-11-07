@@ -73,7 +73,11 @@
             )
         }
 
-        /// Used to size the view before libghostty has measured a cell.
+        /// The last cell libghostty measured on any surface: the font and
+        /// display do not change, so a fresh surface sizes itself by it and
+        /// its first layout is already the Mac's grid.
+        private static var measuredCell: CGSize?
+        /// Used to size the view before libghostty has measured any cell.
         private static let estimatedCell = CGSize(
             width: CGFloat(fontSize) * 0.6,
             height: CGFloat(fontSize) * 1.25
@@ -106,8 +110,9 @@
         /// Sizes the view so that libghostty lays out exactly `cols` by
         /// `rows` cells: the cell it measured times the grid, plus half a
         /// cell so pixel rounding cannot drop a column. Until it has
-        /// measured, an estimate places the view, and the first report
-        /// corrects it.
+        /// measured, the cell another surface measured places the view, or
+        /// on the first surface an estimate, and the first report corrects
+        /// it. `grid` reaches `(cols, rows)` only after a layout pass.
         public func resize(cols: Int, rows: Int) {
             guard cols > 0, rows > 0 else { return }
             target = (cols, rows)
@@ -138,7 +143,7 @@
 
         private func layoutTarget() {
             guard let target else { return }
-            let unit = cell == .zero ? Self.estimatedCell : cell
+            let unit = cell != .zero ? cell : Self.measuredCell ?? Self.estimatedCell
             let size = CGSize(
                 width: (CGFloat(target.cols) + 0.5) * unit.width,
                 height: (CGFloat(target.rows) + 0.5) * unit.height
@@ -188,6 +193,7 @@
                     height: (CGFloat(size.heightPixels) / CGFloat(size.rows)).rounded(.down) / scale
                 )
             }
+            Self.measuredCell = cell
             grid = (Int(size.columns), Int(size.rows))
             if let target, grid != target, corrections < Self.maxCorrections {
                 corrections += 1

@@ -158,6 +158,8 @@ final class TerminalWatch {
     @ObservationIgnored private var lastTextRow: Int?
     /// A read of the last written row is due.
     @ObservationIgnored private var pendingRead: Task<Void, Never>?
+    /// The attach's feeder, told when the surface reaches a grid.
+    @ObservationIgnored private var feeder: TerminalFeeder?
 
     /// How long output settles before the last written row is read: at
     /// most one read of the whole screen per interval.
@@ -206,9 +208,15 @@ final class TerminalWatch {
     /// True when the agent exited.
     private func consume(_ stream: any AttachStream) async -> Bool {
         let feeder = TerminalFeeder { [surface] data in surface.feed(data) }
+        self.feeder = feeder
+        defer { self.feeder = nil }
         for await frame in stream.frames {
             switch frame {
             case .size(let cols, let rows):
+                // The history replay follows right after: it waits until
+                // the surface lays out the Mac's grid, or it is garbled.
+                let current = TerminalFeeder.Grid(cols: surface.grid.cols, rows: surface.grid.rows)
+                await feeder.expect(grid: .init(cols: cols, rows: rows), current: current)
                 showGrid(cols: cols, rows: rows)
             case .data(let data):
                 await feeder.push(data)
@@ -357,6 +365,10 @@ final class TerminalWatch {
     private func observeSurface() {
         surface.onChange = { [weak self] in
             guard let self else { return }
+            if let feeder = self.feeder {
+                let grid = TerminalFeeder.Grid(cols: self.surface.grid.cols, rows: self.surface.grid.rows)
+                Task { await feeder.gridChanged(to: grid) }
+            }
             if self.viewport.cell != self.surface.cell, self.surface.cell != .zero {
                 self.viewport.cell = self.surface.cell
                 self.follow()
