@@ -90,6 +90,53 @@ import Testing
         #expect(Set(p.keys) == ["link", "ch", "mode", "request"])
     }
 
+    @Test func anOwnerAttachIsReadWriteAtItsGrid() throws {
+        let params = try HostChannel.attachParams(link: "L1", ch: 3, agent: "M/a1", cols: 37, rows: 25, owner: true)
+        let got = try #require(try JSONSerialization.jsonObject(with: params) as? NSDictionary)
+        let want = try JSONSerialization.jsonObject(
+            with: Data(
+                #"{"ch":3,"link":"L1","mode":"rw","request":{"attach":"M/a1","cols":37,"history":true,"mode":"rw","owner":true,"rows":25}}"#
+                    .utf8))
+        #expect(got == want as? NSDictionary)
+    }
+
+    @Test func resizeFrameBytes() {
+        // Type 1, length 4, cols and rows uint16 BE; clamped to the range.
+        #expect(AttachDecoder.resize(cols: 37, rows: 25) == Data([1, 0, 0, 0, 4, 0, 37, 0, 25]))
+        #expect(AttachDecoder.resize(cols: 300, rows: 70_000) == Data([1, 0, 0, 0, 4, 0x01, 0x2c, 0xff, 0xff]))
+        #expect(AttachDecoder.resize(cols: -1, rows: 5) == Data([1, 0, 0, 0, 4, 0, 0, 0, 5]))
+    }
+
+    @Test func anOwnerAttachSendsRwAndResizesOnItsChannel() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        let (link, updates) = try await Self.linked(host)
+        defer { withExtendedLifetime(updates) {} }
+        // The fake relay's host publishes no `sizeOwner` capability.
+        #expect(link.sizing(on: "M")?.publishesOwner == false)
+        #expect(link.sizing(on: "M")?.device == "phone-1")
+        let stream = try await link.attach(agent: "M/a1", cols: 37, rows: 25, owner: true)
+        let ch = try #require((stream as? AttachChannel)?.id)
+        let p = try #require(host.params("agents.attach"))
+        #expect(p["mode"] as? String == "rw")
+        let request = try #require(p["request"] as? [String: Any])
+        #expect(request["mode"] as? String == "rw" && request["owner"] as? Bool == true && request["history"] as? Bool == true)
+        #expect(request["cols"] as? Int == 37 && request["rows"] as? Int == 25)
+        stream.resize(cols: 80, rows: 12)
+        for _ in 0..<200 where host.received.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        stream.close()
+        for _ in 0..<200 where host.received.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        // RESIZE in a D frame, then X: never a data frame.
+        #expect(
+            host.received == [
+                LinkFrames.Frame(kind: Self.d, channel: ch, payload: Data([1, 0, 0, 0, 4, 0, 80, 0, 12])),
+                LinkFrames.Frame(kind: Self.x, channel: ch, payload: Data()),
+            ])
+        // A closed attach sends no more.
+        stream.resize(cols: 90, rows: 12)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(host.received.count == 2)
+    }
+
     @Test func demuxRoutesByChannel() async throws {
         let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
         var (link, updates) = try await Self.linked(host)

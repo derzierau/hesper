@@ -4,7 +4,8 @@
     import GhosttyTerminal
     import UIKit
 
-    /// A Mac's terminal drawn on the phone by libghostty, read only.
+    /// A Mac's terminal drawn on the phone by libghostty; the phone never
+    /// types into it.
     ///
     /// The bytes come from the Mac's PTY (`feed`), never from a local
     /// process; what the terminal itself would send back (keys, query
@@ -17,8 +18,13 @@
     public final class TerminalSurface {
         /// Rows kept above the screen, at most.
         public static let maxScrollback = 10_000
-        /// The font size the grid is drawn at, before `Viewport` scales it.
-        public static let fontSize: Float = 13
+        /// The font size handed to libghostty, before `Viewport` scales it.
+        /// libghostty sizes fonts at 96 dpi (a 13 pt font drew a 10.33 pt
+        /// cell, 0.6 em of 17.3 pt), so 13.5 draws a true 18 pt
+        /// JetBrains Mono: a cell about 10.8 x 24 pt.
+        public static let fontSize: Float = 13.5
+        /// The font size the phone shows, in true points.
+        public static let pointSize = CGFloat(fontSize) * 96 / 72
 
         /// The view, top-left anchored (`layer.anchorPoint` is `.zero`):
         /// `resize` changes its bounds and leaves its position alone, so a
@@ -77,11 +83,16 @@
         /// display do not change, so a fresh surface sizes itself by it and
         /// its first layout is already the Mac's grid.
         private static var measuredCell: CGSize?
-        /// Used to size the view before libghostty has measured any cell.
+        /// Used to size the view before libghostty has measured any cell:
+        /// JetBrains Mono's advance (0.6 em) and line height (1.32 em).
         private static let estimatedCell = CGSize(
-            width: CGFloat(fontSize) * 0.6,
-            height: CGFloat(fontSize) * 1.25
+            width: pointSize * 0.6,
+            height: pointSize * 1.32
         )
+
+        /// The cell a surface draws: the last one measured, else the estimate.
+        /// A grid that fits the phone is sized by it before a surface drew.
+        public static var expectedCell: CGSize { measuredCell ?? estimatedCell }
         /// Reaching the grid takes one pass with a measured cell; more
         /// means the Mac's grid cannot be drawn here.
         private static let maxCorrections = 3

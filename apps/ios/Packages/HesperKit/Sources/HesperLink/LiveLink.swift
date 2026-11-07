@@ -15,6 +15,9 @@ public final class LiveLink: LinkClient {
         var channels: [String: HostChannel] = [:]
         /// The fleet's machine name (the host's short name) → machine id.
         var ids: [String: String] = [:]
+        /// By the fleet's machine name: its capability, the rights it
+        /// granted and this phone's id there.
+        var sizing: [String: HostSizing] = [:]
         var listeners: [UUID: AsyncStream<LinkUpdate>.Continuation] = [:]
         /// One connection however many listen: the relay keeps only the
         /// newest connection of a device.
@@ -83,6 +86,12 @@ public final class LiveLink: LinkClient {
             for m in paired { names[m.id] = Self.name(m) }
             state.withLock { s in
                 s.ids = Dictionary(paired.map { (Self.name($0), $0.id) }, uniquingKeysWith: { a, _ in a })
+                s.sizing = Dictionary(
+                    paired.map { m in
+                        let sizing = HostSizing(
+                            publishesOwner: m.capabilities["sizeOwner"] == true, rights: hosts[m.id]?.rights ?? [], device: me.device)
+                        return (Self.name(m), sizing)
+                    }, uniquingKeysWith: { a, _ in a })
             }
             out.yield(.macs(paired.map { Machine(short: Self.name($0), name: $0.name, online: $0.online) }))
             for m in paired {
@@ -152,11 +161,13 @@ public final class LiveLink: LinkClient {
         }
     }
 
-    /// A read-only attach on the agent's Mac. While the relay reconnects
+    public func sizing(on machine: String) -> HostSizing? { state.withLock { $0.sizing[machine] } }
+
+    /// An attach on the agent's Mac. While the relay reconnects
     /// it waits (up to 10 s) for the Mac's channel; an attach open when a
     /// link breaks ends (its frames finish without `.exit`) and the caller
     /// attaches again, which waits for the relink.
-    public func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream {
+    public func attach(agent: String, cols: Int, rows: Int, owner: Bool) async throws -> any AttachStream {
         let machine = String(agent.split(separator: "/").first ?? "")
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(10)
@@ -169,7 +180,7 @@ public final class LiveLink: LinkClient {
             // A channel of the previous relay connection may linger until
             // `follow` clears it: only one whose link is up will do.
             if let channel = found.channel, await channel.linked {
-                return try await channel.attach(agent: agent, cols: cols, rows: rows, wait: .zero)
+                return try await channel.attach(agent: agent, cols: cols, rows: rows, owner: owner, wait: .zero)
             }
             guard clock.now < deadline else { throw RelayError(code: "unavailable", message: "\(machine) is not connected") }
             try await Task.sleep(for: .milliseconds(100))

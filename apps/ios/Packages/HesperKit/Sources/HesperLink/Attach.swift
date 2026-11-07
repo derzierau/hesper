@@ -82,6 +82,19 @@ public struct AttachDecoder: Sendable {
         return (reply, frames)
     }
 
+    /// A RESIZE frame (type 1, relay/pkg/wire/frame.go): cols and rows as
+    /// uint16 BE. The phone's only frame to the Mac; only the size owner's
+    /// counts.
+    public static func resize(cols: Int, rows: Int) -> Data {
+        var out = Data([1, 0, 0, 0, 4])
+        for v in [cols, rows] {
+            let n = UInt16(clamping: v)
+            out.append(UInt8(n >> 8))
+            out.append(UInt8(n & 0xff))
+        }
+        return out
+    }
+
     /// One frame; nil for RESIZE (it only goes to the Mac) and unknown types.
     static func frame(type: UInt8, _ payload: Data) throws -> AttachFrame? {
         switch type {
@@ -97,13 +110,14 @@ public struct AttachDecoder: Sendable {
     }
 }
 
-/// One read-only attach on a channel of a host's link. The link's reader
-/// feeds it; `close()` sends `X` and ends the stream.
+/// One attach on a channel of a host's link. The link's reader feeds it;
+/// `resize` sends RESIZE, `close()` sends `X` and ends the stream.
 public final class AttachChannel: AttachStream {
     public let id: UInt32
     public let frames: AsyncStream<AttachFrame>
     private let continuation: AsyncStream<AttachFrame>.Continuation
     private let onClose: @Sendable (UInt32) -> Void
+    private let onResize: @Sendable (UInt32, Int, Int) -> Void
 
     private struct State {
         var decoder = AttachDecoder()
@@ -113,9 +127,13 @@ public final class AttachChannel: AttachStream {
     }
     private let state = Mutex(State())
 
-    init(id: UInt32, onClose: @escaping @Sendable (UInt32) -> Void) {
+    init(
+        id: UInt32, onClose: @escaping @Sendable (UInt32) -> Void,
+        onResize: @escaping @Sendable (UInt32, Int, Int) -> Void = { _, _, _ in }
+    ) {
         self.id = id
         self.onClose = onClose
+        self.onResize = onResize
         (frames, continuation) = AsyncStream.makeStream(of: AttachFrame.self, bufferingPolicy: .unbounded)
     }
 
@@ -187,4 +205,9 @@ public final class AttachChannel: AttachStream {
     }
 
     public func close() { close(RelayError(code: "closed", message: "Closed")) }
+
+    public func resize(cols: Int, rows: Int) {
+        guard cols > 0, rows > 0, !state.withLock({ $0.ended }) else { return }
+        onResize(id, cols, rows)
+    }
 }

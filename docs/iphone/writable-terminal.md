@@ -1,7 +1,9 @@
 # A writable terminal on the iPhone
 
 Status, 7 Nov 2026: step 1 shipped as watching only (a read-only Mirror,
-no typing yet); Take over is later. The prebuilt libghostty-spm framework
+no typing yet). Take over is built on the phone, automatic when the agent
+view opens (the owner's decision of 7 Nov, replacing the explicit tap),
+on hosts that publish `capabilities.sizeOwner`; typing is still later. The prebuilt libghostty-spm framework
 includes LGPL libintl, so before an App Store release the iOS slice needs
 the source build the Mac uses.
 

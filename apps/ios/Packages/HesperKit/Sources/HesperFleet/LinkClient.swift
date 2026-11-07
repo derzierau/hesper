@@ -54,11 +54,31 @@ public protocol LinkClient: Sendable {
     /// never retried automatically.
     func perform(_ command: LinkCommand) async throws
 
-    /// Watches an agent's terminal: a read-only attach at the Mac's grid
-    /// size (`cols`×`rows`). Throws when the Mac refused it or is not
-    /// linked. The stream ends without `.exit` when the link broke: show
-    /// "Reconnecting…" and attach again (it waits for the relink).
-    func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream
+    /// Watches an agent's terminal at `cols`×`rows`. Mirror (`owner`
+    /// false): a read-only attach at the Mac's grid. Fitted (`owner`
+    /// true): a read-write attach that makes the phone the size owner, so
+    /// the PTY takes this grid (`AttachPlan`); it sends RESIZE, never
+    /// bytes. Throws when the Mac refused it or is not linked. The stream
+    /// ends without `.exit` when the link broke: show "Reconnecting…" and
+    /// attach again (it waits for the relink).
+    func attach(agent: String, cols: Int, rows: Int, owner: Bool) async throws -> any AttachStream
+
+    /// What `machine` lets this phone do with a terminal's size; nil when
+    /// the Mac is not known (yet).
+    func sizing(on machine: String) -> HostSizing?
+}
+
+extension LinkClient {
+    /// A mirror attach.
+    public func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream {
+        try await attach(agent: agent, cols: cols, rows: rows, owner: false)
+    }
+}
+
+/// An error with the Mac's code (`forbidden`, `unsupported`, …), so the
+/// fleet can decide on it without knowing the link's error type.
+public protocol CodedError: Error {
+    var code: String { get }
 }
 
 /// What a watched terminal sends (relay/pkg/wire/frame.go): its bytes,
@@ -71,10 +91,13 @@ public enum AttachFrame: Equatable, Sendable {
     case scroll
 }
 
-/// An open read-only attach. `frames` ends after `.exit`, when the Mac
-/// closed it, when the link broke, or after `close()`.
+/// An open attach. `frames` ends after `.exit`, when the Mac closed it,
+/// when the link broke, or after `close()`.
 public protocol AttachStream: Sendable {
     var frames: AsyncStream<AttachFrame> { get }
+    /// Asks the Mac to size the terminal to `cols`×`rows` (RESIZE). Only
+    /// the size owner's counts; the Mac ignores a mirror's.
+    func resize(cols: Int, rows: Int)
     /// Ends the attach; the Mac stops sending. Idempotent.
     func close()
 }

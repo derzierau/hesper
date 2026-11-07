@@ -7,14 +7,19 @@ import SwiftUI
 import TerminalModel
 import UIKit
 
-/// The agent's live terminal, watched: a read-only attach drawn at the
-/// Mac's grid size, scaled and panned to the phone (`Viewport`).
-/// Bottom-anchored, so the grid's last row sits on the dock.
+/// The agent's live terminal, watched. On a Mac that names size owners the
+/// phone owns the size while the view is open (fitted, `AttachPlan`): the
+/// grid is what fits the area above the dock at 18 pt, unscaled, and
+/// follows rotation and the dock (RESIZE, debounced). Otherwise, or once
+/// the Mac took the size back, a mirror: the Mac's grid, scaled and panned
+/// to the phone (`Viewport`). Bottom-anchored, so the grid's last row sits
+/// on the dock.
 ///
-/// The attach opens when the view appears and closes when it disappears,
-/// and after 30 s in the background (it opens again on return). A link
-/// that breaks reads "Reconnecting…" and attaches again; a Mac that
-/// refuses reads its reason.
+/// The attach opens when the view appears and closes when it disappears.
+/// In the background a mirror closes after 30 s; a fitted one at once,
+/// inside a background task, so the Mac gets its size back. Both open
+/// again on return. A link that breaks reads "Reconnecting…" and attaches
+/// again; a Mac that refuses reads its reason.
 struct TerminalView: View {
     let agent: Agent
     @Environment(FleetModel.self) private var model
@@ -25,6 +30,18 @@ struct TerminalView: View {
 
     /// How long the app may stay in the background with the attach open.
     private static let backgroundGrace: Duration = .seconds(30)
+    /// How long the app asks to keep running after it let go, so the close
+    /// reaches the Mac before iOS suspends it.
+    private static let releaseTime: Duration = .seconds(2)
+
+    /// Runs `release` inside a background task that lasts `releaseTime`.
+    private static func inBackgroundTask(_ release: () -> Void) async {
+        let app = UIApplication.shared
+        let task = app.beginBackgroundTask(withName: "Let go of the terminal size", expirationHandler: nil)
+        release()
+        try? await Task.sleep(for: releaseTime)
+        app.endBackgroundTask(task)
+    }
 
     var body: some View {
         ZStack {
@@ -42,11 +59,18 @@ struct TerminalView: View {
         .environment(\.colorScheme, .dark)
         .task(id: AttachKey(agent: agent.id, reachable: model.fleet.isReachable(agent), asleep: asleep)) {
             guard !asleep else { return }
-            await watch.run(agent) { try await model.attach($0) }
+            await watch.run(agent, model: model)
         }
+        .onChange(of: agent.sizeOwner) { _, owner in watch.ownerChanged(owner) }
         .task(id: scenePhase) {
             guard scenePhase != .active else {
                 asleep = false
+                return
+            }
+            if watch.fitsPhone {
+                // The Mac's terminal keeps the phone's size until the phone
+                // lets go: close (X) now, while iOS still runs the app.
+                await Self.inBackgroundTask { asleep = true }
                 return
             }
             guard (try? await Task.sleep(for: Self.backgroundGrace)) != nil else { return }
@@ -58,7 +82,7 @@ struct TerminalView: View {
     @ViewBuilder private var status: some View {
         switch watch.phase {
         case .loading:
-            if let size = agent.size {
+            if !watch.fitsPhone, let size = agent.size {
                 caption("Mac's size · \(size.cols) × \(size.rows)")
             }
         case .reconnecting:
@@ -144,6 +168,17 @@ final class TerminalWatch {
     private(set) var pan: CGPoint = .zero
     /// The newest line is on screen (not scrolled up into the history).
     private(set) var isAtBottom = true
+    /// Whether the phone owns the Mac's terminal size and still holds it.
+    private(set) var fit = FitState(plan: AttachPlan(mode: .mirror, grid: AttachPlan.fallbackSize), device: nil)
+    var fitsPhone: Bool { fit.isFitted }
+
+    /// The open attach, for RESIZE.
+    @ObservationIgnored private var stream: (any AttachStream)?
+    /// The Mac took the size back while this view was open: it stays a
+    /// mirror until the agent screen opens again.
+    @ObservationIgnored private var macTookBack = false
+    /// A RESIZE waiting for the area to settle.
+    @ObservationIgnored private var pendingFit: Task<Void, Never>?
 
     /// Placement changed: the canvas moves the surface.
     @ObservationIgnored var onPlace: (() -> Void)?
@@ -168,6 +203,10 @@ final class TerminalWatch {
     /// Wait before attaching again after the link broke.
     static let backoff: Duration = .seconds(1)
 
+    /// How long the area must hold before the Mac's terminal follows it,
+    /// so a rotation or the keyboard redraws the agent once.
+    static let fitDebounce: Duration = .milliseconds(300)
+
     init() {
         observeSurface()
     }
@@ -175,23 +214,33 @@ final class TerminalWatch {
     /// Attaches and draws until the agent exits or the task is cancelled
     /// (the view disappeared, or the attach's key changed), attaching again
     /// whenever the link breaks.
-    func run(_ agent: Agent, attach: (Agent) async throws -> any AttachStream) async {
+    func run(_ agent: Agent, model: FleetModel) async {
         if used { replaceSurface() }
         phase = .loading
         while !Task.isCancelled {
+            await waitForArea()
+            let wanted = macTookBack ? AttachPlan.mirror(agent) : model.plan(for: agent, area: viewport.view, cell: cell)
             let stream: any AttachStream
+            let plan: AttachPlan
             do {
-                stream = try await attach(agent)
+                let attached = try await model.attach(agent, plan: wanted)
+                stream = attached.stream
+                plan = attached.plan
             } catch {
                 if !Task.isCancelled { phase = .unavailable(String(describing: error)) }
                 return
             }
             used = true
+            start(plan, device: model.device(on: agent.machine))
+            self.stream = stream
             let exited = await withTaskCancellationHandler {
                 await consume(stream)
             } onCancel: {
                 stream.close()
             }
+            self.stream = nil
+            pendingFit?.cancel()
+            pendingFit = nil
             stream.close()
             if exited {
                 phase = .exited
@@ -205,6 +254,62 @@ final class TerminalWatch {
         }
     }
 
+    /// An attach began. Fitted: unscaled, the surface sized to the grid
+    /// asked for. A mirror keeps its mode, or leaves the fitted one.
+    private func start(_ plan: AttachPlan, device: String?) {
+        fit = FitState(plan: plan, device: device)
+        if plan.owner {
+            viewport.mode = .fitted
+            surface.resize(cols: plan.grid.cols, rows: plan.grid.rows)
+        } else if viewport.mode == .fitted {
+            viewport.mode = Viewport.defaultMode(cols: plan.grid.cols)
+        }
+    }
+
+    /// The agent's size owner changed (its info): the Mac may have taken
+    /// the size back.
+    func ownerChanged(_ owner: String?) {
+        if fit.owner(owner) { dropToMirror(cols: viewport.cols) }
+    }
+
+    /// The Mac owns the size again: today's mirror, for as long as this
+    /// view is open.
+    private func dropToMirror(cols: Int) {
+        macTookBack = true
+        pendingFit?.cancel()
+        pendingFit = nil
+        viewport.mode = Viewport.defaultMode(cols: cols)
+        lastPan = nil
+        follow()
+    }
+
+    /// The cell a grid is sized by: the surface's, or until it has drawn
+    /// the last one measured.
+    private var cell: CGSize { surface.cell != .zero ? surface.cell : TerminalSurface.expectedCell }
+
+    /// The container reports its size after the first layout; a fitted
+    /// grid needs it (a second at most, then the plan falls back).
+    private func waitForArea() async {
+        for _ in 0..<50 where viewport.view.width <= 0 || viewport.view.height <= 0 {
+            guard (try? await Task.sleep(for: .milliseconds(20))) != nil else { return }
+        }
+    }
+
+    /// The area or the cell changed: once it has held for `fitDebounce`,
+    /// the Mac's terminal is sized to what fits now (RESIZE).
+    private func scheduleFit() {
+        guard fit.isFitted else { return }
+        pendingFit?.cancel()
+        pendingFit = Task { [weak self] in
+            guard (try? await Task.sleep(for: Self.fitDebounce)) != nil, let self else { return }
+            self.pendingFit = nil
+            guard let stream = self.stream, let grid = AttachPlan.fit(area: self.viewport.view, cell: self.cell),
+                let ask = self.fit.resize(to: grid)
+            else { return }
+            stream.resize(cols: ask.cols, rows: ask.rows)
+        }
+    }
+
     /// True when the agent exited.
     private func consume(_ stream: any AttachStream) async -> Bool {
         let feeder = TerminalFeeder { [surface] data in surface.feed(data) }
@@ -213,6 +318,7 @@ final class TerminalWatch {
         for await frame in stream.frames {
             switch frame {
             case .size(let cols, let rows):
+                if fit.size(GridSize(cols: cols, rows: rows)) { dropToMirror(cols: cols) }
                 // The history replay follows right after: it waits until
                 // the surface lays out the Mac's grid, or it is garbled.
                 let current = TerminalFeeder.Grid(cols: surface.grid.cols, rows: surface.grid.rows)
@@ -239,7 +345,7 @@ final class TerminalWatch {
         let first = viewport.cols == 0
         surface.resize(cols: cols, rows: rows)
         viewport.setGrid(cols: cols, rows: rows)
-        if first { viewport.mode = Viewport.defaultMode(cols: cols) }
+        if first, !fit.isFitted { viewport.mode = Viewport.defaultMode(cols: cols) }
         follow()
     }
 
@@ -249,6 +355,7 @@ final class TerminalWatch {
         guard viewport.view != size else { return }
         viewport.view = size
         follow()
+        scheduleFit()
     }
 
     /// A pinch: zooms within the viewport's clamps, keeping the point under
@@ -265,6 +372,7 @@ final class TerminalWatch {
 
     /// A double tap: readable and fit width, in turn.
     func toggleMode() {
+        guard viewport.mode != .fitted else { return }
         viewport.mode = viewport.mode == .readable ? .fitWidth : .readable
         lastPan = nil
         follow()
@@ -372,6 +480,7 @@ final class TerminalWatch {
             if self.viewport.cell != self.surface.cell, self.surface.cell != .zero {
                 self.viewport.cell = self.surface.cell
                 self.follow()
+                self.scheduleFit()
             }
             self.isAtBottom = self.surface.isAtBottom
             self.onPlace?()

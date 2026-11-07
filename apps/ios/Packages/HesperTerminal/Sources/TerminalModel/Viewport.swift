@@ -4,15 +4,18 @@ import CoreGraphics
 /// drawn at, its scaled size, and how far it can be panned. All sizes are
 /// points; `cell` is one cell of the unscaled surface.
 ///
-/// The grid is never resized to fit the phone (the Mac owns it), so the
-/// phone scales it down instead: `.fitWidth` shows every column,
-/// `.readable` draws text at about 18 pt and pans sideways. A pinch
-/// zooms between the two limits: never smaller than fit width, never
-/// magnified past 1.0, where the text would blur.
+/// A mirror's grid is the Mac's, so the phone scales it down instead:
+/// `.fitWidth` shows every column, `.readable` draws text at about 18 pt
+/// and pans sideways. A pinch zooms between the two limits: never smaller
+/// than fit width, never magnified past 1.0, where the text would blur.
+/// `.fitted` is the grid the phone asked for (it owns the size): drawn
+/// unscaled, no pinch, no sideways pan.
 public struct Viewport: Equatable, Sendable {
     public enum Mode: Equatable, Sendable {
         case readable
         case fitWidth
+        /// The phone owns the grid, sized to the view: unscaled.
+        case fitted
     }
 
     /// The cell width `.readable` aims for, in points: an 18 pt monospace
@@ -63,6 +66,7 @@ public struct Viewport: Equatable, Sendable {
 
     /// A pinch asks for this scale; `scale` clamps it.
     public mutating func zoom(to scale: CGFloat) {
+        guard mode != .fitted else { return }
         pinch = scale
     }
 
@@ -79,6 +83,7 @@ public struct Viewport: Equatable, Sendable {
     }
 
     public var scale: CGFloat {
+        if mode == .fitted { return 1 }
         let wanted: CGFloat
         if let pinch {
             wanted = pinch
@@ -88,6 +93,8 @@ public struct Viewport: Equatable, Sendable {
                 wanted = fitWidthScale
             case .readable:
                 wanted = cell.width > 0 ? Self.readableCellWidth / cell.width : 1
+            case .fitted:
+                wanted = 1
             }
         }
         return min(1, max(fitWidthScale, wanted))
@@ -103,7 +110,8 @@ public struct Viewport: Equatable, Sendable {
     /// points: zero on an axis where the content fits.
     public var panRange: (x: ClosedRange<CGFloat>, y: ClosedRange<CGFloat>) {
         let content = contentSize
-        return (x: 0...Self.overflow(content.width, view.width), y: 0...Self.overflow(content.height, view.height))
+        let x = mode == .fitted ? 0 : Self.overflow(content.width, view.width)
+        return (x: 0...x, y: 0...Self.overflow(content.height, view.height))
     }
 
     /// The vertical pan that keeps `row` (counted from the grid's top)

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import HesperCore
 import Observation
@@ -106,13 +107,35 @@ public final class FleetModel {
     public func agent(_ id: String) -> Agent? { fleet.agents[id] }
 
     /// The grid asked for when the Mac has not reported the agent's size.
-    public static let fallbackSize = GridSize(cols: 80, rows: 24)
+    public static let fallbackSize = AttachPlan.fallbackSize
 
     /// Watches an agent's terminal at the Mac's current grid size
-    /// (`fallbackSize` when it has not said). Throws when the Mac refused
-    /// it or is not linked.
+    /// (`fallbackSize` when it has not said): a mirror. Throws when the
+    /// Mac refused it or is not linked.
     public func attach(_ agent: Agent) async throws -> any AttachStream {
-        let size = agent.size ?? Self.fallbackSize
-        return try await link.attach(agent: agent.id, cols: size.cols, rows: size.rows)
+        try await attach(agent, plan: .mirror(agent)).stream
+    }
+
+    /// How to attach `agent`'s terminal shown in `area` points with cells
+    /// of `cell`: fitted where its Mac lets the phone own the size.
+    public func plan(for agent: Agent, area: CGSize, cell: CGSize) -> AttachPlan {
+        AttachPlan.make(agent, host: link.sizing(on: agent.machine), area: area, cell: cell)
+    }
+
+    /// This phone's controller id on `machine`, as `Agent.sizeOwner` names it.
+    public func device(on machine: String) -> String? { link.sizing(on: machine)?.device }
+
+    /// Attaches by `plan`. An owner attach the Mac refuses for lack of the
+    /// right or support (`AttachPlan.retriesAsMirror`) is made again as a
+    /// mirror. Returns the stream and the plan it runs.
+    public func attach(_ agent: Agent, plan: AttachPlan) async throws -> (stream: any AttachStream, plan: AttachPlan) {
+        do {
+            let stream = try await link.attach(agent: agent.id, cols: plan.grid.cols, rows: plan.grid.rows, owner: plan.owner)
+            return (stream, plan)
+        } catch let e as any CodedError where plan.owner && AttachPlan.retriesAsMirror(e.code) {
+            let mirror = AttachPlan.mirror(agent)
+            let stream = try await link.attach(agent: agent.id, cols: mirror.grid.cols, rows: mirror.grid.rows, owner: false)
+            return (stream, mirror)
+        }
     }
 }

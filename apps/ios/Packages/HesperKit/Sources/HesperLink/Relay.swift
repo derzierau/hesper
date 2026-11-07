@@ -1,4 +1,5 @@
 import Foundation
+import HesperFleet
 import Synchronization
 
 /// An error answer from the relay or a host (relay/docs/protocol.md,
@@ -17,6 +18,8 @@ public struct RelayError: Error, Equatable, Sendable {
 }
 
 /// What a screen shows for it: the message, or the code when there is none.
+extension RelayError: CodedError {}
+
 extension RelayError: CustomStringConvertible {
     public var description: String { message.isEmpty ? code : message }
 }

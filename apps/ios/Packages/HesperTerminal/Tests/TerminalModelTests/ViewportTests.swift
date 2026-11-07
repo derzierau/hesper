@@ -122,4 +122,18 @@ import Testing
         #expect(v.followOffset(lastTextRow: 55) == 204)
         #expect(v.followOffset(lastTextRow: nil) == 204)
     }
+
+    @Test func fittedIsUnscaledWithNoSidewaysPan() {
+        // 37 x 25 cells of 10.8 x 24 pt in a 402 x 610 pt area.
+        var v = Viewport(
+            grid: (cols: 37, rows: 25), view: CGSize(width: 402, height: 610), cell: CGSize(width: 10.8, height: 24), mode: .fitted)
+        #expect(v.scale == 1)
+        #expect(v.panRange.x == 0...0 && v.panRange.y == 0...0)
+        v.zoom(to: 0.5)
+        #expect(v.scale == 1)
+        // A grid wider than the view (before the Mac's resize lands) still
+        // does not pan sideways.
+        v.view = CGSize(width: 300, height: 610)
+        #expect(v.panRange.x == 0...0)
+    }
 }

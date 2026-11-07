@@ -11,6 +11,21 @@ public enum Samples {
         Machine(short: "air", name: "air", online: false),
     ]
 
+    /// What each sample Mac publishes (`snapshot.capabilities`): all but
+    /// `mini` name a terminal's size owner, so `mini`'s agents show the
+    /// mirror and the others fit the terminal to the phone.
+    public static let capabilities: [String: [String: Bool]] = [
+        "mini": ["e2e": true],
+        "studio": ["e2e": true, "sizeOwner": true],
+        "air": ["e2e": true, "sizeOwner": true],
+    ]
+
+    /// The sample phone: its controller id, its name, and the rights the
+    /// sample Macs granted it.
+    public static let device = "sample-iphone"
+    public static let deviceName = "iPhone"
+    public static let rights = ["observe", "answer", "type", "transfer"]
+
     /// One `agents.link` list event per Mac, as hesperd sends them, so the
     /// fixtures go through the same decoder as the live link.
     public static let listEvents: [String: String] = [

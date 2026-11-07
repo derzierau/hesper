@@ -207,11 +207,13 @@ extension HostChannel {
         attaches = [:]
     }
 
-    /// Opens a read-only attach of `agent` at `cols`x`rows` on a new
-    /// channel of the link, waiting up to `wait` for the link to be up.
-    /// Returns once the Mac's reply line said ok; throws its error
-    /// otherwise, `timeout` when no reply came.
-    public func attach(agent: String, cols: Int, rows: Int, wait: Duration = .seconds(10)) async throws -> AttachChannel {
+    /// Opens an attach of `agent` at `cols`x`rows` on a new channel of the
+    /// link, waiting up to `wait` for the link to be up: read only, or as
+    /// the size owner (`attachParams`). Returns once the Mac's reply line
+    /// said ok; throws its error otherwise, `timeout` when no reply came.
+    public func attach(
+        agent: String, cols: Int, rows: Int, owner: Bool = false, wait: Duration = .seconds(10)
+    ) async throws -> AttachChannel {
         let clock = ContinuousClock()
         let deadline = clock.now + wait
         // Polled: the link comes back on its own retry loop (LiveLink).
@@ -226,11 +228,11 @@ extension HostChannel {
         let ch = lastChannel
         let channel = AttachChannel(id: ch) { [weak self] id in
             Task { await self?.closed(id, link: link.id) }
+        } onResize: { [weak self] id, cols, rows in
+            Task { await self?.resized(id, cols: cols, rows: rows, link: link.id) }
         }
         attaches[ch] = channel
-        let request: [String: Any] = ["attach": agent, "mode": "ro", "cols": cols, "rows": rows, "owner": false, "history": true]
-        let params = try JSONSerialization.data(
-            withJSONObject: ["link": link.id, "ch": Int(ch), "mode": "ro", "request": request] as [String: Any], options: .sortedKeys)
+        let params = try Self.attachParams(link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, owner: owner)
         let timeout = Task {
             try await Task.sleep(for: .seconds(15))
             channel.end(.timeout)
@@ -255,8 +257,25 @@ extension HostChannel {
         try? await send(frame: LinkFrames.Frame(kind: Self.kindClose, channel: ch, payload: Data()))
     }
 
-    /// Sends one frame on the open link. Used only to close a channel: a
-    /// read-only attach never sends bytes.
+    /// `agents.attach`'s params (relay/docs/protocol.md, "Links"): the
+    /// local attach request, its mode repeated for the rights table. A
+    /// mirror is `ro`; the size owner is `rw` (right `type`) and the PTY
+    /// takes `cols`x`rows`. Both replay the history first.
+    static func attachParams(link: String, ch: UInt32, agent: String, cols: Int, rows: Int, owner: Bool) throws -> Data {
+        let mode = owner ? "rw" : "ro"
+        let request: [String: Any] = ["attach": agent, "mode": mode, "cols": cols, "rows": rows, "owner": owner, "history": true]
+        return try JSONSerialization.data(
+            withJSONObject: ["link": link, "ch": Int(ch), "mode": mode, "request": request] as [String: Any], options: .sortedKeys)
+    }
+
+    /// RESIZE on an attach's channel, if its link is still the open one.
+    private func resized(_ ch: UInt32, cols: Int, rows: Int, link: String) async {
+        guard attaches[ch] != nil, openLink?.id == link else { return }
+        try? await send(frame: LinkFrames.Frame(kind: Self.kindData, channel: ch, payload: AttachDecoder.resize(cols: cols, rows: rows)))
+    }
+
+    /// Sends one frame on the open link: `X` to close a channel, RESIZE
+    /// to size an owner attach. The phone sends no bytes (no typing).
     func send(frame: LinkFrames.Frame) async throws {
         guard let link = openLink else { throw RelayError(code: "unavailable", message: "The Mac is not linked") }
         // Sealed and handed to the socket in one actor turn, so the

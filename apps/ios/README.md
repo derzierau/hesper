@@ -140,8 +140,17 @@ terminal can be checked without a Mac.
 
 In the order of the concept's "Core work":
 
-1. Typing in the terminal, then Fit to iPhone. The agent view already
-   shows the live terminal, watching only (Mirror, read-only attach).
+1. Typing in the terminal. The agent view already shows the live
+   terminal, watching only. On a Mac that publishes
+   `capabilities.sizeOwner` it fits the Mac's terminal to the phone when
+   it opens: an owner attach (`rw`, never a data frame) at the grid that
+   fits the area above the dock at a true 18 pt, unscaled, no sideways
+   pan, resized (RESIZE, 300 ms debounce) on rotation and dock changes,
+   let go (`X`) when the screen closes or the app leaves the foreground.
+   An older Mac, a `forbidden` reply, or the Mac taking the size back
+   (its keystroke or click) gives the Mirror: the Mac's grid, scaled and
+   panned. In the samples `studio` and `air` fit, `mini` mirrors
+   (`HESPER_OPEN=agent:mini/m2`).
 2. Push: the notification extension decrypts ids into text; actionable
    Allow / Deny / Reply.
 3. Live Activity and widget pushes from the relay.
