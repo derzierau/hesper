@@ -53,4 +53,37 @@ public protocol LinkClient: Sendable {
     /// Sends one command. Throws when the Mac refused it or did not answer;
     /// never retried automatically.
     func perform(_ command: LinkCommand) async throws
+
+    /// Watches an agent's terminal: a read-only attach at the Mac's grid
+    /// size (`cols`×`rows`). Throws when the Mac refused it or is not
+    /// linked. The stream ends without `.exit` when the link broke: show
+    /// "Reconnecting…" and attach again (it waits for the relink).
+    func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream
+}
+
+extension LinkClient {
+    public func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream {
+        throw AttachUnsupported()
+    }
+}
+
+/// A link that cannot show terminals.
+public struct AttachUnsupported: Error, Equatable {}
+
+/// What a watched terminal sends (relay/pkg/wire/frame.go): its bytes,
+/// its grid size (first from the attach's reply, then at every resize), a
+/// scroll state, and its exit, the last frame.
+public enum AttachFrame: Equatable, Sendable {
+    case data(Data)
+    case size(cols: Int, rows: Int)
+    case exit
+    case scroll
+}
+
+/// An open read-only attach. `frames` ends after `.exit`, when the Mac
+/// closed it, when the link broke, or after `close()`.
+public protocol AttachStream: Sendable {
+    var frames: AsyncStream<AttachFrame> { get }
+    /// Ends the attach; the Mac stops sending. Idempotent.
+    func close()
 }

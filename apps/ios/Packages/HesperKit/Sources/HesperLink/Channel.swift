@@ -24,6 +24,20 @@ public actor HostChannel {
     private var session: E2ESession?
     private var created = Date.distantPast
 
+    /// The link stream while `link` reads it: its ticket id (the `link`
+    /// of `agents.attach`), socket and cipher.
+    private struct OpenLink {
+        let id: String
+        let socket: any RelaySocket
+        let cipher: StreamCipher
+    }
+    private var openLink: OpenLink?
+    /// Open attaches by channel. Channel numbers only grow, as the Mac's
+    /// own controller does (internal/remote/link.go): a closed channel's
+    /// number never meets a late frame of the one before.
+    private var attaches: [UInt32: AttachChannel] = [:]
+    private var lastChannel: UInt32 = 0
+
     public init(relay: RelayConnection, machine: String, hostKey: Data, me: ControllerIdentity) {
         self.relay = relay
         self.machine = machine
@@ -142,8 +156,12 @@ public struct LinkFrames: Sendable {
 }
 
 extension HostChannel {
-    /// Opens the link (`agents.link`) and yields channel 0's events until
-    /// the stream ends; throws when it breaks.
+    static let kindEvent = UInt8(ascii: "E"), kindData = UInt8(ascii: "D"), kindClose = UInt8(ascii: "X")
+
+    /// Opens the link (`agents.link`) and reads it until the stream ends;
+    /// throws when it breaks. Channel 0's events go to `yield`, `D` frames
+    /// to the attach on their channel, `X` ends it; other frames are
+    /// dropped. Open attaches end when the link does.
     func link(_ yield: @Sendable (LinkEvent) -> Void) async throws {
         let ticket = try JSONSerialization.jsonObject(with: try await call("agents.link")) as? [String: Any]
         guard let id = ticket?["id"] as? String, let secret = (ticket?["e2e"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
@@ -151,7 +169,11 @@ extension HostChannel {
         }
         let cipher = try StreamCipher(secret: secret, streamID: id)
         let socket = try await relay.openStream(id)
-        defer { socket.close() }
+        openLink = OpenLink(id: id, socket: socket, cipher: cipher)
+        defer {
+            socket.close()
+            linkEnded(id)
+        }
         var frames = LinkFrames()
         while !Task.isCancelled {
             guard case .data(let sealed) = try await socket.receive() else {
@@ -159,9 +181,88 @@ extension HostChannel {
             }
             let (kind, payload) = try cipher.open(sealed)
             guard kind == StreamCipher.data else { continue }
-            for f in try frames.append(payload) where f.kind == UInt8(ascii: "E") && f.channel == 0 {
-                if let event = try? LinkEvent.decode(f.payload) { yield(event) }
+            for f in try frames.append(payload) {
+                switch (f.kind, f.channel) {
+                case (Self.kindEvent, 0):
+                    if let event = try? LinkEvent.decode(f.payload) { yield(event) }
+                case (Self.kindData, let ch) where ch > 0:
+                    attaches[ch]?.receive(f.payload)
+                case (Self.kindClose, let ch) where ch > 0:
+                    attaches.removeValue(forKey: ch)?.end(RelayError(code: "closed", message: "The Mac closed the terminal"))
+                default:
+                    continue
+                }
             }
         }
+    }
+
+    /// Whether the link stream is open now.
+    var linked: Bool { openLink != nil }
+
+    private func linkEnded(_ id: String) {
+        guard openLink?.id == id else { return }
+        openLink = nil
+        let lost = RelayError(code: "link_lost", message: "The link to the Mac broke")
+        for a in attaches.values { a.end(lost) }
+        attaches = [:]
+    }
+
+    /// Opens a read-only attach of `agent` at `cols`x`rows` on a new
+    /// channel of the link, waiting up to `wait` for the link to be up.
+    /// Returns once the Mac's reply line said ok; throws its error
+    /// otherwise, `timeout` when no reply came.
+    public func attach(agent: String, cols: Int, rows: Int, wait: Duration = .seconds(10)) async throws -> AttachChannel {
+        let clock = ContinuousClock()
+        let deadline = clock.now + wait
+        // Polled: the link comes back on its own retry loop (LiveLink).
+        while openLink == nil {
+            guard clock.now < deadline else { throw RelayError(code: "unavailable", message: "The Mac is not linked") }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        guard let link = openLink, lastChannel < UInt32.max else {
+            throw RelayError(code: "unavailable", message: "The Mac is not linked")
+        }
+        lastChannel += 1
+        let ch = lastChannel
+        let channel = AttachChannel(id: ch) { [weak self] id in
+            Task { await self?.closed(id, link: link.id) }
+        }
+        attaches[ch] = channel
+        let request: [String: Any] = ["attach": agent, "mode": "ro", "cols": cols, "rows": rows, "owner": false, "history": true]
+        let params = try JSONSerialization.data(
+            withJSONObject: ["link": link.id, "ch": Int(ch), "mode": "ro", "request": request] as [String: Any], options: .sortedKeys)
+        let timeout = Task {
+            try await Task.sleep(for: .seconds(15))
+            channel.end(.timeout)
+        }
+        defer { timeout.cancel() }
+        do {
+            _ = try await call("agents.attach", params: params)
+            let reply = try await channel.reply()
+            guard reply.ok else { throw reply.error ?? RelayError(code: "unavailable", message: "The Mac refused the terminal") }
+        } catch {
+            if attaches[ch] === channel { attaches[ch] = nil }
+            channel.end(error as? RelayError ?? RelayError(code: "closed"))
+            throw error
+        }
+        return channel
+    }
+
+    /// The phone closed an attach: `X` on its channel, if its link is
+    /// still the open one.
+    private func closed(_ ch: UInt32, link: String) async {
+        guard attaches.removeValue(forKey: ch) != nil, openLink?.id == link else { return }
+        try? await send(frame: LinkFrames.Frame(kind: Self.kindClose, channel: ch, payload: Data()))
+    }
+
+    /// Sends one frame on the open link. Used only to close a channel: a
+    /// read-only attach never sends bytes.
+    func send(frame: LinkFrames.Frame) async throws {
+        guard let link = openLink else { throw RelayError(code: "unavailable", message: "The Mac is not linked") }
+        // Sealed and handed to the socket in one actor turn, so the
+        // implicit counters reach the Mac in order.
+        let sealed = link.cipher.seal(
+            kind: StreamCipher.data, payload: LinkFrames.encode(kind: frame.kind, channel: frame.channel, payload: frame.payload))
+        try await link.socket.send(.data(sealed))
     }
 }

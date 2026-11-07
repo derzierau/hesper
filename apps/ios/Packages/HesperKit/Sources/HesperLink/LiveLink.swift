@@ -152,6 +152,30 @@ public final class LiveLink: LinkClient {
         }
     }
 
+    /// A read-only attach on the agent's Mac. While the relay reconnects
+    /// it waits (up to 10 s) for the Mac's channel; an attach open when a
+    /// link breaks ends (its frames finish without `.exit`) and the caller
+    /// attaches again, which waits for the relink.
+    public func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream {
+        let machine = String(agent.split(separator: "/").first ?? "")
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(10)
+        while true {
+            let found = state.withLock { s -> (known: Bool, channel: HostChannel?) in
+                guard let id = s.ids[machine] else { return (false, nil) }
+                return (true, s.channels[id])
+            }
+            guard found.known else { throw RelayError(code: "unavailable", message: "\(machine) is not connected") }
+            // A channel of the previous relay connection may linger until
+            // `follow` clears it: only one whose link is up will do.
+            if let channel = found.channel, await channel.linked {
+                return try await channel.attach(agent: agent, cols: cols, rows: rows, wait: .zero)
+            }
+            guard clock.now < deadline else { throw RelayError(code: "unavailable", message: "\(machine) is not connected") }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
     fileprivate func broadcast(_ update: LinkUpdate) {
         for l in state.withLock({ Array($0.listeners.values) }) { l.yield(update) }
     }
