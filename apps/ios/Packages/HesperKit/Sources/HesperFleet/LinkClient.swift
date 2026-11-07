@@ -61,15 +61,6 @@ public protocol LinkClient: Sendable {
     func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream
 }
 
-extension LinkClient {
-    public func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream {
-        throw AttachUnsupported()
-    }
-}
-
-/// A link that cannot show terminals.
-public struct AttachUnsupported: Error, Equatable {}
-
 /// What a watched terminal sends (relay/pkg/wire/frame.go): its bytes,
 /// its grid size (first from the attach's reply, then at every resize), a
 /// scroll state, and its exit, the last frame.

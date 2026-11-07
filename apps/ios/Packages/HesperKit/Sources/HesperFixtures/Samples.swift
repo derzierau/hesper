@@ -59,6 +59,35 @@ public enum Samples {
         ]
     ]
 
+    /// A sample agent's terminal as hesperd would send it after the reply:
+    /// a prompt, Claude's tool lines (a green Read with its dim result, a
+    /// yellow Bash), a cursor move back up to redraw a line, and a bold
+    /// cyan question. Made up, no captured session.
+    public static let terminalScript: Data = {
+        let esc = "\u{1b}["
+        let lines = [
+            "\(esc)1m$ claude\(esc)0m",
+            "",
+            "\(esc)32m⏺\(esc)0m Read(Sources/HesperFleet/Fleet.swift)",
+            "\(esc)2m  ⎿  Read 214 lines\(esc)0m",
+            "",
+            "\(esc)33m⏺\(esc)0m Bash(swift test --filter FleetTests)",
+            "\(esc)2m  ⎿  Running…\(esc)0m",
+        ]
+        // Up one line, clear it, and redraw the Bash result as done.
+        let redraw = "\(esc)1A\r\(esc)2K\(esc)2m  ⎿  12 tests passed\(esc)0m\r\n"
+        let question = "\r\n\(esc)1;36mShall I commit the fix to fix/login?\(esc)0m\r\n"
+        return Data((esc + "H" + esc + "2J" + lines.joined(separator: "\r\n") + "\r\n" + redraw + question).utf8)
+    }()
+
+    /// The line the scripted terminal adds every tick, numbered.
+    public static func terminalLine(_ n: Int) -> Data {
+        Data("\u{1b}[2m  ⎿  still working (\(n))\u{1b}[0m\r\n".utf8)
+    }
+
+    /// The grid of the scripted terminal.
+    public static let terminalSize = (cols: 97, rows: 56)
+
     /// When `air` dropped off, in the samples.
     public static let airLost = ISO8601DateFormatter().date(from: "2026-10-31T08:40:00Z")!
 

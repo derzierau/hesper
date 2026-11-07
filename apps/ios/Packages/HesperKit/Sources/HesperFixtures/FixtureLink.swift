@@ -17,9 +17,12 @@ public final class FixtureLink: LinkClient {
 
     private let state = Mutex(State())
     private let initial: [LinkUpdate]
+    private let terminalTick: Duration
 
-    public init(updates: [LinkUpdate] = Samples.initialUpdates()) {
+    /// `terminalTick`: how often a watched terminal prints a new line.
+    public init(updates: [LinkUpdate] = Samples.initialUpdates(), terminalTick: Duration = .seconds(2)) {
         initial = updates
+        self.terminalTick = terminalTick
         state.withLock { s in
             for case .event(.list(_, let agents, _), _) in updates {
                 for a in agents { s.agents[a.id] = a }
@@ -87,6 +90,13 @@ public final class FixtureLink: LinkClient {
         broadcast(update)
     }
 
+    /// Any sample agent's terminal: the Mac's size, the script, then a
+    /// new line every tick until closed.
+    public func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream {
+        guard state.withLock({ $0.agents[agent] != nil }) else { throw FixtureError.unknownAgent(agent) }
+        return ScriptedTerminal(tick: terminalTick)
+    }
+
     private func broadcast(_ update: LinkUpdate) {
         for c in state.withLock({ Array($0.continuations.values) }) { c.yield(update) }
     }
@@ -105,6 +115,30 @@ public final class FixtureLink: LinkClient {
         let words = task.lowercased().split { !$0.isLetter && !$0.isNumber }.filter { $0.count > 2 }.prefix(3)
         return words.isEmpty ? "agent" : words.map { String($0) }.joined(separator: "-")
     }
+}
+
+/// A scripted terminal stream (`Samples.terminalScript`).
+final class ScriptedTerminal: AttachStream {
+    let frames: AsyncStream<AttachFrame>
+    private let player: Task<Void, Never>
+
+    init(tick: Duration) {
+        let (stream, continuation) = AsyncStream.makeStream(of: AttachFrame.self)
+        frames = stream
+        player = Task {
+            continuation.yield(.size(cols: Samples.terminalSize.cols, rows: Samples.terminalSize.rows))
+            continuation.yield(.data(Samples.terminalScript))
+            var n = 1
+            while (try? await Task.sleep(for: tick)) != nil {
+                continuation.yield(.data(Samples.terminalLine(n)))
+                n += 1
+            }
+            continuation.finish()
+        }
+        continuation.onTermination = { [player] _ in player.cancel() }
+    }
+
+    func close() { player.cancel() }
 }
 
 public enum FixtureError: Error, Equatable, CustomStringConvertible {
