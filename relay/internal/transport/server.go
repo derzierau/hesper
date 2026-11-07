@@ -4,8 +4,10 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +35,29 @@ type Server struct {
 }
 
 func New(repository identity.Repository, hub *relay.Hub) *Server {
-	return &Server{Repository: repository, Hub: hub, Terminals: newTerminalBroker()}
+	s := &Server{Repository: repository, Hub: hub, Terminals: newTerminalBroker()}
+	hub.SetDeviceAdmin(repository.Devices, s.revokeOwned)
+	return s
+}
+
+// revokeOwned revokes the owner's device id as DELETE /v1/devices/{id}
+// does, for a controller of that owner (the hub's "revoke"). The owner is
+// checked again in the repository under the enrollment lock.
+func (s *Server) revokeOwned(ctx context.Context, owner, id string) error {
+	s.enrollment.Lock()
+	defer s.enrollment.Unlock()
+	devices, err := s.Repository.Devices(ctx, owner)
+	if err != nil {
+		return fmt.Errorf("list devices of the owner: %w", err)
+	}
+	if !slices.ContainsFunc(devices, func(d identity.Device) bool { return d.ID == id && d.Owner == owner && !d.Revoked }) {
+		return protocol.Err("not_found", "Device not found")
+	}
+	if err := s.Repository.Revoke(ctx, id); err != nil {
+		return fmt.Errorf("revoke device: %w", err)
+	}
+	s.Revoke(id)
+	return nil
 }
 func reply(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")

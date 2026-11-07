@@ -42,6 +42,10 @@ type Message struct {
 	Error        *Error          `json:"error,omitempty"`
 	Removed      bool            `json:"removed,omitempty"`
 	Machines     []Machine       `json:"machines,omitempty"`
+	// DeviceID names the device a controller revokes; Devices answers
+	// "devices" (protocol.md, "Devices").
+	DeviceID string   `json:"deviceId,omitempty"`
+	Devices  []Device `json:"devices,omitempty"`
 	// Auth is the controller's device-key signature of a request
 	// (pkg/devicekey). The relay forwards it unchanged; hosts verify it.
 	Auth *Auth `json:"auth,omitempty"`
@@ -71,6 +75,22 @@ type Machine struct {
 	Online   bool            `json:"online"`
 	Snapshot json.RawMessage `json:"snapshot,omitempty"`
 }
+
+// Device is one of the owner's devices that is not revoked, as the relay
+// answers "devices". Online: it has a live relay connection. Push: it has an
+// APNs registration (a phone).
+type Device struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Role   string `json:"role"`
+	Online bool   `json:"online"`
+	Push   bool   `json:"push"`
+}
+
+// FeatureDevices in hello's features says the relay answers "devices" and
+// "revoke". An older relay closes the connection on either.
+const FeatureDevices = "devices"
+
 type PairRequest struct {
 	Invitation string `json:"invitation"`
 	Name       string `json:"name"`

@@ -116,7 +116,16 @@ Sec-WebSocket-Protocol: ghosty.v2
 
 The server requires `ghosty.v2`, text JSON messages, and `v: 2` in each message.
 Browser Origin-bearing requests are not currently accepted. The server initially
-sends a `hello` message containing device ID and role in `result`.
+sends a `hello` message containing device ID, role and, from relays that have
+them, `features` in `result`:
+
+```json
+{"v":2,"type":"hello","result":{"deviceId":"DEVICE_ID","role":"controller","features":["devices"]}}
+```
+
+`features` lists optional relay messages: `devices` means the relay answers
+`devices` and `revoke` (see [Devices](#devices)). A missing `features` means
+none.
 
 A controller receives a full `machines` inventory on connection. It replaces all
 previous inventory. Subsequent `machine.updated` messages replace only the named
@@ -177,6 +186,46 @@ disconnected, never silently given a partial inventory; reconnect resets state.
 Offline machines have `online: false` and no snapshot. An online machine can have
 no snapshot while initializing. Adapter errors replace the snapshot with an
 `error` object; do not display old state as current.
+
+### Devices
+
+A controller lists and revokes its owner's devices; the relay answers these
+itself, no host is involved. Send them only when `hello` lists the
+`devices` feature: an older relay treats either as a protocol violation and
+closes the connection.
+
+```json
+{"v":2,"type":"devices","id":"client-request-id"}
+```
+
+The answer echoes `id` and lists every device of the caller's owner that is
+not revoked, the caller included, sorted by `id`. `online`: it has a live
+connection to the relay. `push`: it has an APNs registration (a phone).
+
+```json
+{"v":2,"type":"devices","id":"client-request-id","devices":[
+  {"id":"HOST_ID","name":"My Mac","role":"host","online":true,"push":false},
+  {"id":"PHONE_ID","name":"My iPhone","role":"controller","online":false,"push":true}]}
+```
+
+```json
+{"v":2,"type":"revoke","id":"client-request-id","deviceId":"PHONE_ID"}
+```
+
+`revoke` does what the administrator's `DELETE /v1/devices/{id}` does: the
+device is revoked for good (pairing again gives a new id), its access and
+refresh credentials are deleted, its relay connection and terminal streams
+close, and a host's controllers get `machine.updated` with `removed: true`.
+Success is `{"v":2,"type":"result","id":"client-request-id","result":{}}`.
+Errors, as a `result` with `error`:
+
+| Code | When |
+| --- | --- |
+| `not_found` | The id is unknown, already revoked or another owner's device; the relay does not tell these apart |
+| `forbidden` | The id is the caller's own device |
+| `invalid_request` | `deviceId` is missing or longer than 128 bytes |
+
+Hosts may send neither message. The usual message rate limit applies.
 
 ## Host operations
 

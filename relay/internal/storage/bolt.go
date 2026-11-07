@@ -149,6 +149,9 @@ func (s *Bolt) Revoke(ctx context.Context, id string) error {
 		}
 		device.Revoked = true
 		device.Push = nil
+		if err := dropCredentials(tx, id); err != nil {
+			return err
+		}
 		return b.Put([]byte(id), protocol.JSON(device))
 	})
 }
