@@ -87,6 +87,22 @@ public enum DS {
     public enum Edge {
         /// The priority card's accent top edge.
         public static let hero: CGFloat = 3
+        /// Borders.
+        public static let line: CGFloat = 1
+        /// A command block's left edge.
+        public static let command: CGFloat = 2
+    }
+
+    /// Fixed sizes on Home (docs/iphone/neon.md, "Layout: Home").
+    public enum Size {
+        /// The scope pill, the menu button, an option row's least height.
+        public static let control: CGFloat = 44
+        /// A grid card's action buttons.
+        public static let gridAction: CGFloat = 32
+        /// The priority card's open button.
+        public static let openButton: CGFloat = 28
+        /// The state caption's dot.
+        public static let captionDot: CGFloat = 6
     }
 
     /// The phone's state mark is a little larger than the Mac's 7 pt.

@@ -18,8 +18,10 @@ public enum LinkUpdate: Equatable, Sendable {
 /// A verb the phone sends to the agent's Mac (relay/docs/protocol.md,
 /// "Methods").
 public enum LinkCommand: Equatable, Sendable {
-    /// `agents.answer` with a decision (Allow, Always, Deny).
-    case answer(agent: String, Decision)
+    /// `agents.answer` with a decision (Allow, Always, Deny). A deny may
+    /// carry a message: hesperd types it after the deny, telling the agent
+    /// what to do instead.
+    case answer(agent: String, Decision, message: String? = nil)
     /// `agents.answer` with a question's choice, by its number.
     case choose(agent: String, option: Int)
     /// `agents.input`: a whole message, sent with return.
@@ -36,7 +38,7 @@ public enum LinkCommand: Equatable, Sendable {
     /// The agent it acts on; nil for spawn and drafts.
     public var agent: String? {
         switch self {
-        case .answer(let a, _), .choose(let a, _), .reply(let a, _), .stop(let a), .resume(let a), .close(let a): a
+        case .answer(let a, _, _), .choose(let a, _), .reply(let a, _), .stop(let a), .resume(let a), .close(let a): a
         case .spawn, .saveDraft, .removeDraft: nil
         }
     }

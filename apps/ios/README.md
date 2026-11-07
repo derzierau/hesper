@@ -74,7 +74,7 @@ groups need a paid developer account.
 `HesperUI`:
 
 - `HesperDesign`: the Mac's Dusk/Daylight tokens, the square state mark, controls.
-- `HesperFeatures`: Inbox, Agents (with search and Later), Macs (with Add
+- `HesperFeatures`: Home, Agents (with search and Later), Macs (with Add
   Mac), Settings, the agent view, capture (the mic circle, dictation and
   the capture sheet) and onboarding.
 
@@ -91,6 +91,10 @@ failure with `-HesperPairingFixture <name>` (`notAllowed`, `unreachable`,
 `cancelled`, `pending`, `offline`, `denied`, `unsupported`, `keyChanged`).
 For a headless simulator: `xcrun simctl launch <device> <bundle id>
 -HesperOnboardingDemo connected`, then `xcrun simctl io <device> screenshot`.
+`-HesperOnboardingDemo samples` lands on Home with the sample Macs; the
+environment variable `HESPER_HOME_SCOPE` (`all`, `needsYou`, `working`;
+pass it as `SIMCTL_CHILD_HESPER_HOME_SCOPE=working xcrun simctl launch …`)
+opens Home on that scope.
 
 ## Choices
 

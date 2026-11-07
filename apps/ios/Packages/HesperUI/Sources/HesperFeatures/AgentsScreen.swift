@@ -9,8 +9,11 @@ import SwiftUI
 /// sessions join with `sessions.search`, concept Core work 5); Later lists
 /// the tasks kept on every Mac.
 struct AgentsScreen: View {
+    /// Opened from Home's menu as Search: the field takes the focus.
+    var focusSearch = false
     @Environment(FleetModel.self) private var model
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         let groups = model.fleet.groups(matching: query)
@@ -41,6 +44,8 @@ struct AgentsScreen: View {
             }
         }
         .searchable(text: $query, prompt: "Agents and projects")
+        .searchFocused($searchFocused)
+        .task { if focusSearch { searchFocused = true } }
         .themedList()
         .navigationTitle("Agents")
     }

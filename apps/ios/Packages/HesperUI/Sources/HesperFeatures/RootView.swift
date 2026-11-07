@@ -6,22 +6,21 @@ import HesperSurfaces
 import SwiftUI
 import WidgetKit
 
-/// The app: three tabs (Inbox, Agents, Macs) and the mic in the circle
-/// next to them, for dropping a task or an idea into Hesper (wireframes
-/// round 5). The mic opens capture and is never selected, so the tabs
-/// stay navigation only. On iPhone the circle is `CaptureBar`; on iPad
-/// it is a "New task" item among the system tabs.
+/// The app: Home, the owner's control console, at the root of one
+/// navigation stack (docs/iphone/neon.md). Its menu pushes Agents, Macs,
+/// Search and Settings. The mic bar stays under Home until the Speak /
+/// Type console replaces it; its tabs push the same screens.
 public struct RootView: View {
-    enum Tab: Hashable { case inbox, agents, macs, capture }
+    enum Tab: Hashable { case inbox, agents, macs }
 
     @Environment(FleetModel.self) private var model
-    @State private var tab = Tab.inbox
-    /// The mic's dictation: the tab bar starts it, the sheet carries on.
+    @State private var path = NavigationPath()
+    /// The mic's dictation: the bar starts it, the sheet carries on.
     @State private var dictation = Dictation()
     @State private var talk = Talk()
     @State private var capture: Capture?
     @State private var kept: KeptTask?
-    /// When the app last went to the background, for the Inbox's
+    /// When the app last went to the background, for Home's
     /// notifications card.
     @State private var awaySince: Date?
     @Environment(\.scenePhase) private var scenePhase
@@ -29,31 +28,11 @@ public struct RootView: View {
     public init() {}
 
     public var body: some View {
-        TabView(selection: selection) {
-            SwiftUI.Tab("Inbox", systemImage: "tray", value: Tab.inbox) {
-                NavigationStack {
-                    InboxScreen(awaySince: awaySince).captureBar(tab: $tab, dictation: dictation, talk: $talk, capture: open)
-                        .agentDestinations()
-                }
-            }
-            .badge(model.fleet.counts.needsYou)
-
-            SwiftUI.Tab("Agents", systemImage: "square.grid.2x2", value: Tab.agents) {
-                NavigationStack {
-                    AgentsScreen().captureBar(tab: $tab, dictation: dictation, talk: $talk, capture: open).agentDestinations()
-                }
-            }
-
-            SwiftUI.Tab("Macs", systemImage: "macbook", value: Tab.macs) {
-                NavigationStack { MacsScreen().captureBar(tab: $tab, dictation: dictation, talk: $talk, capture: open) }
-            }
-
-            // iPad only: the system tabs show it; selecting it opens capture.
-            SwiftUI.Tab("New task", systemImage: "mic.fill", value: Tab.capture) {
-                Color.clear
-            }
+        NavigationStack(path: $path) {
+            HomeScreen(awaySince: awaySince) { path.append($0) }
+                .captureBar(tab: tabs, dictation: dictation, talk: $talk, capture: open)
+                .agentDestinations()
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
         .sheet(item: $capture) { c in
             CaptureSheet(dictation: dictation, opening: c.opening) { k in withAnimation { kept = k } }
         }
@@ -69,6 +48,7 @@ public struct RootView: View {
             if let kept { KeptToast(kept: kept) { withAnimation { self.kept = nil } } }
         }
         .tint(Theme.accent)
+        .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { awaySince = .now }
         }
@@ -154,16 +134,16 @@ extension RootView {
         capture = Capture(opening: opening)
     }
 
-    /// The tab selection; choosing the mic opens capture and keeps the tab.
-    private var selection: Binding<Tab> {
+    /// The bar's tabs until the console replaces it: Home stays selected,
+    /// Agents and Macs push their screens.
+    private var tabs: Binding<Tab> {
         Binding {
-            tab
+            .inbox
         } set: { new in
-            if new == .capture {
-                dictation.start()
-                open(.listening)
-            } else {
-                tab = new
+            switch new {
+            case .inbox: path = NavigationPath()
+            case .agents: path.append(MenuRoute.agents)
+            case .macs: path.append(MenuRoute.macs)
             }
         }
     }

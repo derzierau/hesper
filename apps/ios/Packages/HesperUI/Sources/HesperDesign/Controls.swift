@@ -45,6 +45,8 @@ public struct NeonButtonStyle: ButtonStyle {
 
     let kind: Kind
     @Environment(\.isEnabled) private var isEnabled
+    /// Small: a grid card's 32 pt action buttons.
+    @Environment(\.controlSize) private var controlSize
 
     public init(_ kind: Kind) {
         self.kind = kind
@@ -54,8 +56,8 @@ public struct NeonButtonStyle: ButtonStyle {
         let shape = RoundedRectangle(cornerRadius: DS.Radius.console)
         configuration.label
             .foregroundStyle(label)
-            .padding(.horizontal, DS.Spacing.l)
-            .frame(minHeight: 44)
+            .padding(.horizontal, small ? DS.Spacing.m : DS.Spacing.l)
+            .frame(minHeight: small ? DS.Size.gridAction : DS.Size.control)
             .background(fill, in: shape)
             .overlay {
                 if let border { shape.strokeBorder(border, lineWidth: 1) }
@@ -63,6 +65,8 @@ public struct NeonButtonStyle: ButtonStyle {
             .contentShape(shape)
             .opacity(configuration.isPressed ? 0.7 : isEnabled ? 1 : 0.4)
     }
+
+    private var small: Bool { controlSize == .small || controlSize == .mini }
 
     private var fill: Color { kind == .primary ? Theme.accent : Theme.surface }
 
