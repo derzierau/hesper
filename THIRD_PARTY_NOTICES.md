@@ -24,7 +24,8 @@ This file ships inside `Hesper.app/Contents/Resources/THIRD_PARTY_NOTICES.md`.
 | Highway | as pinned by Ghostty | Apache-2.0 OR BSD-3-Clause | Hesper.app |
 | Wuffs | v0.4 | Apache-2.0 (see note) | Hesper.app |
 | GNU gettext (libintl) | as pinned by Ghostty | LGPL-2.1-or-later | Hesper.app built with the prebuilt libghostty only (see note); not in release builds |
-| JetBrains Mono | 2.304 | OFL-1.1 | Hesper.app (embedded in libghostty) |
+| JetBrains Mono | 2.304 | OFL-1.1 | Hesper.app (embedded in libghostty); Hesper for iPhone |
+| Space Grotesk | 2.0.0 | OFL-1.1 | Hesper for iPhone |
 | Symbols Nerd Font | 3.4.0 | MIT / OFL-1.1 (see note) | Hesper.app (embedded in libghostty) |
 | Geist, Geist Mono | as bundled | OFL-1.1 | Hesper.app |
 | Go standard library | toolchain version | BSD-3-Clause | hesperd, hesperctl, hesper-relay |
@@ -188,12 +189,25 @@ on how it was built (details and relink instructions: `docs/licensing.md`):
 
 ### JetBrains Mono
 
-Embedded in libghostty as Ghostty's built-in fallback font.
+Embedded in libghostty as Ghostty's built-in fallback font. Hesper for
+iPhone bundles `JetBrainsMono-Regular.ttf` (source tree:
+`apps/ios/App/Fonts/`) from the same release.
 
 - Version: 2.304
 - URL: https://github.com/JetBrains/JetBrainsMono
 - License: SIL Open Font License 1.1
 - Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+- Full text: [SIL Open Font License 1.1](#sil-open-font-license-11)
+
+### Space Grotesk
+
+Bundled in Hesper for iPhone as `SpaceGrotesk-Bold.ttf` (source tree:
+`apps/ios/App/Fonts/`), the static Bold from the 2.0.0 release.
+
+- Version: 2.0.0
+- URL: https://github.com/floriankarsten/space-grotesk
+- License: SIL Open Font License 1.1
+- Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)
 - Full text: [SIL Open Font License 1.1](#sil-open-font-license-11)
 
 ### Symbols Nerd Font
@@ -1584,9 +1598,9 @@ END OF TERMS AND CONDITIONS
 
 ### SIL Open Font License 1.1
 
-Applies to Geist, Geist Mono and JetBrains Mono (and parts of the Nerd
-Fonts glyph sets), each with its own copyright notice as listed. The text
-below is `app/Resources/Fonts/OFL.txt`, shipped as `Fonts/OFL.txt`.
+Applies to Geist, Geist Mono, JetBrains Mono and Space Grotesk (and parts
+of the Nerd Fonts glyph sets), each with its own copyright notice as
+listed. The text below is `app/Resources/Fonts/OFL.txt`, shipped as `Fonts/OFL.txt`.
 
 ```text
 Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font.git)

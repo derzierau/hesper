@@ -46,6 +46,7 @@ groups need a paid developer account.
 | `project.yml` | Targets and settings (XcodeGen) |
 | `Config/` | `Base.xcconfig` and its Debug/Release layers; your `Local.xcconfig` |
 | `App/` | The app target: `HesperApp.swift`, icon, privacy manifest |
+| `App/Fonts/` | Space Grotesk Bold and JetBrains Mono Regular (OFL) |
 | `Widgets/` | Lock-screen widget and the one fleet Live Activity |
 | `NotificationService/` | Writes a push's text before it shows |
 | `Packages/HesperKit/` | Logic, no views; `swift test` runs it on a Mac |
