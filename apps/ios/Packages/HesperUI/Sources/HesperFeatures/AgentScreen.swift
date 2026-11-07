@@ -37,18 +37,18 @@ private struct TerminalPlaceholder: View {
             if let size = agent.size {
                 Text("Mac's size · \(size.cols) × \(size.rows)")
                     .font(.caption2.monospaced())
-                    .foregroundStyle(Theme.Token.dim.color)
+                    .foregroundStyle(Theme.dim)
             }
             Text(AgentCopy.headline(agent))
                 .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(Theme.Token.text.color)
+                .foregroundStyle(Theme.text)
             Text("The live terminal arrives with the mobile link library.")
                 .font(.caption2.monospaced())
-                .foregroundStyle(Theme.Token.dim.color)
+                .foregroundStyle(Theme.dim)
         }
         .padding(DS.Spacing.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .background(Theme.Token.background.color)
+        .background(Theme.background)
         .environment(\.colorScheme, .dark)
     }
 }

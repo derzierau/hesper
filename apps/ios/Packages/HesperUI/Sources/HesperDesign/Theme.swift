@@ -1,81 +1,71 @@
 import HesperCore
+import HesperSurfaces
 import SwiftUI
 import UIKit
 
-/// The Mac's colour tokens, Dusk in dark mode and Daylight in light mode
-/// (app/Sources/Hesper/UI/Theme.swift, docs/design-system.md). The only
-/// place the app names a colour.
+/// The Neon console's colours (`NeonPalette`, docs/iphone/neon.md). Dark
+/// only for now, so each token is one colour. The only place the app names
+/// a colour.
 public enum Theme {
-    // nonisolated: UIKit and SwiftUI resolve dynamic colours on their render
-    // thread too (glass tints while animating), so the provider closure must
-    // not be main-actor.
-    public nonisolated enum Token: CaseIterable, Sendable {
-        case background, surface, tile, line, text, text2, dim, dim2, signal, working, question, done, error, horizon
-
-        /// (Dusk, Daylight) as sRGB hex; the same values as the Mac.
-        public var hex: (dusk: UInt32, daylight: UInt32) {
-            switch self {
-            case .background: (0x0F1020, 0xF6F5FA)
-            case .surface: (0x171A2E, 0xECEBF3)
-            case .tile: (0x13152A, 0xFFFFFF)
-            case .line: (0x272B48, 0xDFDEEA)
-            case .text: (0xD7DBF5, 0x1B1D33)
-            case .text2: (0xB3B6CF, 0x424457)
-            case .dim: (0x7A80A8, 0x61668C)
-            case .dim2: (0x505578, 0xA0A2BB)
-            case .signal: (0xFF6F91, 0xC9305C)
-            case .working: (0x8F9CFF, 0x4B55D6)
-            case .question: (0xFFCF5C, 0x8C6300)
-            case .done: (0x7FE0A8, 0x17804F)
-            case .error: (0xFF5D5D, 0xD93636)
-            case .horizon: (0xFFB36B, 0xB4600F)
-            }
-        }
-
-        public var color: Color { Color(uiColor: uiColor) }
-
-        public var uiColor: UIColor {
-            let (dusk, daylight) = hex
-            return UIColor { $0.userInterfaceStyle == .dark ? Theme.srgb(dusk) : Theme.srgb(daylight) }
-        }
-    }
-
     nonisolated static func srgb(_ v: UInt32) -> UIColor {
         UIColor(red: CGFloat((v >> 16) & 0xff) / 255, green: CGFloat((v >> 8) & 0xff) / 255, blue: CGFloat(v & 0xff) / 255, alpha: 1)
     }
 
-    public static let background = Token.background.color
-    public static let surface = Token.surface.color
-    public static let tile = Token.tile.color
-    public static let line = Token.line.color
-    public static let text = Token.text.color
-    public static let text2 = Token.text2.color
-    public static let dim = Token.dim.color
-    /// The accent: primary actions (Allow, Start, Accept), selection.
-    public static let accent = Token.working.color
-    /// Needs you. Only on marks and the Inbox badge, never on buttons.
-    public static let signal = Token.signal.color
-    public static let question = Token.question.color
-    public static let done = Token.done.color
-    public static let error = Token.error.color
-    /// The evening glow behind onboarding, low on the screen.
-    public static let horizon = Token.horizon.color
+    /// A token as a UIKit colour, for the places SwiftUI does not reach.
+    public nonisolated static func uiColor(_ token: NeonPalette.Token) -> UIColor {
+        srgb(NeonPalette.hex(token))
+    }
 
-    /// A state mark's tone as a colour.
+    private static func color(_ token: NeonPalette.Token) -> Color { Color(uiColor: uiColor(token)) }
+
+    /// The screen, the console, command blocks.
+    public static let background = color(.background)
+    /// Cards, unselected segments, secondary buttons.
+    public static let surface = color(.surface)
+    /// Numbered option rows.
+    public static let surface2 = color(.surface2)
+    /// 1 pt borders and edges.
+    public static let line = color(.line)
+    public static let text = color(.text)
+    /// Meta lines and details.
+    public static let muted = color(.muted)
+    /// Cyan, for action: primary buttons, selection, commands.
+    public static let accent = color(.accent)
+    /// Text and icons on an accent fill.
+    public static let onAccent = color(.onAccent)
+    /// The "You" panel and the open button.
+    public static let accentTint = color(.accentTint)
+    /// Magenta, needs you: marks, captions, destructive options.
+    public static let signal = color(.signal)
+    /// A destructive option row's fill.
+    public static let signalTint = color(.signalTint)
+
+    // The names the screens used before Neon, so they keep compiling until
+    // each is restyled.
+    public static let tile = surface
+    public static let text2 = text
+    public static let dim = muted
+    public static let question = signal
+    public static let done = muted
+    public static let error = signal
+    /// The glow behind onboarding.
+    public static let horizon = accent
+    public static let working = accent
+
+    /// A state mark's tone as a colour: Neon has only cyan and magenta, so
+    /// working is the accent, anything that needs you is signal, the rest
+    /// is muted.
     public static func tone(_ tone: StateMarkKind.Tone) -> Color {
         switch tone {
-        case .working: Token.working.color
-        case .signal: Token.signal.color
-        case .question: Token.question.color
-        case .done: Token.done.color
-        case .dim: Token.dim.color
-        case .error: Token.error.color
+        case .working: accent
+        case .signal, .question, .error: signal
+        case .done, .dim: muted
         }
     }
 }
 
 /// Spacing, radii and motion from the shared tokens (HesperCore's
-/// `DesignTokens`), in points.
+/// `DesignTokens`), in points, plus the console's own shapes.
 public enum DS {
     public enum Spacing {
         public static let xxs = CGFloat(DesignTokens.Spacing.xxs)
@@ -85,6 +75,18 @@ public enum DS {
         public static let l = CGFloat(DesignTokens.Spacing.l)
         public static let xl = CGFloat(DesignTokens.Spacing.xl)
         public static let xxl = CGFloat(DesignTokens.Spacing.xxl)
+        /// Between the cards of a task grid and the console's two buttons.
+        public static let grid: CGFloat = 10
+    }
+
+    public enum Radius {
+        /// Every corner on the console: nearly square.
+        public static let console: CGFloat = 2
+    }
+
+    public enum Edge {
+        /// The priority card's accent top edge.
+        public static let hero: CGFloat = 3
     }
 
     /// The phone's state mark is a little larger than the Mac's 7 pt.

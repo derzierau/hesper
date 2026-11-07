@@ -45,11 +45,9 @@ public struct HesperMark: View {
     }
 }
 
-/// The onboarding background: Dusk or Daylight with the horizon glowing
+/// The onboarding background: the console's dark with a low accent glow
 /// below. Hesper is the evening star.
 public struct HorizonBackground: View {
-    @Environment(\.colorScheme) private var scheme
-
     public init() {}
 
     public var body: some View {
@@ -57,7 +55,7 @@ public struct HorizonBackground: View {
             .overlay {
                 GeometryReader { g in
                     RadialGradient(
-                        colors: [Theme.horizon.opacity(scheme == .dark ? 0.26 : 0.16), .clear], center: UnitPoint(x: 0.5, y: 1.08),
+                        colors: [Theme.accent.opacity(0.14), .clear], center: UnitPoint(x: 0.5, y: 1.08),
                         startRadius: 0, endRadius: max(g.size.width, g.size.height) * 0.62
                     )
                 }
