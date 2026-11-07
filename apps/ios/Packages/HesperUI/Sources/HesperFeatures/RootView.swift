@@ -8,14 +8,11 @@ import WidgetKit
 
 /// The app: Home, the owner's control console, at the root of one
 /// navigation stack (docs/iphone/neon.md). Its menu pushes Agents, Macs,
-/// Search and Settings. The mic bar stays under Home until the Speak /
-/// Type console replaces it; its tabs push the same screens.
+/// Search and Settings; the Speak / Type console sits under Home.
 public struct RootView: View {
-    enum Tab: Hashable { case inbox, agents, macs }
-
     @Environment(FleetModel.self) private var model
     @State private var path = NavigationPath()
-    /// The mic's dictation: the bar starts it, the sheet carries on.
+    /// Speak's dictation: the console starts it, the sheet carries on.
     @State private var dictation = Dictation()
     @State private var talk = Talk()
     @State private var capture: Capture?
@@ -25,12 +22,29 @@ public struct RootView: View {
     @State private var awaySince: Date?
     @Environment(\.scenePhase) private var scenePhase
 
-    public init() {}
+    public init() {
+        #if DEBUG
+            // `HESPER_CAPTURE=listening` (or `typing`) opens the capture
+            // sheet at launch, for screenshots in a headless simulator,
+            // where nobody can press Speak. `listening` shows a sample
+            // transcript without the microphone.
+            switch ProcessInfo.processInfo.environment["HESPER_CAPTURE"] {
+            case "listening":
+                let dictation = Dictation()
+                dictation.pretend("Add a dark mode toggle to the settings screen")
+                _dictation = State(initialValue: dictation)
+                _capture = State(initialValue: Capture(opening: .listening))
+            case "typing":
+                _capture = State(initialValue: Capture(opening: .typing))
+            default: break
+            }
+        #endif
+    }
 
     public var body: some View {
         NavigationStack(path: $path) {
             HomeScreen(awaySince: awaySince) { path.append($0) }
-                .captureBar(tab: tabs, dictation: dictation, talk: $talk, capture: open)
+                .console(dictation: dictation, talk: $talk, capture: open)
                 .agentDestinations()
         }
         .sheet(item: $capture) { c in
@@ -77,8 +91,8 @@ public struct RootView: View {
 /// "Kept on mini · hesper", with Undo, for a few seconds after Keep for
 /// later. The idea is safe on the Mac; Undo removes it again.
 private struct KeptToast: View {
-    /// The floating tab bar's height and margin, so the toast sits above it.
-    static let tabBarClearance: CGFloat = 80
+    /// The console's height, so the toast sits above it.
+    static let consoleClearance: CGFloat = DS.Size.console + DS.Spacing.l + DS.Spacing.m
 
     let kept: KeptTask
     let done: () -> Void
@@ -101,9 +115,9 @@ private struct KeptToast: View {
         .padding(.leading, DS.Spacing.l)
         .padding(.trailing, DS.Spacing.s)
         .padding(.vertical, DS.Spacing.s)
-        .glassEffect()
+        .neonPanel()
         .padding(.horizontal, DS.Spacing.l)
-        .padding(.bottom, Self.tabBarClearance)
+        .padding(.bottom, Self.consoleClearance)
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .task(id: kept.id) {
             try? await Task.sleep(for: .seconds(4))
@@ -132,20 +146,6 @@ extension RootView {
 
     private func open(_ opening: CaptureSheet.Opening) {
         capture = Capture(opening: opening)
-    }
-
-    /// The bar's tabs until the console replaces it: Home stays selected,
-    /// Agents and Macs push their screens.
-    private var tabs: Binding<Tab> {
-        Binding {
-            .inbox
-        } set: { new in
-            switch new {
-            case .inbox: path = NavigationPath()
-            case .agents: path.append(MenuRoute.agents)
-            case .macs: path.append(MenuRoute.macs)
-            }
-        }
     }
 }
 

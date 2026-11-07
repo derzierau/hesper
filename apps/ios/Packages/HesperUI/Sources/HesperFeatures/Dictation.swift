@@ -113,6 +113,16 @@ final class Dictation {
         return text
     }
 
+    #if DEBUG
+        /// Listening without the microphone, with `said` heard so far: the
+        /// `HESPER_CAPTURE=listening` screenshot.
+        func pretend(_ said: String) {
+            settled = said
+            guess = ""
+            phase = .listening(since: .now)
+        }
+    #endif
+
     /// Stops without waiting; what was said is dropped.
     func cancel() {
         starting?.cancel()

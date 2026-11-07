@@ -94,7 +94,9 @@ For a headless simulator: `xcrun simctl launch <device> <bundle id>
 `-HesperOnboardingDemo samples` lands on Home with the sample Macs; the
 environment variable `HESPER_HOME_SCOPE` (`all`, `needsYou`, `working`;
 pass it as `SIMCTL_CHILD_HESPER_HOME_SCOPE=working xcrun simctl launch …`)
-opens Home on that scope.
+opens Home on that scope. `HESPER_CAPTURE` (`listening`, `typing`) opens
+the capture sheet at launch, `listening` with a sample transcript and no
+microphone, since nobody can press Speak on a headless simulator.
 
 ## Choices
 
@@ -109,9 +111,9 @@ opens Home on that scope.
 - **Swift Testing**, `swift format` from the toolchain, no third-party
   packages.
 - **Plain SwiftUI**: `@Observable` model in the environment, one
-  `NavigationStack` per tab, `#Preview` on fixtures. One exception: on
-  iPhone the tab bar is drawn by the app (`CaptureBar`), because the system
-  bar has no slot for the mic circle.
+  `NavigationStack`, `#Preview` on fixtures. Home's Speak / Type console
+  (`Console`) is the app's own bar, not a system tab bar: Speak carries a
+  push-to-talk gesture no system control has.
 - **On-device dictation**: `SpeechTranscriber` for capture; nothing leaves
   the phone but the text the owner sends.
 - **No background sockets**: the model follows the Macs only while the app

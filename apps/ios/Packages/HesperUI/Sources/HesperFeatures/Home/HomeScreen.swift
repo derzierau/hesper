@@ -84,7 +84,7 @@ struct HomeScreen: View {
             if scope == .working {
                 ContentUnavailableView(
                     "Nothing is working", systemImage: "square.grid.2x2",
-                    description: Text("Tap the mic to start an agent."))
+                    description: Text("Tap Speak to start an agent."))
             } else {
                 ContentUnavailableView(
                     "Nothing needs you",
@@ -92,7 +92,7 @@ struct HomeScreen: View {
                     description: Text(
                         working > 0
                             ? "\(working) agents are working. You'll get a notification when one asks for you."
-                            : "Tap the mic to start an agent.")
+                            : "Tap Speak to start an agent.")
                 )
             }
         }

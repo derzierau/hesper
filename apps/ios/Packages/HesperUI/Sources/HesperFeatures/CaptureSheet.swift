@@ -5,19 +5,20 @@ import SwiftUI
 
 /// Drop a task or an idea into Hesper (wireframes round 5): say it or
 /// type it, then start an agent now or keep it for later as a parked draft
-/// on a Mac.
+/// on a Mac. A Neon panel with the console's accent on top
+/// (docs/iphone/neon.md, "Capture sheet").
 struct CaptureSheet: View {
     /// How the sheet opens.
     enum Opening: Hashable {
-        /// A tap on the mic: `dictation` is already listening.
+        /// A tap on Speak: `dictation` is already listening.
         case listening
-        /// Released after holding the mic: what was said.
+        /// Released after holding Speak: what was said.
         case said(String)
-        /// The keyboard (VoiceOver's "Type a task", or no speech).
+        /// Type, VoiceOver's "Type a task", or no speech.
         case typing
     }
 
-    /// The mic's dictation, shared with the tab bar so listening carries on
+    /// Speak's dictation, shared with the console so listening carries on
     /// from the tap into the sheet.
     let dictation: Dictation
     let opening: Opening
@@ -42,7 +43,7 @@ struct CaptureSheet: View {
                         .lineLimit(3...8)
                         .focused($typing)
                     if case .unavailable(let why) = dictation.phase {
-                        Text(why).font(.footnote).foregroundStyle(Theme.dim)
+                        Text(why).font(.footnote).foregroundStyle(Theme.muted)
                     }
                 }
                 destinationRow
@@ -51,21 +52,21 @@ struct CaptureSheet: View {
                     Button {
                         Task { await keep() }
                     } label: {
-                        Text("Keep for later").frame(maxWidth: .infinity)
+                        Text("Keep for later").frame(maxWidth: .infinity, minHeight: DS.Size.sheetAction)
                     }
                     .secondaryAction()
                     Button {
                         Task { await start() }
                     } label: {
-                        Text("Start now").frame(maxWidth: .infinity)
+                        Text("Start now").frame(maxWidth: .infinity, minHeight: DS.Size.sheetAction)
                     }
                     .primaryAction()
                 }
-                .controlSize(.large)
+                .font(.headline)
                 .disabled(!canSend)
             }
             .padding(DS.Spacing.l)
-            .background(Theme.background)
+            .background(Theme.surface)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Discard", systemImage: "xmark", role: .cancel) {
@@ -92,9 +93,14 @@ struct CaptureSheet: View {
                 }
             }
         }
+        .neonPanel(edge: Theme.accent)
+        .presentationBackground(Theme.surface)
         .presentationDetents([.medium, .large])
+        // The Macs may still be arriving when the sheet opens (at launch).
+        .onChange(of: model.fleet.destinations, initial: true) { _, all in
+            destination = destination ?? all.first
+        }
         .task {
-            destination = destination ?? model.fleet.destinations.first
             switch opening {
             case .listening: break
             case .said(let said): text = said
@@ -111,30 +117,62 @@ struct CaptureSheet: View {
     private var listening: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.s) {
             HStack(spacing: DS.Spacing.s) {
-                Image(systemName: "waveform").symbolEffect(.variableColor.iterative).foregroundStyle(Theme.accent)
-                Text("Listening").font(.headline)
+                Circle().fill(Theme.signal).frame(width: DS.Size.captionDot, height: DS.Size.captionDot)
+                Text("Listening…").font(Typeface.heading())
                 Spacer()
+                Image(systemName: "waveform")
+                    .symbolEffect(.variableColor.iterative)
+                    .font(.title3)
+                    .foregroundStyle(Theme.accent)
                 if case .listening(let since) = dictation.phase {
-                    Text(since, style: .timer).font(.footnote.monospacedDigit()).foregroundStyle(Theme.dim)
+                    Text(since, style: .timer)
+                        .font(Typeface.mono(12, relativeTo: .caption))
+                        .foregroundStyle(Theme.muted)
                 }
             }
             let said = text.isEmpty ? dictation.settled : text + " " + dictation.settled
-            Text("\(said)\(Text(dictation.guess).foregroundStyle(Theme.dim))")
-                .font(.title3)
+            Text("\(said)\(Text(dictation.guess).foregroundStyle(Theme.muted))")
+                .font(.body)
                 .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
+            Text("Tap Done when you have said it, or Type to use the keyboard.")
+                .font(.caption2)
+                .foregroundStyle(Theme.muted)
         }
     }
 
+    /// Where the task goes, as an option row that opens the picker.
     private var destinationRow: some View {
-        LabeledContent("Where") {
+        Menu {
             Picker("Where", selection: $destination) {
                 ForEach(model.fleet.destinations, id: \.self) { d in
-                    Text("\(d.project) on \(model.fleet.macName(d.machine))").tag(Optional(d))
+                    Text(name(d)).tag(Optional(d))
                 }
             }
-            .pickerStyle(.menu)
+        } label: {
+            HStack(spacing: DS.Spacing.m) {
+                Text("Where").font(.subheadline).foregroundStyle(Theme.muted)
+                Text(destination.map(name) ?? "No Mac")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Spacer(minLength: DS.Spacing.s)
+                Image(systemName: "chevron.down").foregroundStyle(Theme.accent)
+            }
+            .padding(.horizontal, DS.Spacing.l)
+            .frame(minHeight: DS.Size.control)
+            .background(Theme.surface2, in: .rect(cornerRadius: DS.Radius.console))
+            .overlay {
+                RoundedRectangle(cornerRadius: DS.Radius.console).strokeBorder(Theme.line, lineWidth: DS.Edge.line)
+            }
+            .contentShape(.rect)
         }
-        .foregroundStyle(Theme.dim)
+        .disabled(model.fleet.destinations.isEmpty)
+        .accessibilityLabel("Where")
+        .accessibilityValue(destination.map(name) ?? "No Mac")
+    }
+
+    private func name(_ d: Destination) -> String {
+        "\(d.project) on \(model.fleet.macName(d.machine))"
     }
 
     private var task: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }

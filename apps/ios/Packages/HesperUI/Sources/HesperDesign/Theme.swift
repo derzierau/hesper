@@ -103,6 +103,14 @@ public enum DS {
         public static let openButton: CGFloat = 28
         /// The state caption's dot.
         public static let captionDot: CGFloat = 6
+        /// The console's Speak and Type buttons.
+        public static let console: CGFloat = 64
+        /// The icons on Speak and Type.
+        public static let consoleIcon: CGFloat = 24
+        /// Type's least width; Speak takes the rest (the Figma's 146 of 408).
+        public static let typeButton: CGFloat = 140
+        /// The capture sheet's Keep for later and Start now.
+        public static let sheetAction: CGFloat = 58
     }
 
     /// The phone's state mark is a little larger than the Mac's 7 pt.
