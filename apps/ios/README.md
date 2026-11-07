@@ -52,6 +52,7 @@ groups need a paid developer account.
 | `Packages/HesperKit/` | Logic, no views; `swift test` runs it on a Mac |
 | `Packages/HesperUI/` | The screens (iOS only) |
 | `Packages/HesperUI/Sources/HesperFeatures/Home/` | Home: scope bar, priority card, task grids, the Speak / Type console |
+| `Packages/HesperTerminal/` | The agent's terminal: libghostty for iOS, and its tested viewport logic |
 
 `HesperKit`:
 
@@ -68,8 +69,8 @@ groups need a paid developer account.
   the X25519 end-to-end key in the Keychain, request signing
   (`pkg/devicekey`'s golden vector), GitHub enrollment with PKCE and one
   renewal at a time, the relay socket, the Noise IK channel (BLAKE2s;
-  vectors from `relay/pkg/e2e`), sealed links, `LiveLink: LinkClient` and
-  `LivePairing: PairingService`. Its flows are tested against a fake relay
+  vectors from `relay/pkg/e2e`), sealed links, read-only attaches on a
+  link, `LiveLink: LinkClient` and `LivePairing: PairingService`. Its flows are tested against a fake relay
   and Mac.
 
 `HesperUI`:
@@ -77,8 +78,16 @@ groups need a paid developer account.
 - `HesperDesign`: the Neon tokens (`docs/iphone/neon.md`), the square state
   mark, controls.
 - `HesperFeatures`: Home, Agents (with search and Later), Macs (with Add
-  Mac), Settings, the agent view, capture (the Speak/Type console,
-  dictation and the capture sheet) and onboarding.
+  Mac), Settings, the agent view with the live terminal, capture (the
+  Speak/Type console, dictation and the capture sheet) and onboarding.
+
+`HesperTerminal`:
+
+- `TerminalModel`: no UIKit, so `swift test` runs it on a Mac. `Viewport`
+  (readable and fit width, zoom and pan limits, which row to follow),
+  `FollowRule` and `TerminalFeeder`.
+- `HesperTerminal`: `TerminalSurface`, libghostty-spm's `GhosttyTerminal`
+  (iOS only) drawing a Mac's grid read-only.
 
 Wire models and design tokens come from the Mac app's `HesperCore`
 (`app/Package.swift` exports it), so the phone and the Mac decode the same
@@ -100,7 +109,9 @@ opens Home on that scope. `HESPER_CAPTURE` (`listening`, `typing`) opens
 the capture sheet at launch, `listening` with a sample transcript and no
 microphone, since nobody can press Speak on a headless simulator.
 `HESPER_OPEN` (`agent:<id>`, `agents`, `macs`, `settings`) pushes that
-screen over Home at launch, for example `agent:studio/s1`.
+screen over Home at launch. `agent:studio/s1` opens the agent view with
+the sample Mac's scripted terminal (every sample agent has one), so the
+terminal can be checked without a Mac.
 
 ## Choices
 
@@ -112,8 +123,10 @@ screen over Home at launch, for example `agent:studio/s1`.
   and `InferIsolatedConformances`. UI code defaults to the main actor
   (`defaultIsolation(MainActor.self)`, `SWIFT_DEFAULT_ACTOR_ISOLATION`), and
   logic stays nonisolated.
-- **Swift Testing**, `swift format` from the toolchain, no third-party
-  packages.
+- **Swift Testing**, `swift format` from the toolchain. One third-party
+  package: libghostty-spm (with DisplayLink) for the terminal, at the
+  Mac's pin. Its prebuilt framework includes LGPL libintl, so before an
+  App Store release the iOS slice needs the source build the Mac uses.
 - **Plain SwiftUI**: `@Observable` model in the environment, one
   `NavigationStack`, `#Preview` on fixtures. Home's Speak / Type console
   (`Console`) is the app's own bar, not a system tab bar: Speak carries a
@@ -127,8 +140,8 @@ screen over Home at launch, for example `agent:studio/s1`.
 
 In the order of the concept's "Core work":
 
-1. The terminal in the agent view: libghostty-spm's `GhosttyTerminal`
-   on an `agents.attach`, Mirror first, then Fit to iPhone.
+1. Typing in the terminal, then Fit to iPhone. The agent view already
+   shows the live terminal, watching only (Mirror, read-only attach).
 2. Push: the notification extension decrypts ids into text; actionable
    Allow / Deny / Reply.
 3. Live Activity and widget pushes from the relay.

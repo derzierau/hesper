@@ -1,5 +1,10 @@
 # A writable terminal on the iPhone
 
+Status, 7 Nov 2026: step 1 shipped as watching only (a read-only Mirror,
+no typing yet); Take over is later. The prebuilt libghostty-spm framework
+includes LGPL libintl, so before an App Store release the iOS slice needs
+the source build the Mac uses.
+
 Research, 2026-10-31. Question: can the iPhone app have a terminal you
 type into, as on the Mac (live agent, full keys, selection, scrollback),
 instead of the read-only terminal plus reply panel of the concept

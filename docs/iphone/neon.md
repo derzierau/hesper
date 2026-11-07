@@ -251,6 +251,13 @@ layouts stay as Ole built them.
   1 pt `line` top edge) whose approval/question controls are the same
   numbered option rows as the hero; message field = `surface` with `line`
   border, Send = accent square. Terminal placeholder unchanged.
+  The placeholder has since become the live terminal (watching only,
+  `docs/iphone/concept.md` "The terminal on a phone"): the Mac's grid on
+  `background`, readable (a font of about 9 pt, with an "N cols →" hint
+  and pan) or fit width, pinch to zoom, double tap to switch, a drag to
+  pan or scroll back, and "Live ↓" to return. It follows the last row
+  with text, kept just above the dock; in landscape the dock is a column
+  on the right.
 - **Capture sheet**: sheet background `surface`, 1 pt accent top edge
   (the console's sheets carry the accent, cards carry `line`), grabber
   `line`; "Listening…" heading in Space Grotesk 20 with a signal dot and a

@@ -1,6 +1,7 @@
 # Hesper for iPhone: concept
 
-Status: concept, 31 Oct 2026; capture updated 2 Nov 2026. Wireframes in
+Status: concept, 31 Oct 2026; capture updated 2 Nov 2026; the terminal's
+first version (watching) built 7 Nov 2026. Wireframes in
 [`wireframes/`](wireframes/) (round 4 draws the writable terminal and iPad,
 round 5 the mic circle that replaced the Search tab), critique between rounds
 in [`critique.md`](critique.md), the writable terminal researched in
@@ -60,16 +61,20 @@ Home             scope bar (All · Needs you · Working) + menu (Agents,
 │                Later (tasks kept for later, parked drafts on every Mac)
 └── Macs         machines, their health, pairing
 Console          Speak (push-to-talk) and Type at the bottom
-Agent view       pushed from any row; live writable terminal + dock;
+Agent view       pushed from any row; live terminal (watching; typing
+                 later) + dock;
                  portrait and landscape (iPad: the detail column)
 Sheets           Capture · Review · Deny with a message · Pair a Mac
 System surfaces  notifications · one fleet Live Activity · widgets · controls · App Intents
 ```
 
-Why three tabs and a mic:
+Why Home, a menu and a console (the Neon redesign, [`neon.md`](neon.md),
+replaced the three tabs and the mic circle on 7 Nov):
 
-- **Inbox** is the Mac's ⌘J and ⌘R in one place: things that wait for the
-  owner. It can be empty, and empty is the goal ("Nothing needs you").
+- **Home** is the Mac's ⌘J and ⌘R in one place: the one decision that
+  matters most on top, then what needs the owner, what is ready to review
+  and what is working. The scope bar narrows it to Needs you or Working.
+  Needs you can be empty, and empty is the goal ("Nothing needs you").
   Codex, Claude Code Remote Control and Cursor all lead with one run list
   that flags "needs input"
   ([Codex mobile](https://learn.chatgpt.com/docs/mobile.md),
@@ -79,27 +84,22 @@ Why three tabs and a mic:
   Mac's automatic bands (by project; one level dropped when everything is in
   one project). Rows carry the agent's own activity line, not a terminal
   preview, so the list costs no terminal streams.
-- **Macs** exists because machines fail in ways the owner must see (lid
+- **Macs** (in the menu) exists because machines fail in ways the owner must see (lid
   closed, offline, unpaired). A plain status line beats a dot: Tailscale
   found that an activity dot "caused more confusion"
   ([forum](https://forum.tailscale.com/t/online-status-in-app/2107)).
-- **Search** is the field at the top of Agents (`.searchable`). On a phone
-  the owner drops tasks far more often than they search, so search gave
-  its place to capture (decided, round 5).
+- **Search** is the field at the top of Agents (`.searchable`); the menu's
+  Search opens Agents with it focused. On a phone the owner drops tasks
+  far more often than they search, so capture gets the bottom of the
+  screen, not search (decided, round 5).
 
-**The mic circle** sits where the Search circle was: a glass circle in the
-accent beside the tab capsule. It listens from the moment it is touched:
-a tap opens the capture sheet still listening; holding is push-to-talk
-(the words show at the top of the screen, letting go opens the sheet with them,
-sliding off the circle cancels). The sheet has a keyboard button. It is a button, not a tab, so the tab bar still holds
-navigation only ([HIG tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars.md)).
-The system bar has no slot for an action (the search-role tab is drawn
-inside the capsule on current iOS), so on iPhone the app draws the bar
-itself under the three root screens; pushed screens such as the agent view
-have no bar. iPad keeps the system tabs with a "New task" item.
-It replaces the New agent accessory: one way in, and the lists keep the
-space the accessory covered.
-The Inbox tab badge shows the needs-you count; nothing else is badged.
+**The console** at the bottom of Home holds Speak and Type. Speak listens
+from the moment it is touched: a tap opens the capture sheet still
+listening; holding is push-to-talk (the words show at the top of the
+screen, letting go opens the sheet with them, sliding off cancels). Type
+opens the sheet with the keyboard. It is the app's own bar, not a system
+tab bar, because no system control carries push-to-talk. Pushed screens
+such as the agent view have no console; iPad gets the same console.
 
 ## Key flows
 
@@ -131,8 +131,8 @@ more in the agent view). A question with no options says "Open to answer".
 
 ### 3. Drop a task from anywhere (20 seconds)
 
-1. Hold the **mic circle** and speak, then let go; or tap it and speak
-   until Done. Typing is one button away in the sheet.
+1. Hold **Speak** on Home's console and speak, then let go; or tap it and
+   speak until Done. **Type** opens the sheet with the keyboard.
 2. One sheet: the text first (live while listening, editable after), then
    one destination line
    "hesper on mini" (the last-used or most recent project from
@@ -244,6 +244,14 @@ for confirmation (`requestConfirmation`,
 [WWDC25-275](https://developer.apple.com/videos/play/wwdc2025/275/)).
 
 ## The terminal on a phone
+
+**Built so far (7 Nov 2026): watching only.** The agent view attaches
+read-only (`mode: ro`, right `observe`, no Face ID) and draws the Mac's
+grid with no keyboard; replies, answers and Speak go through the dock.
+Readable and fit width, pinch, double tap, pan, "Live ↓" and landscape
+work as below; the view follows the last row with text rather than the
+cursor, which the renderer does not report. Typing, Fit to iPhone,
+selection and links are still to come.
 
 The terminal is writable, like the Mac's. Typing and owning the size are
 separate in hesperd, so the phone can type without resizing anything
@@ -404,8 +412,8 @@ What core Hesper (`main`) needs before this app can ship, in order:
    protocol (enrollment, device and strong keys, `devices.request`, signed
    requests, Noise channel, links) usable from Swift. *Built*:
    `HesperLink` in `apps/ios/Packages/HesperKit` (`LiveLink`,
-   `LivePairing`); still to come: attaches on the link (`agents.attach`,
-   core job 4) and the direct path.
+   `LivePairing`) and read-only attaches (item 8); still to come: the
+   direct path.
 2. **Push from the relay**: APNs alerts on entering approval, question or
    error, ids only; the phone fills in text end to end. Plus a presence
    signal so a Mac in active use suppresses pushes.
@@ -419,8 +427,9 @@ What core Hesper (`main`) needs before this app can ship, in order:
 7. **`agents.move` driven by a Mac on the phone's behalf** (later).
 8. **Attach channels in the mobile client library**: open an
    `agents.attach` on a link, then read and write its `D` frames and close
-   it with `X` (HesperLink drops them today). This is needed for the
-   writable terminal (Mirror). No protocol change.
+   it with `X`. No protocol change. *Built* for watching:
+   `HostChannel.attach` opens a read-only attach and reads its `D` frames;
+   writing them comes with typing.
 9. **Who owns the size, in hesperd**: record whether the size owner is
    local or a remote device. Publish it as `sizeOwner` in the agent's info
    and events, and set `capabilities.sizeOwner` in the snapshot. Both are
