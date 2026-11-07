@@ -1565,6 +1565,16 @@ re-attaches). Deviation: the app going to the background keeps the owner
 (otherwise every app switch would resize every open agent twice); only
 another Hesper window becoming key, or the owner closing, releases it.
 
+**Size owned by another device** (Fit to iPhone): while an agent's info
+carries `sizeOwner` (the iPhone that owns the PTY size; `sizeOwnerName`
+its name), every local pane of that agent is a view (`attach --fit`), in
+the key window too, and its tile header shows "On <sizeOwnerName>" ("On
+iPhone" without a name). A keystroke that would type into the agent, or a
+click in its terminal area, makes that pane the owner at once (latest
+owner wins; a key typed meanwhile is held and replayed into the owner
+surface). hesperd then clears `sizeOwner` and the rule above applies again
+(debounced). A daemon that omits the fields leaves the rule unchanged.
+
 **Walls and scopes.** Each wall has its own layout, card width and
 selection, and a scope (toolbar pill "All · 12" / "All · 8 of 12" /
 "Overflow · 4" / "Filter · 3"; its popover is the overlay system's

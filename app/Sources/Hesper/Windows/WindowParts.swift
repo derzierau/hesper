@@ -162,8 +162,15 @@ final class SizeOwnership {
     private var generation = 0
     /// Re-attaches done for ownership (tests, perf).
     private(set) var switches = 0
+    private var takeBackMonitor: Any?
 
     init() {
+        // Fit to iPhone: a keystroke or click in a pane whose agent's size
+        // another device owns takes the size back at once (takeBack).
+        takeBackMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] e in
+            let consumed = MainActor.assumeIsolated { self?.takeBack(e) ?? false }
+            return consumed ? nil : e
+        }
         NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] n in
             let oid = (n.object as AnyObject?).map(ObjectIdentifier.init)
             MainActor.assumeIsolated {
@@ -205,7 +212,8 @@ final class SizeOwnership {
         var ts = terminals()
         if let extra, !ts.contains(where: { $0 === extra }) { ts.append(extra) }
         let id: (NSWindow?) -> Int? = { $0.map { ObjectIdentifier($0).hashValue } }
-        let cs = ts.map { SizeOwner.Candidate(agentID: $0.agent.id, window: id($0.host.window), focusRole: $0.role == .focus, readWrite: $0.readWrite) }
+        let cs = ts.map { SizeOwner.Candidate(agentID: $0.agent.id, window: id($0.host.window), focusRole: $0.role == .focus, readWrite: $0.readWrite,
+                                              remoteOwned: SizeOwner.remoteOwned($0.agent), takingBack: $0.takingSizeBack) }
         return Array(zip(ts, SizeOwner.owners(cs, ownerWindow: id(effectiveOwnerWindow))))
     }
 
@@ -216,6 +224,44 @@ final class SizeOwnership {
         let owns = all.first { $0.0 === t }?.1 ?? false
         if owns, all.contains(where: { $0.0 !== t && $0.0.agent.id == t.agent.id && $0.0.readWrite && $0.0.ownsSize }) { schedule() }
         return owns
+    }
+
+    /// An agent's `sizeOwner` changed: another device taking the size makes
+    /// its panes views at once; a cleared owner goes through the debounce.
+    func sizeOwnerChanged(_ t: AgentTerminal) {
+        if SizeOwner.remoteOwned(t.agent) { apply() } else { schedule() }
+    }
+
+    /// A key or click in one of our windows: the pane it goes to, if its
+    /// agent's size is another device's, takes the size back (owner at
+    /// once, latest owner wins). True: a key held for that pane's owner
+    /// surface (replayed once it swapped in), so it is not lost.
+    private func takeBack(_ e: NSEvent) -> Bool {
+        guard let w = e.window, isOurs(w) else { return false }
+        let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && SizeOwner.remoteOwned($0.agent) }
+        guard !ts.isEmpty else { return false }
+        let target: AgentTerminal?
+        if e.type == .leftMouseDown {
+            target = ts.first { $0.host.bounds.contains($0.host.convert(e.locationInWindow, from: nil)) }
+        } else {
+            // Only keys that would type into the agent, not into a field.
+            guard w.isKeyWindow, !(w.firstResponder is NSTextView),
+                  TerminalKeys.bytes(KeyChord(event: e), characters: e.characters) != nil else { return false }
+            target = ts.first { $0.role == .focus } ?? ts.first { $0.interactive }
+        }
+        guard let t = target else { return false }
+        if t.takingSizeBack {
+            // Already taken back: keys while its owner surface swaps in
+            // wait for it; after that they go to it directly.
+            guard e.type == .keyDown, t.swapping else { return false }
+            t.hold(e)
+            return true
+        }
+        t.takingSizeBack = true
+        apply()
+        guard e.type == .keyDown, t.readWrite, t.swapping else { return false }
+        t.hold(e)
+        return true
     }
 
     func apply() {

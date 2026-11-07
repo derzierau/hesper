@@ -25,8 +25,13 @@ public enum SizeOwner {
         public var focusRole: Bool
         /// Wants to type: a focus view, or the active tile.
         public var readWrite: Bool
-        public init(agentID: String, window: Int?, focusRole: Bool, readWrite: Bool) {
+        /// Another device (the iPhone) owns the agent's size (`sizeOwner`).
+        public var remoteOwned: Bool
+        /// Typed or clicked in while `remoteOwned`: takes the size back.
+        public var takingBack: Bool
+        public init(agentID: String, window: Int?, focusRole: Bool, readWrite: Bool, remoteOwned: Bool = false, takingBack: Bool = false) {
             self.agentID = agentID; self.window = window; self.focusRole = focusRole; self.readWrite = readWrite
+            self.remoteOwned = remoteOwned; self.takingBack = takingBack
         }
     }
 
@@ -34,11 +39,17 @@ public enum SizeOwner {
     /// the owner window (the app's key window among ours), and at most one
     /// per agent (a focus view before a tile, then the first listed). With
     /// no owner window nobody owns (the daemon follows the views' fit).
+    /// While another device owns an agent's size, only a pane typed or
+    /// clicked in (`takingBack`) owns, wherever it is; the rest are views.
     public static func owners(_ cs: [Candidate], ownerWindow: Int?) -> [Bool] {
         var out = Array(repeating: false, count: cs.count)
-        guard let ownerWindow else { return out }
         var best: [String: Int] = [:]
-        for (i, c) in cs.enumerated() where c.readWrite && c.window == ownerWindow {
+        func eligible(_ c: Candidate) -> Bool {
+            guard c.readWrite else { return false }
+            if c.remoteOwned { return c.takingBack }
+            return ownerWindow != nil && c.window == ownerWindow
+        }
+        for (i, c) in cs.enumerated() where eligible(c) {
             if let j = best[c.agentID] {
                 if c.focusRole && !cs[j].focusRole { best[c.agentID] = i }
             } else {
@@ -62,6 +73,25 @@ public enum SizeOwner {
     /// the size would get a raw stream at another grid (garbled).
     public static func attach(readWrite: Bool, owns: Bool) -> Attach {
         readWrite && owns ? .owner : .view
+    }
+
+    /// Whether another device (the iPhone) owns the agent's PTY size now.
+    public static func remoteOwned(_ a: Agent) -> Bool { !(a.sizeOwner ?? "").isEmpty }
+
+    /// Whether a pane's take-back still stands after the agent's
+    /// `sizeOwner` went from `old` to `new`: only while the same remote
+    /// owner is shown. Cleared (the daemon saw the Mac's owner attach) or a
+    /// new remote owner: the normal rule again.
+    public static func keepsTakeBack(old: String?, new: String?) -> Bool {
+        guard let new, !new.isEmpty else { return false }
+        return old == new
+    }
+
+    /// The tile's badge while another device owns the size.
+    public static func badge(_ a: Agent) -> String? {
+        guard remoteOwned(a) else { return nil }
+        let name = a.sizeOwnerName ?? ""
+        return "On \(name.isEmpty ? "iPhone" : name)"
     }
 }
 

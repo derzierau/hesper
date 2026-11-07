@@ -76,6 +76,13 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// new terminal in a window that is not key never attaches as a second
     /// owner (nil: keep `ownsSize`).
     static var ownershipResolver: ((AgentTerminal) -> Bool)?
+    /// Another device owns the size and this pane was typed or clicked in:
+    /// it owns again at once (SizeOwner); cleared when `sizeOwner` changes.
+    var takingSizeBack = false
+    /// The agent's `sizeOwner` changed (the window layer re-decides).
+    static var onSizeOwnerChanged: ((AgentTerminal) -> Void)?
+    /// A surface is swapping in (input is held for it).
+    var swapping: Bool { prewarm != nil }
     private var resolvingOwnership = false
     /// The active wall tile: typing goes to the agent. Its surface is a
     /// read-write attach (size owner at the tile's own grid, which is the
@@ -129,6 +136,10 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
             recreate()
         } else if surface == nil || (surface?.processExited ?? false) {
             if connected && isAttachable { scheduleReattach() }
+        }
+        if old.sizeOwner != a.sizeOwner {
+            if !SizeOwner.keepsTakeBack(old: old.sizeOwner, new: a.sizeOwner) { takingSizeBack = false }
+            Self.onSizeOwnerChanged?(self)
         }
         // A changed PTY size needs nothing here: a tile's view follows the
         // screen, and the wall re-lays out (maybe with another font).
@@ -211,7 +222,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         let takeFocus = surfaceIsInteractive || (role == .focus && p.acceptsInput && (hadFocus || host.window?.isKeyWindow == true))
         if takeFocus, let w = host.window { w.makeFirstResponder(p.view) }
         surfaceMetricsDidChange(p)
-        if surfaceIsInteractive {
+        if p.acceptsInput {
             for e in heldInput.drain(now: ProcessInfo.processInfo.systemUptime) { send(e, to: p.view) }
         } else {
             heldInput.clear()
@@ -238,9 +249,14 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         case .leftMouseUp: view.mouseUp(with: e)
         case .leftMouseDragged: view.mouseDragged(with: e)
         case .scrollWheel: view.scrollWheel(with: e)
+        case .keyDown: view.keyDown(with: e)
         default: break
         }
     }
+
+    /// Holds a key typed while this pane takes the size back, replayed
+    /// into its owner surface once that swapped in.
+    func hold(_ e: NSEvent) { heldInput.hold(e, at: e.timestamp) }
 
     /// Focus the active tile's terminal (typing).
     func focusInput() {
