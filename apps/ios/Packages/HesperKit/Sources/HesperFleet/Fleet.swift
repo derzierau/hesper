@@ -137,8 +137,12 @@ public struct Fleet: Equatable, Sendable {
 
     /// Finished work waiting for a verdict, newest first.
     public var readyToReview: [Agent] {
-        agents.values.filter { $0.state == .done }
-            .sorted { ($0.stateSince ?? .distantPast, $0.id) > ($1.stateSince ?? .distantPast, $1.id) }
+        Self.newestFirst(agents.values.filter { $0.state == .done })
+    }
+
+    /// Latest state change first; the id breaks ties so the order is stable.
+    static func newestFirst(_ list: [Agent]) -> [Agent] {
+        list.sorted { ($0.stateSince ?? .distantPast, $0.id) > ($1.stateSince ?? .distantPast, $1.id) }
     }
 
     /// The agent the dock offers after `current` is answered.
