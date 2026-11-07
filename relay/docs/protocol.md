@@ -227,6 +227,39 @@ Errors, as a `result` with `error`:
 
 Hosts may send neither message. The usual message rate limit applies.
 
+On each Mac, hesperd merges this list with its own files and removes a
+device in one step. These are local-socket methods, called by a person
+only (an agent gets `forbidden`):
+
+| Method | Params | Result | Errors |
+| --- | --- | --- | --- |
+| `devices.list` | – | `{devices:[{id, name, short?, role, kind, online, self, approvedHere, trustedHere, relay}]}` | – |
+| `devices.remove` | `{deviceId, localOnly?}` | `{relay, approval, trust, names, signedOut?}` | `invalid`, `forbidden`, `unavailable`, `unsupported`, `not_found`, a relay code |
+
+`devices.list` is the union of the relay's `devices` (when the controller
+connection is up and `hello` lists `devices`; `relay: true`), this host's
+`controllers.json` (`approvedHere`), `trusted-hosts.json` (`trustedHere`)
+and `machines.json` (`short`). `kind` is `iphone` exactly when the relay
+says `push`, else `mac`; `self` marks this Mac's own host and controller
+ids. Sorted: this Mac, then Macs by short name, then iPhones by name.
+Without the relay the list is this Mac's files, every entry offline.
+
+`devices.remove` revokes the device on the relay first, then removes its
+approval here, its pinned key and its `machines.json` entry. Each result
+field is `"done"`, `"skipped"` (nothing to do) or the step's error text.
+The relay is skipped for a device it does not list (already revoked, or
+known only here). Removing a host also revokes the offline controller
+records of the same name (a Mac's second identity), listed in
+`signedOut`; online ones stay. This Mac's own two ids are `forbidden`.
+Nothing changes here when the relay step cannot run: `unavailable` (no
+controller role, or the relay is unreachable), `unsupported` ("The relay
+needs an update to remove devices": its `hello` has no `devices`, and it
+is never probed), or the relay's refusal with its code. `not_found` from
+`revoke` for a device the relay just listed counts as done. With
+`localOnly: true` the relay is not asked and only the local steps run.
+Every removal is audited as `device.removed` with the four outcomes. A
+daemon older than this answers `-32601` (method not found).
+
 ## Host operations
 
 Controllers send:

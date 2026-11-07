@@ -766,6 +766,15 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 			return struct{}{}, remote.RemoveForward(p.ID)
 		}
 		return remote.Forwards(), nil
+	case "devices.list", "devices.remove":
+		// every device of the owner (devicehook.go); a person only
+		// (dispatch, treePerson)
+		if reg.opt.Removal == nil {
+			return nil, wire.Errorf(wire.CodeUnavailable, "devices are not available")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return reg.opt.Removal.Call(ctx, method, withoutCaller(params))
 	case "projects.list", "projects.update", "projects.promote", "projects.remove", "groups.list", "groups.save", "groups.remove",
 		"projects.scratch", "projects.scratchKeep", "projects.scratchArchive", "projects.scratchRestore", "projects.scratchDelete",
 		"projects.scratchSettings", "settings.get", "settings.set": // scratch projects

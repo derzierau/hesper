@@ -29,6 +29,7 @@ import (
 	"github.com/derzierau/hesper/relay/internal/sessions"
 	"github.com/derzierau/hesper/relay/pkg/client"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
+	"github.com/derzierau/hesper/relay/pkg/e2e"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 	"github.com/derzierau/hesper/relay/pkg/transfer"
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -172,11 +173,14 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	}
 	d.Offers = &host.Offers{}
 	opt.Devices = d.Offers
+	hostID, controllerID := "", ""
+	if c, err := client.LoadCredentials(cfg.HostCredentials); err == nil {
+		hostID = c.DeviceID
+	}
+	if c, err := client.LoadCredentials(cfg.ControllerCredentials); err == nil {
+		controllerID = c.DeviceID
+	}
 	if exists(cfg.ControllerCredentials) {
-		hostID := ""
-		if c, err := client.LoadCredentials(cfg.HostCredentials); err == nil {
-			hostID = c.DeviceID
-		}
 		d.Fleet = remote.New(remote.Options{Credentials: cfg.ControllerCredentials, HostDeviceID: hostID, ConfigDir: opt.ConfigDir,
 			StateDir: cfg.KeysDir, Signer: cfg.Signer, Direct: cfg.ControllerDirect, ControlSocket: cfg.ControlSocket, Grace: cfg.Grace, Logf: logf,
 			Projects: d.Projects})
@@ -184,6 +188,17 @@ func Start(parent context.Context, cfg Config) (*Daemon, error) {
 	} else {
 		logf("controller role off: no %s (hesperctl login --role controller)", cfg.ControllerCredentials)
 	}
+	// devices.list / devices.remove (internal/host removal.go)
+	configDir := opt.ConfigDir
+	if configDir == "" {
+		configDir = wire.ConfigDir()
+	}
+	devices := &host.DevicesService{Store: host.Store{Dir: cfg.KeysDir}, TrustPath: filepath.Join(cfg.KeysDir, e2e.TrustFile),
+		MachinesPath: filepath.Join(configDir, "machines.json"), SelfHost: hostID, SelfController: controllerID}
+	if d.Fleet != nil {
+		devices.Relay = d.Fleet
+	}
+	opt.Removal = devices
 	ln := cfg.Listener
 	if ln == nil {
 		var err error
