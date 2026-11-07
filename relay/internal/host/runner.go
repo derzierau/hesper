@@ -191,6 +191,31 @@ func (r *Runner) Run(ctx context.Context) error {
 	return nil
 }
 
+// answer is the result message of a request: sealed when it came
+// through the channel (via), else in plaintext.
+func (r *Runner) answer(id string, via *hostSession, innerID string, result json.RawMessage, err error) protocol.Message {
+	response := protocol.Message{Type: "result", ID: id, Result: result}
+	if via != nil {
+		started := time.Now()
+		response.Result = r.E2E.Seal(via, innerID, result, err)
+		perf.Host.Since(perf.RPCSeal, started)
+	} else if err != nil {
+		response.Result = nil
+		response.Error = protocol.PublicError(err)
+	}
+	return response
+}
+
+// fits: the relay takes m (protocol.MaxMessageBytes per message). Most
+// answers are far below; only a big one is measured as it is sent (its
+// JSON can grow: HTML characters are escaped to six bytes).
+func fits(m protocol.Message) bool {
+	if len(m.Result) <= protocol.MaxMessageBytes/8 {
+		return true
+	}
+	return len(protocol.JSON(m)) <= protocol.MaxMessageBytes
+}
+
 // openE2E opens one sealed request (timed for the latency harness).
 func (r *Runner) openE2E(m protocol.Message) (protocol.Message, *hostSession, string, error) {
 	started := time.Now()
@@ -349,14 +374,15 @@ func (r *Runner) Serve(parent context.Context, link *client.Link) error {
 			} else if err == nil {
 				result, err = r.perform(opCtx, m, terminals)
 			}
-			response := protocol.Message{Type: "result", ID: m.ID, Result: result}
-			if via != nil {
-				started := time.Now()
-				response.Result = r.E2E.Seal(via, innerID, result, err)
-				perf.Host.Since(perf.RPCSeal, started)
-			} else if err != nil {
-				response.Result = nil
-				response.Error = protocol.PublicError(err)
+			response := r.answer(m.ID, via, innerID, result, err)
+			if !fits(response) {
+				// The relay drops the whole connection for a message over
+				// its limit, and every controller's link with it: the
+				// caller gets an error instead.
+				if r.Logger != nil {
+					r.Logger.Warn("answer exceeds the relay's message limit; refused", "method", m.Method, "bytes", len(response.Result))
+				}
+				response = r.answer(m.ID, via, innerID, nil, protocol.Err("too_large", "Answer exceeds the relay's message limit"))
 			}
 			if err := link.Send(ctx, response); err != nil {
 				return err

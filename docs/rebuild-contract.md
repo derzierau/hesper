@@ -3222,9 +3222,10 @@ node; equal stamps compare values, so merges converge in any order.
 `sessions.pull {since, epoch, from}` (host method, signed, right
 `observe`) answers the entries changed after `since` (a per-database
 sequence number; a new database = new epoch = from 0), skipping entries
-whose every stamp is the requester's (no echo), ≤ 400 entries and ≤ 600
-KiB of zstd-compressed JSON per answer, `{node, short, epoch, next, more,
-data}`. The puller asks again while `more`, one request at a time per
+whose every stamp is the requester's (no echo), ≤ 400 entries and ≤ 384
+KiB of zstd-compressed JSON per answer (base64 twice, sealed, it stays
+well inside the relay's 1 MiB message; an entry over the budget alone is
+skipped, not sent), `{node, short, epoch, next, more, data}`. The puller asks again while `more`, one request at a time per
 Mac, pausing 20 ms + 1 s per 8 MiB received (rate limit), and stores the
 cursor (`peers`), so an interrupted sync resumes. Pulls start when a
 link opens and when the host's **hint** arrives on its link
