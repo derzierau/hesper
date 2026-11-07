@@ -196,6 +196,15 @@ Mac). `surface` fill, 3 pt accent top edge, 1 pt `line` sides, padding
      ("Changes the database or remote state." Allow / Cancel). The
      owner's decision (7 Nov); Ole's inline rows refused to answer these
      at all, and this replaces that rule on Home and in the grid.
+   - `Yes, and don't ask again` asks once more on every approval, as its
+     detail says: a risky one with the dialog above, any other with
+     "Allow this without asking again?" (Allow / Cancel).
+   - A confirmation dialog or the deny sheet answers only the prompt the
+     owner saw (`DecisionOptions.isStillCurrent`: same state, same
+     attention). When the prompt changes while either is open, it closes
+     unsent and the "Not sent" alert reads "This prompt changed. Look
+     again before answering." The deny sheet closes only once the deny
+     went out; on a failure it keeps its text.
    - Rows are disabled while `pending` or the Mac is unreachable, as
      today.
 

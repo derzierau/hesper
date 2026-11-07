@@ -25,12 +25,50 @@ import Testing
         #expect(DecisionOptions.gridActions(for: a).map(\.label) == ["Open"])
     }
 
-    @Test func onlyRiskyAllowsAskTwice() {
+    @Test func allowAsksTwiceOnlyWhenRiskyAlwaysAlwaysAsks() {
         let risky = Samples.fleet.agents["mini/m1"]!
         let plain = Samples.fleet.agents["studio/s1"]!
         #expect(DecisionOptions.needsConfirmation(risky, .allow) && DecisionOptions.needsConfirmation(risky, .always))
         #expect(!DecisionOptions.needsConfirmation(risky, .denyWithMessage))
         #expect(!DecisionOptions.needsConfirmation(plain, .allow))
+        #expect(DecisionOptions.needsConfirmation(plain, .always))
+    }
+
+    @Test func confirmationTitleNamesTheRiskOrTheLastAsk() {
+        let risky = Samples.fleet.agents["mini/m1"]!
+        let plain = Samples.fleet.agents["studio/s1"]!
+        #expect(DecisionOptions.confirmationTitle(risky, .allow) == DecisionOptions.confirmationTitle)
+        #expect(DecisionOptions.confirmationTitle(risky, .always) == DecisionOptions.confirmationTitle)
+        #expect(DecisionOptions.confirmationTitle(plain, .always) == "Allow this without asking again?")
+    }
+
+    @Test func theConfirmedPromptIsStillCurrent() {
+        let fleet = Samples.fleet
+        let confirmed = fleet.agents["studio/s1"]!
+        #expect(DecisionOptions.isStillCurrent(confirmed, in: fleet))
+    }
+
+    @Test func aNewPromptIsNotTheConfirmedOne() {
+        let confirmed = Samples.fleet.agents["studio/s1"]!
+        var live = confirmed
+        live.attention?.detail = "internal/relay/other.go"
+        var fleet = Samples.fleet
+        fleet.apply(.changed(live), from: live.machine)
+        #expect(!DecisionOptions.isStillCurrent(confirmed, in: fleet))
+    }
+
+    @Test func anAnsweredPromptIsNotCurrent() {
+        let confirmed = Samples.fleet.agents["studio/s1"]!
+        var live = confirmed
+        live.state = .working
+        var fleet = Samples.fleet
+        fleet.apply(.changed(live), from: live.machine)
+        #expect(!DecisionOptions.isStillCurrent(confirmed, in: fleet))
+    }
+
+    @Test func aGoneAgentIsNotCurrent() {
+        let confirmed = Samples.fleet.agents["studio/s1"]!
+        #expect(!DecisionOptions.isStillCurrent(confirmed, in: Fleet()))
     }
 
     @Test func commandsMapOneToOne() {

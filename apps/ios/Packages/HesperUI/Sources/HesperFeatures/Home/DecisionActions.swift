@@ -23,8 +23,9 @@ extension FleetModel {
 }
 
 extension View {
-    /// Handles the decisions of the cards inside: a risky Yes and Stop ask
-    /// first, No… opens the deny sheet, the rest sends at once.
+    /// Handles the decisions of the cards inside: a risky Yes, "don't ask
+    /// again" and Stop ask first, No… opens the deny sheet, the rest sends
+    /// at once. A dialog or sheet whose prompt changed closes unsent.
     func decisions() -> some View {
         modifier(DecisionHandling())
     }
@@ -68,11 +69,34 @@ struct DecisionHandling: ViewModifier {
                 }
             }
             .sheet(item: $deny) { DenySheet(agent: $0) }
+            .onChange(of: isStale) { _, stale in
+                // A dialog or sheet for a prompt that is gone never lingers.
+                guard stale else { return }
+                confirm = nil
+                deny = nil
+                model.failure = DecisionOptions.promptChanged
+            }
     }
 
     private var title: String {
-        guard let confirm, confirm.action == .stop else { return DecisionOptions.confirmationTitle }
-        return "Stop \(confirm.agent.name)?"
+        guard let confirm else { return "" }
+        if confirm.action == .stop { return "Stop \(confirm.agent.name)?" }
+        return DecisionOptions.confirmationTitle(confirm.agent, confirm.action)
+    }
+
+    /// The open dialog or sheet answers a prompt the agent no longer
+    /// shows. Stop is about the agent, not a prompt, so it stays; an agent
+    /// with an answer on its way is expected to change.
+    private var isStale: Bool {
+        if let confirm, confirm.action != .stop, !model.pending.contains(confirm.agent.id),
+            !DecisionOptions.isStillCurrent(confirm.agent, in: model.fleet)
+        {
+            return true
+        }
+        if let deny, !model.pending.contains(deny.id), !DecisionOptions.isStillCurrent(deny, in: model.fleet) {
+            return true
+        }
+        return false
     }
 
     private func tap(_ agent: Agent, _ action: DecisionAction) {
@@ -90,6 +114,12 @@ struct DecisionHandling: ViewModifier {
 
     private func send(_ agent: Agent, _ action: DecisionAction) {
         guard let command = DecisionOptions.command(agent, action) else { return }
+        // The dialog kept a snapshot; answer only the prompt the owner saw.
+        if action != .stop, !DecisionOptions.isStillCurrent(agent, in: model.fleet) {
+            confirm = nil
+            model.failure = DecisionOptions.promptChanged
+            return
+        }
         Task { await model.perform(command) }
     }
 }

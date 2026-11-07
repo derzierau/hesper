@@ -85,10 +85,34 @@ public enum DecisionOptions {
         }
     }
 
-    /// Whether the tap first asks `confirmationTitle`: only a Yes on a
-    /// risky approval (`RiskRule`).
+    /// What the "Not sent" alert says when a dialog or sheet answered a
+    /// prompt that is no longer the agent's (`isStillCurrent`).
+    public static let promptChanged = "This prompt changed. Look again before answering."
+
+    /// Whether the tap first asks `confirmationTitle(_:_:)`: a Yes on a
+    /// risky approval (`RiskRule`), and "don't ask again" on every
+    /// approval, as its row's "asks once more" promises.
     public static func needsConfirmation(_ a: Agent, _ action: DecisionAction) -> Bool {
-        (action == .allow || action == .always) && RiskRule.isRisky(a)
+        switch action {
+        case .allow: RiskRule.isRisky(a)
+        case .always: true
+        default: false
+        }
+    }
+
+    /// The dialog's title for a tap that `needsConfirmation`: the risk for
+    /// a risky approval, otherwise the last ask before "don't ask again".
+    public static func confirmationTitle(_ a: Agent, _ action: DecisionAction) -> String {
+        RiskRule.isRisky(a) ? confirmationTitle : "Allow this without asking again?"
+    }
+
+    /// Whether the prompt the owner confirmed is still the one the agent
+    /// shows. A dialog or sheet keeps a snapshot and sends by id; if the
+    /// prompt was answered elsewhere or a new one arrived, the answer would
+    /// land on a prompt the owner never saw.
+    public static func isStillCurrent(_ confirmed: Agent, in fleet: Fleet) -> Bool {
+        guard let live = fleet.agents[confirmed.id] else { return false }
+        return live.state == confirmed.state && live.attention == confirmed.attention
     }
 
     /// The command a tap sends; nil for the deny sheet and for opening the

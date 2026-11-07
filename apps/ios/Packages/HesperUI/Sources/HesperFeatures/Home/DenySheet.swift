@@ -18,6 +18,7 @@ struct DenySheet: View {
     @Environment(FleetModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
+    @State private var sending = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -41,13 +42,14 @@ struct DenySheet: View {
                     Text("Just say no").frame(maxWidth: .infinity)
                 }
                 .secondaryAction()
+                .disabled(sending)
                 Button {
                     send(message)
                 } label: {
                     Text("Send").frame(maxWidth: .infinity)
                 }
                 .primaryAction()
-                .disabled(message.isEmpty)
+                .disabled(message.isEmpty || sending)
             }
             Spacer(minLength: 0)
         }
@@ -57,9 +59,20 @@ struct DenySheet: View {
         .onAppear { focused = true }
     }
 
+    /// Closes only once the answer went out; on a failure the sheet and
+    /// its text stay, and the "Not sent" alert says why.
     private func send(_ message: String?) {
+        guard DecisionOptions.isStillCurrent(agent, in: model.fleet) else {
+            model.failure = DecisionOptions.promptChanged
+            dismiss()
+            return
+        }
         let command = LinkCommand.answer(agent: agent.id, .deny, message: message)
-        Task { await model.perform(command) }
-        dismiss()
+        sending = true
+        Task {
+            let ok = await model.perform(command)
+            sending = false
+            if ok { dismiss() }
+        }
     }
 }
