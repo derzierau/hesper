@@ -51,9 +51,9 @@ type TranscriptPage struct {
 }
 
 // TranscriptStreamParams are agents.transcriptStream's: the stream runs
-// on channel Ch of the caller's link Link, like agents.attach. It sends
-// the newest Limit items (0: the default) after the item at After (0:
-// from the start), then every new item as the transcript grows.
+// on channel Ch of the caller's link Link, like agents.attach. It sends,
+// without After, the newest Limit items (0: the default); with After,
+// every item after it; then every new item as the transcript grows.
 type TranscriptStreamParams struct {
 	Link  string `json:"link"`
 	Ch    uint32 `json:"ch"`
