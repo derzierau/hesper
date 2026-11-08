@@ -519,9 +519,11 @@ in the host's `controllers.json` (absent while enforcement is off). Both
 are absent while the size is owned on the host itself (a local
 `hesperd attach --owner`, a Hesper.app tile) or by nobody. The host sends
 a `changed` event (locally an `agents.changed` note) whenever they change:
-a remote owner attaches, it detaches (`X`; the size stays, fits apply as
-before) or a newer owner takes over (the latest owner wins, a local one
-included). They are not persisted: a restarted host starts with none. A
+a remote owner attaches, it detaches (`X`) or a newer owner takes over
+(the latest owner wins, a local one included). When the last remote
+owner detaches, the PTY goes back to the size it had before the first
+remote owner took it, unless view attaches ask for a fit (then the fit
+applies, as before); a local owner in between keeps its own size. They are not persisted: a restarted host starts with none. A
 controlling hesperd shows its own device's ownership as local (it omits
 both fields when `sizeOwner` is its own device id).
 

@@ -8,7 +8,10 @@ import "time"
 // one. The PTY takes the largest fit (the widest cols and the most rows
 // among them), never below MinFitCols x MinFitRows, debounced by
 // FitDebounce and only when a side changes by at least FitStep. An owner
-// always wins; when it detaches, the fit applies again.
+// always wins; when it detaches, the fit applies again. A remote owner
+// (Origin not this Mac) that detaches with no fit asking gives the PTY
+// back the size it had before the first remote take-over; a local owner
+// in between drops that size, since the Mac sized the PTY itself.
 
 const (
 	// FitDebounce is how long the fit must stay unchanged before the PTY

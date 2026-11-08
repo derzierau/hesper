@@ -67,6 +67,10 @@ type Term struct {
 	// ownerFrom is where owner attached from; set once per owner attach,
 	// cleared when that owner detaches.
 	ownerFrom Origin
+	// restoreCols, restoreRows is the size the PTY had before the first
+	// remote owner took it (0: none); it comes back when the remote
+	// owner detaches and no fit asks for a size (fit.go).
+	restoreCols, restoreRows int
 	// fitTimer debounces sizing the PTY to the views' fits (fit.go).
 	fitTimer *time.Timer
 	exit     *wire.Exit

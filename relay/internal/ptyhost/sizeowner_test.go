@@ -104,10 +104,10 @@ func TestOwnerOrigin(t *testing.T) {
 	if c, r := tm.Size(); c != 46 || r != 19 {
 		t.Fatalf("size %dx%d", c, r)
 	}
-	// It lets go: cleared, the size stays.
+	// It lets go: cleared, the size from before it comes back.
 	owner.Close()
 	expect("cleared on detach", Origin{}, 2)
-	if c, r := tm.Size(); c != 46 || r != 19 {
+	if c, r := tm.Size(); c != 80 || r != 24 {
 		t.Fatalf("size after detach %dx%d", c, r)
 	}
 

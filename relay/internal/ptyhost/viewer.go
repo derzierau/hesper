@@ -89,6 +89,12 @@ func (t *Term) AttachFrom(conn net.Conn, r *bufio.Reader, req wire.AttachRequest
 	resized, ownerChanged := false, false
 	if rw && req.Owner {
 		t.owner = v
+		if origin == (Origin{}) {
+			// The Mac sizes it itself: nothing to give back.
+			t.restoreCols, t.restoreRows = 0, 0
+		} else if t.restoreCols == 0 {
+			t.restoreCols, t.restoreRows = t.cols, t.rows
+		}
 		if t.ownerFrom != origin {
 			t.ownerFrom, ownerChanged = origin, true
 		}
@@ -151,16 +157,25 @@ func Refuse(conn net.Conn, err *wire.Error) {
 func (t *Term) detach(v *viewer) {
 	t.mu.Lock()
 	delete(t.viewers, v)
-	ownerChanged := false
+	ownerChanged, resized := false, false
 	if t.owner == v {
-		// The size stays, unless view attaches ask for a fit.
+		// A remote owner gives the size back; otherwise the size stays.
+		// View attaches that ask for a fit win either way.
 		t.owner = nil
+		if _, _, fit := t.fitTarget(); !fit && t.restoreCols > 0 {
+			resized, _ = t.resizeLocked(t.restoreCols, t.restoreRows)
+		}
+		t.restoreCols, t.restoreRows = 0, 0
 		t.scheduleFit()
 		if t.ownerFrom != (Origin{}) {
 			t.ownerFrom, ownerChanged = Origin{}, true
 		}
 	}
+	cols, rows := t.cols, t.rows
 	t.mu.Unlock()
+	if resized && t.cfg.OnResize != nil {
+		t.cfg.OnResize(cols, rows)
+	}
 	if ownerChanged && t.cfg.OnOwner != nil {
 		t.cfg.OnOwner()
 	}
