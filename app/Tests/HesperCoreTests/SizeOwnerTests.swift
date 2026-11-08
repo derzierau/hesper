@@ -104,6 +104,13 @@ import Testing
         C(agentID: agent, window: window, focusRole: focus, readWrite: focus || rw, remoteOwned: remote, takingBack: takingBack)
     }
 
+    @Test func aKeyTakesBackOnlyTheTerminalItTargets() {
+        let cs = [c("a", 1, focus: true, remote: true), c("b", 1, rw: true, remote: true)]
+        #expect(SizeOwner.keyTakeBackTarget(cs, targeted: [false, false]) == nil) // another control has focus
+        #expect(SizeOwner.keyTakeBackTarget(cs, targeted: [false, true]) == 1)
+        #expect(SizeOwner.keyTakeBackTarget(cs, targeted: [true, false]) == 0)
+    }
+
     @Test func aRemoteOwnerMakesKeyAndNonKeyPanesViews() {
         let cs = [
             c("a", 1, focus: true, remote: true),  // a's focus view in the key window

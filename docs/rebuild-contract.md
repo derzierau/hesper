@@ -1572,8 +1572,11 @@ the key window too, and its tile header shows "On <sizeOwnerName>" ("On
 iPhone" without a name). A keystroke that would type into the agent, or a
 click in its terminal area, makes that pane the owner at once (latest
 owner wins; a key typed meanwhile is held and replayed into the owner
-surface). hesperd then clears `sizeOwner` and the rule above applies again
-(debounced). A daemon that omits the fields leaves the rule unchanged.
+surface). Keys aimed at another control leave that control's input and
+size ownership alone. A read-only focus pane keeps keyboard focus on its
+focus view until the owner surface is ready. hesperd then clears
+`sizeOwner` and the rule above applies again (debounced). A daemon that
+omits the fields leaves the rule unchanged.
 
 **Walls and scopes.** Each wall has its own layout, card width and
 selection, and a scope (toolbar pill "All · 12" / "All · 8 of 12" /

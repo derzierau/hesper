@@ -60,6 +60,13 @@ public enum SizeOwner {
         return out
     }
 
+    /// A key may take back size only for the read-write terminal it would
+    /// reach. A focused control outside the terminal has no target.
+    public static func keyTakeBackTarget(_ cs: [Candidate], targeted: [Bool]) -> Int? {
+        guard cs.count == targeted.count else { return nil }
+        return cs.indices.first { targeted[$0] && cs[$0].remoteOwned && cs[$0].readWrite }
+    }
+
     /// How a terminal attaches.
     public enum Attach: Equatable, Sendable {
         /// `--owner`, read-write: the pane's grid becomes the PTY's size.

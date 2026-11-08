@@ -221,6 +221,11 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         // takes typing too: as a view it could not be first responder.
         let takeFocus = surfaceIsInteractive || (role == .focus && p.acceptsInput && (hadFocus || host.window?.isKeyWindow == true))
         if takeFocus, let w = host.window { w.makeFirstResponder(p.view) }
+        if role == .focus, hadFocus, !p.acceptsInput {
+            var ancestor = host.superview
+            while let view = ancestor, !(view is FocusView) { ancestor = view.superview }
+            if let focus = ancestor { host.window?.makeFirstResponder(focus) }
+        }
         surfaceMetricsDidChange(p)
         if p.acceptsInput {
             for e in heldInput.drain(now: ProcessInfo.processInfo.systemUptime) { send(e, to: p.view) }

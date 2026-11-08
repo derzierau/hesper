@@ -244,10 +244,24 @@ final class SizeOwnership {
         if e.type == .leftMouseDown {
             target = ts.first { $0.host.bounds.contains($0.host.convert(e.locationInWindow, from: nil)) }
         } else {
-            // Only keys that would type into the agent, not into a field.
-            guard w.isKeyWindow, !(w.firstResponder is NSTextView),
+            guard w.isKeyWindow,
                   TerminalKeys.bytes(KeyChord(event: e), characters: e.characters) != nil else { return false }
-            target = ts.first { $0.role == .focus } ?? ts.first { $0.interactive }
+            let responder = w.firstResponder
+            let targeted = ts.map { t in
+                if responder === t.surface?.view { return true }
+                if let wall = responder as? WallView {
+                    return t.role == .tile && t.interactive && t.host.isDescendant(of: wall)
+                }
+                if let focus = responder as? FocusView {
+                    return t.role == .focus && t.host.isDescendant(of: focus)
+                }
+                return false
+            }
+            let cs = ts.map { t in
+                SizeOwner.Candidate(agentID: t.agent.id, window: nil, focusRole: t.role == .focus,
+                                    readWrite: t.readWrite, remoteOwned: true, takingBack: t.takingSizeBack)
+            }
+            target = SizeOwner.keyTakeBackTarget(cs, targeted: targeted).map { ts[$0] }
         }
         guard let t = target else { return false }
         if t.takingSizeBack {

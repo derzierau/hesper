@@ -36,6 +36,7 @@ final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
     static let slideFadeFrom: Float = 0.35
 
     override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
 
     init(model: AppModel) {
         self.model = model
@@ -145,11 +146,11 @@ final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
     func focusTerminal() {
         guard let t = terminal, let v = t.surface?.view else {
             DispatchQueue.main.async { [weak self] in
-                if let v = self?.terminal?.surface?.view { self?.window?.makeFirstResponder(v) }
+                if self?.terminal?.surface?.view != nil { self?.focusTerminal() }
             }
             return
         }
-        window?.makeFirstResponder(v)
+        if window?.makeFirstResponder(v) != true { window?.makeFirstResponder(self) }
     }
 
     private var cardWidth: CGFloat { max(0, bounds.width - 2 * Self.margin) }
