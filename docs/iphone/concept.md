@@ -390,6 +390,12 @@ the app backgrounds. On return, the first frame is a full redraw, about
 costs well under 1% of a core. Rows update at most at the display rate,
 coalesced per agent.
 
+The phone buffers at most sixteen terminal frames of up to 256 KiB each
+while the renderer catches up. If it falls further behind, it closes only
+that attach. The terminal shows Reconnecting, opens a new attach and takes
+the Mac's full redraw; it never continues drawing a stream with missing
+bytes. Other attaches and the Mac's link keep reading.
+
 **Battery.** No background sockets: WebSockets do not run in the
 background and the app is suspended shortly after leaving the foreground
 ([forum](https://developer.apple.com/forums/thread/716118)). While

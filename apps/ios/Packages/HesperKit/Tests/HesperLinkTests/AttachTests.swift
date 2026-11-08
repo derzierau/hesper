@@ -241,6 +241,66 @@ import Testing
         #expect(await it.next() == .size(cols: 97, rows: 56))
     }
 
+    @Test func aStalledConsumerClosesOnOverflowAndCanReopen() async throws {
+        let closed = Mutex([UInt32]())
+        let stream = AttachChannel(id: 7) { id in closed.withLock { $0.append(id) } }
+        stream.receive(Data(#"{"ok":true,"cols":80,"rows":24}"#.utf8) + Data([10]))
+        var stalled = stream.frames.makeAsyncIterator()
+        #expect(await stalled.next() == .size(cols: 80, rows: 24))
+
+        for i in 0..<17 {
+            stream.receive(Self.inner(0, Data([UInt8(i)])))
+        }
+        try #require(closed.withLock { $0 == [7] })
+        let queued = await Self.all(stream)
+        #expect(queued == (0..<16).map { .data(Data([UInt8($0)])) })
+
+        let reopened = AttachChannel(id: 8) { id in closed.withLock { $0.append(id) } }
+        reopened.receive(Data(#"{"ok":true,"cols":90,"rows":30}"#.utf8) + Data([10]) + Self.inner(0, Data("fresh".utf8)))
+        reopened.close()
+        #expect(await Self.all(reopened) == [.size(cols: 90, rows: 30), .data(Data("fresh".utf8))])
+        #expect(closed.withLock { $0 } == [7, 8])
+    }
+
+    @Test func largeDataFrameUsesBoundedChunks() async {
+        let stream = AttachChannel(id: 7, onClose: { _ in })
+        let data = Data(repeating: 0x61, count: 1 << 20)
+        stream.receive(Data(#"{"ok":true,"cols":80,"rows":24}"#.utf8) + Data([10]) + Self.inner(0, data))
+        stream.close()
+        let chunks = await Self.all(stream).compactMap { frame -> Data? in
+            if case .data(let bytes) = frame { return bytes }
+            return nil
+        }
+        #expect(chunks.count == 4)
+        #expect(chunks.allSatisfy { $0.count <= 256 << 10 })
+        #expect(chunks.reduce(into: Data()) { $0 += $1 } == data)
+    }
+
+    @Test func overflowClosesOnlyItsChannelAndAReattachGetsFreshFrames() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        let (link, updates) = try await Self.linked(host)
+        defer { withExtendedLifetime(updates) {} }
+        let stream = try await link.attach(agent: "M/a1", cols: 80, rows: 24)
+        let first = try #require((stream as? AttachChannel)?.id)
+        for i in 0..<17 {
+            host.push(kind: Self.d, channel: first, Self.inner(0, Data([UInt8(i)])))
+        }
+        let close = LinkFrames.Frame(kind: Self.x, channel: first, payload: Data())
+        for _ in 0..<200 {
+            if host.received.contains(close) { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(host.received.contains(close))
+        let queued = await Self.all(stream)
+        #expect(queued.count == 16)
+        #expect(queued.prefix(2) == [.size(cols: 97, rows: 56), .data(Data("hi".utf8))])
+
+        let again = try await link.attach(agent: "M/a1", cols: 80, rows: 24)
+        #expect((again as? AttachChannel)?.id == first + 1)
+        again.close()
+        #expect(await Self.all(again) == [.size(cols: 97, rows: 56), .data(Data("hi".utf8))])
+    }
+
     @Test func anUnknownMacIsUnavailable() async throws {
         let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
         let (link, updates) = try await Self.linked(host)

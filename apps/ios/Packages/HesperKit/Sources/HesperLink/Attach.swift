@@ -120,6 +120,8 @@ public struct AttachDecoder: Sendable {
 /// `resize` sends RESIZE, `write` typed bytes, `close()` sends `X` and
 /// ends the stream.
 public final class AttachChannel: AttachStream {
+    /// At most 4 MiB of terminal data waits for a slow renderer.
+    static let maxQueuedFrames = 16, maxQueuedDataFrame = 256 << 10
     public let id: UInt32
     public let frames: AsyncStream<AttachFrame>
     private let continuation: AsyncStream<AttachFrame>.Continuation
@@ -144,7 +146,7 @@ public final class AttachChannel: AttachStream {
         self.onClose = onClose
         self.onResize = onResize
         self.onWrite = onWrite
-        (frames, continuation) = AsyncStream.makeStream(of: AttachFrame.self, bufferingPolicy: .unbounded)
+        (frames, continuation) = AsyncStream.makeStream(of: AttachFrame.self, bufferingPolicy: .bufferingOldest(Self.maxQueuedFrames))
     }
 
     /// The payload of one `D` frame for this channel. A malformed stream
@@ -165,12 +167,34 @@ public final class AttachChannel: AttachStream {
         case .success(let (reply, frames)):
             if let reply {
                 if reply.ok, let cols = reply.cols, let rows = reply.rows, cols > 0, rows > 0 {
-                    continuation.yield(.size(cols: cols, rows: rows))
+                    guard enqueue(.size(cols: cols, rows: rows)) else { return }
                 }
                 resolve(.success(reply))
             }
-            for f in frames { continuation.yield(f) }
+            for f in frames {
+                if case .data(let bytes) = f, bytes.count > Self.maxQueuedDataFrame {
+                    for start in stride(from: 0, to: bytes.count, by: Self.maxQueuedDataFrame) {
+                        let end = min(start + Self.maxQueuedDataFrame, bytes.count)
+                        guard enqueue(.data(bytes.subdata(in: start..<end))) else { return }
+                    }
+                } else {
+                    guard enqueue(f) else { return }
+                }
+            }
             if frames.contains(.exit) { end(RelayError(code: "closed", message: "The agent exited")) }
+        }
+    }
+
+    /// Dropping any part of a VT stream invalidates its screen. End this
+    /// attach so the caller reopens it and receives the Mac's full redraw.
+    private func enqueue(_ frame: AttachFrame) -> Bool {
+        switch continuation.yield(frame) {
+        case .enqueued: return true
+        case .dropped:
+            close(RelayError(code: "overflow", message: "The terminal reader fell behind"))
+            return false
+        case .terminated: return false
+        @unknown default: return false
         }
     }
 
