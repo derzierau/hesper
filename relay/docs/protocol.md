@@ -476,6 +476,10 @@ renames to its own machine naming.
 | `review.evidence` | `{id}` | `ReviewEvidence`: what the agent ran, its freshness (right `observe`) |
 | `review.provenance` | `{id, path, line?}` | `ReviewProvenance`: the edit that wrote that line; `sessionId` in the host's naming, renamed by the controller (right `observe`) |
 
+The transcript index skips exceptionally large source lines (roughly
+256 MiB). Their items do not appear in pages or streams and have no
+`agents.transcriptText` result.
+
 ### Links
 
 One link per controller and host: a terminal stream (`agents.link`
