@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -89,11 +90,8 @@ func (f *transcriptFile) update() error {
 	return nil
 }
 
-// page is the items of the last indexed lines before byte offset before
-// (before <= 0: the end), oldest first: whole lines, newest back, until
-// they hold at least limit items or TranscriptPageBytes. A before inside
-// an indexed line leaves that line out too. More: an indexed line exists
-// before the first one returned.
+// page returns items before seq before (before <= 0: the end), oldest
+// first. An item inside a multi-item line can be a page boundary.
 func (f *transcriptFile) page(before int64, limit int) (wire.TranscriptPage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -114,39 +112,42 @@ func (f *transcriptFile) pageIndexed(before int64, limit int) (wire.TranscriptPa
 	if before > 0 {
 		end = sort.Search(len(f.offsets), func(i int) bool { return f.offsets[i] >= before })
 	}
-	var lines [][]wire.TranscriptItem // newest first
-	n, size, i := 0, 0, end-1
-	for ; i >= 0 && n < limit; i-- {
+	var newest []wire.TranscriptItem
+	size := 0
+	for i := end - 1; i >= 0; i-- {
 		off := f.offsets[i]
 		raw, err := lineAt(fh, off, f.size)
 		if err != nil {
 			return wire.TranscriptPage{}, err
 		}
-		if i == end-1 && before > 0 && before < off+int64(len(raw)) {
-			continue
-		}
 		items := itemsFrom(f.kind, bytes.TrimRight(raw, "\r\n"), off)
-		// The first line goes in whatever its size, so paging back
-		// always moves.
-		m := itemsSize(items)
-		if len(lines) > 0 && size+m > TranscriptPageBytes {
-			break
+		for j := len(items) - 1; j >= 0; j-- {
+			it := items[j]
+			if before > 0 && it.Seq >= before {
+				continue
+			}
+			m := itemsSize([]wire.TranscriptItem{it})
+			if len(newest) >= limit || size+m > TranscriptPageBytes-32 {
+				p := wire.TranscriptPage{Items: make([]wire.TranscriptItem, len(newest)), More: true}
+				for k, item := range newest {
+					p.Items[len(newest)-1-k] = item
+				}
+				return p, nil
+			}
+			newest = append(newest, it)
+			size += m
 		}
-		lines = append(lines, items)
-		n += len(items)
-		size += m
 	}
-	p := wire.TranscriptPage{Items: make([]wire.TranscriptItem, 0, n), More: i >= 0}
-	for j := len(lines) - 1; j >= 0; j-- {
-		p.Items = append(p.Items, lines[j]...)
+	p := wire.TranscriptPage{Items: make([]wire.TranscriptItem, len(newest))}
+	for k, item := range newest {
+		p.Items[len(newest)-1-k] = item
 	}
 	return p, nil
 }
 
-// TranscriptPageBytes caps a page's items, marshalled, like a review
-// part (review.PartSize): one reply stays well inside a relay frame. A
-// page stops before the line that would pass it (More is then true);
-// its first line goes in whatever its size.
+// TranscriptPageBytes caps a page's JSON, like a review part
+// (review.PartSize). Leave 32 bytes for the items/more envelope. A page
+// stops before the item that would pass it (More is then true).
 const TranscriptPageBytes = 384 << 10
 
 // itemsSize is the items' size as JSON in a page, a comma each.
@@ -158,6 +159,55 @@ func itemsSize(items []wire.TranscriptItem) int {
 	}
 	return n
 }
+
+// text returns one chunk of a message, selecting the exact item within
+// its source line. A result or an unknown seq has no full-text endpoint.
+func (f *transcriptFile) text(seq int64, offset, limit int) (wire.TranscriptTextChunk, error) {
+	if seq < 0 || offset < 0 {
+		return wire.TranscriptTextChunk{}, wire.Errorf(wire.CodeInvalid, "invalid transcript text offset")
+	}
+	if limit <= 0 || limit > transcriptTextBytes {
+		limit = transcriptTextBytes
+	}
+	limit = max(limit, 4) // enough to make progress across a UTF-8 rune
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.update(); err != nil {
+		return wire.TranscriptTextChunk{}, err
+	}
+	i := sort.Search(len(f.offsets), func(i int) bool { return f.offsets[i] > seq }) - 1
+	if i < 0 {
+		return wire.TranscriptTextChunk{}, wire.Errorf(wire.CodeNotFound, "no transcript message at seq %d", seq)
+	}
+	fh, err := os.Open(f.path)
+	if err != nil {
+		return wire.TranscriptTextChunk{}, fmt.Errorf("open transcript: %w", err)
+	}
+	defer fh.Close()
+	off := f.offsets[i]
+	raw, err := lineAt(fh, off, f.size)
+	if err != nil {
+		return wire.TranscriptTextChunk{}, err
+	}
+	for _, it := range rawItemsFrom(f.kind, bytes.TrimRight(raw, "\r\n"), off) {
+		if it.Seq != seq || it.Kind != wire.ItemUser && it.Kind != wire.ItemAssistant {
+			continue
+		}
+		if offset > len(it.Text) || offset < len(it.Text) && !utf8.RuneStart(it.Text[offset]) {
+			return wire.TranscriptTextChunk{}, wire.Errorf(wire.CodeInvalid, "offset is not a text boundary")
+		}
+		end := min(offset+limit, len(it.Text))
+		for end < len(it.Text) && !utf8.RuneStart(it.Text[end]) {
+			end--
+		}
+		return wire.TranscriptTextChunk{Text: it.Text[offset:end], Next: end, More: end < len(it.Text)}, nil
+	}
+	return wire.TranscriptTextChunk{}, wire.Errorf(wire.CodeNotFound, "no transcript message at seq %d", seq)
+}
+
+// A control byte can take six JSON bytes, so 64 KiB of text stays below
+// the relay's 1 MiB response cap even with worst-case escaping.
+const transcriptTextBytes = 64 << 10
 
 // lineAt reads the line at off of a file indexed to size, newline
 // included.
@@ -239,6 +289,34 @@ func (s *Service) Transcript(ctx context.Context, a wire.Agent, before int64, li
 		return wire.TranscriptPage{}, f.err
 	}
 	return f.page(before, limit)
+}
+
+// TranscriptText retrieves a user or assistant item's full text in
+// bounded, UTF-8-aligned chunks.
+func (s *Service) TranscriptText(ctx context.Context, a wire.Agent, seq int64, offset, limit int) (wire.TranscriptTextChunk, error) {
+	if err := ctx.Err(); err != nil {
+		return wire.TranscriptTextChunk{}, err
+	}
+	path, err := s.TranscriptPath(a)
+	if err != nil {
+		return wire.TranscriptTextChunk{}, err
+	}
+	key := a.Kind + ":" + a.SessionID
+	f := s.transcriptIndex(key, a.Kind, path)
+	defer s.releaseTranscript(key, f)
+	t := time.NewTimer(transcriptWait)
+	defer t.Stop()
+	select {
+	case <-f.ready:
+	case <-t.C:
+		return wire.TranscriptTextChunk{}, wire.Errorf(wire.CodeBusy, "the transcript of %s is being read; try again", a.ID)
+	case <-ctx.Done():
+		return wire.TranscriptTextChunk{}, ctx.Err()
+	}
+	if f.err != nil {
+		return wire.TranscriptTextChunk{}, f.err
+	}
+	return f.text(seq, offset, limit)
 }
 
 // IndexKeep is how long a transcript's index is kept after its last

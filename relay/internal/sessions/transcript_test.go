@@ -206,27 +206,17 @@ func lineOf(offs []int64, seq int64) int64 {
 	return line
 }
 
-// fromLine is items from the line at off on.
-func fromLine(items []wire.TranscriptItem, off int64) []wire.TranscriptItem {
-	for i, it := range items {
-		if it.Seq >= off {
-			return items[i:]
-		}
-	}
-	return nil
-}
-
 func TestTranscriptPage(t *testing.T) {
 	for _, c := range []struct{ kind, path string }{
 		{wire.KindClaude, "testdata/transcript_claude.jsonl"},
 		{wire.KindCodex, "testdata/transcript_codex.jsonl"},
 	} {
-		all, offs := fixtureItems(t, c.kind, c.path)
+		all, _ := fixtureItems(t, c.kind, c.path)
 		f, err := openTranscript(c.path, c.kind)
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Whole lines, from the line of the 3rd last item on.
+		// The newest three items, even if a line has more than one.
 		p, err := f.page(0, 3)
 		if err != nil {
 			t.Fatal(err)
@@ -234,7 +224,7 @@ func TestTranscriptPage(t *testing.T) {
 		if !p.More {
 			t.Errorf("%s: limit 3: More false", c.kind)
 		}
-		sameItems(t, p.Items, fromLine(all, lineOf(offs, all[len(all)-3].Seq)))
+		sameItems(t, p.Items, all[len(all)-3:])
 		p, err = f.page(0, 100)
 		if err != nil {
 			t.Fatal(err)
@@ -253,11 +243,11 @@ func TestTranscriptPageBefore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// An offset inside a line: the lines before that line only.
+	// A cursor just after an item includes that item.
 	line := lineOf(offs, all[len(all)/2].Seq)
 	var want []wire.TranscriptItem
 	for _, it := range all {
-		if it.Seq < line {
+		if it.Seq < line+1 {
 			want = append(want, it)
 		}
 	}

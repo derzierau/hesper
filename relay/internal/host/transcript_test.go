@@ -37,6 +37,30 @@ func (f *fakeTranscripts) Exportable(id string) error { return nil }
 func (f *fakeTranscripts) Transcript(_ context.Context, a wire.Agent, before int64, limit int) (wire.TranscriptPage, error) {
 	return wire.TranscriptPage{Items: []wire.TranscriptItem{{Seq: 1, Kind: wire.ItemUser, Text: a.ID}}}, nil
 }
+func (f *fakeTranscripts) TranscriptText(_ context.Context, a wire.Agent, seq int64, offset, limit int) (wire.TranscriptTextChunk, error) {
+	return wire.TranscriptTextChunk{Text: a.ID, Next: len(a.ID)}, nil
+}
+
+func TestTranscriptTextRoutesToHistory(t *testing.T) {
+	reg, project := testRegistry(t)
+	a, err := reg.Spawn(wire.SpawnParams{Project: project, Task: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Stop(a.ID)
+	s := &Service{Agents: reg, Sessions: &fakeTranscripts{}}
+	params, _ := json.Marshal(wire.TranscriptTextParams{ID: a.ID, Seq: 7})
+	result, err := s.Execute(context.Background(), protocol.Message{
+		Method: "agents.transcriptText", Params: params, Deadline: time.Now().Add(time.Second).UnixMilli(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var chunk wire.TranscriptTextChunk
+	if err := json.Unmarshal(result, &chunk); err != nil || chunk.Text != a.ID || chunk.Next != len(a.ID) || chunk.More {
+		t.Fatalf("text chunk %+v: %v", chunk, err)
+	}
+}
 func (f *fakeTranscripts) FollowTranscript(ctx context.Context, a wire.Agent, after int64, limit int, emit func(wire.TranscriptItem) error) error {
 	if err := emit(wire.TranscriptItem{Seq: 7, Kind: wire.ItemAssistant, Text: "hi"}); err != nil {
 		return err

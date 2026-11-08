@@ -40,6 +40,9 @@ func (f *fakeSessions) Watch(<-chan struct{}, func(string, any) error) {}
 func (f *fakeSessions) Transcript(context.Context, wire.Agent, int64, int) (wire.TranscriptPage, error) {
 	return wire.TranscriptPage{}, nil
 }
+func (f *fakeSessions) TranscriptText(context.Context, wire.Agent, int64, int, int) (wire.TranscriptTextChunk, error) {
+	return wire.TranscriptTextChunk{}, nil
+}
 
 // agents.transcript on a daemon without the shared history answers
 // unsupported, as the host does.

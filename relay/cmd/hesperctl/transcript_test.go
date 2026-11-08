@@ -22,6 +22,9 @@ func (fakeHistory) Transcript(_ context.Context, a wire.Agent, before int64, lim
 		{Seq: 41, Kind: wire.ItemResult, Text: "ok\nmore"},
 	}, More: before == 0}, nil
 }
+func (fakeHistory) TranscriptText(_ context.Context, a wire.Agent, seq int64, offset, limit int) (wire.TranscriptTextChunk, error) {
+	return wire.TranscriptTextChunk{Text: "fix " + a.ID, Next: len("fix " + a.ID)}, nil
+}
 
 func TestTranscriptCommand(t *testing.T) {
 	reg, sock, project := daemonSessions(t, nil, fakeHistory{})

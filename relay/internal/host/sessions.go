@@ -31,6 +31,7 @@ type SessionsHost interface {
 	// TranscriptPath finds it (wire.CodeUnavailable: none).
 	TranscriptPath(a wire.Agent) (string, error)
 	Transcript(ctx context.Context, a wire.Agent, before int64, limit int) (wire.TranscriptPage, error)
+	TranscriptText(ctx context.Context, a wire.Agent, seq int64, offset, limit int) (wire.TranscriptTextChunk, error)
 	FollowTranscript(ctx context.Context, a wire.Agent, after int64, limit int, emit func(wire.TranscriptItem) error) error
 }
 

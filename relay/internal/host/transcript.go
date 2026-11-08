@@ -33,6 +33,26 @@ func (s *Service) transcript(ctx context.Context, m protocol.Message) (json.RawM
 	return protocol.JSON(page), nil
 }
 
+// transcriptText serves a bounded chunk of one message under observe.
+func (s *Service) transcriptText(ctx context.Context, m protocol.Message) (json.RawMessage, error) {
+	var p wire.TranscriptTextParams
+	if err := params(m.Params, &p); err != nil {
+		return nil, err
+	}
+	if s.Sessions == nil {
+		return nil, protocol.Err("unsupported", "Host keeps no history")
+	}
+	a, err := s.agent(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	chunk, err := s.Sessions.TranscriptText(ctx, a, p.Seq, p.Offset, p.Limit)
+	if err != nil {
+		return nil, publicError(err)
+	}
+	return protocol.JSON(chunk), nil
+}
+
 // transcriptStream serves agents.transcriptStream (right observe): the
 // transcript's items as JSON lines on a channel of the caller's link,
 // registered like an attach's. The controller's X ends it; the host

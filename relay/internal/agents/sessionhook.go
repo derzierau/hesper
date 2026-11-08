@@ -23,6 +23,7 @@ type Sessions interface {
 	Watch(done <-chan struct{}, send func(method string, params any) error)
 	// Transcript is a page of an agent's transcript (agents.transcript).
 	Transcript(ctx context.Context, a wire.Agent, before int64, limit int) (wire.TranscriptPage, error)
+	TranscriptText(ctx context.Context, a wire.Agent, seq int64, offset, limit int) (wire.TranscriptTextChunk, error)
 }
 
 // SessionSpawn starts an agent on an existing conversation.

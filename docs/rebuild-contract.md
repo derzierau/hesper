@@ -170,12 +170,12 @@ view that draws the conversation itself (the phone):
 | `seq` | byte offset of the item's line in the transcript file, plus the item's index within the line (0 for the first; a line is longer than its item count, so this never reaches the next line's offset): unique per item, monotonic, stable across daemon restarts; pages are cut at it (`before`, `after`) and views key items by it |
 | `at` | the line's timestamp in Unix ms, when it has one |
 | `kind` | `user`, `assistant`, `tool`, `result` or `system` |
-| `text` | a message's text; a result's output, clipped; a system notice |
+| `text` | a user or assistant message's first 4 KiB of UTF-8 text (or all of it when shorter); a result's clipped output; a system notice |
 | `tool` | a tool call's tool (Codex: the `function_call`'s or `custom_tool_call`'s name) |
 | `summary` | one short line saying what a tool call works on (below) |
 | `id` | a tool call's id |
 | `of` | a result's tool call id |
-| `truncated` | a result's `text` was clipped |
+| `truncated` | a message preview or result's `text` was clipped; use `agents.transcriptText` with the message's `seq` for its complete text |
 | `ok` | results only: false when the tool reported an error (Claude Code `is_error`) |
 
 Dropped: thinking, `isMeta` and sidechain (subagent) lines, Codex
@@ -189,9 +189,16 @@ Codex `function_call` and `custom_tool_call` items are `tool`,
 "[image]" for an image). A `custom_tool_call`'s summary is its
 free-text `input`'s first line, clipped to 80 runes. A system item with a negative `seq` is a marker: the phone
 drops what it has; the newest items follow; today only "Transcript
-restarted". A page (and a stream's backfill without `after`) holds
-whole lines and stops before the line that would take its items past
-384 KiB of JSON; its first line goes in whatever its size.
+restarted". A page (and a stream's backfill without `after`) stops
+before the item that would take it past 384 KiB of JSON. A cursor may
+land inside a source line; the next page includes the earlier items of
+that line. A single stream item remains below the relay's 1 MiB frame.
+
+`agents.transcriptText` retrieves complete user or assistant text by
+`seq`, in chunks of at most 64 KiB of UTF-8 bytes. `offset` and `next`
+are byte offsets in the full text; repeat at `next` while `more` is true.
+Tool names and call IDs are capped at 4 KiB in transcript items so one
+malformed source line cannot make an item exceed a page or link frame.
 
 **Summary rule.** Read, Edit and Write: the file's base name; Bash and
 Codex `shell`: the command's first line, clipped to 80 runes; Grep and

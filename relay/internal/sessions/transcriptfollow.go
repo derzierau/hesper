@@ -24,7 +24,7 @@ var FollowPoll = 250 * time.Millisecond
 // every new complete line's items as the file grows, until ctx ends
 // (ctx.Err()) or emit returns an error. First: after <= 0, the newest
 // limit items (0: wire.TranscriptDefaultLimit, at most
-// wire.TranscriptMaxLimit) as whole lines, oldest first, like a page;
+// wire.TranscriptMaxLimit), oldest first, like a page;
 // after > 0, every item whose Seq is greater than after, not capped by
 // limit (a phone catching up after a reconnect). A file that shrank was
 // rewritten: it sends {Seq: -1, Kind: system, Text: "Transcript

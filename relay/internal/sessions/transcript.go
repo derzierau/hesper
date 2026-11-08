@@ -23,6 +23,7 @@ import (
 const (
 	resultLines  = 60
 	resultBytes  = 4096
+	messageBytes = 4096
 	summaryRunes = 80
 )
 
@@ -32,6 +33,22 @@ const (
 // n-th item of a line (from 0) gets off+n: a line is longer than its
 // item count, so this stays below the next line's offset.
 func itemsFrom(kind string, line []byte, off int64) []wire.TranscriptItem {
+	items := rawItemsFrom(kind, line, off)
+	for i := range items {
+		if items[i].Kind == wire.ItemUser || items[i].Kind == wire.ItemAssistant {
+			items[i].Text, items[i].Truncated = clipMessage(items[i].Text)
+		}
+		// One unusually large tool name or call ID must not produce an
+		// item larger than a page or a link frame.
+		items[i].Tool, _ = clipMessage(items[i].Tool)
+		items[i].ID, _ = clipMessage(items[i].ID)
+		items[i].Of, _ = clipMessage(items[i].Of)
+	}
+	return items
+}
+
+// rawItemsFrom keeps message text for an explicit text-chunk request.
+func rawItemsFrom(kind string, line []byte, off int64) []wire.TranscriptItem {
 	var items []wire.TranscriptItem
 	switch kind {
 	case wire.KindClaude:
@@ -43,6 +60,17 @@ func itemsFrom(kind string, line []byte, off int64) []wire.TranscriptItem {
 		items[i].Seq = off + int64(i)
 	}
 	return items
+}
+
+func clipMessage(text string) (string, bool) {
+	if len(text) <= messageBytes {
+		return text, false
+	}
+	end := messageBytes
+	for !utf8.RuneStart(text[end]) {
+		end--
+	}
+	return text[:end], true
 }
 
 func claudeItems(line []byte, off int64) []wire.TranscriptItem {

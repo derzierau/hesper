@@ -12,7 +12,9 @@ package wire
 // text, or a result's clipped output (Truncated when clipped). Tool and
 // Summary name a tool call and say in one short line what it works on;
 // ID is the call's id, Of a result's call. OK, for results only, is false
-// when the tool reported an error.
+// when the tool reported an error. A user or assistant message is a
+// bounded preview when Truncated is true; agents.transcriptText fetches
+// its complete text in chunks.
 type TranscriptItem struct {
 	Seq       int64  `json:"seq"`
 	At        int64  `json:"at,omitempty"`
@@ -36,7 +38,8 @@ const (
 )
 
 // TranscriptParams are agents.transcript's: Limit items (0: the default)
-// before the item at Before (0: the end of the transcript).
+// before the item at Before (0: the end of the transcript). A page can
+// start or end within a multi-item source line.
 type TranscriptParams struct {
 	ID     string `json:"id"`
 	Before int64  `json:"before,omitempty"`
@@ -48,6 +51,23 @@ type TranscriptParams struct {
 type TranscriptPage struct {
 	Items []TranscriptItem `json:"items"`
 	More  bool             `json:"more"`
+}
+
+// TranscriptTextParams asks for one user or assistant item's full text.
+// Offset is a UTF-8 byte offset; Limit is the maximum unescaped bytes.
+type TranscriptTextParams struct {
+	ID     string `json:"id"`
+	Seq    int64  `json:"seq"`
+	Offset int    `json:"offset,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+// TranscriptTextChunk is one bounded piece. Next is the following byte
+// offset; More says another request at Next is needed.
+type TranscriptTextChunk struct {
+	Text string `json:"text"`
+	Next int    `json:"next"`
+	More bool   `json:"more"`
 }
 
 // TranscriptStreamParams are agents.transcriptStream's: the stream runs
