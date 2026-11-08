@@ -1,6 +1,7 @@
 import HesperCore
 import HesperDesign
 import HesperFleet
+import HesperTerminal
 import SwiftUI
 
 /// The agent view: the live terminal, and under it a dock that follows the
@@ -24,13 +25,13 @@ struct AgentScreen: View {
                 layout {
                     TerminalView(agent: agent, watch: watch)
                     if wide {
-                        Dock(agent: agent)
+                        Dock(agent: agent, watch: watch)
                             .frame(width: Self.dockColumn)
                             .frame(maxHeight: .infinity, alignment: .bottom)
                             .background(Theme.surface, ignoresSafeAreaEdges: .bottom)
                             .overlay(alignment: .leading) { Rectangle().fill(Theme.line).frame(width: DS.Edge.line) }
                     } else {
-                        Dock(agent: agent)
+                        Dock(agent: agent, watch: watch)
                     }
                 }
             }
@@ -49,11 +50,12 @@ struct AgentScreen: View {
 
 /// The dock under the terminal, a Neon bar: the priority card's numbered
 /// options when the agent needs you (a risky Yes asks first, No… opens the
-/// deny sheet), a reply field while it works, Resume once it exited.
+/// deny sheet), Send while it works (Enter in the terminal: what is typed
+/// goes into the agent's own prompt), Resume once it exited.
 private struct Dock: View {
     let agent: Agent
+    let watch: TerminalWatch
     @Environment(FleetModel.self) private var model
-    @State private var reply = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.m) {
@@ -78,26 +80,16 @@ private struct Dock: View {
                 }
                 .frame(maxWidth: .infinity)
             default:
-                HStack(spacing: DS.Spacing.s) {
-                    TextField("Message \(agent.name)", text: $reply, axis: .vertical)
-                        .lineLimit(1...4)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, DS.Spacing.l)
-                        .padding(.vertical, DS.Spacing.m)
-                        .frame(minHeight: DS.Size.control)
-                        .background(Theme.surface)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: DS.Radius.console).strokeBorder(Theme.line, lineWidth: DS.Edge.line)
-                        }
-                    Button("Send", systemImage: "arrow.up") {
-                        send(.reply(agent: agent.id, text: reply))
-                        reply = ""
-                    }
-                    .labelStyle(.iconOnly)
-                    .font(.body.weight(.semibold))
-                    .primaryAction(square: true)
-                    .disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                // Enter, through the surface: it needs no keyboard up. The
+                // label is full width, so the button's fill is too.
+                Button {
+                    watch.press(.enter)
+                } label: {
+                    Label("Send", systemImage: "arrow.up").frame(maxWidth: .infinity)
                 }
+                .font(.body.weight(.semibold))
+                .primaryAction()
+                .disabled(!watch.canType)
             }
         }
         .controlSize(.large)
