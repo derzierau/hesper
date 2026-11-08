@@ -152,6 +152,48 @@ On attach the daemon first sends a DATA frame that redraws the current screen
 exactly (from its `internal/vt` screen copy: clear, every row with attributes,
 cursor position and modes, alternate screen), then live output.
 
+**Transcript items** (added) are what `agents.transcript` and
+`agents.transcriptStream` send (`relay/docs/protocol.md`): an agent's
+Claude Code or Codex transcript parsed, one JSON object per item, for a
+view that draws the conversation itself (the phone):
+
+```json
+{"seq": 1834211, "at": 1762600000123, "kind": "user", "text": "…"}
+{"seq": 1835077, "kind": "assistant", "text": "…"}
+{"seq": 1836002, "kind": "tool", "tool": "Read", "summary": "TerminalView.swift", "id": "toolu_…"}
+{"seq": 1838410, "kind": "result", "of": "toolu_…", "text": "…", "truncated": true, "ok": true}
+{"seq": 1900120, "kind": "system", "text": "Context compacted"}
+```
+
+| Field | Meaning |
+|---|---|
+| `seq` | byte offset of the item's line in the transcript file: monotonic, stable across daemon restarts; pages are cut at it (`before`, `after`) and views key items by it |
+| `at` | the line's timestamp in Unix ms, when it has one |
+| `kind` | `user`, `assistant`, `tool`, `result` or `system` |
+| `text` | a message's text; a result's output, clipped; a system notice |
+| `tool` | a tool call's tool (Codex: the `function_call`'s name) |
+| `summary` | one short line saying what a tool call works on (below) |
+| `id` | a tool call's id |
+| `of` | a result's tool call id |
+| `truncated` | a result's `text` was clipped |
+| `ok` | results only: false when the tool reported an error (Claude Code `is_error`) |
+
+Dropped: thinking, `isMeta` and sidechain (subagent) lines, Codex
+`reasoning` and token events, and user text starting with `<`,
+`[Request interrupted` or `Caveat:` (as shared history does). A Claude
+Code `isCompactSummary` line becomes one `system` item "Context
+compacted"; a transcript that shrinks, `system` "Transcript restarted".
+Codex `function_call` items are `tool`, `function_call_output` items
+`result`.
+
+**Summary rule.** Read, Edit and Write: the file's base name; Bash and
+Codex `shell`: the command's first line, clipped to 80 runes; Grep and
+Glob: the pattern; Agent and Task: its `description`; any other tool:
+empty (views show the tool name alone).
+
+**Clip rule.** A result's `text` is clipped to 60 lines or 4 KiB,
+whichever comes first, with `truncated: true`.
+
 **Size rule.** An agent's PTY has exactly one size. The size owner is the most
 recent `owner:true` rw attachment (the app's focused view); when it detaches,
 the size stays (unless view attaches ask for a fit, below). Every other

@@ -228,7 +228,7 @@ appends a line to `~/.local/state/hesper/audit.log`:
 
 | Right | Methods |
 | --- | --- |
-| `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.screen`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat` (and the unsigned `snapshot`, `ping`) |
+| `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.screen`, `agents.transcript`, `agents.transcriptStream`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat` (and the unsigned `snapshot`, `ping`) |
 | `answer` | `agents.answer` |
 | `type` | `agents.input`, `agents.attach` with mode `rw` |
 | `transfer` | `agents.spawn`, `agents.stop`, `agents.resume`, `agents.remove`, `agents.rename`, `agents.import`, `transfer`, `projects.clone`, `projects.promote`, `projects.scratch`, `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete` |
@@ -425,7 +425,7 @@ closures as `direct.closed`.
 ping goes unanswered for 2 s or the connection fails; a request that may
 have reached the host is resent through the relay only when idempotent
 (`snapshot`, `ping`, `agents.list`, `agents.plan`, `agents.probe`,
-`agents.screen`, `download`, `projects.recent`, `profiles.list`, `fs.stat`; identical inner request), anything else fails `connection_lost`. Controllers fetch a new
+`agents.screen`, `agents.transcript`, `download`, `projects.recent`, `profiles.list`, `fs.stat`; identical inner request), anything else fails `connection_lost`. Controllers fetch a new
 offer through the relay every 10 minutes; the host closes direct
 connections of a device that has not done so for 30 minutes, or that it no
 longer approves.
@@ -459,6 +459,8 @@ renames to its own machine naming.
 | `agents.close` | `{id, reason?: "moved", to?}` | as locally (a move closes its source with reason `moved`) |
 | `checkpoints.restore` | `{key, ref, commit}` | `{path, branch}`: a worktree from a session's checkpoint (right `transfer`) |
 | `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?, alt?}`: the terminal as plain text (right `observe`) |
+| `agents.transcript` | `{id, before?, limit?}` | `{items, more}`: the `limit` transcript items (default 200, max 1000) before the item whose `seq` is `before` (default: the end), oldest first; `more`, older items exist (right `observe`; items: rebuild contract, "Transcript items"). A shell agent, or one without a transcript yet: `unavailable` |
+| `agents.transcriptStream` | `{link, ch, id, after?, limit?}` | `{}`; items as newline-delimited JSON on channel `ch` of the caller's link, newest `limit` first (default 200, after the item whose `seq` is `after` when given), then live as the transcript grows, until the caller closes the channel (right `observe`). A transcript that shrinks sends `{"kind":"system","text":"Transcript restarted"}` and continues from its new end |
 | `projects.clone` | `{url}` | `{path}` |
 | `projects.scratch` | `{name?, task?}` | `{id, path, state}`: a new scratch project on this host (its home) and the host's project state |
 | `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete` | `{id}` | `{id, state}`: done on the scratch's home (this host); `busy` while agents run in it |
