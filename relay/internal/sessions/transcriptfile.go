@@ -127,7 +127,7 @@ func (f *transcriptFile) pageIndexed(before int64, limit int) (wire.TranscriptPa
 				continue
 			}
 			m := itemsSize([]wire.TranscriptItem{it})
-			if len(newest) >= limit || size+m > TranscriptPageBytes-32 {
+			if len(newest) >= limit || size+m > TranscriptPageBytes-128 {
 				p := wire.TranscriptPage{Items: make([]wire.TranscriptItem, len(newest)), More: true}
 				for k, item := range newest {
 					p.Items[len(newest)-1-k] = item
@@ -146,8 +146,9 @@ func (f *transcriptFile) pageIndexed(before int64, limit int) (wire.TranscriptPa
 }
 
 // TranscriptPageBytes caps a page's JSON, like a review part
-// (review.PartSize). Leave 32 bytes for the items/more envelope. A page
-// stops before the item that would pass it (More is then true).
+// (review.PartSize). Leave 128 bytes for the items/more envelope and a
+// possible restart marker in a stream. A page stops before the item
+// that would pass it (More is then true).
 const TranscriptPageBytes = 384 << 10
 
 // itemsSize is the items' size as JSON in a page, a comma each.
@@ -169,7 +170,9 @@ func (f *transcriptFile) text(seq int64, offset, limit int) (wire.TranscriptText
 	if limit <= 0 || limit > transcriptTextBytes {
 		limit = transcriptTextBytes
 	}
-	limit = max(limit, 4) // enough to make progress across a UTF-8 rune
+	if limit < 4 {
+		return wire.TranscriptTextChunk{}, wire.Errorf(wire.CodeInvalid, "transcript text limit must be at least 4 bytes")
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.update(); err != nil {

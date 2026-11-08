@@ -126,14 +126,18 @@ func TestTranscriptTextRejectsWrongItemAndRuneOffset(t *testing.T) {
 	for _, c := range []struct {
 		seq    int64
 		offset int
+		limit  int
 		code   string
 	}{
-		{0, 1, wire.CodeInvalid}, // in the middle of é
-		{0, -1, wire.CodeInvalid},
-		{1, 0, wire.CodeNotFound}, // a tool has no full message text
-		{2, 0, wire.CodeNotFound},
+		{0, 1, 0, wire.CodeInvalid}, // in the middle of é
+		{0, -1, 0, wire.CodeInvalid},
+		{0, 0, 1, wire.CodeInvalid},
+		{0, 0, 2, wire.CodeInvalid},
+		{0, 0, 3, wire.CodeInvalid},
+		{1, 0, 0, wire.CodeNotFound}, // a tool has no full message text
+		{2, 0, 0, wire.CodeNotFound},
 	} {
-		_, err := f.text(c.seq, c.offset, 0)
+		_, err := f.text(c.seq, c.offset, c.limit)
 		var we *wire.Error
 		if !errors.As(err, &we) || we.Code != c.code {
 			t.Errorf("seq %d offset %d: %v, want %s", c.seq, c.offset, err, c.code)
@@ -222,8 +226,12 @@ func TestTranscriptPageBytes(t *testing.T) {
 			t.Fatal(err)
 		}
 		pages++
-		if n := itemsSize(p.Items); n > TranscriptPageBytes {
-			t.Fatalf("page %d: %d bytes of items", pages, n)
+		b, err := json.Marshal(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(b) > TranscriptPageBytes {
+			t.Fatalf("page %d: %d serialized bytes", pages, len(b))
 		}
 		got = append(p.Items, got...)
 		if !p.More {

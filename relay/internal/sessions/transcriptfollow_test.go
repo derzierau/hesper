@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,70 @@ import (
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
+
+func TestFollowReconnectSplitsMultiItemLineWithinBatchBudget(t *testing.T) {
+	e := newEnv(t)
+	s := e.open(Options{})
+	const sid = "0199a000-0000-7000-8000-00000000f012"
+	dir := filepath.Join(e.claude, "projects", "p")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, sid+".jsonl")
+	first := `{"type":"user","message":{"content":"first"}}` + "\n"
+	second := `{"type":"user","message":{"content":"second"}}` + "\n"
+	var blocks []map[string]any
+	for i := range 200 {
+		blocks = append(blocks, map[string]any{"type": "text", "text": strings.Repeat(string(rune('a'+i%26)), 8000)})
+	}
+	line, _ := json.Marshal(map[string]any{"type": "assistant", "message": map[string]any{"content": blocks}})
+	if err := os.WriteFile(path, append([]byte(first+second), append(line, '\n')...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := wire.Agent{ID: "a1", Kind: wire.KindClaude, SessionID: sid}
+	f, err := openTranscript(path, a.Kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := int64(len(first) + len(second))
+	after := base // reconnect after the first item of the large line
+	batch, next, gen, err := f.backfill(after, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size := itemsSize(batch); size > TranscriptPageBytes {
+		t.Fatalf("first reconnect batch is %d bytes, cap %d", size, TranscriptPageBytes)
+	}
+	var direct []wire.TranscriptItem
+	for batches := 0; next.line < f.size && batches < 10; batches++ {
+		direct = append(direct, batch...)
+		batch, next, gen, err = f.tail(next, gen, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if size := itemsSize(batch); size > TranscriptPageBytes {
+			t.Fatalf("later reconnect batch is %d bytes, cap %d", size, TranscriptPageBytes)
+		}
+	}
+	direct = append(direct, batch...)
+	if len(direct) != 199 {
+		t.Fatalf("batched %d of 199 items", len(direct))
+	}
+	for i, it := range direct {
+		if it.Seq != base+int64(i+1) {
+			t.Fatalf("batch item %d has seq %d", i, it.Seq)
+		}
+	}
+	items, _, cancel := follow(t, s, a, after, 1)
+	defer cancel()
+	for i := 1; i < 200; i++ {
+		it := nextItem(t, items, time.Second)
+		if it.Seq != base+int64(i) || it.Kind != wire.ItemAssistant {
+			t.Fatalf("item %d: seq %d kind %s", i, it.Seq, it.Kind)
+		}
+	}
+	noItem(t, items, 50*time.Millisecond)
+}
 
 func TestFollowBackfillIsBatched(t *testing.T) {
 	texts := make([]string, 130)
@@ -29,11 +94,11 @@ func TestFollowBackfillIsBatched(t *testing.T) {
 	if len(items) == 0 || len(items) > 64 {
 		t.Fatalf("first backfill held %d items, want 1..64", len(items))
 	}
-	if next >= f.size {
-		t.Fatalf("first backfill advanced to %d of %d before emitting the rest", next, f.size)
+	if next.line >= f.size {
+		t.Fatalf("first backfill advanced to %d of %d before emitting the rest", next.line, f.size)
 	}
 	got := append([]wire.TranscriptItem(nil), items...)
-	for next < f.size {
+	for next.line < f.size {
 		items, next, gen, err = f.tail(next, gen, 1)
 		if err != nil {
 			t.Fatal(err)
@@ -94,8 +159,12 @@ func follow(t *testing.T, s *Service, a wire.Agent, after int64, limit int) (<-c
 	items, done, fin := make(chan wire.TranscriptItem, 100), make(chan error, 1), make(chan struct{})
 	go func() {
 		done <- s.FollowTranscript(ctx, a, after, limit, func(it wire.TranscriptItem) error {
-			items <- it
-			return nil
+			select {
+			case items <- it:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		})
 		close(fin)
 	}()
