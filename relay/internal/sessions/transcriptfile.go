@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -32,10 +33,18 @@ type transcriptFile struct {
 	offsets []int64 // ascending
 	size    int64   // bytes indexed: to the end of the last complete line
 	gen     int     // times the file shrank and was indexed again
-	refs    int     // streams following it (FollowTranscript); s.mu guards it
+
+	// ready closes when the first pass (indexTranscript) is done; err is
+	// its error, read after ready.
+	ready chan struct{}
+	err   error
+	// refs counts the pages and streams using it; idle drops it
+	// IndexKeep after the last. s.mu guards both.
+	refs int
+	idle *time.Timer
 }
 
-// openTranscript indexes the transcript at path in one pass.
+// openTranscript indexes the transcript at path in one pass (tests).
 func openTranscript(path, kind string) (*transcriptFile, error) {
 	f := &transcriptFile{path: path, kind: kind}
 	if err := f.update(); err != nil {
@@ -212,35 +221,98 @@ func (s *Service) Transcript(ctx context.Context, a wire.Agent, before int64, li
 	if err != nil {
 		return wire.TranscriptPage{}, err
 	}
-	f, err := s.transcriptIndex(a.Kind+":"+a.SessionID, a.Kind, path)
-	if err != nil {
-		return wire.TranscriptPage{}, err
+	key := a.Kind + ":" + a.SessionID
+	f := s.transcriptIndex(key, a.Kind, path)
+	defer s.releaseTranscript(key, f)
+	// The host serves requests one at a time: a long first pass must not
+	// hold the rest up, so the page asks again.
+	t := time.NewTimer(transcriptWait)
+	defer t.Stop()
+	select {
+	case <-f.ready:
+	case <-t.C:
+		return wire.TranscriptPage{}, wire.Errorf(wire.CodeBusy, "the transcript of %s is being read; try again", a.ID)
+	case <-ctx.Done():
+		return wire.TranscriptPage{}, ctx.Err()
+	}
+	if f.err != nil {
+		return wire.TranscriptPage{}, f.err
 	}
 	return f.page(before, limit)
 }
 
-// transcriptIndex is the index of key's transcript at path. It is built
-// without s.mu (that reads the whole file) when there is none yet or the
-// transcript moved; of two built at once, the first stored is kept.
-func (s *Service) transcriptIndex(key, kind, path string) (*transcriptFile, error) {
-	s.mu.Lock()
-	f := s.transcripts[key]
-	s.mu.Unlock()
-	if f != nil && f.path == path {
-		return f, nil
-	}
-	nf, err := openTranscript(path, kind)
-	if err != nil {
-		return nil, err
-	}
+// IndexKeep is how long a transcript's index is kept after its last
+// user (page or stream) is done, so the next page does not read the
+// whole file again.
+var IndexKeep = time.Minute
+
+// transcriptWait is how long a page waits for a transcript's first
+// pass before it answers busy.
+var transcriptWait = 2 * time.Second
+
+// transcriptIndexHook (tests) runs before a first pass.
+var transcriptIndexHook func()
+
+// transcriptIndex is the index of key's transcript at path, with one
+// more user (releaseTranscript drops it). When there is none yet or the
+// transcript moved, a new one is stored and its first pass runs in a
+// goroutine; f.ready closes when it is done (f.err its error). Every
+// user of the key shares that pass.
+func (s *Service) transcriptIndex(key, kind, path string) *transcriptFile {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if f := s.transcripts[key]; f != nil && f.path == path {
-		return f, nil
+	f := s.transcripts[key]
+	if f == nil || f.path != path {
+		f = &transcriptFile{path: path, kind: kind, ready: make(chan struct{})}
+		if s.transcripts == nil {
+			s.transcripts = map[string]*transcriptFile{}
+		}
+		s.transcripts[key] = f
+		go s.indexTranscript(key, f)
 	}
-	if s.transcripts == nil {
-		s.transcripts = map[string]*transcriptFile{}
+	f.refs++
+	if f.idle != nil {
+		f.idle.Stop()
+		f.idle = nil
 	}
-	s.transcripts[key] = nf
-	return nf, nil
+	return f
+}
+
+// indexTranscript is f's first pass. A pass that failed is dropped, so
+// the next user tries again.
+func (s *Service) indexTranscript(key string, f *transcriptFile) {
+	if transcriptIndexHook != nil {
+		transcriptIndexHook()
+	}
+	f.mu.Lock()
+	err := f.update()
+	f.mu.Unlock()
+	if err != nil {
+		s.mu.Lock()
+		if s.transcripts[key] == f {
+			delete(s.transcripts, key)
+		}
+		s.mu.Unlock()
+	}
+	f.err = err
+	close(f.ready)
+}
+
+// releaseTranscript drops a user of key's index f; IndexKeep after the
+// last one, f is dropped unless it was used or replaced meanwhile.
+func (s *Service) releaseTranscript(key string, f *transcriptFile) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f.refs--; f.refs > 0 || s.transcripts[key] != f {
+		return
+	}
+	var t *time.Timer
+	t = time.AfterFunc(IndexKeep, func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if f.idle == t && f.refs == 0 && s.transcripts[key] == f {
+			delete(s.transcripts, key)
+		}
+	})
+	f.idle = t
 }

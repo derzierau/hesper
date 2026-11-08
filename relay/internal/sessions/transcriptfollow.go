@@ -46,21 +46,17 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 		return err
 	}
 	key := a.Kind + ":" + a.SessionID
-	f, err := s.transcriptIndex(key, a.Kind, path)
-	if err != nil {
-		return err
+	f := s.transcriptIndex(key, a.Kind, path)
+	defer s.releaseTranscript(key, f)
+	// The caller is a goroutine of its own: wait for the first pass.
+	select {
+	case <-f.ready:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	s.mu.Lock()
-	f.refs++
-	// The last follower before us may have dropped f since the lookup.
-	if s.transcripts[key] == nil {
-		if s.transcripts == nil {
-			s.transcripts = map[string]*transcriptFile{}
-		}
-		s.transcripts[key] = f
+	if f.err != nil {
+		return fmt.Errorf("follow transcript of %s: %w", a.ID, f.err)
 	}
-	s.mu.Unlock()
-	defer s.unfollow(key, f)
 
 	poll := FollowPoll
 	items, next, gen, err := f.backfill(after, limit)
@@ -84,16 +80,6 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 		case <-t.C:
 		}
 		items, next, gen, err = f.tail(next, gen, limit)
-	}
-}
-
-// unfollow drops a follower of key's transcript f; the last one drops
-// the index unless it was replaced meanwhile.
-func (s *Service) unfollow(key string, f *transcriptFile) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if f.refs--; f.refs == 0 && s.transcripts[key] == f {
-		delete(s.transcripts, key)
 	}
 }
 

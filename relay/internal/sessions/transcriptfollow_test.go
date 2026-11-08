@@ -188,6 +188,9 @@ func TestFollowStopsOnCancel(t *testing.T) {
 	// Polls long enough that "within two" is not a race with the
 	// scheduler under -race.
 	FollowPoll = 50 * time.Millisecond
+	oldKeep := IndexKeep
+	IndexKeep = time.Millisecond
+	t.Cleanup(func() { IndexKeep = oldKeep })
 	items, done, cancel := follow(t, s, a, 0, 10)
 	nextItem(t, items, time.Second)
 	s.mu.Lock()
@@ -205,10 +208,18 @@ func TestFollowStopsOnCancel(t *testing.T) {
 	case <-time.After(2 * FollowPoll):
 		t.Fatal("still following two polls after cancel")
 	}
-	s.mu.Lock()
-	n = len(s.transcripts)
-	s.mu.Unlock()
-	if n != 0 {
-		t.Fatalf("after cancel: %d transcripts indexed, want 0", n)
+	// Dropped IndexKeep after the stream (TestTranscriptIndexKeep).
+	deadline := time.Now().Add(time.Second)
+	for {
+		s.mu.Lock()
+		n = len(s.transcripts)
+		s.mu.Unlock()
+		if n == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after cancel: %d transcripts indexed, want 0", n)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
