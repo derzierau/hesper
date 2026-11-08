@@ -20,11 +20,16 @@ import UIKit
 /// inside a background task, so the Mac gets its size back. Both open
 /// again on return. A link that breaks reads "Reconnecting…" and attaches
 /// again; a Mac that refuses reads its reason.
+///
+/// On a typing attach a tap on the terminal brings up the keyboard and a
+/// second tap, or a swipe down, puts it away; the keys go straight to the
+/// agent. The area shrinks for the keyboard, so a fitted grid follows it.
 struct TerminalView: View {
     let agent: Agent
+    /// The agent screen's, so the dock reaches the same terminal.
+    let watch: TerminalWatch
     @Environment(FleetModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    @State private var watch = TerminalWatch()
     /// The app was in the background for 30 s: the attach is closed.
     @State private var asleep = false
 
@@ -62,6 +67,7 @@ struct TerminalView: View {
             await watch.run(agent, model: model)
         }
         .onChange(of: agent.sizeOwner) { _, owner in watch.ownerChanged(owner) }
+        .onDisappear { watch.blurKeyboard() }
         .task(id: scenePhase) {
             guard scenePhase != .active else {
                 asleep = false
@@ -171,6 +177,8 @@ final class TerminalWatch {
     /// Whether the phone owns the Mac's terminal size and still holds it.
     private(set) var fit = FitState(plan: AttachPlan(mode: .mirror, grid: AttachPlan.fallbackSize), device: nil)
     var fitsPhone: Bool { fit.isFitted }
+    /// The open attach may type: keys and the dock's Send reach the agent.
+    private(set) var canType = false
 
     /// The open attach, for RESIZE.
     @ObservationIgnored private var stream: (any AttachStream)?
@@ -234,18 +242,22 @@ final class TerminalWatch {
             used = true
             start(plan, device: model.device(on: agent.machine))
             self.stream = stream
-            // Wheel input reaches the agent only on a read-write attach.
+            // Keys and wheel input reach the agent only on a read-write
+            // attach.
             if plan.typing {
                 surface.onInput = { @Sendable data in stream.write(data) }
             } else {
                 surface.onInput = nil
             }
+            canType = plan.typing
             let exited = await withTaskCancellationHandler {
                 await consume(stream)
             } onCancel: {
                 stream.close()
             }
             surface.onInput = nil
+            canType = false
+            blurKeyboard()
             self.stream = nil
             pendingFit?.cancel()
             pendingFit = nil
@@ -266,6 +278,7 @@ final class TerminalWatch {
     /// asked for. A mirror keeps its mode, or leaves the fitted one.
     private func start(_ plan: AttachPlan, device: String?) {
         stopFling()
+        blurKeyboard()
         fit = FitState(plan: plan, device: device)
         if plan.owner {
             viewport.mode = .fitted
@@ -356,6 +369,27 @@ final class TerminalWatch {
         viewport.setGrid(cols: cols, rows: rows)
         if first, !fit.isFitted { viewport.mode = Viewport.defaultMode(cols: cols) }
         follow()
+    }
+
+    // MARK: Typing
+
+    /// Up when it is down and the attach may type, else down.
+    func toggleKeyboard() {
+        if surface.keyboardUp {
+            surface.blurKeyboard()
+        } else if canType {
+            surface.focusKeyboard()
+        }
+    }
+
+    func blurKeyboard() {
+        surface.blurKeyboard()
+    }
+
+    /// Sends `key` to the agent; nothing on a read-only attach.
+    func press(_ key: TerminalSurface.Key) {
+        guard canType else { return }
+        surface.press(key)
     }
 
     // MARK: Gestures (the canvas's container)
@@ -541,9 +575,10 @@ private struct TerminalCanvas: UIViewRepresentable {
 /// Places the surface by `layer.position` (the pan, bottom-anchored) and
 /// `transform` (the scale), never by `frame`: the surface's bounds are the
 /// Mac's grid, which `TerminalSurface.resize` owns.
-final class TerminalContainer: UIView {
+final class TerminalContainer: UIView, UIGestureRecognizerDelegate {
     private let watch: TerminalWatch
     private var pinchStart: CGFloat = 1
+    private let swipeDown = UISwipeGestureRecognizer()
 
     init(watch: TerminalWatch) {
         self.watch = watch
@@ -556,7 +591,16 @@ final class TerminalContainer: UIView {
         doubleTap.numberOfTapsRequired = 2
         let drag = UIPanGestureRecognizer(target: self, action: #selector(dragged(_:)))
         drag.maximumNumberOfTouches = 1
-        for g in [pinch, doubleTap, drag] { addGestureRecognizer(g) }
+        // A single tap waits for the double tap to fail, or a double tap
+        // would toggle the keyboard twice; a drag fails it by moving.
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+        tap.require(toFail: doubleTap)
+        // Puts the keyboard away alongside the drag (which still scrolls),
+        // and only while the keyboard is up.
+        swipeDown.direction = .down
+        swipeDown.addTarget(self, action: #selector(swipedDown))
+        swipeDown.delegate = self
+        for g in [pinch, doubleTap, tap, drag, swipeDown] { addGestureRecognizer(g) }
 
         watch.onPlace = { [weak self] in self?.place() }
     }
@@ -603,6 +647,24 @@ final class TerminalContainer: UIView {
 
     @objc private func doubleTapped() {
         watch.toggleMode()
+    }
+
+    @objc private func tapped() {
+        watch.toggleKeyboard()
+    }
+
+    @objc private func swipedDown() {
+        watch.blurKeyboard()
+    }
+
+    override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        g === swipeDown ? watch.surface.keyboardUp : super.gestureRecognizerShouldBegin(g)
+    }
+
+    func gestureRecognizer(
+        _ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+        g === swipeDown
     }
 
     @objc private func dragged(_ g: UIPanGestureRecognizer) {

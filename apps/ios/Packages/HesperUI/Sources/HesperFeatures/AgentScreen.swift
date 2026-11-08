@@ -8,6 +8,8 @@ import SwiftUI
 struct AgentScreen: View {
     let id: String
     @Environment(FleetModel.self) private var model
+    /// The terminal, shared with the dock.
+    @State private var watch = TerminalWatch()
 
     /// The dock's width as a column, in landscape.
     private static let dockColumn: CGFloat = 320
@@ -20,7 +22,7 @@ struct AgentScreen: View {
                 // terminal (and its attach) instead of making a new one.
                 let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
                 layout {
-                    TerminalView(agent: agent)
+                    TerminalView(agent: agent, watch: watch)
                     if wide {
                         Dock(agent: agent)
                             .frame(width: Self.dockColumn)
