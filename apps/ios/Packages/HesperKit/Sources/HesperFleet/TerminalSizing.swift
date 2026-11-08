@@ -17,10 +17,14 @@ public struct HostSizing: Equatable, Sendable {
         self.device = device
     }
 
+    /// The phone may attach read-write: the `type` right. Unknown rights
+    /// try it; a `forbidden` reply falls back to read only.
+    public var canType: Bool { rights.isEmpty || rights.contains("type") }
+
     /// The phone may take the size: the capability, and the `type` right
     /// a read-write attach needs. Unknown rights try it; a `forbidden`
     /// reply falls back to the mirror.
-    public var canOwn: Bool { publishesOwner && (rights.isEmpty || rights.contains("type")) }
+    public var canOwn: Bool { publishesOwner && canType }
 }
 
 /// How the agent view attaches (docs/iphone/writable-terminal.md, "C. Take
@@ -28,7 +32,8 @@ public struct HostSizing: Equatable, Sendable {
 /// at the phone's font, or a mirror of the Mac's own grid.
 public struct AttachPlan: Equatable, Sendable {
     public enum Mode: Equatable, Sendable {
-        /// The Mac's grid, read only, scaled and panned to the phone.
+        /// The Mac's grid, scaled and panned to the phone; read-write
+        /// when the phone may type, never the size owner.
         case mirror
         /// The phone owns the size: the grid is what fits its area.
         case fitted
@@ -36,6 +41,9 @@ public struct AttachPlan: Equatable, Sendable {
 
     public var mode: Mode
     public var grid: GridSize
+    /// The attach is `rw`: what the terminal writes back (wheel input as
+    /// mouse reports or arrow keys) goes to the agent. Always true fitted.
+    public var typing: Bool
     /// A fitted attach is the size owner (`owner: true`, mode `rw`).
     public var owner: Bool { mode == .fitted }
 
@@ -46,20 +54,28 @@ public struct AttachPlan: Equatable, Sendable {
     /// The mirror's grid when the Mac has not reported the agent's size.
     public static let fallbackSize = GridSize(cols: 80, rows: 24)
 
-    public init(mode: Mode, grid: GridSize) {
+    /// `typing` nil is `rw` exactly when fitted; a fitted plan always types.
+    public init(mode: Mode, grid: GridSize, typing: Bool? = nil) {
         self.mode = mode
         self.grid = grid
+        self.typing = mode == .fitted || (typing ?? false)
     }
 
-    /// A mirror at the Mac's grid.
-    public static func mirror(_ agent: Agent) -> AttachPlan {
-        AttachPlan(mode: .mirror, grid: agent.size ?? fallbackSize)
+    /// A mirror at the Mac's grid, read-write when `typing`.
+    public static func mirror(_ agent: Agent, typing: Bool = false) -> AttachPlan {
+        AttachPlan(mode: .mirror, grid: agent.size ?? fallbackSize, typing: typing)
     }
+
+    /// A read-only mirror: what is left when the Mac refused `rw`.
+    public static func readOnly(_ agent: Agent) -> AttachPlan { mirror(agent, typing: false) }
 
     /// Fitted when the host lets the phone own the size and the area is
-    /// measured; the mirror otherwise (an older host, no `type` right).
+    /// measured; the mirror otherwise (an older host, no `type` right),
+    /// read-write when the phone may type.
     public static func make(_ agent: Agent, host: HostSizing?, area: CGSize, cell: CGSize) -> AttachPlan {
-        guard let host, host.canOwn, let grid = fit(area: area, cell: cell) else { return mirror(agent) }
+        guard let host, host.canOwn, let grid = fit(area: area, cell: cell) else {
+            return mirror(agent, typing: host?.canType ?? false)
+        }
         return AttachPlan(mode: .fitted, grid: grid)
     }
 

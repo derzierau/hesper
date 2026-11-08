@@ -91,13 +91,52 @@ import Testing
     }
 
     @Test func anOwnerAttachIsReadWriteAtItsGrid() throws {
-        let params = try HostChannel.attachParams(link: "L1", ch: 3, agent: "M/a1", cols: 37, rows: 25, owner: true)
+        let params = try HostChannel.attachParams(link: "L1", ch: 3, agent: "M/a1", cols: 37, rows: 25, typing: true, owner: true)
         let got = try #require(try JSONSerialization.jsonObject(with: params) as? NSDictionary)
         let want = try JSONSerialization.jsonObject(
             with: Data(
                 #"{"ch":3,"link":"L1","mode":"rw","request":{"attach":"M/a1","cols":37,"history":true,"mode":"rw","owner":true,"rows":25}}"#
                     .utf8))
         #expect(got == want as? NSDictionary)
+    }
+
+    @Test func aTypingMirrorIsReadWriteWithoutOwner() throws {
+        let params = try HostChannel.attachParams(link: "L1", ch: 3, agent: "M/a1", cols: 97, rows: 56, typing: true, owner: false)
+        let got = try #require(try JSONSerialization.jsonObject(with: params) as? NSDictionary)
+        let want = try JSONSerialization.jsonObject(
+            with: Data(
+                #"{"ch":3,"link":"L1","mode":"rw","request":{"attach":"M/a1","cols":97,"history":true,"mode":"rw","owner":false,"rows":56}}"#
+                    .utf8))
+        #expect(got == want as? NSDictionary)
+    }
+
+    @Test func inputFrameBytes() {
+        // Type 0, length uint32 BE, the bytes.
+        #expect(AttachDecoder.input(Data("ab".utf8)) == Data([0, 0, 0, 0, 2, 0x61, 0x62]))
+        #expect(AttachDecoder.input(Data(count: 300)).prefix(5) == Data([0, 0, 0, 0x01, 0x2c]))
+    }
+
+    @Test func writeSendsAnInputFrameOnItsChannel() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        let (link, updates) = try await Self.linked(host)
+        defer { withExtendedLifetime(updates) {} }
+        let stream = try await link.attach(agent: "M/a1", cols: 97, rows: 56, typing: true, owner: false)
+        let ch = try #require((stream as? AttachChannel)?.id)
+        #expect(host.params("agents.attach")?["mode"] as? String == "rw")
+        let up = Data([0x1b, 0x5b, 0x41])
+        stream.write(up)
+        for _ in 0..<200 where host.received.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        stream.close()
+        for _ in 0..<200 where host.received.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(
+            host.received == [
+                LinkFrames.Frame(kind: Self.d, channel: ch, payload: AttachDecoder.input(up)),
+                LinkFrames.Frame(kind: Self.x, channel: ch, payload: Data()),
+            ])
+        // A closed attach sends no more.
+        stream.write(up)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(host.received.count == 2)
     }
 
     @Test func resizeFrameBytes() {
@@ -114,7 +153,7 @@ import Testing
         // The fake relay's host publishes no `sizeOwner` capability.
         #expect(link.sizing(on: "M")?.publishesOwner == false)
         #expect(link.sizing(on: "M")?.device == "phone-1")
-        let stream = try await link.attach(agent: "M/a1", cols: 37, rows: 25, owner: true)
+        let stream = try await link.attach(agent: "M/a1", cols: 37, rows: 25, typing: true, owner: true)
         let ch = try #require((stream as? AttachChannel)?.id)
         let p = try #require(host.params("agents.attach"))
         #expect(p["mode"] as? String == "rw")

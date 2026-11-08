@@ -127,15 +127,28 @@ public final class FleetModel {
 
     /// Attaches by `plan`. An owner attach the Mac refuses for lack of the
     /// right or support (`AttachPlan.retriesAsMirror`) is made again as a
-    /// mirror. Returns the stream and the plan it runs.
+    /// mirror that keeps the plan's typing; a read-write mirror refused as
+    /// `forbidden` is made once more read only, and that answer stands.
+    /// Returns the stream and the plan it runs.
     public func attach(_ agent: Agent, plan: AttachPlan) async throws -> (stream: any AttachStream, plan: AttachPlan) {
+        guard plan.owner else { return try await mirror(agent, plan: plan) }
         do {
-            let stream = try await link.attach(agent: agent.id, cols: plan.grid.cols, rows: plan.grid.rows, owner: plan.owner)
-            return (stream, plan)
-        } catch let e as any CodedError where plan.owner && AttachPlan.retriesAsMirror(e.code) {
-            let mirror = AttachPlan.mirror(agent)
-            let stream = try await link.attach(agent: agent.id, cols: mirror.grid.cols, rows: mirror.grid.rows, owner: false)
-            return (stream, mirror)
+            return (try await open(agent, plan), plan)
+        } catch let e as any CodedError where AttachPlan.retriesAsMirror(e.code) {
+            return try await mirror(agent, plan: .mirror(agent, typing: plan.typing))
         }
+    }
+
+    private func mirror(_ agent: Agent, plan: AttachPlan) async throws -> (stream: any AttachStream, plan: AttachPlan) {
+        do {
+            return (try await open(agent, plan), plan)
+        } catch let e as any CodedError where plan.typing && e.code == "forbidden" {
+            let readOnly = AttachPlan.readOnly(agent)
+            return (try await open(agent, readOnly), readOnly)
+        }
+    }
+
+    private func open(_ agent: Agent, _ plan: AttachPlan) async throws -> any AttachStream {
+        try await link.attach(agent: agent.id, cols: plan.grid.cols, rows: plan.grid.rows, typing: plan.typing, owner: plan.owner)
     }
 }

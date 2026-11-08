@@ -20,19 +20,39 @@ import Testing
         #expect(plan.owner)
     }
 
+    @Test func typingNeedsOnlyTheTypeRight() {
+        #expect(HostSizing(publishesOwner: false, rights: ["observe", "type"], device: "p").canType)
+        #expect(HostSizing(publishesOwner: false, rights: [], device: "p").canType)
+        #expect(!HostSizing(publishesOwner: true, rights: ["observe"], device: "p").canType)
+    }
+
+    @Test func aMirrorOnATypingHostIsReadWrite() {
+        let host = HostSizing(publishesOwner: false, rights: ["type"], device: "p")
+        let plan = AttachPlan.make(agent, host: host, area: area, cell: cell)
+        #expect(plan == AttachPlan(mode: .mirror, grid: GridSize(cols: 97, rows: 56), typing: true))
+        #expect(!plan.owner)
+    }
+
+    @Test func inputIsDroppedWithoutTheTypingRight() {
+        #expect(AttachPlan.readOnly(Agent(id: "m/a", size: nil)).typing == false)
+        #expect(AttachPlan(mode: .fitted, grid: GridSize(cols: 37, rows: 25), typing: false).typing)
+    }
+
     @Test func otherwiseTheMirrorAtTheMacsGrid() {
         let mirror = AttachPlan(mode: .mirror, grid: GridSize(cols: 97, rows: 56))
+        // Where the phone may type, the mirror is read-write.
+        let typing = AttachPlan(mode: .mirror, grid: GridSize(cols: 97, rows: 56), typing: true)
         // An older host: no capability.
         var old = host
         old.publishesOwner = false
-        #expect(AttachPlan.make(agent, host: old, area: area, cell: cell) == mirror)
+        #expect(AttachPlan.make(agent, host: old, area: area, cell: cell) == typing)
         // No `type` right.
         var watcher = host
         watcher.rights = ["observe"]
         #expect(AttachPlan.make(agent, host: watcher, area: area, cell: cell) == mirror)
         // An unknown Mac, or an area not measured yet.
         #expect(AttachPlan.make(agent, host: nil, area: area, cell: cell) == mirror)
-        #expect(AttachPlan.make(agent, host: host, area: .zero, cell: cell) == mirror)
+        #expect(AttachPlan.make(agent, host: host, area: .zero, cell: cell) == typing)
         #expect(!mirror.owner)
         // The Mac never reported a size: 80 x 24.
         #expect(AttachPlan.make(Agent(id: "mini/m3"), host: nil, area: area, cell: cell).grid == GridSize(cols: 80, rows: 24))
@@ -157,7 +177,7 @@ import Testing
         #expect(link.sizing(on: "studio")?.canOwn == true)
         #expect(link.sizing(on: "mini")?.canOwn == false)
         #expect(link.sizing(on: "elsewhere") == nil)
-        let owned = try await link.attach(agent: "studio/s1", cols: 37, rows: 25, owner: true)
+        let owned = try await link.attach(agent: "studio/s1", cols: 37, rows: 25, typing: true, owner: true)
         var it = owned.frames.makeAsyncIterator()
         #expect(await it.next() == .size(cols: 37, rows: 25))
         owned.resize(cols: 80, rows: 12)
@@ -175,7 +195,7 @@ import Testing
         var m = mirror.frames.makeAsyncIterator()
         #expect(await m.next() == .size(cols: 97, rows: 56))
         mirror.close()
-        let old = try await link.attach(agent: "mini/m2", cols: 37, rows: 25, owner: true)
+        let old = try await link.attach(agent: "mini/m2", cols: 37, rows: 25, typing: true, owner: true)
         var o = old.frames.makeAsyncIterator()
         #expect(await o.next() == .size(cols: 97, rows: 56))
         old.close()

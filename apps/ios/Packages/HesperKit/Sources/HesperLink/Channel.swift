@@ -208,11 +208,11 @@ extension HostChannel {
     }
 
     /// Opens an attach of `agent` at `cols`x`rows` on a new channel of the
-    /// link, waiting up to `wait` for the link to be up: read only, or as
-    /// the size owner (`attachParams`). Returns once the Mac's reply line
+    /// link, waiting up to `wait` for the link to be up: read only,
+    /// read-write, or as the size owner (`attachParams`). Returns once the Mac's reply line
     /// said ok; throws its error otherwise, `timeout` when no reply came.
     public func attach(
-        agent: String, cols: Int, rows: Int, owner: Bool = false, wait: Duration = .seconds(10)
+        agent: String, cols: Int, rows: Int, typing: Bool = false, owner: Bool = false, wait: Duration = .seconds(10)
     ) async throws -> AttachChannel {
         let clock = ContinuousClock()
         let deadline = clock.now + wait
@@ -230,9 +230,11 @@ extension HostChannel {
             Task { await self?.closed(id, link: link.id) }
         } onResize: { [weak self] id, cols, rows in
             Task { await self?.resized(id, cols: cols, rows: rows, link: link.id) }
+        } onWrite: { [weak self] id, data in
+            Task { await self?.wrote(id, data, link: link.id) }
         }
         attaches[ch] = channel
-        let params = try Self.attachParams(link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, owner: owner)
+        let params = try Self.attachParams(link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, typing: typing, owner: owner)
         let timeout = Task {
             try await Task.sleep(for: .seconds(15))
             channel.end(.timeout)
@@ -259,10 +261,11 @@ extension HostChannel {
 
     /// `agents.attach`'s params (relay/docs/protocol.md, "Links"): the
     /// local attach request, its mode repeated for the rights table. A
-    /// mirror is `ro`; the size owner is `rw` (right `type`) and the PTY
-    /// takes `cols`x`rows`. Both replay the history first.
-    static func attachParams(link: String, ch: UInt32, agent: String, cols: Int, rows: Int, owner: Bool) throws -> Data {
-        let mode = owner ? "rw" : "ro"
+    /// typing attach is `rw` (right `type`), any other `ro`; the size
+    /// owner (always typing) makes the PTY take `cols`x`rows`. All replay
+    /// the history first.
+    static func attachParams(link: String, ch: UInt32, agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) throws -> Data {
+        let mode = typing || owner ? "rw" : "ro"
         let request: [String: Any] = ["attach": agent, "mode": mode, "cols": cols, "rows": rows, "owner": owner, "history": true]
         return try JSONSerialization.data(
             withJSONObject: ["link": link, "ch": Int(ch), "mode": mode, "request": request] as [String: Any], options: .sortedKeys)
@@ -274,8 +277,15 @@ extension HostChannel {
         try? await send(frame: LinkFrames.Frame(kind: Self.kindData, channel: ch, payload: AttachDecoder.resize(cols: cols, rows: rows)))
     }
 
+    /// Typed bytes on an attach's channel (frame type 0), if its link is
+    /// still the open one.
+    private func wrote(_ ch: UInt32, _ data: Data, link: String) async {
+        guard attaches[ch] != nil, openLink?.id == link else { return }
+        try? await send(frame: LinkFrames.Frame(kind: Self.kindData, channel: ch, payload: AttachDecoder.input(data)))
+    }
+
     /// Sends one frame on the open link: `X` to close a channel, RESIZE
-    /// to size an owner attach. The phone sends no bytes (no typing).
+    /// to size an owner attach, typed bytes for a read-write one.
     func send(frame: LinkFrames.Frame) async throws {
         guard let link = openLink else { throw RelayError(code: "unavailable", message: "The Mac is not linked") }
         // Sealed and handed to the socket in one actor turn, so the

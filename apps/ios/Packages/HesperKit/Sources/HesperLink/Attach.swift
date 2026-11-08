@@ -83,8 +83,7 @@ public struct AttachDecoder: Sendable {
     }
 
     /// A RESIZE frame (type 1, relay/pkg/wire/frame.go): cols and rows as
-    /// uint16 BE. The phone's only frame to the Mac; only the size owner's
-    /// counts.
+    /// uint16 BE. Only the size owner's counts.
     public static func resize(cols: Int, rows: Int) -> Data {
         var out = Data([1, 0, 0, 0, 4])
         for v in [cols, rows] {
@@ -93,6 +92,13 @@ public struct AttachDecoder: Sendable {
             out.append(UInt8(n & 0xff))
         }
         return out
+    }
+
+    /// A data frame (type 0) of bytes for the PTY: what the phone's
+    /// terminal writes back. The Mac drops it from a read-only attach.
+    public static func input(_ bytes: Data) -> Data {
+        let n = UInt32(clamping: bytes.count)
+        return Data([0, UInt8(n >> 24), UInt8(n >> 16 & 0xff), UInt8(n >> 8 & 0xff), UInt8(n & 0xff)]) + bytes
     }
 
     /// One frame; nil for RESIZE (it only goes to the Mac) and unknown types.
@@ -111,13 +117,15 @@ public struct AttachDecoder: Sendable {
 }
 
 /// One attach on a channel of a host's link. The link's reader feeds it;
-/// `resize` sends RESIZE, `close()` sends `X` and ends the stream.
+/// `resize` sends RESIZE, `write` typed bytes, `close()` sends `X` and
+/// ends the stream.
 public final class AttachChannel: AttachStream {
     public let id: UInt32
     public let frames: AsyncStream<AttachFrame>
     private let continuation: AsyncStream<AttachFrame>.Continuation
     private let onClose: @Sendable (UInt32) -> Void
     private let onResize: @Sendable (UInt32, Int, Int) -> Void
+    private let onWrite: @Sendable (UInt32, Data) -> Void
 
     private struct State {
         var decoder = AttachDecoder()
@@ -129,11 +137,13 @@ public final class AttachChannel: AttachStream {
 
     init(
         id: UInt32, onClose: @escaping @Sendable (UInt32) -> Void,
-        onResize: @escaping @Sendable (UInt32, Int, Int) -> Void = { _, _, _ in }
+        onResize: @escaping @Sendable (UInt32, Int, Int) -> Void = { _, _, _ in },
+        onWrite: @escaping @Sendable (UInt32, Data) -> Void = { _, _ in }
     ) {
         self.id = id
         self.onClose = onClose
         self.onResize = onResize
+        self.onWrite = onWrite
         (frames, continuation) = AsyncStream.makeStream(of: AttachFrame.self, bufferingPolicy: .unbounded)
     }
 
@@ -209,5 +219,10 @@ public final class AttachChannel: AttachStream {
     public func resize(cols: Int, rows: Int) {
         guard cols > 0, rows > 0, !state.withLock({ $0.ended }) else { return }
         onResize(id, cols, rows)
+    }
+
+    public func write(_ data: Data) {
+        guard !data.isEmpty, !state.withLock({ $0.ended }) else { return }
+        onWrite(id, data)
     }
 }

@@ -94,8 +94,8 @@ public final class FixtureLink: LinkClient {
     /// tick until closed. A mirror gets the Mac's size; an owner attach
     /// sizes the terminal as hesperd does: its grid and every RESIZE come
     /// back as `.size`, and the agent names the phone as its size owner
-    /// until it lets go.
-    public func attach(agent: String, cols: Int, rows: Int, owner: Bool) async throws -> any AttachStream {
+    /// until it lets go. Typing has no PTY here: `write` is dropped.
+    public func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) async throws -> any AttachStream {
         guard state.withLock({ $0.agents[agent] != nil }) else { throw FixtureError.unknownAgent(agent) }
         guard owner, sizing(on: String(agent.split(separator: "/").first ?? ""))?.canOwn == true else {
             return ScriptedTerminal(tick: terminalTick)
@@ -177,6 +177,9 @@ final class ScriptedTerminal: AttachStream {
         guard owner, cols > 0, rows > 0 else { return }
         continuation.yield(.size(cols: cols, rows: rows))
     }
+
+    // The script has no PTY to type into.
+    func write(_ data: Data) {}
 
     func close() { player.cancel() }
 }
