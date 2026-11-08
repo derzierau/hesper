@@ -186,7 +186,9 @@ compacted"; a transcript that shrinks, `system` "Transcript restarted".
 Codex `function_call` items are `tool`, `function_call_output` items
 `result`. A system item with a negative `seq` is a marker: the phone
 drops what it has; the newest items follow; today only "Transcript
-restarted".
+restarted". A page (and a stream's backfill without `after`) holds
+whole lines and stops before the line that would take its items past
+384 KiB of JSON; its first line goes in whatever its size.
 
 **Summary rule.** Read, Edit and Write: the file's base name; Bash and
 Codex `shell`: the command's first line, clipped to 80 runes; Grep and

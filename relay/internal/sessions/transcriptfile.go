@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -81,9 +82,9 @@ func (f *transcriptFile) update() error {
 
 // page is the items of the last indexed lines before byte offset before
 // (before <= 0: the end), oldest first: whole lines, newest back, until
-// they hold at least limit items. A before inside an indexed line leaves
-// that line out too. More: an indexed line exists before the first one
-// returned.
+// they hold at least limit items or TranscriptPageBytes. A before inside
+// an indexed line leaves that line out too. More: an indexed line exists
+// before the first one returned.
 func (f *transcriptFile) page(before int64, limit int) (wire.TranscriptPage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -105,7 +106,7 @@ func (f *transcriptFile) pageIndexed(before int64, limit int) (wire.TranscriptPa
 		end = sort.Search(len(f.offsets), func(i int) bool { return f.offsets[i] >= before })
 	}
 	var lines [][]wire.TranscriptItem // newest first
-	n, i := 0, end-1
+	n, size, i := 0, 0, end-1
 	for ; i >= 0 && n < limit; i-- {
 		off := f.offsets[i]
 		raw, err := lineAt(fh, off, f.size)
@@ -116,14 +117,37 @@ func (f *transcriptFile) pageIndexed(before int64, limit int) (wire.TranscriptPa
 			continue
 		}
 		items := itemsFrom(f.kind, bytes.TrimRight(raw, "\r\n"), off)
+		// The first line goes in whatever its size, so paging back
+		// always moves.
+		m := itemsSize(items)
+		if len(lines) > 0 && size+m > TranscriptPageBytes {
+			break
+		}
 		lines = append(lines, items)
 		n += len(items)
+		size += m
 	}
 	p := wire.TranscriptPage{Items: make([]wire.TranscriptItem, 0, n), More: i >= 0}
 	for j := len(lines) - 1; j >= 0; j-- {
 		p.Items = append(p.Items, lines[j]...)
 	}
 	return p, nil
+}
+
+// TranscriptPageBytes caps a page's items, marshalled, like a review
+// part (review.PartSize): one reply stays well inside a relay frame. A
+// page stops before the line that would pass it (More is then true);
+// its first line goes in whatever its size.
+const TranscriptPageBytes = 384 << 10
+
+// itemsSize is the items' size as JSON in a page, a comma each.
+func itemsSize(items []wire.TranscriptItem) int {
+	n := 0
+	for _, it := range items {
+		b, _ := json.Marshal(it)
+		n += len(b) + 1
+	}
+	return n
 }
 
 // lineAt reads the line at off of a file indexed to size, newline
