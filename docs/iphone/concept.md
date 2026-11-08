@@ -41,7 +41,7 @@ Three rules hold the design together:
 | 1 | See what needs me, across every Mac | Inbox tab, lock screen, Live Activity, widget | `agents.link` events (channel 0) |
 | 2 | Answer or approve | Inbox row, agent dock, notification action | `agents.answer`, `agents.input` (digit for choices) |
 | 3 | Start an agent, or keep a task for later, on any Mac and project | Mic circle next to the tabs, Siri / Action button | `agents.spawn`, `drafts.save`, `projects.recent`, `profiles.list` |
-| 4 | Follow and steer | Agent view: live writable terminal plus reply dock | `agents.attach` `rw` (`owner: false`; `owner: true` after Fit to iPhone), `agents.input` for the reply field |
+| 4 | Follow and steer | Agent view: live writable terminal plus dock | `agents.attach` `rw` (`owner: false`; `owner: true` after Fit to iPhone); keys as frame type 0 |
 | 5 | Stop, resume, close | Agent menu, swipe on rows | `agents.stop`, `agents.resume`, `agents.close` |
 | 6 | Judge the result | Review sheet from the Inbox | `review.list`, `review.diff`, `review.evidence`, `review.accept`, `review.sendBack` |
 | 7 | Know the Macs are fine | Macs tab | inventory (`machines`, `machine.updated`), `snapshot` stats |
@@ -164,11 +164,12 @@ The agent view is the agent's real terminal. Under it sits the dock:
 - **needs you**: the decision as native buttons (Allow · Always · Deny…,
   or the numbered choices). Deny… opens a field for "tell Claude what to do
   instead".
-- **working, done, idle**: a reply field ("Message migrations"), a mic, and
-  a **Keyboard** button that puts the focus in the terminal itself. The
-  reply field sends whole messages with `agents.input`. In the terminal,
-  every key goes straight to the agent, as on the Mac. The PTY keeps the
-  Mac's size until the owner taps Fit to iPhone.
+- **working, done, idle**: one full-width **Send** that presses Enter;
+  typing goes into the terminal. A tap on the terminal brings up the
+  keyboard with a key bar (Esc, Tab, Ctrl, arrows); a second tap or a
+  swipe down puts it away. Every key goes straight to the agent, as on
+  the Mac, into Claude Code's own prompt. A fitted terminal shrinks to
+  the rows above the keyboard.
 - **exited**: Resume and Close.
 - **error**: the error line, Open on Mac, Resume, Close.
 

@@ -7,7 +7,12 @@ agent view opens (the owner's decision of 7 Nov, replacing the explicit
 tap), on hosts that publish `capabilities.sizeOwner`. A vertical drag
 reaches the agent as wheel input (mouse reports or arrow keys, frame
 type 0), so Claude Code's transcript scrolls; a flick keeps going with
-momentum. There is no typing UI yet; that is the next feature. The prebuilt libghostty-spm framework
+momentum. Typing ships on a `rw` attach: a tap on the terminal brings
+up the keyboard (a second tap or a swipe down puts it away), with
+libghostty's key bar above it (Esc, Tab, a sticky Ctrl, the arrows);
+every key goes to the agent as frame type 0, and the dock's Send
+presses Enter. A fitted grid shrinks to the rows above the keyboard
+(RESIZE, 300 ms debounce). The prebuilt libghostty-spm framework
 includes LGPL libintl, so before an App Store release the iOS slice needs
 the source build the Mac uses.
 

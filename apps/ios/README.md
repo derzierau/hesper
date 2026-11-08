@@ -153,6 +153,10 @@ In the order of the concept's "Core work":
    panned, attached `rw` when the phone has the `type` right (`ro` after
    a `forbidden`). A drag scrolls the agent as wheel input, with
    momentum; the only bytes sent are what libghostty writes back for it.
+   On a `rw` attach a tap on the terminal brings up the keyboard, with
+   libghostty's key bar (Esc, Tab, sticky Ctrl, arrows); a second tap or
+   a swipe down puts it away. Keys go to the agent; the dock's Send
+   presses Enter. A read-only attach takes no keys.
    In the samples `studio` and `air` fit, `mini` mirrors
    (`HESPER_OPEN=agent:mini/m2`).
 2. Push: the notification extension decrypts ids into text; actionable
