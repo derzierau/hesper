@@ -84,6 +84,9 @@ type Service struct {
 	notes    map[string]bool // keys waiting for sessions.changed
 	indexing wire.SessionIndexing
 	closed   bool
+	// transcriptfile.go: "kind:sid" → the line index of an agent's
+	// transcript, built at the first page.
+	transcripts map[string]*transcriptFile
 
 	ownedMu sync.Mutex
 	owned   map[string]bool // "kind:sid" started by hesperd

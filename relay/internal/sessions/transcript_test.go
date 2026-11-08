@@ -2,8 +2,11 @@ package sessions
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -182,5 +185,146 @@ func TestClipResult(t *testing.T) {
 		if text, cut := clipResult(s); cut || text != s {
 			t.Errorf("%q: got %q, cut %v", s, text, cut)
 		}
+	}
+}
+
+// lineOf is the offset of the line that holds seq.
+func lineOf(offs []int64, seq int64) int64 {
+	var line int64
+	for _, o := range offs {
+		if o <= seq {
+			line = o
+		}
+	}
+	return line
+}
+
+// fromLine is items from the line at off on.
+func fromLine(items []wire.TranscriptItem, off int64) []wire.TranscriptItem {
+	for i, it := range items {
+		if it.Seq >= off {
+			return items[i:]
+		}
+	}
+	return nil
+}
+
+func TestTranscriptPage(t *testing.T) {
+	for _, c := range []struct{ kind, path string }{
+		{wire.KindClaude, "testdata/transcript_claude.jsonl"},
+		{wire.KindCodex, "testdata/transcript_codex.jsonl"},
+	} {
+		all, offs := fixtureItems(t, c.kind, c.path)
+		f, err := openTranscript(c.path, c.kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Whole lines, from the line of the 3rd last item on.
+		p, err := f.page(0, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !p.More {
+			t.Errorf("%s: limit 3: More false", c.kind)
+		}
+		sameItems(t, p.Items, fromLine(all, lineOf(offs, all[len(all)-3].Seq)))
+		p, err = f.page(0, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.More {
+			t.Errorf("%s: limit 100: More true", c.kind)
+		}
+		sameItems(t, p.Items, all)
+	}
+}
+
+func TestTranscriptPageBefore(t *testing.T) {
+	const path = "testdata/transcript_claude.jsonl"
+	all, offs := fixtureItems(t, wire.KindClaude, path)
+	f, err := openTranscript(path, wire.KindClaude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An offset inside a line: the lines before that line only.
+	line := lineOf(offs, all[len(all)/2].Seq)
+	var want []wire.TranscriptItem
+	for _, it := range all {
+		if it.Seq < line {
+			want = append(want, it)
+		}
+	}
+	p, err := f.page(line+1, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sameItems(t, p.Items, want)
+	if p.More {
+		t.Error("before a middle line, limit 100: More true")
+	}
+	// The first line's offset: nothing before it.
+	p, err = f.page(all[0].Seq, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Items) != 0 || p.More {
+		t.Errorf("before the first line: %d items, More %v", len(p.Items), p.More)
+	}
+}
+
+func TestTranscriptPathShell(t *testing.T) {
+	s := &Service{}
+	for _, a := range []wire.Agent{{ID: "a1", Kind: wire.KindShell}, {ID: "a2", Kind: wire.KindClaude}} {
+		var we *wire.Error
+		if _, err := s.TranscriptPath(a); !errors.As(err, &we) || we.Code != wire.CodeUnavailable {
+			t.Errorf("%s: TranscriptPath err %v, want unavailable", a.ID, err)
+		}
+		if _, err := s.Transcript(context.Background(), a, 0, 0); !errors.As(err, &we) || we.Code != wire.CodeUnavailable {
+			t.Errorf("%s: Transcript err %v, want unavailable", a.ID, err)
+		}
+	}
+}
+
+// A Codex rollout the index has not seen yet is found by its glob, and
+// a page after the file grew holds the new line.
+func TestTranscriptGlob(t *testing.T) {
+	e := newEnv(t)
+	s := e.open(Options{})
+	const sid = "0199a000-0000-7000-8000-00000000c0de"
+	data, err := os.ReadFile("testdata/transcript_codex.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(e.codex, "sessions", "2026", "11", "08")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "rollout-2026-11-08T10-00-00-"+sid+".jsonl")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := wire.Agent{ID: "a1", Kind: wire.KindCodex, SessionID: sid}
+	if got, err := s.TranscriptPath(a); err != nil || got != path {
+		t.Fatalf("TranscriptPath = %q, %v; want %q", got, err, path)
+	}
+	p, err := s.Transcript(context.Background(), a, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, _ := fixtureItems(t, wire.KindCodex, "testdata/transcript_codex.jsonl")
+	sameItems(t, p.Items, all)
+
+	fh, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fh.WriteString(`{"timestamp":"2026-10-02T09:00:08.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"later"}]}}` + "\n")
+	fh.Close()
+	p, err = s.Transcript(context.Background(), a, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Items) != 1 || p.Items[0].Text != "later" || p.Items[0].Seq != int64(len(data)) || !p.More {
+		t.Errorf("after the append: %+v", p)
 	}
 }
