@@ -85,9 +85,10 @@ groups need a paid developer account.
 
 - `TerminalModel`: no UIKit, so `swift test` runs it on a Mac. `Viewport`
   (readable and fit width, zoom and pan limits, which row to follow),
-  `FollowRule` and `TerminalFeeder`.
+  `FollowRule`, `TerminalFeeder` and `Fling` (scroll momentum).
 - `HesperTerminal`: `TerminalSurface`, libghostty-spm's `GhosttyTerminal`
-  (iOS only) drawing a Mac's grid read-only.
+  (iOS only) drawing a Mac's grid; a drag is handed to it as wheel input
+  and what it writes back goes to the Mac on a read-write attach.
 
 Wire models and design tokens come from the Mac app's `HesperCore`
 (`app/Package.swift` exports it), so the phone and the Mac decode the same
@@ -143,13 +144,16 @@ In the order of the concept's "Core work":
 1. Typing in the terminal. The agent view already shows the live
    terminal, watching only. On a Mac that publishes
    `capabilities.sizeOwner` it fits the Mac's terminal to the phone when
-   it opens: an owner attach (`rw`, never a data frame) at the grid that
+   it opens: an owner attach (`rw`) at the grid that
    fits the area above the dock at a true 18 pt, unscaled, no sideways
    pan, resized (RESIZE, 300 ms debounce) on rotation and dock changes,
    let go (`X`) when the screen closes or the app leaves the foreground.
    An older Mac, a `forbidden` reply, or the Mac taking the size back
    (its keystroke or click) gives the Mirror: the Mac's grid, scaled and
-   panned. In the samples `studio` and `air` fit, `mini` mirrors
+   panned, attached `rw` when the phone has the `type` right (`ro` after
+   a `forbidden`). A drag scrolls the agent as wheel input, with
+   momentum; the only bytes sent are what libghostty writes back for it.
+   In the samples `studio` and `air` fit, `mini` mirrors
    (`HESPER_OPEN=agent:mini/m2`).
 2. Push: the notification extension decrypts ids into text; actionable
    Allow / Deny / Reply.

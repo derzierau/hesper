@@ -245,9 +245,12 @@ for confirmation (`requestConfirmation`,
 
 ## The terminal on a phone
 
-**Built so far (7 Nov 2026): watching only.** The agent view attaches
-read-only (`mode: ro`, right `observe`, no Face ID) and draws the Mac's
-grid with no keyboard; replies, answers and Speak go through the dock.
+**Built so far (8 Nov 2026): watching and scrolling.** The agent view
+attaches read-write (`mode: rw`, right `type`) when the phone has that
+right, read-only (`mode: ro`, right `observe`) otherwise, with no Face
+ID, and draws the Mac's grid with no keyboard; a vertical drag scrolls
+the agent as wheel input, with momentum. Replies, answers and Speak go
+through the dock.
 Readable and fit width, pinch, double tap, pan, "Live ↓" and landscape
 work as below; the view follows the last row with text rather than the
 cursor, which the renderer does not report. Typing, Fit to iPhone,

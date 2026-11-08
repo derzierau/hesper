@@ -1,9 +1,13 @@
 # A writable terminal on the iPhone
 
-Status, 7 Nov 2026: step 1 shipped as watching only (a read-only Mirror,
-no typing yet). Take over is built on the phone, automatic when the agent
-view opens (the owner's decision of 7 Nov, replacing the explicit tap),
-on hosts that publish `capabilities.sizeOwner`; typing is still later. The prebuilt libghostty-spm framework
+Status, 8 Nov 2026: the Mirror attaches `rw` without `owner` when the
+phone has the `type` right, `ro` otherwise (a `forbidden` reply to `rw`
+retries `ro` once). Take over is built on the phone, automatic when the
+agent view opens (the owner's decision of 7 Nov, replacing the explicit
+tap), on hosts that publish `capabilities.sizeOwner`. A vertical drag
+reaches the agent as wheel input (mouse reports or arrow keys, frame
+type 0), so Claude Code's transcript scrolls; a flick keeps going with
+momentum. There is no typing UI yet; that is the next feature. The prebuilt libghostty-spm framework
 includes LGPL libintl, so before an App Store release the iOS slice needs
 the source build the Mac uses.
 
