@@ -9,6 +9,10 @@ import SwiftUI
 struct AgentScreen: View {
     let id: String
     @Environment(FleetModel.self) private var model
+    /// Landscape on a phone. Not the area's shape: with the keyboard up
+    /// the area is wider than tall in portrait too, and the dock must
+    /// not jump to the side then.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     /// The terminal, shared with the dock.
     @State private var watch = TerminalWatch()
 
@@ -17,8 +21,8 @@ struct AgentScreen: View {
 
     var body: some View {
         if let agent = model.agent(id) {
-            GeometryReader { geometry in
-                let wide = geometry.size.width > geometry.size.height
+            GeometryReader { _ in
+                let wide = verticalSizeClass == .compact
                 // One layout for both, so turning the phone keeps the
                 // terminal (and its attach) instead of making a new one.
                 let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
