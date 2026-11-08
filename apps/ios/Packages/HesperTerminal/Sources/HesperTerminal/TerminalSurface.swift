@@ -2,14 +2,15 @@
 #if os(iOS)
     import Foundation
     import GhosttyTerminal
+    import Synchronization
     import UIKit
 
-    /// A Mac's terminal drawn on the phone by libghostty; the phone never
-    /// types into it.
+    /// A Mac's terminal drawn on the phone by libghostty.
     ///
     /// The bytes come from the Mac's PTY (`feed`), never from a local
-    /// process; what the terminal itself would send back (keys, query
-    /// replies) is dropped, since a watcher does not type. The Mac owns the
+    /// process; what the terminal itself sends back (mouse reports for a
+    /// `wheel`, arrow keys, query replies) goes to `onInput`, which the
+    /// holder forwards to the Mac only when it may type. The Mac owns the
     /// grid: `resize(cols:rows:)` sizes the view so that libghostty lays out
     /// exactly that many cells, and the phone scales the view to fit
     /// (`Viewport`). The view does not take touches: its own pinch would
@@ -42,11 +43,20 @@
         public private(set) var isAtBottom = true
         /// Called after `grid`, `cell` or `isAtBottom` changed.
         public var onChange: (() -> Void)?
+        /// Called, on libghostty's thread, with every byte the terminal
+        /// sends to the process; nil drops them.
+        public var onInput: (@Sendable (Data) -> Void)? {
+            get { input.handler.withLock { $0 } }
+            set { input.handler.withLock { $0 = newValue } }
+        }
 
         private let terminal: UITerminalView
         // Sendable (libghostty: `receive` may be called from any thread),
         // so `feed` needs no hop to the main actor.
         private nonisolated let session: InMemoryTerminalSession
+        /// `onInput`, behind a lock: the session's `write` runs on
+        /// libghostty's queue while the holder sets it on the main actor.
+        private let input = InputSink()
         /// The grid the Mac asked for.
         private var target: (cols: Int, rows: Int)?
         /// Re-layouts since the last `resize`, to stop chasing a grid
@@ -100,7 +110,7 @@
         /// `background` fills the cells the Mac's output leaves at the
         /// default colour, and the rest of the view.
         public init(background: UIColor) {
-            session = InMemoryTerminalSession(write: { _ in }, resize: { _ in })
+            session = InMemoryTerminalSession(write: { [input] data in input.send(data) }, resize: { _ in })
             terminal = UITerminalView(frame: .zero)
             terminal.layer.anchorPoint = .zero
             terminal.isUserInteractionEnabled = false
@@ -146,10 +156,14 @@
             return rows.lastIndex { $0.contains { !$0.isWhitespace } }
         }
 
-        /// Scrolls the scrollback by whole rows; negative goes back in time.
-        public func scroll(rows: Int) {
-            guard rows != 0 else { return }
-            terminal.surface?.performBindingAction("scroll_page_lines:\(rows)")
+        /// A wheel scroll of `points` (the unscaled view's), positive when
+        /// the finger moved down: towards older text. libghostty decides
+        /// by the agent's modes: its own scrollback on the primary screen,
+        /// mouse reports or arrow keys (to `onInput`) on the alternate one.
+        public func wheel(points: CGFloat) {
+            guard points != 0 else { return }
+            // Direction: flip the sign here if the device scrolls inverted.
+            terminal.sendMouseScroll(x: 0, y: Double(points), mods: TerminalScrollModifiers(precision: true))
         }
 
         private func layoutTarget() {
@@ -216,5 +230,11 @@
         public func terminalDidUpdateScrollbar(_ scrollbar: TerminalScrollbar) {
             setAtBottom(scrollbar.offset + scrollbar.len >= scrollbar.total)
         }
+    }
+
+    /// The holder's input handler, shared with the session's `write`.
+    private nonisolated final class InputSink: Sendable {
+        let handler = Mutex<(@Sendable (Data) -> Void)?>(nil)
+        func send(_ data: Data) { handler.withLock { $0 }?(data) }
     }
 #endif

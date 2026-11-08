@@ -185,8 +185,8 @@ final class TerminalWatch {
     /// When the owner last panned or zoomed; the view follows the output
     /// again `FollowRule.idle` later.
     @ObservationIgnored private var lastPan: Date?
-    /// A vertical drag past the grid's edge, not yet a whole row of history.
-    @ObservationIgnored private var scrollRemainder: CGFloat = 0
+    /// The momentum of the last flick, until it rests or a finger lands.
+    @ObservationIgnored private var flinging: Task<Void, Never>?
     /// The surface has been fed: a new attach starts on a fresh one.
     @ObservationIgnored private var used = false
     /// The last written row of the screen, read after output settles.
@@ -219,7 +219,8 @@ final class TerminalWatch {
         phase = .loading
         while !Task.isCancelled {
             await waitForArea()
-            let wanted = macTookBack ? AttachPlan.mirror(agent) : model.plan(for: agent, area: viewport.view, cell: cell)
+            let planned = model.plan(for: agent, area: viewport.view, cell: cell)
+            let wanted = macTookBack ? AttachPlan.mirror(agent, typing: planned.typing) : planned
             let stream: any AttachStream
             let plan: AttachPlan
             do {
@@ -233,11 +234,18 @@ final class TerminalWatch {
             used = true
             start(plan, device: model.device(on: agent.machine))
             self.stream = stream
+            // Wheel input reaches the agent only on a read-write attach.
+            if plan.typing {
+                surface.onInput = { @Sendable data in stream.write(data) }
+            } else {
+                surface.onInput = nil
+            }
             let exited = await withTaskCancellationHandler {
                 await consume(stream)
             } onCancel: {
                 stream.close()
             }
+            surface.onInput = nil
             self.stream = nil
             pendingFit?.cancel()
             pendingFit = nil
@@ -257,6 +265,7 @@ final class TerminalWatch {
     /// An attach began. Fitted: unscaled, the surface sized to the grid
     /// asked for. A mirror keeps its mode, or leaves the fitted one.
     private func start(_ plan: AttachPlan, device: String?) {
+        stopFling()
         fit = FitState(plan: plan, device: device)
         if plan.owner {
             viewport.mode = .fitted
@@ -379,30 +388,50 @@ final class TerminalWatch {
     }
 
     /// A drag by `delta` points. Sideways pans; up and down pan the grid
-    /// first and past its edge scroll the history, a row per cell height.
-    func drag(by delta: CGPoint) {
+    /// first and past its edge go to the terminal as wheel input: the
+    /// phone's scrollback, or the agent's own (Claude Code draws on the
+    /// alternate screen, which has none here). A finger stops a fling.
+    func drag(by delta: CGPoint, fromFinger: Bool = true) {
+        if fromFinger { stopFling() }
         lastPan = .now
         let range = viewport.panRange
         var target = CGPoint(x: pan.x - delta.x, y: pan.y)
         var rest = delta.y
         if rest > 0 {
             // Down: towards the top of the grid, then back in time.
-            let moved = min(rest, target.y - range.y.lowerBound)
+            let moved = max(0, min(rest, target.y - range.y.lowerBound))
             target.y -= moved
             rest -= moved
-        } else if rest < 0, isAtBottom {
-            // Up at the newest line: towards the grid's bottom only.
-            target.y -= rest
-            rest = 0
+        } else if rest < 0 {
+            // Up: towards the grid's bottom, then forward in time.
+            let moved = min(0, max(rest, target.y - range.y.upperBound))
+            target.y -= moved
+            rest -= moved
         }
         setPan(target)
-        scrollRemainder -= rest
-        let row = viewport.cell.height * viewport.scale
-        guard row > 0 else { return }
-        let rows = Int(scrollRemainder / row)
-        guard rows != 0 else { return }
-        scrollRemainder -= CGFloat(rows) * row
-        surface.scroll(rows: rows)
+        guard viewport.scale > 0 else { return }
+        surface.wheel(points: rest / viewport.scale)
+    }
+
+    /// The finger lifted at `velocity` points per second (positive moving
+    /// down): the drag goes on and slows down (`Fling`).
+    func fling(velocity: CGFloat) {
+        stopFling()
+        let start = Fling(velocity: velocity)
+        flinging = Task { [weak self] in
+            var fling = start
+            let tick: Duration = .milliseconds(16)
+            while let d = fling.step(tick) {
+                guard (try? await Task.sleep(for: tick)) != nil, let self else { return }
+                self.drag(by: CGPoint(x: 0, y: d), fromFinger: false)
+            }
+        }
+    }
+
+    /// Ends the momentum of a flick.
+    func stopFling() {
+        flinging?.cancel()
+        flinging = nil
     }
 
     /// The "Live ↓" pill: the newest line, and the view follows again.
@@ -439,7 +468,6 @@ final class TerminalWatch {
     }
 
     private func follow() {
-        scrollRemainder = 0
         setPan(CGPoint(x: 0, y: viewport.followOffset(lastTextRow: lastTextRow)))
     }
 
@@ -570,8 +598,16 @@ final class TerminalContainer: UIView {
     }
 
     @objc private func dragged(_ g: UIPanGestureRecognizer) {
-        guard g.state == .changed else { return }
-        watch.drag(by: g.translation(in: self))
-        g.setTranslation(.zero, in: self)
+        switch g.state {
+        case .began:
+            watch.stopFling()
+        case .changed:
+            watch.drag(by: g.translation(in: self))
+            g.setTranslation(.zero, in: self)
+        case .ended, .cancelled:
+            watch.fling(velocity: g.velocity(in: self).y)
+        default:
+            break
+        }
     }
 }
