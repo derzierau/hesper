@@ -523,7 +523,9 @@ a remote owner attaches, it detaches (`X`) or a newer owner takes over
 (the latest owner wins, a local one included). When the last remote
 owner detaches, the PTY goes back to the size it had before the first
 remote owner took it, unless view attaches ask for a fit (then the fit
-applies, as before); a local owner in between keeps its own size. They are not persisted: a restarted host starts with none. A
+applies, as before); if every fit disappears before its debounce, the
+pre-takeover size comes back instead. A local owner in between keeps its
+own size. They are not persisted: a restarted host starts with none. A
 controlling hesperd shows its own device's ownership as local (it omits
 both fields when `sizeOwner` is its own device id).
 

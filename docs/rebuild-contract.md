@@ -172,7 +172,9 @@ fit views (`--fit`, bottom anchored), never owners, until a keystroke or
 click in one takes the size back (the latest owner wins; the fields
 clear). When the remote owner detaches, the fields clear and the PTY gets
 back the size it had before the first remote owner took it; fits asking
-for a size win over that, and a local owner in between keeps its size. Snapshots set `capabilities.sizeOwner: true`; the
+for a size win over that, but the old size comes back if every fit
+disappears before its debounce. A local owner in between keeps its size.
+Snapshots set `capabilities.sizeOwner: true`; the
 fields are not persisted.
 
 **View attaches** (added with the layout rework, see "As built — layout"): an

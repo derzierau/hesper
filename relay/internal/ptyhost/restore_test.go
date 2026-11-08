@@ -80,3 +80,27 @@ func TestRemoteOwnerDetachWithFitLetsFitWin(t *testing.T) {
 		t.Fatalf("size %dx%d, want the fit 90x30", c, r)
 	}
 }
+
+// A fit view can disappear before its debounce runs. The Mac must still
+// recover the size it had before the phone took over.
+func TestRemoteOwnerDetachThenFitClosesRestoresSize(t *testing.T) {
+	tm := start(t, "lines", 120, 40)
+	tm.mu.Lock()
+	tm.cfg.FitDebounce = 300 * time.Millisecond
+	tm.mu.Unlock()
+	waitFor(t, "prompt", func() bool { return screenHas(tm, "prompt>") })
+	phone := Origin{Device: "phone-1", Name: "iPhone"}
+
+	owner := attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 37, Rows: 27}, phone)
+	waitFor(t, "the phone's size", sizeIs(tm, 37, 27))
+	view := fitView(t, tm, 90, 30)
+	owner.Close()
+	waitFor(t, "the phone released", func() bool { return tm.SizeOwner() == (Origin{}) })
+	view.Close()
+	waitFor(t, "the fit view closed", func() bool {
+		tm.mu.Lock()
+		defer tm.mu.Unlock()
+		return len(tm.views) == 0
+	})
+	waitFor(t, "the Mac's original size", sizeIs(tm, 120, 40))
+}

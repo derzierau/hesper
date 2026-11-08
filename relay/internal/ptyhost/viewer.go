@@ -162,10 +162,12 @@ func (t *Term) detach(v *viewer) {
 		// A remote owner gives the size back; otherwise the size stays.
 		// View attaches that ask for a fit win either way.
 		t.owner = nil
-		if _, _, fit := t.fitTarget(); !fit && t.restoreCols > 0 {
-			resized, _ = t.resizeLocked(t.restoreCols, t.restoreRows)
+		if _, _, fit := t.fitTarget(); !fit {
+			if t.restoreCols > 0 {
+				resized, _ = t.resizeLocked(t.restoreCols, t.restoreRows)
+			}
+			t.restoreCols, t.restoreRows = 0, 0
 		}
-		t.restoreCols, t.restoreRows = 0, 0
 		t.scheduleFit()
 		if t.ownerFrom != (Origin{}) {
 			t.ownerFrom, ownerChanged = Origin{}, true
