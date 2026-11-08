@@ -28,8 +28,9 @@ var FollowPoll = 250 * time.Millisecond
 // after > 0, every item whose Seq is greater than after, not capped by
 // limit (a phone catching up after a reconnect). A file that shrank was
 // rewritten: it sends {Seq: -1, Kind: system, Text: "Transcript
-// restarted"} (a negative Seq is a marker, never a line) and continues
-// from the new end.
+// restarted"} (a negative Seq is a marker, never a line), then the
+// newest limit items of the rewritten file as after <= 0 does, and
+// continues from its end.
 func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int64, limit int, emit func(wire.TranscriptItem) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -51,6 +52,13 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 	}
 	s.mu.Lock()
 	f.refs++
+	// The last follower before us may have dropped f since the lookup.
+	if s.transcripts[key] == nil {
+		if s.transcripts == nil {
+			s.transcripts = map[string]*transcriptFile{}
+		}
+		s.transcripts[key] = f
+	}
 	s.mu.Unlock()
 	defer s.unfollow(key, f)
 
@@ -61,6 +69,9 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 			return fmt.Errorf("follow transcript of %s: %w", a.ID, err)
 		}
 		for _, it := range items {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if err := emit(it); err != nil {
 				return fmt.Errorf("follow transcript of %s: %w", a.ID, err)
 			}
@@ -72,7 +83,7 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 			return ctx.Err()
 		case <-t.C:
 		}
-		items, next, gen, err = f.tail(next, gen)
+		items, next, gen, err = f.tail(next, gen, limit)
 	}
 }
 
@@ -112,16 +123,18 @@ func (f *transcriptFile) backfill(after int64, limit int) ([]wire.TranscriptItem
 
 // tail is the items of the lines indexed from byte offset from on, the
 // offset to continue from and the index's generation. An index of
-// another generation than gen (the file shrank) sends only the restart
-// notice and continues from the new end.
-func (f *transcriptFile) tail(from int64, gen int) ([]wire.TranscriptItem, int64, int, error) {
+// another generation than gen (the file shrank) sends the restart
+// marker and the newest limit items, and continues from the new end.
+func (f *transcriptFile) tail(from int64, gen, limit int) ([]wire.TranscriptItem, int64, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.update(); err != nil {
 		return nil, from, gen, err
 	}
 	if f.gen != gen {
-		return []wire.TranscriptItem{{Seq: -1, Kind: wire.ItemSystem, Text: "Transcript restarted"}}, f.size, f.gen, nil
+		p, err := f.pageIndexed(0, limit)
+		items := append([]wire.TranscriptItem{{Seq: -1, Kind: wire.ItemSystem, Text: "Transcript restarted"}}, p.Items...)
+		return items, f.size, f.gen, err
 	}
 	items, err := f.linesFrom(sort.Search(len(f.offsets), func(i int) bool { return f.offsets[i] >= from }))
 	return items, f.size, f.gen, err

@@ -142,19 +142,44 @@ func TestFollowPartialLine(t *testing.T) {
 }
 
 func TestFollowTruncate(t *testing.T) {
-	s, a, path, _ := followEnv(t, "m1", "m2")
+	s, a, path, _ := followEnv(t, "m1", "m2", "m3")
 	items, _, _ := follow(t, s, a, 0, 10)
-	nextItem(t, items, time.Second)
-	nextItem(t, items, time.Second)
+	for range 3 {
+		nextItem(t, items, time.Second)
+	}
+	restarted := func(when string) {
+		t.Helper()
+		if it := nextItem(t, items, time.Second); it.Kind != wire.ItemSystem || it.Text != "Transcript restarted" || it.Seq != -1 {
+			t.Fatalf("%s: %+v, want the restart marker", when, it)
+		}
+	}
+	// Truncated to 0 and two items written in one step (a rename, so no
+	// poll sees it empty): the marker, then the rewritten file's items.
+	n1 := codexMsg("n1")
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, []byte(n1+codexMsg("n2")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatal(err)
+	}
+	restarted("after a rewrite")
+	for _, want := range []wire.TranscriptItem{{Text: "n1", Seq: 0}, {Text: "n2", Seq: int64(len(n1))}} {
+		if it := nextItem(t, items, time.Second); it.Text != want.Text || it.Seq != want.Seq {
+			t.Fatalf("after a rewrite: %+v, want %s at %d", it, want.Text, want.Seq)
+		}
+	}
+	// Truncated to 0, then two items appended.
 	if err := os.Truncate(path, 0); err != nil {
 		t.Fatal(err)
 	}
-	if it := nextItem(t, items, time.Second); it.Kind != wire.ItemSystem || it.Text != "Transcript restarted" || it.Seq != -1 {
-		t.Fatalf("after truncate: %+v", it)
-	}
-	appendTo(t, path, codexMsg("new"))
+	restarted("after truncate")
+	appendTo(t, path, codexMsg("new")+codexMsg("new2"))
 	if it := nextItem(t, items, time.Second); it.Text != "new" || it.Seq != 0 {
 		t.Fatalf("after restart: %+v, want new at 0", it)
+	}
+	if it := nextItem(t, items, time.Second); it.Text != "new2" || it.Seq != int64(len(codexMsg("new"))) {
+		t.Fatalf("after restart: %+v, want new2", it)
 	}
 }
 
