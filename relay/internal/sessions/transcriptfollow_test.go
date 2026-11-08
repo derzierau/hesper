@@ -149,7 +149,7 @@ func TestFollowTruncate(t *testing.T) {
 	if err := os.Truncate(path, 0); err != nil {
 		t.Fatal(err)
 	}
-	if it := nextItem(t, items, time.Second); it.Kind != wire.ItemSystem || it.Text != "Transcript restarted" {
+	if it := nextItem(t, items, time.Second); it.Kind != wire.ItemSystem || it.Text != "Transcript restarted" || it.Seq != -1 {
 		t.Fatalf("after truncate: %+v", it)
 	}
 	appendTo(t, path, codexMsg("new"))

@@ -27,8 +27,9 @@ var FollowPoll = 250 * time.Millisecond
 // wire.TranscriptMaxLimit) as whole lines, oldest first, like a page;
 // after > 0, every item whose Seq is greater than after, not capped by
 // limit (a phone catching up after a reconnect). A file that shrank was
-// rewritten: it sends {Kind: system, Text: "Transcript restarted", Seq:
-// the new end} and continues from the new end.
+// rewritten: it sends {Seq: -1, Kind: system, Text: "Transcript
+// restarted"} (a negative Seq is a marker, never a line) and continues
+// from the new end.
 func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int64, limit int, emit func(wire.TranscriptItem) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -120,7 +121,7 @@ func (f *transcriptFile) tail(from int64, gen int) ([]wire.TranscriptItem, int64
 		return nil, from, gen, err
 	}
 	if f.gen != gen {
-		return []wire.TranscriptItem{{Seq: f.size, Kind: wire.ItemSystem, Text: "Transcript restarted"}}, f.size, f.gen, nil
+		return []wire.TranscriptItem{{Seq: -1, Kind: wire.ItemSystem, Text: "Transcript restarted"}}, f.size, f.gen, nil
 	}
 	items, err := f.linesFrom(sort.Search(len(f.offsets), func(i int) bool { return f.offsets[i] >= from }))
 	return items, f.size, f.gen, err

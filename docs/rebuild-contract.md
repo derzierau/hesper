@@ -184,7 +184,8 @@ Dropped: thinking, `isMeta` and sidechain (subagent) lines, Codex
 Code `isCompactSummary` line becomes one `system` item "Context
 compacted"; a transcript that shrinks, `system` "Transcript restarted".
 Codex `function_call` items are `tool`, `function_call_output` items
-`result`.
+`result`. A system item with a negative `seq` is a marker: the phone
+drops what it has and continues; today only "Transcript restarted".
 
 **Summary rule.** Read, Edit and Write: the file's base name; Bash and
 Codex `shell`: the command's first line, clipped to 80 runes; Grep and
