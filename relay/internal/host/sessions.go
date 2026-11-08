@@ -7,6 +7,7 @@ import (
 
 	"github.com/derzierau/hesper/relay/pkg/agentlink"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
+	"github.com/derzierau/hesper/relay/pkg/wire"
 )
 
 // Shared history (internal/sessions): other Macs pull this Mac's index
@@ -25,6 +26,10 @@ type SessionsHost interface {
 	HostHint() json.RawMessage
 	Changes() <-chan struct{}
 	Exportable(id string) error
+	// Transcript and FollowTranscript read an agent's transcript as items
+	// (agents.transcript, agents.transcriptStream; transcript.go).
+	Transcript(ctx context.Context, a wire.Agent, before int64, limit int) (wire.TranscriptPage, error)
+	FollowTranscript(ctx context.Context, a wire.Agent, after int64, limit int, emit func(wire.TranscriptItem) error) error
 }
 
 // sessionsDebounce collects bursts of changes into one hint.

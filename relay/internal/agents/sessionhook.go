@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -20,6 +21,8 @@ type Sessions interface {
 	// Watch sends the sessions notifications of an agents.subscribe
 	// connection until done closes or send fails.
 	Watch(done <-chan struct{}, send func(method string, params any) error)
+	// Transcript is a page of an agent's transcript (agents.transcript).
+	Transcript(ctx context.Context, a wire.Agent, before int64, limit int) (wire.TranscriptPage, error)
 }
 
 // SessionSpawn starts an agent on an existing conversation.

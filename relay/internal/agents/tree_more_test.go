@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"testing"
@@ -36,6 +37,9 @@ func (f *fakeSessions) Call(method string, params json.RawMessage) (any, error, 
 }
 
 func (f *fakeSessions) Watch(<-chan struct{}, func(string, any) error) {}
+func (f *fakeSessions) Transcript(context.Context, wire.Agent, int64, int) (wire.TranscriptPage, error) {
+	return wire.TranscriptPage{}, nil
+}
 
 // An agent's session starts (resume, fork, continue-as) make its
 // children, within the limits; a person's have no parent, whatever the

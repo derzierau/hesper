@@ -61,6 +61,10 @@ func init() {
 			Help:   idHelp + " The screen hesperd keeps for the agent (as a person sees it, no colors or escape codes); --rows N only its last N rows with text (blank rows below the output are dropped first, so a mostly empty screen still shows its output); --scrollback that many lines from above the screen first. Works for agents of every machine.",
 			Output: "{text, rows, cols, cursor?:{col, row}, alt?}", Examples: []string{"hesperctl screen a7f3k2", "hesperctl screen a7f3k2 --rows 10 --scrollback 200"},
 			Run: screenCommand},
+		{Name: "transcript", ReadOnly: true, Summary: "Print an agent's conversation from its transcript", Usage: "transcript ID [--limit N] [--before SEQ] [--follow] [--json]",
+			Help:   idHelp + " The Claude Code or Codex transcript as items, oldest first: › your messages, the agent's replies, ⏺ tool calls and ⎿ the first line of their results. --limit N items (default 200, at most 1000; whole lines, so a few more may come), --before SEQ only items before that seq (paging back, with more from the previous page); --follow then prints new items as they come, until interrupted (this Mac's daemon pages every second). A shell, or an agent with no transcript yet: unavailable.",
+			Output: "{items:[{seq, at?, kind, text?, tool?, summary?, id?, of?, truncated?, ok?}], more}; with --follow one item per line", Examples: []string{"hesperctl transcript a7f3k2", "hesperctl transcript a7f3k2 --limit 20 --follow"},
+			Run: transcriptCommand},
 		{Name: "events", NoMCP: true, Summary: "Stream agent, draft, project and history changes as JSON lines", Usage: "events [--agent ID]… [--kinds K,…]",
 			Help:   "One JSON object per line, {\"method\", \"params\"}, until interrupted: agents.changed {agent}, agents.removed {id, reason, data?: {to}} (first one agents.changed per agent), agents.moving {id, step, to, percent?, agent?} (a move's progress) and agents.bringing {id, draft?, step, to, from, percent?, path?, agent?, error?} (new --bring's progress), drafts.*, projects.*, groups.*, sessions.*. --kinds keeps only agents, drafts, projects, groups or sessions; --agent only those agents' events.",
 			Output: "a stream of {method, params}", Examples: []string{"hesperctl events --kinds agents", "hesperctl events --agent a7f3k2 | jq -r '.params.agent.state'"},
@@ -885,6 +889,98 @@ func screenCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 		}
 		return nil
 	})
+}
+
+// transcriptFollowLimit is how many of the newest items transcript
+// --follow pages each second (those above the last printed are new).
+const transcriptFollowLimit = 50
+
+func transcriptCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
+	asJSON := jsonFlag(f)
+	limit := f.Int("limit", 0, "At most N items (default 200, at most 1000)")
+	before := f.Int64("before", 0, "Only items before the one with this seq")
+	follow := f.Bool("follow", false, "Then print new items as they come, until interrupted")
+	return withDaemon(ctx, f, args, func(ctx context.Context, c *wire.Client, positional []string) error {
+		if len(positional) != 1 {
+			return usagef("usage: hesperctl transcript ID [--limit N] [--before SEQ] [--follow]")
+		}
+		if *limit < 0 || *limit > wire.TranscriptMaxLimit || *before < 0 {
+			return usagef("--limit must be 0 to %d, --before a seq", wire.TranscriptMaxLimit)
+		}
+		if *follow && *before > 0 {
+			return usagef("--follow starts at the end: no --before")
+		}
+		id, err := resolveAgent(ctx, c, positional[0])
+		if err != nil {
+			return err
+		}
+		var page wire.TranscriptPage
+		if err := c.Call(ctx, "agents.transcript", wire.TranscriptParams{ID: id, Before: *before, Limit: *limit}, &page); err != nil {
+			return err
+		}
+		if !*follow {
+			if *asJSON {
+				return output(page)
+			}
+			printTranscript(page.Items, false, -1)
+			return nil
+		}
+		// The local socket has no link channel: page from the end every
+		// second and print what is newer than the last printed item.
+		last := printTranscript(page.Items, *asJSON, -1)
+		tick := time.NewTicker(time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-tick.C:
+			}
+			var next wire.TranscriptPage
+			if err := c.Call(ctx, "agents.transcript", wire.TranscriptParams{ID: id, Limit: transcriptFollowLimit}, &next); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+			last = printTranscript(next.Items, *asJSON, last)
+		}
+	})
+}
+
+// printTranscript prints the items whose seq is above after (as JSON
+// lines when asJSON) and returns the last seq printed (after when none).
+func printTranscript(items []wire.TranscriptItem, asJSON bool, after int64) int64 {
+	dim := func(s string) string { return s }
+	if st, err := os.Stdout.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 {
+		dim = func(s string) string { return "\x1b[2m" + s + "\x1b[0m" }
+	}
+	for _, it := range items {
+		if it.Seq <= after {
+			continue
+		}
+		after = it.Seq
+		if asJSON {
+			line, _ := json.Marshal(it)
+			fmt.Println(string(line))
+			continue
+		}
+		switch it.Kind {
+		case wire.ItemUser:
+			fmt.Println("› " + it.Text)
+		case wire.ItemTool:
+			fmt.Println(dim(strings.TrimSpace("⏺ " + it.Tool + " " + it.Summary)))
+		case wire.ItemResult:
+			first, rest, more := strings.Cut(strings.TrimRight(it.Text, "\n"), "\n")
+			if more && rest != "" || it.Truncated {
+				first += "…"
+			}
+			fmt.Println("⎿ " + first)
+		default:
+			fmt.Println(it.Text)
+		}
+	}
+	return after
 }
 
 // lastRows is text's last n lines once the blank lines at its end are
