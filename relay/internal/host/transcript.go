@@ -34,8 +34,9 @@ func (s *Service) transcript(ctx context.Context, m protocol.Message) (json.RawM
 // transcriptStream serves agents.transcriptStream (right observe): the
 // transcript's items as JSON lines on a channel of the caller's link,
 // registered like an attach's. The controller's X ends it; the host
-// closes the channel when the link ends, the agent is removed or the
-// follow fails. What the controller sends on the channel is dropped.
+// closes the channel when the link ends, the agent is removed or gets
+// another session id, or the follow fails. What the controller sends on
+// the channel is dropped.
 func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (json.RawMessage, error) {
 	var p wire.TranscriptStreamParams
 	if err := params(m.Params, &p); err != nil {
@@ -76,7 +77,8 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 	// reply is not missed.
 	sub := s.Agents.Subscribe()
 	go func() {
-		// The channel's end: the controller's X, the agent's removal.
+		// The channel's end: the controller's X, the agent's removal or
+		// new session.
 		defer s.Agents.Unsubscribe(sub)
 		defer stop()
 		ended := make(chan struct{})
@@ -88,7 +90,9 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 					return
 				}
 				for _, n := range notes {
-					if n.Removed == a.ID {
+					// A new session id (/clear, a resume) is another
+					// transcript: the phone opens a stream on it.
+					if n.Removed == a.ID || n.Agent != nil && n.Agent.ID == a.ID && n.Agent.SessionID != a.SessionID {
 						return
 					}
 				}

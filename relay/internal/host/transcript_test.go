@@ -141,3 +141,41 @@ func TestTranscriptStreamEnds(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// A new session id for the agent (/clear) ends its stream: the host
+// sends X, and the phone opens one on the new transcript.
+func TestTranscriptStreamEndsOnNewSession(t *testing.T) {
+	reg, project := testRegistry(t)
+	fake := &fakeTranscripts{ended: make(chan struct{}, 4)}
+	s := &Service{Agents: reg, Sessions: fake}
+	a, err := reg.Spawn(wire.SpawnParams{Project: project, Task: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Stop(a.ID)
+	stream := &frames{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	link := &hostLink{id: "L1", device: "dev", conn: agentlink.New(stream), ctx: ctx, cancel: cancel, opened: time.Now(), chans: map[uint32]*hostChan{}}
+	s.links.add(link)
+	params, _ := json.Marshal(wire.TranscriptStreamParams{Link: "L1", Ch: 1, ID: a.ID})
+	if _, err := s.Execute(context.Background(), protocol.Message{Method: "agents.transcriptStream", Params: params, ControllerID: "dev", Deadline: time.Now().Add(time.Second).UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"session_id": "0199a000-0000-7000-8000-00000000c1ea", "source": "clear"})
+	if err := reg.Hook(wire.HookParams{Agent: a.ID, Source: wire.KindClaude, Event: "SessionStart", Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fake.ended:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the follow goes on after the new session")
+	}
+	deadline := time.Now().Add(time.Second)
+	for !stream.has(func(b []byte) bool { return len(b) > 0 && b[0] == agentlink.KindClose }) {
+		if time.Now().After(deadline) {
+			t.Fatalf("no X after the new session: %q", stream.got)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
