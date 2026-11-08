@@ -424,12 +424,14 @@ type codexMessage struct {
 	} `json:"content"`
 }
 
-// codexCall is a function_call's or function_call_output's payload.
+// codexCall is a function_call's, custom_tool_call's or their outputs'
+// payload. Output is a string or an array of {type, text} blocks.
 type codexCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-	CallID    string `json:"call_id"`
-	Output    string `json:"output"`
+	Name      string          `json:"name"`
+	Arguments string          `json:"arguments"`
+	Input     string          `json:"input"` // custom_tool_call
+	CallID    string          `json:"call_id"`
+	Output    json.RawMessage `json:"output"`
 }
 
 // payloadType finds `"payload":{"type":"X"` near a Codex line's start

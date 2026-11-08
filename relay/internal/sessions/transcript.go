@@ -103,8 +103,9 @@ func claudeItems(line []byte, off int64) []wire.TranscriptItem {
 	return items
 }
 
-// resultText is a tool_result's content: a string, or its text blocks
-// joined by newlines with "[image]" for each image.
+// resultText is a tool_result's content (or a Codex call's output): a
+// string, or its text blocks joined by newlines with "[image]" for each
+// image.
 func resultText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -121,9 +122,9 @@ func resultText(raw json.RawMessage) string {
 	var parts []string
 	for _, b := range blocks {
 		switch b.Type {
-		case "text":
+		case "text", "input_text", "output_text": // Codex: input_text
 			parts = append(parts, b.Text)
-		case "image":
+		case "image", "input_image":
 			parts = append(parts, "[image]")
 		}
 	}
@@ -164,7 +165,7 @@ func codexItems(line []byte, off int64) []wire.TranscriptItem {
 			kind = wire.ItemAssistant
 		}
 		return []wire.TranscriptItem{{Seq: off, At: at, Kind: kind, Text: strings.Join(parts, "\n")}}
-	case "function_call", "function_call_output":
+	case "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output":
 		var l struct {
 			Payload codexCall `json:"payload"`
 		}
@@ -172,12 +173,17 @@ func codexItems(line []byte, off int64) []wire.TranscriptItem {
 			return nil
 		}
 		p := l.Payload
-		if inner == "function_call" {
+		switch inner {
+		case "function_call":
 			return []wire.TranscriptItem{{Seq: off, At: at, Kind: wire.ItemTool,
 				Tool: p.Name, Summary: toolSummary(p.Name, json.RawMessage(p.Arguments)), ID: p.CallID}}
+		case "custom_tool_call":
+			// A custom tool's input is free text (exec: a script).
+			return []wire.TranscriptItem{{Seq: off, At: at, Kind: wire.ItemTool,
+				Tool: p.Name, Summary: shortLine(p.Input), ID: p.CallID}}
 		}
 		// Codex records no error flag on an output.
-		text, cut := clipResult(p.Output)
+		text, cut := clipResult(resultText(p.Output))
 		ok := true
 		return []wire.TranscriptItem{{Seq: off, At: at, Kind: wire.ItemResult,
 			Of: p.CallID, Text: text, Truncated: cut, OK: &ok}}
@@ -225,6 +231,11 @@ func toolSummary(name string, input json.RawMessage) string {
 	case "Agent", "Task":
 		s = in.Description
 	}
+	return shortLine(s)
+}
+
+// shortLine is s's first line, clipped to summaryRunes runes.
+func shortLine(s string) string {
 	s = oneLine(s)
 	if utf8.RuneCountInString(s) > summaryRunes {
 		s = clip(s, summaryRunes-1) // and "…": summaryRunes in all

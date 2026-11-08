@@ -120,6 +120,13 @@ func TestCodexItems(t *testing.T) {
 		{Seq: offs[5], At: at("03"), Kind: wire.ItemTool, Tool: "shell", Summary: "bash -lc go test ./push/...", ID: "call_01"},
 		{Seq: offs[6], At: at("04"), Kind: wire.ItemResult, Of: "call_01", Text: "ok  \tpush\t0.12s\n", OK: ok(true)},
 		{Seq: offs[8], At: at("06"), Kind: wire.ItemAssistant, Text: "FCM push is in; the tests pass."},
+		// custom_tool_call: free-text input, its first line the summary.
+		{Seq: offs[10], At: at("08"), Kind: wire.ItemTool, Tool: "exec", Summary: "cd /work/push", ID: "call_02"},
+		{Seq: offs[11], At: at("09"), Kind: wire.ItemResult, Of: "call_02", Text: "vet: no issues", OK: ok(true)},
+		{Seq: offs[12], At: at("10"), Kind: wire.ItemTool, Tool: "shell", Summary: "go build ./push", ID: "call_03"},
+		// An output of content blocks: their text, [image] for an image.
+		{Seq: offs[13], At: at("11"), Kind: wire.ItemResult, Of: "call_03", Text: "built push\n[image]", OK: ok(true)},
+		{Seq: offs[14], At: at("12"), Kind: wire.ItemResult, Of: "call_04", Text: "line one\nline two", OK: ok(true)},
 	}
 	sameItems(t, got, want)
 

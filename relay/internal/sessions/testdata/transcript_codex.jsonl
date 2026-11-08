@@ -8,3 +8,8 @@
 {"timestamp":"2026-10-02T09:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1200,"cached_input_tokens":200,"output_tokens":300}}}}
 {"timestamp":"2026-10-02T09:00:06.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"FCM push is in; the tests pass."}]}}
 {"timestamp":"2026-10-02T09:00:07.000Z","type":"event_msg","payload":{"type":"agent_message","message":"FCM push is in; the tests pass."}}
+{"timestamp":"2026-10-02T09:00:08.000Z","type":"response_item","payload":{"type":"custom_tool_call","status":"completed","call_id":"call_02","name":"exec","input":"cd /work/push\ngo vet ./..."}}
+{"timestamp":"2026-10-02T09:00:09.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_02","output":"vet: no issues"}}
+{"timestamp":"2026-10-02T09:00:10.000Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"go\",\"build\",\"./push\"]}","call_id":"call_03"}}
+{"timestamp":"2026-10-02T09:00:11.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_03","output":[{"type":"input_text","text":"built push"},{"type":"input_image","image_url":"data:image/png;base64,AAAA"}]}}
+{"timestamp":"2026-10-02T09:00:12.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_04","output":[{"type":"input_text","text":"line one"},{"type":"input_text","text":"line two"}]}}

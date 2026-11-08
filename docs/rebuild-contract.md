@@ -171,7 +171,7 @@ view that draws the conversation itself (the phone):
 | `at` | the line's timestamp in Unix ms, when it has one |
 | `kind` | `user`, `assistant`, `tool`, `result` or `system` |
 | `text` | a message's text; a result's output, clipped; a system notice |
-| `tool` | a tool call's tool (Codex: the `function_call`'s name) |
+| `tool` | a tool call's tool (Codex: the `function_call`'s or `custom_tool_call`'s name) |
 | `summary` | one short line saying what a tool call works on (below) |
 | `id` | a tool call's id |
 | `of` | a result's tool call id |
@@ -183,8 +183,11 @@ Dropped: thinking, `isMeta` and sidechain (subagent) lines, Codex
 `[Request interrupted` or `Caveat:` (as shared history does). A Claude
 Code `isCompactSummary` line becomes one `system` item "Context
 compacted"; a transcript that shrinks, `system` "Transcript restarted".
-Codex `function_call` items are `tool`, `function_call_output` items
-`result`. A system item with a negative `seq` is a marker: the phone
+Codex `function_call` and `custom_tool_call` items are `tool`,
+`function_call_output` and `custom_tool_call_output` items `result`
+(an output of content blocks: their text joined by newlines,
+"[image]" for an image). A `custom_tool_call`'s summary is its
+free-text `input`'s first line, clipped to 80 runes. A system item with a negative `seq` is a marker: the phone
 drops what it has; the newest items follow; today only "Transcript
 restarted". A page (and a stream's backfill without `after`) holds
 whole lines and stops before the line that would take its items past
