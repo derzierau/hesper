@@ -1,0 +1,49 @@
+
+latency: relay legs 20ms round trip each (network floor 40ms per keystroke over the relay), link route relay, e2e, software keys, fake shell echoing
+measure (ms)                               n      p50      p95      p99      max
+keystroke → echo (remote attach)         300     48.4     59.9     65.4     75.0
+open remote attach → first frame           5     46.5     66.0     66.0     66.0
+state change on M → L's subscribe         40     22.7     27.6     35.2     35.2
+request agents.list (signed, e2e)         40     48.9     65.9     72.4     72.4
+ping (e2e)                                40     50.3     62.4     63.3     63.3
+hosts hesperd.input                      307      0.0      0.1      0.4      1.4
+hosts hesperd.output                     308      0.0      0.0      0.1      0.1
+hosts hesperd.redraw                       6      0.0      0.1      0.1      0.1
+hosts rpc.authorize                       99      0.3      1.3      6.5      6.5
+hosts rpc.execute agents.attach            6      0.0      0.1      0.1      0.1
+hosts rpc.execute agents.link              2     12.4     12.5     12.5     12.5
+hosts rpc.execute agents.list             40      0.0      0.1      0.1      0.1
+hosts rpc.execute agents.spawn             1     65.4     65.4     65.4     65.4
+hosts rpc.execute ping                    46      0.0      0.1      2.4      2.4
+hosts rpc.execute projects.sync            2      0.0      0.1      0.1      0.1
+hosts rpc.execute sessions.pull            2      2.2      2.2      2.2      2.2
+hosts rpc.open                            99      0.0      0.1      0.3      0.3
+hosts rpc.seal                            99      0.0      0.0      0.2      0.2
+hosts stream.input                       307      0.0      0.1      0.7      1.8
+hosts stream.open                        312      0.0      0.0      0.0      2.4
+hosts stream.seal                        679      0.0      0.0      0.0      1.5
+
+latency: relay legs 20ms round trip each (network floor 40ms per keystroke over the relay), link route direct, e2e, software keys, fake shell echoing
+measure (ms)                               n      p50      p95      p99      max
+keystroke → echo (remote attach)         300      0.8      3.5      7.9     20.5
+open remote attach → first frame           5      0.7      1.1      1.1      1.1
+state change on M → L's subscribe         40      0.2      0.3      0.6      0.6
+request agents.list (signed, e2e)         40      1.7      6.1     10.5     10.5
+ping (e2e)                                40      0.6      2.3      8.4      8.4
+hosts hesperd.input                      307      0.0      0.0      0.1      1.3
+hosts hesperd.output                     308      0.0      0.0      0.1      0.6
+hosts hesperd.redraw                       7      0.0      0.0      0.0      0.0
+hosts rpc.authorize                      102      0.2      2.3      5.5      5.6
+hosts rpc.execute agents.attach            7      0.0      0.0      0.0      0.0
+hosts rpc.execute agents.link              3     11.9     12.0     12.0     12.0
+hosts rpc.execute agents.list             40      0.0      0.3      0.3      0.3
+hosts rpc.execute agents.spawn             1     27.0     27.0     27.0     27.0
+hosts rpc.execute ping                    45      0.0      0.0      0.0      0.0
+hosts rpc.execute projects.sync            3      0.0      0.0      0.0      0.0
+hosts rpc.execute sessions.pull            3      0.3      0.4      0.4      0.4
+hosts rpc.open                             8      0.0      0.0      0.0      0.0
+hosts rpc.seal                             8      0.0      0.0      0.0      0.0
+hosts stream.input                       307      0.0      0.1      0.1      1.4
+hosts stream.seal                         12      0.0      0.0      0.0      0.0
+PASS
+ok  	github.com/derzierau/hesper/relay/internal/transport	31.030s
