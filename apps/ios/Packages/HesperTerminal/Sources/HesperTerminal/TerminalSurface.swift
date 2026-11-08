@@ -160,11 +160,19 @@
         /// the finger moved down: towards older text. libghostty decides
         /// by the agent's modes: its own scrollback on the primary screen,
         /// mouse reports or arrow keys (to `onInput`) on the alternate one.
+        /// A precision scroll in pixels, so one cell height of finger
+        /// travel is one line, as on a trackpad. libghostty reports a
+        /// wheel only where it knows the pointer to be, and a phone has
+        /// none, so a position inside the grid comes first.
         public func wheel(points: CGFloat) {
             guard points != 0 else { return }
-            // Direction: flip the sign here if the device scrolls inverted.
-            terminal.sendMouseScroll(x: 0, y: Double(points), mods: TerminalScrollModifiers(precision: true))
+            terminal.sendMousePos(x: Self.pointer, y: Self.pointer)
+            terminal.sendMouseScroll(
+                x: 0, y: Double(points) * Double(displayScale), mods: TerminalScrollModifiers(precision: true))
         }
+
+        /// Where the phone's "pointer" sits for wheel reports, in points.
+        private static let pointer: Double = 30
 
         private func layoutTarget() {
             guard let target else { return }
