@@ -69,8 +69,8 @@ func TestClaudeResultBlocks(t *testing.T) {
 	at := parseTime("2026-10-01T10:00:00.000Z")
 	sameItems(t, itemsFrom(wire.KindClaude, []byte(line), 42), []wire.TranscriptItem{
 		{Seq: 42, At: at, Kind: wire.ItemResult, Of: "toolu_a", Text: "first", OK: ok(true)},
-		{Seq: 42, At: at, Kind: wire.ItemResult, Of: "toolu_b", Text: "second\nhalf", OK: ok(true)},
-		{Seq: 42, At: at, Kind: wire.ItemResult, Of: "toolu_c", OK: ok(false)},
+		{Seq: 43, At: at, Kind: wire.ItemResult, Of: "toolu_b", Text: "second\nhalf", OK: ok(true)},
+		{Seq: 44, At: at, Kind: wire.ItemResult, Of: "toolu_c", OK: ok(false)},
 	})
 
 	long := strings.Repeat("x\n", 100)
@@ -85,6 +85,27 @@ func TestClaudeResultBlocks(t *testing.T) {
 		if items := itemsFrom(wire.KindClaude, []byte(bad), 0); len(items) != 0 {
 			t.Errorf("%q: items %+v", bad, items)
 		}
+	}
+}
+
+// The phone keys items by seq: the items of one line get off, off+1, …
+func TestClaudeMultiResultSeq(t *testing.T) {
+	line := `{"type":"user","message":{"role":"user","content":[` +
+		`{"type":"tool_result","tool_use_id":"toolu_a","content":"a"},` +
+		`{"type":"tool_result","tool_use_id":"toolu_b","content":"b"},` +
+		`{"type":"tool_result","tool_use_id":"toolu_c","content":"c"}]}}`
+	const off = 1000
+	items := itemsFrom(wire.KindClaude, []byte(line), off)
+	if len(items) != 3 {
+		t.Fatalf("items: %+v", items)
+	}
+	for i, it := range items {
+		if it.Seq != off+int64(i) {
+			t.Errorf("item %d (%s): seq %d, want %d", i, it.Of, it.Seq, off+int64(i))
+		}
+	}
+	if last := items[2].Seq; last >= off+int64(len(line)) {
+		t.Errorf("seq %d reaches the next line", last)
 	}
 }
 

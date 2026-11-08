@@ -27,15 +27,21 @@ const (
 
 // itemsFrom parses one transcript line at byte offset off. kind is
 // wire.KindClaude or wire.KindCodex; a line without anything to show
-// (or that does not decode) has no items.
+// (or that does not decode) has no items. Views key items by Seq, so the
+// n-th item of a line (from 0) gets off+n: a line is longer than its
+// item count, so this stays below the next line's offset.
 func itemsFrom(kind string, line []byte, off int64) []wire.TranscriptItem {
+	var items []wire.TranscriptItem
 	switch kind {
 	case wire.KindClaude:
-		return claudeItems(line, off)
+		items = claudeItems(line, off)
 	case wire.KindCodex:
-		return codexItems(line, off)
+		items = codexItems(line, off)
 	}
-	return nil
+	for i := range items {
+		items[i].Seq = off + int64(i)
+	}
+	return items
 }
 
 func claudeItems(line []byte, off int64) []wire.TranscriptItem {

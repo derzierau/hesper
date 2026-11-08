@@ -167,7 +167,7 @@ view that draws the conversation itself (the phone):
 
 | Field | Meaning |
 |---|---|
-| `seq` | byte offset of the item's line in the transcript file: monotonic, stable across daemon restarts; pages are cut at it (`before`, `after`) and views key items by it |
+| `seq` | byte offset of the item's line in the transcript file, plus the item's index within the line (0 for the first; a line is longer than its item count, so this never reaches the next line's offset): unique per item, monotonic, stable across daemon restarts; pages are cut at it (`before`, `after`) and views key items by it |
 | `at` | the line's timestamp in Unix ms, when it has one |
 | `kind` | `user`, `assistant`, `tool`, `result` or `system` |
 | `text` | a message's text; a result's output, clipped; a system notice |

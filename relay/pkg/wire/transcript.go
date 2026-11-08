@@ -5,8 +5,9 @@ package wire
 // conversation natively instead of the terminal (the phone).
 
 // TranscriptItem is one item of a transcript. Seq is the byte offset of
-// the item's line in the transcript file: monotonic, stable across daemon
-// restarts, what pages are cut at. At is the line's timestamp in Unix ms
+// the item's line in the transcript file plus the item's index within
+// the line: unique per item, monotonic, stable across daemon restarts,
+// what pages are cut at. At is the line's timestamp in Unix ms
 // when it has one. Kind is one of the Item constants. Text is a message's
 // text, or a result's clipped output (Truncated when clipped). Tool and
 // Summary name a tool call and say in one short line what it works on;
