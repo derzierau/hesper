@@ -27,7 +27,9 @@ type SessionsHost interface {
 	Changes() <-chan struct{}
 	Exportable(id string) error
 	// Transcript and FollowTranscript read an agent's transcript as items
-	// (agents.transcript, agents.transcriptStream; transcript.go).
+	// (agents.transcript, agents.transcriptStream; transcript.go);
+	// TranscriptPath finds it (wire.CodeUnavailable: none).
+	TranscriptPath(a wire.Agent) (string, error)
 	Transcript(ctx context.Context, a wire.Agent, before int64, limit int) (wire.TranscriptPage, error)
 	FollowTranscript(ctx context.Context, a wire.Agent, after int64, limit int, emit func(wire.TranscriptItem) error) error
 }

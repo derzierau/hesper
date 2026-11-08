@@ -17,7 +17,15 @@ import (
 // fakeTranscripts is a SessionsHost whose follow sends one item, then
 // waits for its ctx (sent on ended).
 type fakeTranscripts struct {
-	ended chan struct{}
+	ended  chan struct{}
+	noPath bool // TranscriptPath answers unavailable
+}
+
+func (f *fakeTranscripts) TranscriptPath(a wire.Agent) (string, error) {
+	if f.noPath {
+		return "", wire.Errorf(wire.CodeUnavailable, "no transcript for %s", a.ID)
+	}
+	return "/transcripts/" + a.ID + ".jsonl", nil
 }
 
 func (f *fakeTranscripts) HostCall(context.Context, string, json.RawMessage) (any, error) {
@@ -139,6 +147,32 @@ func TestTranscriptStreamEnds(t *testing.T) {
 			t.Fatalf("no X after the removal: %q", stream.got)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// An agent without a transcript (a shell, none yet) answers unavailable
+// and registers no channel.
+func TestTranscriptStreamUnavailable(t *testing.T) {
+	reg, project := testRegistry(t)
+	s := &Service{Agents: reg, Sessions: &fakeTranscripts{ended: make(chan struct{}, 4), noPath: true}}
+	a, err := reg.Spawn(wire.SpawnParams{Project: project, Task: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Stop(a.ID)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	link := &hostLink{id: "L1", device: "dev", conn: agentlink.New(&frames{}), ctx: ctx, cancel: cancel, opened: time.Now(), chans: map[uint32]*hostChan{}}
+	s.links.add(link)
+	params, _ := json.Marshal(wire.TranscriptStreamParams{Link: "L1", Ch: 1, ID: a.ID})
+	_, err = s.Execute(context.Background(), protocol.Message{Method: "agents.transcriptStream", Params: params, ControllerID: "dev", Deadline: time.Now().Add(time.Second).UnixMilli()})
+	if code(err) != wire.CodeUnavailable {
+		t.Fatalf("stream without a transcript: %v", err)
+	}
+	link.mu.Lock()
+	defer link.mu.Unlock()
+	if link.chans[1] != nil {
+		t.Fatal("channel 1 registered")
 	}
 }
 

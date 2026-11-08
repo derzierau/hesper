@@ -3,6 +3,8 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net"
 
 	"github.com/derzierau/hesper/relay/pkg/agentlink"
@@ -55,6 +57,10 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 	a, err := s.agent(ctx, p.ID)
 	if err != nil {
 		return nil, err
+	}
+	// A shell, or no transcript yet: the reply says so, not an X.
+	if _, err := s.Sessions.TranscriptPath(a); err != nil {
+		return nil, publicError(err)
 	}
 	// closeChan closes a channel's pipe; this channel has no terminal
 	// behind it, so the pipe is never read.
@@ -117,7 +123,7 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 	}()
 	go func() {
 		defer stop()
-		s.Sessions.FollowTranscript(follow, a, p.After, p.Limit, func(it wire.TranscriptItem) error {
+		err := s.Sessions.FollowTranscript(follow, a, p.After, p.Limit, func(it wire.TranscriptItem) error {
 			line, err := json.Marshal(it)
 			if err != nil {
 				return err
@@ -128,6 +134,9 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 			}
 			return nil
 		})
+		if err != nil && !errors.Is(err, context.Canceled) {
+			slog.Warn("transcript stream ended", "agent", a.ID, "error", err)
+		}
 		select {
 		case <-c.done:
 			// The controller closed it.
