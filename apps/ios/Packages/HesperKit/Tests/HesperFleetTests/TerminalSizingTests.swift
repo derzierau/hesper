@@ -172,6 +172,14 @@ import Testing
         #expect(local.sizeOwner == nil && local.sizeOwnerName == nil)
     }
 
+    @Test func inactiveKeepsTheAttachUntilTheSceneIsBackgrounded() {
+        #expect(TerminalPresence.releaseDelay(for: .active, fitsPhone: true) == nil)
+        #expect(TerminalPresence.releaseDelay(for: .inactive, fitsPhone: true) == nil)
+        #expect(TerminalPresence.releaseDelay(for: .background, fitsPhone: true) == .zero)
+        #expect(TerminalPresence.releaseDelay(for: .inactive, fitsPhone: false) == nil)
+        #expect(TerminalPresence.releaseDelay(for: .background, fitsPhone: false) == .seconds(30))
+    }
+
     @Test func theFixtureEchoesAnOwnerAttachsGrid() async throws {
         let link = FixtureLink(terminalTick: .seconds(60))
         #expect(link.sizing(on: "studio")?.canOwn == true)

@@ -30,11 +30,9 @@ struct TerminalView: View {
     let watch: TerminalWatch
     @Environment(FleetModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    /// The app was in the background for 30 s: the attach is closed.
+    /// The background release closed this view's attach.
     @State private var asleep = false
 
-    /// How long the app may stay in the background with the attach open.
-    private static let backgroundGrace: Duration = .seconds(30)
     /// How long the app asks to keep running after it let go, so the close
     /// reaches the Mac before iOS suspends it.
     private static let releaseTime: Duration = .seconds(2)
@@ -73,13 +71,15 @@ struct TerminalView: View {
                 asleep = false
                 return
             }
-            if watch.fitsPhone {
+            let presence: TerminalPresence = scenePhase == .background ? .background : .inactive
+            guard let delay = TerminalPresence.releaseDelay(for: presence, fitsPhone: watch.fitsPhone) else { return }
+            if delay == .zero {
                 // The Mac's terminal keeps the phone's size until the phone
                 // lets go: close (X) now, while iOS still runs the app.
                 await Self.inBackgroundTask { asleep = true }
                 return
             }
-            guard (try? await Task.sleep(for: Self.backgroundGrace)) != nil else { return }
+            guard (try? await Task.sleep(for: delay)) != nil else { return }
             asleep = true
         }
     }

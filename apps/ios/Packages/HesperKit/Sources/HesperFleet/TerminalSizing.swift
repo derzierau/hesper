@@ -158,3 +158,15 @@ public struct FitState: Equatable, Sendable {
         return true
     }
 }
+
+/// When a terminal view releases its attach as the iPhone scene changes.
+public enum TerminalPresence: Sendable {
+    case active, inactive, background
+
+    /// nil keeps the attach; a fitted view releases immediately in the
+    /// background, while a mirror keeps its existing grace period.
+    public static func releaseDelay(for phase: Self, fitsPhone: Bool) -> Duration? {
+        guard phase == .background else { return nil }
+        return fitsPhone ? .zero : .seconds(30)
+    }
+}

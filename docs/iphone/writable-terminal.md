@@ -267,7 +267,7 @@ leaves, the size stays (`relay/internal/ptyhost/viewer.go:142-146`). So:
    once (latest owner wins). The phone sees the change in the same field
    and drops back to Mirror.
 4. **The phone lets go.** It closes the channel (`X`) when the terminal
-   screen goes away or the scene resigns active, inside a
+   screen goes away or the scene enters the background, inside a
    `beginBackgroundTask`. As a backstop, hesperd already drops a viewer
    that takes nothing for 30 s (`relay/internal/ptyhost/viewer.go:19`).
    Optional: release ownership after a shorter stall (say 10 s) for remote
@@ -333,7 +333,8 @@ agent info and its event, `relay/docs/protocol.md`,
   A suspended app runs no code, and there are no long-lived background
   sockets ([Apple DTS](https://developer.apple.com/forums/thread/685525)).
   So the terminal is foreground-only, as the concept already says. Detach,
-  and release ownership, when the scene resigns active. On return,
+  and release ownership, when the scene enters the background. Temporary
+  inactivity keeps the attach and its size ownership. On return,
   reattach: the first frame is a full redraw (45.7 ms to the first frame
   over the relay), so resuming is cheap. Blink's location trick to stay
   alive conflicts with guideline 2.5.4. Don't use it. Push and the 2 s
@@ -416,7 +417,7 @@ Phone (iOS 26)                         hesperd (Mac)
 | SwiftTerm v1.99.2 doesn't build with Swift 6.2.4 | the fallback needs a pin | pin v1.99.0 if it is ever used |
 | Grid not exactly the PTY's in Mirror (rounding) | garbled TUI, as on the Mac | check on a device first; snap the surface size to whole cells |
 | Mac and phone fight over the size | the PTY ping-pongs | only an explicit tap takes over; the Mac's latest owner wins; debounce; the phone drops to Mirror when it loses |
-| A stale remote owner (phone suspended) | Mac stuck at the phone's size for up to 30 s | release on resign-active; optional shorter stall timeout for remote owners |
+| A stale remote owner (phone suspended) | Mac stuck at the phone's size for up to 30 s | release on background; optional shorter stall timeout for remote owners |
 | Cellular latency | sluggish typing | Speak & Type for long text; measure; adaptive prediction later |
 | App Review 4.2.7 | rejection | review notes; the terminal is a secondary screen, not the product's core |
 | No device data yet | performance, battery, IME unknown | device spike before M4 (see effort) |
