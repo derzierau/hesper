@@ -30,7 +30,8 @@ type transcriptFile struct {
 	mu      sync.Mutex
 	offsets []int64 // ascending
 	size    int64   // bytes indexed: to the end of the last complete line
-	refs    int     // streams reading it (agents.transcriptStream)
+	gen     int     // times the file shrank and was indexed again
+	refs    int     // streams following it (FollowTranscript); s.mu guards it
 }
 
 // openTranscript indexes the transcript at path in one pass.
@@ -57,6 +58,7 @@ func (f *transcriptFile) update() error {
 	}
 	if st.Size() < f.size {
 		f.offsets, f.size = nil, 0
+		f.gen++
 	}
 	if st.Size() == f.size {
 		return nil
@@ -88,6 +90,11 @@ func (f *transcriptFile) page(before int64, limit int) (wire.TranscriptPage, err
 	if err := f.update(); err != nil {
 		return wire.TranscriptPage{}, err
 	}
+	return f.pageIndexed(before, limit)
+}
+
+// pageIndexed is page over what is indexed now. f.mu is held.
+func (f *transcriptFile) pageIndexed(before int64, limit int) (wire.TranscriptPage, error) {
 	fh, err := os.Open(f.path)
 	if err != nil {
 		return wire.TranscriptPage{}, fmt.Errorf("open transcript: %w", err)
