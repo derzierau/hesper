@@ -41,6 +41,14 @@ func (f *fakeSessions) Transcript(context.Context, wire.Agent, int64, int) (wire
 	return wire.TranscriptPage{}, nil
 }
 
+// agents.transcript on a daemon without the shared history answers
+// unsupported, as the host does.
+func TestTranscriptNoHistory(t *testing.T) {
+	h := newHarness(t)
+	a := h.spawn(wire.SpawnParams{Task: "t"})
+	wantCode(t, h.call("agents.transcript", wire.TranscriptParams{ID: a.ID}, nil), "unsupported")
+}
+
 // An agent's session starts (resume, fork, continue-as) make its
 // children, within the limits; a person's have no parent, whatever the
 // params say.

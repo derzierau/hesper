@@ -581,7 +581,8 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 			return res, err
 		}
 		if reg.opt.Sessions == nil {
-			return nil, wire.Errorf(wire.CodeUnavailable, "the shared history is not available")
+			// As the host answers (unavailable means this agent has none).
+			return nil, wire.Errorf("unsupported", "the shared history is not available")
 		}
 		a, err := reg.Get(p.ID)
 		if err != nil {
