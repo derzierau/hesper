@@ -452,7 +452,7 @@ renames to its own machine naming.
 | `agents.resume`, `agents.rename` | as locally (`agents.rename` may carry `by: "agent"`, set by the controller's hesperd from its verified caller, and `auto`; a host that refuses `by` as unknown gets the rename again without it) | `Agent` |
 | `agents.remove` | `{id}` | `{}` |
 | `agents.link` | `{}` | a terminal ticket: the [link](#links) |
-| `agents.attach` | `{link, ch, mode, request}`: `request` is the local attach request (every option of it, passed through), `mode` repeats its mode for the rights table | `{}`; the attach runs on channel `ch` of the caller's link |
+| `agents.attach` | `{link, ch, mode, request}`: `request` is the local attach request (every option of it, passed through), `mode` repeats its mode for the rights table | `{}`; the attach runs on channel `ch` of the caller's link. `rw` with `view` is a typing view: input accepted, rows as a view, never owner, never fit (right `type`) |
 | `agents.plan` | `{id}` | `{project, home, commits, projectId?, remote?, remoteHead?, git?, processes?}` (a move's source: commits the target may have; its Git remote; processes the agent started) |
 | `agents.probe` | `{path, home, commits, projectId?, kind?}` | `{exists, has, path?, tool?}` (a move's target: where the project is there, whether it has the tool) |
 | `agents.checkpoint` | `{id}` | `{checkpoint}` (null outside Git; right `transfer`) |
@@ -493,7 +493,8 @@ kind (1 byte) | channel (uint32 BE) | length (uint32 BE) | payload (≤ 1 MiB)
 
 The controller opens channel `ch` with a signed `agents.attach {link, ch,
 mode, request}`; the host bridges it to the agent's PTY like a local
-attach (redraw first, the size owner rule, viewers that fall behind get
+attach (redraw first, the size owner rule (a typing view, `rw` with
+`view`, never owns and never fits), viewers that fall behind get
 SIZE and a fresh redraw, EXIT last). One link per pair keeps within the
 relay's four streams per host however many tiles show remote agents.
 A host keeps at most four links per device (the oldest goes) and 256

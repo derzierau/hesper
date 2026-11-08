@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/derzierau/hesper/relay/internal/perf"
 	"github.com/derzierau/hesper/relay/internal/vt"
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -16,14 +17,17 @@ import (
 // that arrives sooner is drawn together in the next one.
 var ViewCoalesce = 8 * time.Millisecond
 
-// view is a read-only viewer that sees a window onto the screen (the last
-// rows, following the cursor) rendered from the screen copy, instead of the
+// view is a viewer that sees a window onto the screen (the last rows,
+// following the cursor) rendered from the screen copy, instead of the
 // program's output. Only rows that changed since the last render are sent.
+// A typing view (mode rw) also writes its input to the PTY; it never sizes
+// it.
 type view struct {
-	t    *Term
-	conn net.Conn
-	wake chan struct{}
-	done chan struct{}
+	t      *Term
+	conn   net.Conn
+	typing bool
+	wake   chan struct{}
+	done   chan struct{}
 
 	mu         sync.Mutex // rows, cols, full, the scroll position
 	rows, cols int
@@ -66,7 +70,8 @@ func viewSize(req wire.AttachRequest) (cols, rows int) {
 	return max(cols, 0), max(rows, 1)
 }
 
-// attachView serves a read-only view attach (req.View set).
+// attachView serves a view attach (req.View set): read-only, or a typing
+// view in mode rw, which is never the size owner and never asks for a fit.
 func (t *Term) attachView(conn net.Conn, r *bufio.Reader, req wire.AttachRequest) {
 	defer conn.Close()
 	if req.View.Anchor != "" && req.View.Anchor != wire.AnchorBottom {
@@ -74,8 +79,9 @@ func (t *Term) attachView(conn net.Conn, r *bufio.Reader, req wire.AttachRequest
 		return
 	}
 	cols, rows := viewSize(req)
-	v := &view{t: t, conn: conn, wake: make(chan struct{}, 1), done: make(chan struct{}), rows: rows, cols: cols}
-	if req.Fit != nil && req.Fit.Cols > 0 && req.Fit.Rows > 0 {
+	typing := req.Mode == wire.ModeRW
+	v := &view{t: t, conn: conn, typing: typing, wake: make(chan struct{}, 1), done: make(chan struct{}), rows: rows, cols: cols}
+	if !typing && req.Fit != nil && req.Fit.Cols > 0 && req.Fit.Rows > 0 {
 		v.fitCols, v.fitRows = req.Fit.Cols, req.Fit.Rows
 	}
 	t.mu.Lock()
@@ -118,7 +124,8 @@ func (t *Term) detachView(v *view) {
 	t.mu.Unlock()
 }
 
-// read takes RESIZE frames (the window's new size); input is refused.
+// read takes RESIZE frames (the window's new size), SCROLL frames, and
+// input, which only a typing view writes to the PTY.
 func (v *view) read(r *bufio.Reader) {
 	var buf []byte
 	for {
@@ -131,6 +138,17 @@ func (v *view) read(r *bufio.Reader) {
 		}
 		if typ == wire.FrameScroll {
 			v.scrollTo(p)
+			continue
+		}
+		if typ == wire.FrameData {
+			if !v.typing {
+				continue // read-only: refused
+			}
+			start := time.Now()
+			if v.t.Input(p) != nil {
+				continue
+			}
+			perf.Host.Since(StageInput, start)
 			continue
 		}
 		if typ != wire.FrameResize {

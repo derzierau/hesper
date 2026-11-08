@@ -195,14 +195,15 @@ empty (views show the tool name alone).
 whichever comes first, with `truncated: true`.
 
 **Size rule.** An agent's PTY has exactly one size. The size owner is the most
-recent `owner:true` rw attachment (the app's focused view); when it detaches,
+recent `owner:true` rw attachment without `view` (the app's focused view;
+a typing view, below, never owns); when it detaches,
 the size stays (unless view attaches ask for a fit, below). Every other
 viewer receives bytes for that grid: the app renders tiles by choosing the
 font size that fits `cols × rows` into the tile (scaled live tiles), never by
 resizing the PTY.
 
 **View attaches** (added with the layout rework, see "As built — layout"): an
-`ro` attach may ask for a window onto the screen instead of the screen:
+attach may ask for a window onto the screen instead of the screen:
 `"view":{"rows":R,"cols":C,"anchor":"bottom"}` (`rows`/`cols` 0 or missing:
 the request's `cols`/`rows`; `anchor` only `bottom`). The daemon renders,
 from its screen copy, the R rows that end at the lower of the last non-blank
@@ -210,7 +211,11 @@ row and the cursor's row, each clipped to C columns, and afterwards only the
 rows that changed (each render one `?2026` synchronized update, at most one
 per 8 ms; the first after a quiet period at once). The viewer gets no SIZE
 frames; its RESIZE sets the window (`cols, rows`), never the PTY. The reply
-echoes `"view":{rows, cols, anchor}`. A `rw` view is refused (`invalid`).
+echoes `"view":{rows, cols, anchor}`. `rw` with `view` is a typing view
+(the iPhone's text view): input accepted, rows as a view, never owner, never
+fit. Its DATA frames go to the PTY as from a plain `rw` attach; it gets no
+scrollback preamble and no redraw, and `owner` and `fit` in its request are
+ignored. An `ro` view discards DATA.
 
 **As built — fit** (additive): a view attach may add `"fit":{"cols":C,"rows":R}`,
 the grid its tile would like the PTY to have (the app sends its tile's
@@ -715,7 +720,8 @@ tracking (mouse, focus, kitty keyboard flags, cursor shape), `Resize` and
   frame and a fresh redraw (then live output). A viewer that takes nothing
   for 30 s is dropped.
 - `ro`: DATA from the client is discarded. RESIZE applies only from the
-  current owner (most recent `rw` + `owner:true`); an `ro` attach never owns.
+  current owner (most recent `rw` + `owner:true`, not a view); an `ro`
+  attach or a typing view never owns.
   When the owner detaches the size stays and nobody owns it.
 - The daemon is the agent's terminal: it answers DA1/DA2/DA3, DSR 5/6
   (CPR), XTVERSION (`hesperd`), DECRQM, kitty `CSI ? u`, `CSI 14/16/18 t`,
