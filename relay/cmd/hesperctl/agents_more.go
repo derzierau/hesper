@@ -62,7 +62,7 @@ func init() {
 			Output: "{text, rows, cols, cursor?:{col, row}, alt?}", Examples: []string{"hesperctl screen a7f3k2", "hesperctl screen a7f3k2 --rows 10 --scrollback 200"},
 			Run: screenCommand},
 		{Name: "transcript", ReadOnly: true, Summary: "Print an agent's conversation from its transcript", Usage: "transcript ID [--limit N] [--before SEQ] [--follow] [--json]",
-			Help:   idHelp + " The Claude Code or Codex transcript as items, oldest first: › your messages, the agent's replies, ⏺ tool calls and ⎿ the first line of their results. --limit N items (default 200, at most 1000; whole lines, so a few more may come), --before SEQ only items before that seq (paging back, with more from the previous page); --follow then prints new items as they come, until interrupted (this Mac's daemon pages every second). A shell, or an agent with no transcript yet: unavailable.",
+			Help:   idHelp + " The Claude Code or Codex transcript as items, oldest first: › your messages, the agent's replies, ⏺ tool calls and ⎿ the first line of their results. --limit N items (default 200, at most 1000; whole lines, so a few more may come), --before SEQ only items before that seq (paging back, with more from the previous page); --follow then prints new items as they come, until interrupted (this Mac's daemon pages every second; refused as an MCP tool, which would never return). A shell, or an agent with no transcript yet: unavailable.",
 			Output: "{items:[{seq, at?, kind, text?, tool?, summary?, id?, of?, truncated?, ok?}], more}; with --follow one item per line", Examples: []string{"hesperctl transcript a7f3k2", "hesperctl transcript a7f3k2 --limit 20 --follow"},
 			Run: transcriptCommand},
 		{Name: "events", NoMCP: true, Summary: "Stream agent, draft, project and history changes as JSON lines", Usage: "events [--agent ID]… [--kinds K,…]",
@@ -909,6 +909,9 @@ func transcriptCommand(ctx context.Context, f *flag.FlagSet, args []string) erro
 		}
 		if *follow && *before > 0 {
 			return usagef("--follow starts at the end: no --before")
+		}
+		if *follow && os.Getenv(mcpEnv) != "" {
+			return usagef("--follow runs until interrupted, not as an MCP tool: call transcript again for new items")
 		}
 		id, err := resolveAgent(ctx, c, positional[0])
 		if err != nil {

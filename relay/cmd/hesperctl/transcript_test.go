@@ -40,4 +40,9 @@ func TestTranscriptCommand(t *testing.T) {
 	if code := w.code("transcript", a.ID, "--limit", "5000"); code == 0 {
 		t.Fatal("--limit 5000 passed")
 	}
+	// As an MCP tool --follow would never return: refused.
+	t.Setenv(mcpEnv, "1")
+	if code := w.code("transcript", a.ID, "--follow"); code == 0 {
+		t.Fatal("--follow ran as an MCP tool")
+	}
 }
