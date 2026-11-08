@@ -66,10 +66,19 @@ func TestFollowReconnectSplitsMultiItemLineWithinBatchBudget(t *testing.T) {
 			t.Fatalf("batch item %d has seq %d", i, it.Seq)
 		}
 	}
-	items, _, cancel := follow(t, s, a, after, 1)
+	items, done, cancel := follow(t, s, a, after, 1)
 	defer cancel()
+	deadline := time.NewTimer(15 * time.Second)
+	defer deadline.Stop()
 	for i := 1; i < 200; i++ {
-		it := nextItem(t, items, time.Second)
+		var it wire.TranscriptItem
+		select {
+		case it = <-items:
+		case err := <-done:
+			t.Fatalf("follow ended before item %d: %v", i, err)
+		case <-deadline.C:
+			t.Fatalf("follow delivered only %d of 199 items within 15s", i-1)
+		}
 		if it.Seq != base+int64(i) || it.Kind != wire.ItemAssistant {
 			t.Fatalf("item %d: seq %d kind %s", i, it.Seq, it.Kind)
 		}
