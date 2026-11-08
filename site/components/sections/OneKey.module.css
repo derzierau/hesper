@@ -1,0 +1,69 @@
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  gap: var(--s-section);
+  align-items: center;
+}
+
+.legend {
+  list-style: none;
+  margin: var(--s-xxl) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-xl);
+  font: 400 var(--t-body)/1 var(--sans);
+  color: var(--text2);
+}
+.legendItem { display: inline-flex; align-items: center; gap: var(--s-s); }
+.legendNote { color: var(--dim); }
+
+.demo { display: flex; flex-direction: column; gap: var(--s-m); width: 100%; }
+.bar { display: flex; justify-content: flex-end; }
+.count { font-variant-numeric: tabular-nums; }
+.demo[data-phase="focused"] .count { animation: flash var(--m-move) var(--ease); }
+@keyframes flash { 50% { opacity: 0.2; } }
+
+/* The focus ring is a sibling layer so the tile keeps its overflow clip and only opacity moves. */
+.frame { position: relative; }
+.frame::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 2px solid var(--working);
+  border-radius: calc(var(--r-tile) + 4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--m-quick) var(--ease);
+}
+.frame[data-focused]::after { opacity: 1; }
+
+/* Fixed height so the footer band never moves the tile; lines sit at the top. */
+.tile { height: 190px; }
+.tile pre { min-height: 140px; justify-content: flex-start; }
+.tile footer {
+  animation: footerIn var(--m-settle) var(--ease);
+  transition: opacity var(--m-settle) var(--ease);
+}
+.demo[data-phase="allowed"] footer { opacity: 0; }
+@keyframes footerIn { from { opacity: 0; } }
+
+.try { font: 400 var(--t-chrome)/1.6 var(--sans); color: var(--text2); }
+.key, .replay {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.replay { color: var(--working); }
+.replay:hover { text-decoration: underline; }
+
+@media (max-width: 800px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .demo { max-width: 520px; }
+}

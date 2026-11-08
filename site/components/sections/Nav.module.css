@@ -1,0 +1,21 @@
+.bar { position: sticky; top: 0; z-index: 10; height: 48px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.inner { display: flex; align-items: center; justify-content: space-between; height: 100%; }
+.home { display: inline-flex; align-items: center; color: var(--text); }
+.home:hover { text-decoration: none; }
+/* The wordmark's signal square answers the wall's needs-you: two pulses, then rest. */
+.pulse i { animation: pulse var(--m-settle) var(--ease) 2; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.links { display: flex; align-items: center; gap: var(--s-xxl); margin: 0; padding: 0; list-style: none; }
+.link { font: 500 var(--t-body)/1 var(--sans); color: var(--text2); transition: color var(--m-quick) var(--ease); }
+.link:hover { color: var(--text); text-decoration: none; }
+.install {
+  display: inline-flex; align-items: center; height: 28px; padding: 0 var(--s-l);
+  border: 1px solid var(--line); border-radius: var(--r-control);
+  font: 500 var(--t-chrome)/1 var(--sans); color: var(--text);
+  transition: background var(--m-quick) var(--ease), border-color var(--m-quick) var(--ease);
+}
+.install:hover { background: var(--line); text-decoration: none; }
+@media (max-width: 719px) {
+  .links { gap: var(--s-xl); }
+  .hideNarrow { display: none; }
+}

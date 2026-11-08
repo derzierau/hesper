@@ -2,6 +2,7 @@
 
 Hesper runs Claude Code, Codex and shell agents on the owner's Macs.
 - `relay/`: Go 1.25. `hesperd` (per-Mac daemon), `hesperctl` (CLI), `hesper-relay` (network relay).
+- `site/`: the website at hesper.wtf, Next.js static export.
 - `app/`: Swift 6.2, SwiftPM only, macOS 14+. Hesper.app. `HesperCore` is pure, tested logic; `Hesper` is AppKit/SwiftUI on libghostty.
 - The app is only a view of hesperd. It never talks to the network.
 
@@ -11,6 +12,7 @@ Hesper runs Claude Code, Codex and shell agents on the owner's Macs.
 - App, headless: `make -C relay build && make -C app test-unit test-fake`
 - App bundle: `make -C app build` (output `app/build/Hesper.app`)
 - Installer: `scripts/test-install.sh`
+- Website: `cd site && npm ci && npm run build`
 - `relay/internal/vt` tests need `tmux` 3.7 or newer on PATH.
 
 ## Never run without asking
@@ -38,7 +40,7 @@ Hesper runs Claude Code, Codex and shell agents on the owner's Macs.
 - One logical change per commit. Each commit builds and passes its tests on its own.
 - Keep formatting, renames and refactors in their own commits, apart from behaviour changes.
 - Subject: `<area>: <what changes, imperative>`, at most 72 characters, no trailing period.
-  Areas: `relay`, `hesperd`, `hesperctl`, `app` or an app feature (`Wall`, `History`, `Desks`), `install.sh`, `ci`, `release`, `brew`, `docs`, `AGENTS.md`.
+  Areas: `relay`, `hesperd`, `hesperctl`, `app` or an app feature (`Wall`, `History`, `Desks`), `install.sh`, `ci`, `release`, `brew`, `docs`, `site`, `AGENTS.md`.
 - Body, wrapped at 72: why the change is needed and anything a reviewer cannot see in the diff.
 - Work on a branch; never commit to or force-push `main`.
 - Commits written by an agent end with its `Co-Authored-By:` trailer.

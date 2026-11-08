@@ -1,0 +1,88 @@
+/* Wide: two machine frames with the packet on the connector between them.
+   Narrow: one column in DOM order, the connector turned upright. */
+.demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(176px, 220px) minmax(0, 1fr);
+  gap: var(--s-l);
+  align-items: stretch;
+  margin-top: var(--s-section);
+}
+
+/* A machine: a surface panel with a plain label and room for one tile. */
+.frame {
+  display: flex; flex-direction: column; gap: var(--s-m);
+  min-width: 0;
+  padding: var(--s-l);
+  background: var(--surface);
+  border-radius: var(--r-panel);
+}
+.frameLabel { margin: 0; font: 500 var(--t-chrome)/1 var(--sans); color: var(--text2); }
+.slot { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+/* Both tiles stay in the DOM; only opacity, transform and visibility change.
+   A transition is read from the state being entered, so each state names its own. */
+.tileWrap { transition: opacity var(--m-settle) var(--ease), transform var(--m-settle) var(--ease), visibility 0s; }
+.resting { opacity: 1; transform: none; }
+.faded { opacity: 0.35; transition-duration: var(--m-move), var(--m-move), 0s; }
+.gone { opacity: 0; visibility: hidden; transition: opacity var(--m-quick) var(--ease), visibility 0s linear var(--m-quick); }
+.hidden { opacity: 0; visibility: hidden; transform: translateY(6px); transition: none; }
+.landing { opacity: 1; transform: none; }
+
+/* Connector: a thin line through the packet, never an arrowhead. It reaches
+   across the grid gap into both frames. */
+.connector { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; }
+.connector::before {
+  content: ""; position: absolute; top: 50%; height: 1px;
+  left: calc(-1 * var(--s-l)); right: calc(-1 * var(--s-l));
+  background: var(--line);
+}
+
+/* The checkpoint: a sealed packet. Its outline brightens to the working tone
+   while a move is under way, drawn as an overlay so only opacity animates. */
+.packet {
+  position: relative; width: 100%;
+  display: flex; flex-direction: column; gap: var(--s-s);
+  padding: var(--s-l);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  font: 400 var(--t-chrome)/1.5 var(--sans);
+  color: var(--text);
+}
+.packet::after {
+  content: ""; position: absolute; inset: -1px; pointer-events: none;
+  border: 1.5px solid var(--working); border-radius: inherit;
+  opacity: 0; transition: opacity var(--m-move) var(--ease);
+}
+.active::after { opacity: 1; }
+.seal { display: flex; align-items: center; gap: var(--s-s); margin: 0; font-weight: 500; color: var(--text2); }
+.list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--s-xxs); }
+.item { display: flex; align-items: center; gap: var(--s-s); opacity: 0.55; transition: opacity var(--m-quick) var(--ease); }
+.box { position: relative; flex: none; width: 7px; height: 7px; border-radius: 1px; box-shadow: inset 0 0 0 1.5px var(--dim); }
+.fill { position: absolute; inset: 0; border-radius: 1px; background: var(--working); opacity: 0; transition: opacity var(--m-quick) var(--ease); }
+/* Lines tick on one after another once the outline has brightened. */
+.active .item, .active .fill { opacity: 1; transition-delay: calc(var(--m-move) + var(--i) * var(--m-stagger)); }
+.never { margin: var(--s-xs) 0 0; color: var(--dim); }
+
+.prompt { margin-top: var(--s-xl); font: 400 var(--t-chrome)/1.6 var(--sans); color: var(--text2); }
+.key { margin: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; border-radius: var(--r-kbd); }
+
+.facts {
+  display: flex; flex-wrap: wrap; gap: var(--s-m) var(--s-xxl);
+  margin: var(--s-xxl) 0 0;
+  font: 400 var(--t-chrome)/1.5 var(--sans);
+}
+.fact { display: flex; gap: var(--s-m); min-width: 0; }
+.fact dt { color: var(--dim); white-space: nowrap; }
+.fact dd { margin: 0; color: var(--text); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 720px) {
+  .demo { grid-template-columns: minmax(0, 1fr); }
+  .connector { padding-block: var(--s-l); }
+  .connector::before {
+    left: 50%; right: auto; width: 1px; height: auto;
+    top: calc(-1 * var(--s-l)); bottom: calc(-1 * var(--s-l));
+  }
+  .packet { max-width: 320px; }
+}

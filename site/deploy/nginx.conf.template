@@ -1,0 +1,38 @@
+# The site's vhost in the shared nginx. nginx picks this block by SNI on 443.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${SITE_DOMAIN} www.${SITE_DOMAIN};
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://${SITE_DOMAIN}$request_uri; }
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name www.${SITE_DOMAIN};
+    ssl_certificate /etc/letsencrypt/live/${SITE_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${SITE_DOMAIN}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    return 301 https://${SITE_DOMAIN}$request_uri;
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${SITE_DOMAIN};
+    ssl_certificate /etc/letsencrypt/live/${SITE_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${SITE_DOMAIN}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    location / {
+        set $hesper_site hesper-site:80;
+        proxy_pass http://$hesper_site;
+        proxy_set_header Host $host;
+    }
+}

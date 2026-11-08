@@ -1,0 +1,6 @@
+.pill { display: inline-flex; align-items: center; gap: var(--s-s); height: 22px; padding: 0 9px; border-radius: var(--r-control); font: 500 var(--t-chrome)/1 var(--sans); color: var(--text); background: color-mix(in srgb, var(--working) 14%, transparent); white-space: nowrap; }
+.needsYou { background: color-mix(in srgb, var(--signal) 14%, transparent); }
+.question { background: color-mix(in srgb, var(--question) 14%, transparent); }
+.done { background: color-mix(in srgb, var(--done) 14%, transparent); }
+.error { background: color-mix(in srgb, var(--error) 14%, transparent); }
+.count { font: 500 var(--t-meta)/1 var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; }

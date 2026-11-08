@@ -10,6 +10,7 @@ you write the code.
   and the Secure Enclave helper `hesper-keys`.
 - `app/`: Hesper.app, the native macOS client (SwiftPM, no Xcode project).
 - `install.sh`, `scripts/`: the installer and its tests.
+- `site/`: the website at hesper.wtf (Next.js, static export).
 - `docs/`: the contracts the code is built against.
 
 ## Requirements
@@ -47,6 +48,15 @@ Installer:
 scripts/test-install.sh   # dry runs in a temporary HOME
 ```
 
+Website (Node 20 or newer):
+
+```sh
+cd site && npm ci && npm run build   # type-checks and writes out/
+```
+
+`site/scripts/deploy.sh` publishes it next to a relay's nginx; see
+`site/README.md`.
+
 ## Commits
 
 - One logical change per commit. Each commit builds and passes its tests on
@@ -56,7 +66,7 @@ scripts/test-install.sh   # dry runs in a temporary HOME
 - Subject: `<area>: <what changes>`, imperative, at most 72 characters, no
   trailing period. Areas: `relay`, `hesperd`, `hesperctl`, `app` or an app
   feature (`Wall`, `History`, `Desks`), `install.sh`, `ci`, `release`,
-  `brew`, `docs`, `AGENTS.md`. For example `relay: drop a viewer that falls 4 MiB behind`.
+  `brew`, `docs`, `site`, `AGENTS.md`. For example `relay: drop a viewer that falls 4 MiB behind`.
 - Body, wrapped at 72 columns: why the change is needed and what a reviewer
   cannot see in the diff.
 

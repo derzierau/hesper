@@ -1,0 +1,10 @@
+.tile { background: var(--tile); border: 1px solid var(--line); border-radius: var(--r-tile); overflow: hidden; min-width: 0; display: flex; flex-direction: column; }
+.header { display: flex; align-items: center; gap: var(--s-s); height: 24px; padding: 0 var(--s-m); font: 500 11.5px/1 var(--sans); color: var(--text); }
+.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { margin-left: auto; font: 400 10px/1 var(--mono); color: var(--dim); white-space: nowrap; }
+.term { margin: 0; flex: 1; background: var(--term); color: var(--term-fg); font: 400 10px/1.5 var(--mono); padding: var(--s-m); min-height: 84px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; white-space: pre; }
+.term :global(.d) { color: var(--term-dim); }
+.term :global(.g) { color: var(--done); }
+.term :global(.w) { color: var(--working); }
+.footer { display: flex; align-items: center; gap: var(--s-m); height: 26px; padding: 0 var(--s-m); font: 500 10.5px/1 var(--sans); color: var(--text); background: color-mix(in srgb, var(--signal) 10%, var(--tile)); border-top: 1px solid var(--line); }
+.prompt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

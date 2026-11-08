@@ -45,6 +45,10 @@ This file ships inside `Hesper.app/Contents/Resources/THIRD_PARTY_NOTICES.md`.
 | modernc.org/mathutil | v1.7.1 | BSD-3-Clause | hesperd |
 | modernc.org/memory | v1.11.0 | BSD-3-Clause | hesperd |
 | modernc.org/sqlite (incl. SQLite) | v1.56.0 | BSD-3-Clause, public domain | hesperd |
+| Next.js | 16.4.0 | MIT | the website (site/) |
+| React, React DOM, scheduler | 19.3.0, 0.28.0 | MIT | the website (site/) |
+| @swc/helpers | 0.5.23 | Apache-2.0 | the website (site/) |
+| Geist, Geist Mono | via next/font | OFL-1.1 | the website (site/) |
 
 ---
 
@@ -1281,6 +1285,31 @@ code can be traced back to its original author, and all of those authors have
 public domain dedications on file. So the SQLite code base is clean and is
 uncontaminated with licensed code from other projects.
 ```
+
+---
+
+## The website (site/)
+
+The static site at hesper.wtf is built with Next.js and ships parts of the
+following packages in its JavaScript bundle. Geist and Geist Mono are
+self-hosted through `next/font` (see Geist and Geist Mono above).
+
+### Next.js
+
+Version 16.4.0, https://github.com/vercel/next.js, MIT License.
+
+Copyright (c) 2025 Vercel, Inc.
+
+### React, React DOM, scheduler
+
+Versions 19.3.0 (react, react-dom) and 0.28.0 (scheduler),
+https://github.com/facebook/react, MIT License.
+
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+### @swc/helpers
+
+Version 0.5.23, https://github.com/swc-project/swc, Apache License 2.0.
 
 ---
 

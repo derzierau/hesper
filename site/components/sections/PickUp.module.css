@@ -1,0 +1,32 @@
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-xxl); margin-top: var(--s-section); }
+@media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+
+.card { min-width: 0; background: var(--surface); border-radius: var(--r-panel); overflow: hidden; display: flex; flex-direction: column; }
+.body { padding: var(--s-xl); display: flex; flex-direction: column; gap: var(--s-m); }
+.h3 { font-size: var(--t-panel); display: flex; align-items: center; gap: var(--s-m); }
+.copy { color: var(--text2); font-size: var(--t-body); line-height: 1.55; }
+.note { color: var(--dim); font-size: var(--t-chrome); }
+
+/* A still of the real window: 24 px header bar, then rows in the app's Row anatomy. */
+.still { margin: var(--s-l); margin-bottom: 0; height: 200px; overflow: hidden; background: var(--tile); border: 1px solid var(--line); border-radius: var(--r-tile); display: flex; flex-direction: column; }
+.bar { flex: none; display: flex; align-items: center; justify-content: space-between; height: 24px; padding: 0 var(--s-l); background: var(--surface); border-bottom: 1px solid var(--line); font: 500 11.5px/1 var(--sans); color: var(--text); }
+.barMeta { font: 400 10px/1 var(--mono); color: var(--dim); }
+
+.searchWrap { padding: var(--s-m) var(--s-m) var(--s-xs); }
+.search { height: 24px; padding: 0 var(--s-m); display: flex; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-control); font: 400 var(--t-chrome)/1 var(--sans); color: var(--text); }
+.search::after { content: ""; display: inline-block; width: 1px; height: 12px; margin-left: var(--s-xxs); background: var(--working); }
+
+.row { display: flex; align-items: center; gap: var(--s-m); height: 40px; margin: 0 var(--s-xs); padding: 0 var(--s-m); border-radius: var(--r-control); min-width: 0; transition: opacity var(--m-move) var(--ease), transform var(--m-move) var(--ease); }
+.selected { background: color-mix(in srgb, var(--working) 20%, transparent); }
+.rowText { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.title { font: 400 var(--t-body)/1.2 var(--sans); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub { font: 400 var(--t-chrome)/1.2 var(--sans); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { flex: none; font: 400 var(--t-meta)/1 var(--mono); color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.diff { margin: var(--s-xs) var(--s-m) 0; padding: var(--s-s) 0; border-top: 1px solid var(--line); font: 400 var(--t-meta)/1.6 var(--mono); color: var(--text2); overflow: hidden; display: flex; flex-direction: column; }
+.diff span { display: block; padding: 0 var(--s-s); border-radius: var(--r-kbd); white-space: pre; overflow: hidden; text-overflow: ellipsis; transition: opacity var(--m-move) var(--ease), transform var(--m-move) var(--ease); }
+.add { background: color-mix(in srgb, var(--done) 12%, transparent); }
+.del { background: color-mix(in srgb, var(--error) 12%, transparent); }
+
+/* A row or diff line that has not arrived yet. It keeps its space so the still never reflows. */
+.pending { opacity: 0; transform: translateY(4px); }

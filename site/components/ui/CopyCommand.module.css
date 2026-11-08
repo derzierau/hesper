@@ -1,0 +1,6 @@
+.box { position: relative; background: var(--term); border-radius: var(--r-tile); border: 1px solid var(--line); overflow: hidden; }
+.pre { margin: 0; padding: var(--s-l) 84px var(--s-l) var(--s-xl); font: 400 12.5px/1.7 var(--mono); color: var(--term-fg); overflow-x: auto; }
+.line { display: block; white-space: pre; }
+.prompt { color: var(--term-dim); user-select: none; }
+.btn { position: absolute; top: var(--s-m); right: var(--s-m); box-shadow: 0 0 0 8px var(--term); height: 24px; padding: 0 var(--s-m); border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface); color: var(--text); font: 500 var(--t-chrome)/1 var(--sans); cursor: pointer; transition: background var(--m-quick) var(--ease); }
+.btn:hover { background: var(--line); }
