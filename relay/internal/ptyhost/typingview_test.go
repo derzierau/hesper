@@ -36,12 +36,13 @@ func TestTypingViewNoSizing(t *testing.T) {
 	tm.cfg.FitDebounce = 30 * time.Millisecond
 	tm.mu.Unlock()
 	waitFor(t, "prompt", func() bool { return screenHas(tm, "prompt>") })
-	vc := attachView(t, tm, wire.AttachRequest{Attach: "x", Mode: wire.ModeRW, Owner: true, Cols: 50, Rows: 20,
-		View: &wire.View{Rows: 20, Cols: 50}, Fit: &wire.Size{Cols: 50, Rows: 20}})
+	// Sizes above the 80x24 fit floor: a fit that got through would show.
+	vc := attachView(t, tm, wire.AttachRequest{Attach: "x", Mode: wire.ModeRW, Owner: true, Cols: 120, Rows: 40,
+		View: &wire.View{Rows: 40, Cols: 120}, Fit: &wire.Size{Cols: 120, Rows: 40}})
 	if !vc.rep.OK || vc.rep.Cols != 80 || vc.rep.Rows != 24 {
 		t.Fatalf("reply %+v", vc.rep)
 	}
-	wire.WriteFrame(vc.conn, wire.FrameResize, wire.SizePayload(40, 10))
+	wire.WriteFrame(vc.conn, wire.FrameResize, wire.SizePayload(120, 40))
 	time.Sleep(400 * time.Millisecond)
 	if c, r := tm.Size(); c != 80 || r != 24 {
 		t.Fatalf("a typing view resized the PTY to %dx%d", c, r)
