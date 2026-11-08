@@ -5,11 +5,53 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
+
+func TestFollowBackfillIsBatched(t *testing.T) {
+	texts := make([]string, 130)
+	for i := range texts {
+		texts[i] = strings.Repeat("x", 1024)
+	}
+	_, a, path, offs := followEnv(t, texts...)
+	f, err := openTranscript(path, a.Kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, next, gen, err := f.backfill(offs[1], 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) == 0 || len(items) > 64 {
+		t.Fatalf("first backfill held %d items, want 1..64", len(items))
+	}
+	if next >= f.size {
+		t.Fatalf("first backfill advanced to %d of %d before emitting the rest", next, f.size)
+	}
+	got := append([]wire.TranscriptItem(nil), items...)
+	for next < f.size {
+		items, next, gen, err = f.tail(next, gen, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) == 0 || len(items) > 64 {
+			t.Fatalf("tail batch held %d items, want 1..64", len(items))
+		}
+		got = append(got, items...)
+	}
+	if len(got) != len(texts)-2 {
+		t.Fatalf("emitted %d items, want %d", len(got), len(texts)-2)
+	}
+	for i, item := range got {
+		if item.Seq != offs[i+2] || item.Text != texts[i+2] {
+			t.Fatalf("item %d: %+v, want seq %d", i, item, offs[i+2])
+		}
+	}
+}
 
 // codexMsg is a rollout line with one assistant message.
 func codexMsg(text string) string {

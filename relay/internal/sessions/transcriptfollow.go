@@ -25,8 +25,8 @@ var FollowPoll = 250 * time.Millisecond
 // (ctx.Err()) or emit returns an error. First: after <= 0, the newest
 // limit items (0: wire.TranscriptDefaultLimit, at most
 // wire.TranscriptMaxLimit), oldest first, like a page;
-// after > 0, every item whose Seq is greater than after, not capped by
-// limit (a phone catching up after a reconnect). A file that shrank was
+// after > 0, every item whose Seq is greater than after, sent in bounded
+// batches (a phone catching up after a reconnect). A file that shrank was
 // rewritten: it sends {Seq: -1, Kind: system, Text: "Transcript
 // restarted"} (a negative Seq is a marker, never a line), then the
 // newest limit items of the rewritten file as after <= 0 does, and
@@ -72,6 +72,12 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 				return fmt.Errorf("follow transcript of %s: %w", a.ID, err)
 			}
 		}
+		// Drain a reconnect backlog in bounded batches before polling for
+		// new lines. emit runs between batches, without the index lock.
+		items, next, gen, err = f.tail(next, gen, limit)
+		if err != nil || len(items) > 0 {
+			continue
+		}
 		t := time.NewTimer(poll)
 		select {
 		case <-ctx.Done():
@@ -97,14 +103,14 @@ func (f *transcriptFile) backfill(after int64, limit int) ([]wire.TranscriptItem
 	}
 	// From the line that holds after: its later items count too.
 	i := max(sort.Search(len(f.offsets), func(i int) bool { return f.offsets[i] > after })-1, 0)
-	items, err := f.linesFrom(i)
+	items, next, err := f.linesFrom(i)
 	var out []wire.TranscriptItem
 	for _, it := range items {
 		if it.Seq > after {
 			out = append(out, it)
 		}
 	}
-	return out, f.size, f.gen, err
+	return out, next, f.gen, err
 }
 
 // tail is the items of the lines indexed from byte offset from on, the
@@ -122,27 +128,42 @@ func (f *transcriptFile) tail(from int64, gen, limit int) ([]wire.TranscriptItem
 		items := append([]wire.TranscriptItem{{Seq: -1, Kind: wire.ItemSystem, Text: "Transcript restarted"}}, p.Items...)
 		return items, f.size, f.gen, err
 	}
-	items, err := f.linesFrom(sort.Search(len(f.offsets), func(i int) bool { return f.offsets[i] >= from }))
-	return items, f.size, f.gen, err
+	items, next, err := f.linesFrom(sort.Search(len(f.offsets), func(i int) bool { return f.offsets[i] >= from }))
+	return items, next, f.gen, err
 }
 
-// linesFrom is the items of the i-th indexed line on. f.mu is held.
-func (f *transcriptFile) linesFrom(i int) ([]wire.TranscriptItem, error) {
+// transcriptBatchLines caps lines parsed while holding the index lock.
+const transcriptBatchLines = 64
+
+// linesFrom is a bounded batch of items from the i-th indexed line on,
+// and the offset where the next batch starts. f.mu is held.
+func (f *transcriptFile) linesFrom(i int) ([]wire.TranscriptItem, int64, error) {
 	if i >= len(f.offsets) {
-		return nil, nil
+		return nil, f.size, nil
 	}
 	fh, err := os.Open(f.path)
 	if err != nil {
-		return nil, fmt.Errorf("open transcript: %w", err)
+		return nil, 0, fmt.Errorf("open transcript: %w", err)
 	}
 	defer fh.Close()
 	var items []wire.TranscriptItem
-	for _, off := range f.offsets[i:] {
+	size := 0
+	for j := i; j < len(f.offsets); j++ {
+		if j-i >= transcriptBatchLines {
+			return items, f.offsets[j], nil
+		}
+		off := f.offsets[j]
 		raw, err := lineAt(fh, off, f.size)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		items = append(items, itemsFrom(f.kind, bytes.TrimRight(raw, "\r\n"), off)...)
+		line := itemsFrom(f.kind, bytes.TrimRight(raw, "\r\n"), off)
+		n := itemsSize(line)
+		if j > i && size+n > TranscriptPageBytes {
+			return items, off, nil
+		}
+		items = append(items, line...)
+		size += n
 	}
-	return items, nil
+	return items, f.size, nil
 }
