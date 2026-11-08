@@ -116,7 +116,7 @@ TextStyle/Weight/Chrome/Density/Motion`, `DesignTokens.pulsePeriod` (2 s).
 | starting | `.starting` | outlined `working` |
 | working | `.working` | filled `working` |
 | approval | `.needsYou` | filled `signal`, slow 2 s opacity pulse (none under Reduce Motion) |
-| question | `.question` | filled `question` |
+| question | `.question` | filled `question`, the same pulse |
 | done | `.done` | filled `done` |
 | idle, unknown | `.idle` | outlined `dim` (1.5 pt) |
 | error | `.error` | filled `error` |
@@ -124,7 +124,11 @@ TextStyle/Weight/Chrome/Density/Motion`, `DesignTokens.pulsePeriod` (2 s).
 
 The mark is 7 pt (`StateMarkKind.side`). Its `.fill` is `.filled`,
 `.outlined` or `.slashed`, and its `.tone` maps to a token through
-`Theme.token(_:)`. `.pulses(reduceMotion:)` is true only for `.needsYou`.
+`Theme.token(_:)`. `.pulses(reduceMotion:)` is true for `.needsYou` and
+`.question` (what waits on the user); an error stays steady. The menu
+bar item's stop blinks (filled / ring, every second) while
+`StateMarkKind.anyPulses` holds for the agents, steady under Reduce
+Motion.
 
 ## Primitives
 
@@ -141,7 +145,7 @@ StateMark(color: Theme.color(hex))      // a plain filled square (non-state: mac
 
 // AppKit
 let m = StateMarkView(.working)         // intrinsic size 7 × 7; layer-drawn, follows appearance
-m.kind = StateMarkKind(agent.state)     // pulses for .needsYou while in a window
+m.kind = StateMarkKind(agent.state)     // pulses for .needsYou and .question while in a window
 m.plainColor = Theme.ns(.done)          // optional: plain square
 
 // Menus

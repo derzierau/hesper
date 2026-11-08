@@ -44,6 +44,10 @@ type Service struct {
 	// right start shells here (agents.spawn kind shell, Touch ID) and see,
 	// attach to and type into shell agents. Without it shells stay local.
 	AllowShell bool
+	// AllowForward (hesperd serve --allow-forward) lets devices with the
+	// shell right reach these ports on this machine's loopback
+	// (ports.open, forward.go).
+	AllowForward Ports
 	// E2EKey (base64) advertises the end-to-end channel in snapshots
 	// (Runner.E2E answers it).
 	E2EKey string
@@ -61,7 +65,8 @@ type Service struct {
 	Sessions SessionsHost
 
 	links       links
-	reviewParts partCache // review.go
+	fwdLimits   forwardLimits // forward.go
+	reviewParts partCache     // review.go
 	runtime     string
 	runtimeOnce sync.Once
 }
@@ -100,6 +105,7 @@ func (s *Service) Snapshot(ctx context.Context) (session.Snapshot, error) {
 	state.Capabilities.Agents = s.Agents != nil
 	state.Capabilities.Ping = true
 	state.Capabilities.Shell = s.AllowShell
+	state.Capabilities.Forward = s.Agents != nil && s.AllowForward.Any()
 	if s.Agents != nil {
 		state.Short = s.Agents.Machine()
 		for _, a := range s.Agents.List() {

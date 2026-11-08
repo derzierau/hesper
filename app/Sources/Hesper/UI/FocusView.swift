@@ -244,7 +244,8 @@ final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
 /// how long it has been in that state and machine · tool (Horizon for
 /// another Mac); on the right the "typing ⌘esc" chip (⌘esc has no
 /// pointer equivalent but the wall itself), the needs-you count as a
-/// Pill (⌘J) and ⋯ with the agent's menu.
+/// Pill (⌘J) and ⋯ with the agent's menu. A double click on the header
+/// outside its buttons does what "‹ Wall" does.
 struct FocusHeader: View {
     var agent: Agent?
     var local: Bool
@@ -317,6 +318,11 @@ struct FocusHeader: View {
         }
         .padding(.horizontal, DS.Spacing.l)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // A double click on the header (not its buttons) goes back as
+        // "‹ Wall" does, the way one on a tile opens it. The terminal's
+        // own double clicks (word selection, mouse reporting) stay its.
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2, perform: onBack)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(agent.map { "\($0.name), \($0.machine), \($0.state.label)" } ?? "")
     }

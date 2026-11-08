@@ -232,7 +232,7 @@ appends a line to `~/.local/state/hesper/audit.log`:
 | `answer` | `agents.answer` |
 | `type` | `agents.input`, `agents.attach` with mode `rw` |
 | `transfer` | `agents.spawn`, `agents.stop`, `agents.resume`, `agents.remove`, `agents.rename`, `agents.import`, `transfer`, `projects.clone`, `projects.promote`, `projects.scratch`, `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete` |
-| `shell` | `agents.spawn` of a shell (kind `shell`, or no kind and a profile named like one; **strong key only**); every method and link event about a shell agent, in addition to its own right (and only on a host started with `--allow-shell`) |
+| `shell` | `agents.spawn` of a shell (kind `shell`, or no kind and a profile named like one; **strong key only**); every method and link event about a shell agent, in addition to its own right (and only on a host started with `--allow-shell`); `ports.open` (only on a host started with `--allow-forward`, for its ports) |
 
 `snapshot` is never signed and stays open to every controller the relay
 routes; it carries ids, kinds and states, never names, tasks or terminal
@@ -247,7 +247,7 @@ exists, which the first approval creates; revoking the last device does not
 switch it off. Until then requests are allowed and audited as
 `request.unauthenticated` ("unauthenticated request (enforcement off:
 approve devices with hesperctl approve)", once a minute per device and
-method), so existing setups keep working; shells are refused regardless.
+method), so existing setups keep working; shells and port forwards are refused regardless.
 `hesperd serve --require-device-keys` enforces from the start. Hosts must run
 behind a relay that forwards `auth` (this version); an older relay drops it
 and an enforcing host then refuses every request.
@@ -453,6 +453,7 @@ renames to its own machine naming.
 | `agents.remove` | `{id}` | `{}` |
 | `agents.link` | `{}` | a terminal ticket: the [link](#links) |
 | `agents.attach` | `{link, ch, mode, request}`: `request` is the local attach request (every option of it, passed through), `mode` repeats its mode for the rights table | `{}`; the attach runs on channel `ch` of the caller's link. `rw` with `view` is a typing view: input accepted, rows as a view, never owner, never fit (right `type`) |
+| `ports.open` | `{link, ch, port}` | `{}`: a TCP connection to `port` on the host's loopback (`127.0.0.1`, else `::1`), bridged as a byte-stream channel `ch` of the caller's link (right `shell`; only with `--allow-forward` and a port in its list, at most 64 per link; `forbidden` otherwise, `unavailable` when nothing accepts the connection) |
 | `agents.plan` | `{id}` | `{project, home, commits, projectId?, remote?, remoteHead?, git?, processes?}` (a move's source: commits the target may have; its Git remote; processes the agent started) |
 | `agents.probe` | `{path, home, commits, projectId?, kind?}` | `{exists, has, path?, tool?}` (a move's target: where the project is there, whether it has the tool) |
 | `agents.checkpoint` | `{id}` | `{checkpoint}` (null outside Git; right `transfer`) |
@@ -490,16 +491,29 @@ kind (1 byte) | channel (uint32 BE) | length (uint32 BE) | payload (≤ 1 MiB)
 | --- | --- | --- | --- |
 | `E` | 0 | host → controller | JSON event: first `{"machine","list":[Agent…],"full":true}`, then `{"changed":Agent}` or `{"removed":"id"}` at every change |
 | `D` | > 0 | both | an attach connection's bytes, exactly the local attach protocol after the request line: the host's reply line and frames, the controller's frames |
-| `X` | > 0 | both | the attach on this channel ended |
+| `X` | > 0 | both | the attach (or byte stream) on this channel ended |
+| `W` | > 0 | both | a byte-stream channel's window: the receiver grants the sender this many more bytes (uint32 BE) |
 
 The controller opens channel `ch` with a signed `agents.attach {link, ch,
-mode, request}`; the host bridges it to the agent's PTY like a local
+mode, request}` (or a byte-stream channel with `ports.open {link, ch,
+port}`, below); the host bridges it to the agent's PTY like a local
 attach (redraw first, the size owner rule (a typing view, `rw` with
 `view`, never owns and never fits), viewers that fall behind get
 SIZE and a fresh redraw, EXIT last). One link per pair keeps within the
 relay's four streams per host however many tiles show remote agents.
 A host keeps at most four links per device (the oldest goes) and 256
 channels per link.
+
+A byte-stream channel (a port forward) carries raw bytes in `D` frames of
+at most 32 KiB and has flow control: each side may send 256 KiB, and the
+receiver grants more with `W` once it wrote bytes on (in steps of at least
+64 KiB). A side that receives more than it granted, or a grant that would
+put the sender past 256 KiB, closes the channel. So a link's reader never
+waits for a slow connection and a bulk transfer never queues more than
+256 KiB per direction ahead of the terminals on the same link. `X` ends
+the channel both ways after the sender sent what it had; there is no
+half-close. A controller sends `W` only on such channels, and only to a
+host that announced them (an older host ends a link on an unknown kind).
 
 ## Moves
 
@@ -574,6 +588,10 @@ Host-only message:
 ```json
 {"v":2,"type":"snapshot","result":{"runtimeId":"...","short":"M","terminals":[],"capabilities":{"agents":true,"e2e":true}}}
 ```
+
+Capability `forward` (with `agents`): the host runs with
+`hesperd serve --allow-forward PORTS` and serves `ports.open` and `W`
+frames on its links. Controllers send neither to a host without it.
 
 Host publications are full snapshots, not deltas (the relay keeps the last
 one for new controllers). hesperd publishes about 15 ms after an

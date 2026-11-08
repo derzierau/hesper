@@ -46,10 +46,21 @@ import Testing
         #expect(StateMarkKind.allCases.filter { $0.fill == .filled } == [.working, .needsYou, .question, .done, .error])
         #expect(StateMarkKind.idle.fill == .outlined && StateMarkKind.starting.fill == .outlined && StateMarkKind.exited.fill == .slashed)
         #expect(StateMarkKind.starting.tone == .working && StateMarkKind.idle.tone == .dim && StateMarkKind.exited.tone == .dim)
-        // One light: only "needs you" is Signal, and only it pulses.
+        // One light: only "needs you" is Signal.
         #expect(StateMarkKind.allCases.filter { $0.tone == .signal } == [.needsYou])
-        #expect(StateMarkKind.allCases.filter(\.pulses) == [.needsYou])
-        #expect(StateMarkKind.needsYou.pulses(reduceMotion: false) && !StateMarkKind.needsYou.pulses(reduceMotion: true))
         #expect(StateMarkKind.side == 7 && StateMarkKind.stroke == 1.5)
+    }
+
+    @Test func approvalsAndQuestionsPulseErrorsStaySteady() {
+        #expect(StateMarkKind.allCases.filter(\.pulses) == [.needsYou, .question])
+        #expect(StateMarkKind.needsYou.pulses(reduceMotion: false) && !StateMarkKind.needsYou.pulses(reduceMotion: true))
+        #expect(StateMarkKind.question.pulses(reduceMotion: false) && !StateMarkKind.question.pulses(reduceMotion: true))
+        #expect(!StateMarkKind.error.pulses(reduceMotion: false))
+        // The menu bar item pulses while any agent's mark does.
+        #expect(StateMarkKind.anyPulses([.working, .approval], reduceMotion: false))
+        #expect(StateMarkKind.anyPulses([.question], reduceMotion: false))
+        #expect(!StateMarkKind.anyPulses([.error, .working, .done], reduceMotion: false))
+        #expect(!StateMarkKind.anyPulses([.approval, .question], reduceMotion: true))
+        #expect(!StateMarkKind.anyPulses([], reduceMotion: false))
     }
 }

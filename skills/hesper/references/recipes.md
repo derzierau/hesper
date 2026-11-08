@@ -162,3 +162,20 @@ SESSION ids look like `mini:claude:5b0c1d2e-…`. Pages hold at most 50;
 `drafts ls|save|rm` (a draft is a prepared agent the user starts from the
 app: a good way to *suggest* work without starting it), `profiles` (how
 agents start; `--profile` on `new`).
+
+## Port forwards
+
+```sh
+hesperctl forwards ls --json        # [{id, machine, port, local, conns, error?}]
+hesperctl forwards add dev:3000     # localhost:3000 here reaches localhost:3000 on dev
+hesperctl forwards add dev:5432 --local 15432
+hesperctl forwards rm 3000          # by local port, or dev:3000
+```
+
+The machine must run `hesperd serve --allow-forward PORTS` (e.g.
+`3000,8000-8999` or `all`) and have approved this Mac with the `shell`
+right; otherwise `add` exits 4 naming the flag, or the connection closes
+and `forwards ls` shows why in `error`. Forwards persist across restarts;
+open connections reset when the link to the machine drops. Only a person
+adds or removes them: an agent gets exit 5. Tell the user the command
+instead.

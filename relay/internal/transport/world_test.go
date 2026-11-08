@@ -54,6 +54,7 @@ type worldOptions struct {
 	delay      time.Duration // one network leg each way at the tap
 	direct     bool          // M listens for the direct path (loopback)
 	shell      bool          // M offers shells (--allow-shell)
+	forward    string        // M forwards these ports (--allow-forward)
 	rights     []string      // what each machine's controller may do on the other
 	stranger   bool          // L is not approved on M (M enforces device keys)
 	hubTimeout time.Duration // the relay's cap of one request (default 20 s, as hesper-relay)
@@ -107,6 +108,9 @@ func newWorld(t *testing.T, opts worldOptions) *world {
 		w.M.cfg.DirectAddrs = func() []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} }
 	}
 	w.M.cfg.AllowShell = opts.shell
+	if w.M.cfg.AllowForward, err = host.ParsePorts(opts.forward); err != nil {
+		t.Fatal(err)
+	}
 	rights := opts.rights
 	if rights == nil {
 		rights = []string{"observe", "answer", "type", "transfer", "shell"}

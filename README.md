@@ -33,9 +33,11 @@ that needs you.
 
 ## Release availability
 
-**The current release is [v0.3.4](https://github.com/derzierau/hesper/releases/tag/v0.3.4),
+**The current release is [v0.4.1](https://github.com/derzierau/hesper/releases/tag/v0.4.1),
 signed and notarized for macOS 14+ and installed with [Homebrew](#homebrew).**
-Every feature this README describes is in it. v0.3.4 lets agents name
+Every feature this README describes is in it. v0.4.1 keeps the daemon's
+flags across upgrades and reports its version; v0.4.0 forwards ports
+between machines (`hesperctl forwards add dev:3000`); v0.3.4 lets agents name
 their own tiles after what they work on; v0.3.3 shows project bands
 whenever agents run in more than one project; v0.3.2 makes a wall tile
 active with one click (⌃⌥ + arrow from the keyboard); v0.3.1 fixes Claude
@@ -49,7 +51,7 @@ Code's `/voice` inside Hesper. New since v0.2.0:
 - VoiceOver and Full Keyboard Access support
 - `hesperctl open review` and `hesperctl open palette`
 
-See the [v0.3.4](docs/release-notes-v0.3.4.md), [v0.3.3](docs/release-notes-v0.3.3.md), [v0.3.2](docs/release-notes-v0.3.2.md), [v0.3.1](docs/release-notes-v0.3.1.md)
+See the [v0.4.1](docs/release-notes-v0.4.1.md), [v0.4.0](docs/release-notes-v0.4.0.md), [v0.3.4](docs/release-notes-v0.3.4.md), [v0.3.3](docs/release-notes-v0.3.3.md), [v0.3.2](docs/release-notes-v0.3.2.md), [v0.3.1](docs/release-notes-v0.3.1.md)
 and [v0.3.0 release notes](docs/release-notes-v0.3.0.md) for the full list,
 including the six shortcuts that moved.
 
@@ -269,6 +271,11 @@ brew upgrade --cask derzierau/hesper/hesper
 ```
 
 Run setup after each update to restart the daemon with the new binary.
+Setup keeps the daemon's flags (`hesperd serve --allow-shell`,
+`--allow-forward PORTS`): to change them, edit `ProgramArguments` in
+`~/Library/LaunchAgents/de.olezierau.hesperd.plist` and run setup again.
+It saves them in `~/.local/state/hesper/serve-flags`, because the upgrade
+deletes the plist.
 
 ### Homebrew tap and official catalog
 
@@ -461,6 +468,12 @@ Opening a shell on another Mac is off by default. Install with
 `--allow-shell` on the Mac that should accept it; the request then needs
 Touch ID on the Mac that sends it.
 
+To open a dev server's `localhost` ports on your Mac, run its hesperd
+with `hesperd serve --allow-forward 3000,8000-8999` (or `all`), approve
+your Mac there with the `shell` right, then on the Mac:
+`hesperctl forwards add dev:3000` and open `http://localhost:3000`.
+Forwards are kept across restarts (`hesperctl forwards ls`, `rm`).
+
 ## Where things live
 
 | Path | |
@@ -496,7 +509,7 @@ security issues privately as described in [SECURITY.md](SECURITY.md).
 ## Status
 
 Hesper is young and used daily by its author. Signed releases are
-available through Homebrew and GitHub Releases; the current one is v0.3.4.
+available through Homebrew and GitHub Releases; the current one is v0.4.1.
 
 Supported agents are Claude Code, Codex and a plain shell.
 

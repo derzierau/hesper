@@ -52,6 +52,9 @@ type Config struct {
 	Signer devicekey.Signer
 	// AllowShell offers shells to devices with the shell right.
 	AllowShell bool
+	// AllowForward are the ports devices with the shell right may reach
+	// on this machine's loopback (port forwards).
+	AllowForward host.Ports
 	// RequireDeviceKeys enforces device keys before any approval.
 	RequireDeviceKeys bool
 	// Direct: "auto" (listen unless the macOS firewall would ask), "on",
@@ -321,7 +324,7 @@ func (d *Daemon) startHost(ctx context.Context, cfg Config, logf func(string, ..
 		return errors.New("direct must be on, off or auto")
 	}
 	d.Service = &host.Service{Agents: reg, Handoff: d.Handoff, Machine: &host.MachineMonitor{},
-		AllowShell: cfg.AllowShell, E2EKey: channel.PublicKey(), Direct: direct, Audit: auth.Audit, Projects: d.Projects}
+		AllowShell: cfg.AllowShell, AllowForward: cfg.AllowForward, E2EKey: channel.PublicKey(), Direct: direct, Audit: auth.Audit, Projects: d.Projects}
 	if d.History != nil { // shared history
 		d.Service.Sessions = d.History
 		d.History.SetHostKey(key)

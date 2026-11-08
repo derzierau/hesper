@@ -381,3 +381,22 @@ public enum BandMenu {
                 actions, moves]
     }
 }
+
+/// Sticky band headings: on a wall that scrolls sideways, a band wider
+/// than the viewport keeps its title in view. The title moves right with
+/// the visible left edge while the band is on screen, and stops where the
+/// title and the heading's buttons (`keep`) just fit before the band's
+/// end, so it leaves with the band and never runs past it.
+public enum StickyHeading {
+    /// How far right of `header.x` the title starts.
+    /// - Parameters:
+    ///   - visibleMinX: the viewport's left edge, in wall coordinates (the
+    ///     wall starts at 0, so this is also how far it has scrolled).
+    ///   - fade: the left edge fade's width. The title's floor moves right
+    ///     with the scroll until it clears the fade, so it never jumps.
+    ///   - keep: the width the title and buttons need from the title's start.
+    public static func offset(header: Rect, visibleMinX: Double, fade: Double = 0, keep: Double) -> Double {
+        let edge = visibleMinX + min(max(0, visibleMinX), fade)
+        return min(max(0, edge - header.x), max(0, header.width - keep))
+    }
+}

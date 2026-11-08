@@ -150,9 +150,14 @@ public enum StateMarkKind: String, CaseIterable, Sendable {
         }
     }
 
-    /// Only "needs you" pulses (and never under Reduce Motion).
-    public var pulses: Bool { self == .needsYou }
+    /// What waits on the user pulses: an approval ("needs you") or a
+    /// question; an error stays steady (never under Reduce Motion).
+    public var pulses: Bool { self == .needsYou || self == .question }
     public func pulses(reduceMotion: Bool) -> Bool { pulses && !reduceMotion }
+    /// The menu bar item pulses while any of these agents' marks does.
+    public static func anyPulses(_ states: [AgentState], reduceMotion: Bool) -> Bool {
+        !reduceMotion && states.contains { StateMarkKind($0).pulses }
+    }
 
     public var label: String {
         switch self {

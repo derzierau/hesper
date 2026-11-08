@@ -40,6 +40,10 @@ type Capabilities struct {
 	// Agents: the host is a hesperd serving its agents (agents.* methods,
 	// links; rebuild contract part R).
 	Agents bool `json:"agents,omitempty"`
+	// Forward: the host runs with --allow-forward and serves ports.open
+	// on its links, with W frames (pkg/agentlink). Controllers send
+	// neither to a host without it.
+	Forward bool `json:"forward,omitempty"`
 }
 type Snapshot struct {
 	RuntimeID    string       `json:"runtimeId"`

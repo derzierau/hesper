@@ -199,7 +199,28 @@ final class BandHeaderView: NSView {
         setAccessibilityLabel("\(b.displayTitle), \(counts.total) agents\(counts.needsYou > 0 ? ", \(counts.needsYou) need you" : "")\(pointer ? ", pointer" : collapsed ? ", collapsed" : "")")
         restyle()
         setAccessibilityValue((pointer ? "pointer" : collapsed ? "collapsed" : "expanded") + (focused ? ", focused" : ""))
+        labelWidth = nil
         needsLayout = true
+    }
+
+    /// Sticky heading (StickyHeading): how far right the title sits so it
+    /// stays in view while a wide band scrolls sideways; the buttons stay.
+    var titleOffset: CGFloat = 0 {
+        didSet { if oldValue != titleOffset { needsLayout = true } }
+    }
+
+    /// The label's natural width, measured when first needed after `apply`.
+    private var labelWidth: CGFloat?
+
+    /// The width the title and the buttons need from the title's start
+    /// (StickyHeading's `keep`): both paddings, the label, its gap, the buttons.
+    var titleKeep: CGFloat {
+        let l = labelWidth ?? label.fittingSize.width
+        labelWidth = l
+        // As layout() places them: ＋ (also where hidden), ↗ when shown, ⋯.
+        let n: CGFloat = open.isHidden ? 2 : 3
+        let buttons = n * IconButton.side + (n - 1) * DS.Spacing.xxs
+        return 2 * CGFloat(Metrics.wall.bandPad) + l + DS.Spacing.xs + buttons
     }
 
     /// Below this width the path is left out.
@@ -250,7 +271,8 @@ final class BandHeaderView: NSView {
         more.frame = NSRect(x: pad + w - s, y: y, width: s, height: s)
         open.frame = NSRect(x: more.frame.minX - DS.Spacing.xxs - s, y: y, width: s, height: s)
         plus.frame = NSRect(x: (open.isHidden ? more.frame.minX : open.frame.minX) - DS.Spacing.xxs - s, y: y, width: s, height: s)
-        label.frame = NSRect(x: pad, y: 0, width: max(0, plus.frame.minX - DS.Spacing.xs - pad), height: h)
+        let x = pad + titleOffset
+        label.frame = NSRect(x: x, y: 0, width: max(0, plus.frame.minX - DS.Spacing.xs - x), height: h)
     }
 
     @objc private func button(_ sender: NSButton) {

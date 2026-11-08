@@ -43,7 +43,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     private(set) var agent: Agent
     private(set) var surface: (any TerminalSurface)?
     let host = NSView()
-    var userFontSize: Double = 13
+    var userFontSize: Double = TerminalFont.focusDefaultSize
     var visible = true { didSet { surface?.isRenderingVisible = visible; prewarm?.isRenderingVisible = visible } }
     /// Tiles: the font the wall laid this tile out with. libghostty must not
     /// change a live surface's font (see "As built"), so a new font means a
@@ -290,7 +290,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         s.acceptsInput = rw && (role == .focus || assign)
         s.prefersLowLatency = rw
         s.isRenderingVisible = visible
-        let font = role == .tile ? tileFont : userFontSize
+        let font = self.font
         let argv = env.attachArgv(id: agent.id, mode)
         // Assign first: libghostty reports the initial cell size from inside
         // surface creation, and the delegate must see this surface.
@@ -306,6 +306,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     }
 
     private var scale: Double { Double(host.window?.backingScaleFactor ?? 2) }
+    private var font: Double { role == .tile ? tileFont : userFontSize }
 
     private var refitGeneration = 0
     private func scheduleRefit() {
@@ -315,7 +316,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         // and frame animations settle before the one re-attach.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self, gen == self.refitGeneration, let surface = self.surface else { return }
-            if abs(self.tileFont - surface.fontSize) > 0.001 { self.recreate() }
+            if abs(self.font - surface.fontSize) > 0.001 { self.recreate() }
         }
     }
 

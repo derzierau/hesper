@@ -8,7 +8,7 @@ architecture. libghostty is built without libintl as described in licensing.md.
 
 ## Current distribution
 
-Homebrew installs **v0.3.4**, the signed and notarized release for macOS 14+,
+Homebrew installs **v0.4.1**, the signed and notarized release for macOS 14+,
 once its cask update is merged. Install Claude Code or Codex separately. Local
 use needs no relay; multi-Mac use requires a self-hosted relay and device
 enrollment.
@@ -21,7 +21,9 @@ active with one click, and ⌃⌥ + arrow moves to a neighbor and types there.
 v0.3.3 groups the wall by project or branch whenever its agents run in more
 than one, and gives projects outside a group their own band. v0.3.4 lets
 agents name their own tiles after what they work on, keeping a name you give.
-The [v0.3.4 release notes](release-notes-v0.3.4.md) are the text to publish on
+v0.4.0 forwards ports from one machine's loopback to another's over the link.
+v0.4.1 keeps the daemon's flags across upgrades and reports its version.
+The [v0.4.1 release notes](release-notes-v0.4.1.md) are the text to publish on
 GitHub; editing the file later does not change notes already published.
 
 ## One-time credentials
@@ -74,6 +76,10 @@ runner (it now runs under the test world's 2 minutes),
 `TestReviewAcceptReject` exposed a real race: a scan running during an
 accept stored what it read before it.
 
+The release workflow passes the tag (without its `v`) as `VERSION` to both
+builds, so the app and `hesperd --version` report it. Local builds take the
+latest release tag instead.
+
 The release workflow runs tests again, publishes both notarized zip files and
 SHA256SUMS, then commits `Casks/hesper.rb` with exact archive hashes to the
 branch `brew/<tag>`. Changes reach main only through pull requests, so open
@@ -97,7 +103,9 @@ Use the app directory printed by Homebrew if you supplied `--appdir`.
 The setup command installs the LaunchAgent, hooks and skill without modifying
 the signed app. Enable Codex hooks once with `/hooks`. Run setup again after
 `brew update` and `brew upgrade --cask derzierau/hesper/hesper` to restart
-the daemon with the updated binary.
+the daemon with the updated binary; it keeps `hesperd serve`'s flags, saved in
+`~/.local/state/hesper/serve-flags` because the cask's uninstall step deletes
+the LaunchAgent plist.
 Homebrew uninstall unloads the daemon and keeps your agents and configuration.
 
 The repository and release downloads are public. The cask uses HTTPS

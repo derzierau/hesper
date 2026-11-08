@@ -126,6 +126,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `fs.stat` | `{machine?, path}` | `{exists, isDir}` (added, see "Machine and folder agree") |
 | `hook` | `{agent, source: claude\|codex, event, payload}` | `{context?}` (what hook processes send; context: the tile-naming text on a tile agent's own SessionStart, see "As built — agent tree") |
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
+| `forwards.list` / `forwards.add` / `forwards.remove` | – / `{machine, port, local?}` / `{id}` (the local port, or `machine:port`) | `[Forward]` / `Forward` / `{}`: port forwards to other machines' loopback (added, see "As built — port forwarding"; a person only adds or removes) |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
@@ -471,7 +472,8 @@ that, `kill -QUIT` the daemon: it writes every goroutine to the log.
   header: state dot, name, machine + kind mark. Tiles in `approval` / `question`
   / `error` get a ring and inline actions (Allow / Always / Deny for approvals).
 - **Focus**: ⌘↩ opens a tile full window as `rw --owner` (resizes the PTY to the
-  view); ⌘↩ again or ⌘Esc returns (Esc is the agent's). ⌥⌘← / ⌥⌘→ step through agents in wall order.
+  view); ⌘↩ again, ⌘Esc or a double click on the focus header returns (Esc is
+  the agent's). ⌥⌘← / ⌥⌘→ step through agents in wall order.
 - **Attention**: ⌘J jumps to the next agent needing you (approval, then
   question, then error; oldest first). Menu bar item with counts; a macOS
   notification on entering approval/question/error (not while focused on it).
@@ -972,7 +974,8 @@ libghostty findings that shaped the code:
   still runs (≤ 5 tries / 10 s), after the control connection comes back,
   and when `exit` becomes null (resume). An agent is live iff
   `exit == null && state != exited`.
-- Focus: `hesperd attach <id> --owner` (rw), the user's Ghostty font size;
+- Focus: `hesperd attach <id> --owner` (rw), the user's Ghostty font size
+  (uncapped, else 13; `TerminalFont.focusSize`), never the wall's font;
   its grid becomes the PTY's size, tiles refit when `agents.changed` brings
   the new size.
 - Control: one connection, `hello` → `agents.subscribe` → `agents.list`
@@ -1009,7 +1012,8 @@ agents).
 **Deviations / needs:**
 
 - Esc is never taken from the agent (Claude and Codex use it to interrupt;
-  Claude's double-Esc rewinds). Focus is left with ⌘↩ or ⌘Esc.
+  Claude's double-Esc rewinds). Focus is left with ⌘↩, ⌘Esc or a double
+  click on the focus header.
 - **Need (part D):** cloning has no method. The sheet calls
   `projects.clone {url, machine?}` → `{path}` and, on `-32601`, tells the
   user to clone and choose the folder. Proposed: hesperd clones into
@@ -1217,9 +1221,13 @@ branch suggested from the first line (`Fix the flaky badge test` →
 `fix/flaky-badge-test`), ⌥⌘B toggles (⇧⌘W tidies up, as everywhere). ⌘↩ starts: the spawn's agent takes
 the draft's place (`placements`, remembered in UserDefaults; the agent's
 tile is created in the draft tile's frame — no movement), the first line
-names it, the draft leaves hesperd. ⌥↩ starts and opens the next draft
-right of it. Esc parks the draft (quiet: the shelf in grid + shelf); an
-empty draft is discarded. ⌘W discards with undo. Saving is continuous
+names it, the draft leaves hesperd. The draft stays selected while it is
+written: daemon events (agents' states, the draft's own save echo) keep
+a selected card that is still on the wall, draft or ghost included
+(`WallSelection.kept`; before, any event moved the selection to the
+first agent, and ⌘↩ then scrolled Columns back to the first card). ⌥↩
+starts and opens the next draft right of it. Esc parks the draft (quiet:
+the shelf in grid + shelf); an empty draft is discarded. ⌘W discards with undo. Saving is continuous
 (300 ms after typing stops, at least every 2 s; quit flushes ≤ 2 s);
 local edits win over late echoes until saved. Files and screenshots
 dropped or pasted on a draft insert their paths; images without a file
@@ -1396,13 +1404,21 @@ an agent whose local worktree has uncommitted changes (`git status
 --porcelain`) asks, inline on the tile (Close anyway ⏎ · Keep esc as
 KeyButtons; the strip takes the keyboard while it shows and gives it
 back after: "pointer paths" below).
-Settings ⌘, is a window (General: layout, tile font, min width; Quick
-Launch; Notifications; Profiles per kind). Focus ⌘↩ zooms the card to the
+Settings ⌘, is a window (General: layout, font size, min width; Quick
+Launch; Notifications; Profiles per kind) of one fixed size on every
+pane (`SettingsView.size`, set by AppKit, never by a pane's fitting
+size): the sidebar shows each pane's title and ⌘N chip, a control row
+too wide for its column stacks under its label, and the pane scrolls
+instead of clipping. Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
 
-**One tile font; the PTY follows the tile.** Every tile uses the same
-font (Settings › Tile font size, default the user's Ghostty font, 9–16
-pt) and shows as many cols × rows as fill its terminal area; tiles attach
+**One tile font; the PTY follows the tile.** Every wall tile uses the
+same font (Settings › Font size, default the user's Ghostty font, 9–16
+pt; HesperCore `TerminalFont`, stored as `terminalFontSize`, an earlier
+`tileFontSize` value carried over; a change re-attaches the open tiles
+of every wall at once). The focused agent and agent windows keep the
+user's Ghostty font size (uncapped, else 13), so a dense wall never
+shrinks them. A tile shows as many cols × rows as fill its terminal area; tiles attach
 with `--fit`, so with no owner the PTY takes the largest tile's grid (≥
 80 × 24, hesperd's rule). A focused agent's PTY returns to its tile's
 grid when focus closes (checked end to end). Min card width = N columns at
@@ -1467,6 +1483,9 @@ offset / rw preamble / alt screen, `internal/attachtty` scroll parser,
 `make -C app layout SHOW=draft|draft-typing|palette|move|attention|
 machines|layout|undo|deny|quick|settings|flap|after-focus|active|scroll
 [DAEMON=real]` screenshots each (quick/settings: the panel/window too).
+`SHOW=settings:<pane>` (general, machines, agents, appearance,
+shortcuts, advanced) opens that Settings pane; the dump's
+`extraWindowFrame` is the Settings window's frame.
 
 #### As built — pointer paths in the overlays (UI control, phase 3c)
 
@@ -1699,7 +1718,9 @@ menu in `AppDelegate`.
 
 - **Selected**: highlight ring (blue, 2 pt; a tile that needs you keeps
   its rose / amber / red ring at 3 pt), no cursor (read-only tiles live
-  in the tile engine app, whose config has `cursor-opacity = 0`; the
+  in the tile engine app, whose config has `cursor-opacity = 0` and
+  `cursor-text = cell-foreground`, so the character under the hidden
+  cursor keeps its color instead of turning background-colored; the
   active tile and focus views are in the read-write app and keep theirs),
   read-only view attach; keys go to the wall. Its footer shows
   `←→↑↓ move · ⏎ type · ⇧-click window` (narrow: `←→↑↓ · ⏎ type`; shelf
@@ -1904,7 +1925,12 @@ state · elapsed, machine · tool. Right: the "typing ⌘esc" chip
 (`focus.typing`; ⌘esc has no pointer equivalent other than the wall), a
 "need you" Pill with the count of agents on the wall that need the user
 (`focus.needsYou`, ⌘J; none: no Pill) and ⋯ (`focus.menu`) with the
-agent's menu (the tile menu without "Open Full Size").
+agent's menu (the tile menu without "Open Full Size"). A double click on
+the header outside its buttons does what "‹ Wall" does, so a double click
+toggles wall and focus as ⌘↩ does. Only the header counts: the terminal
+body keeps its double clicks (word selection, and mouse reporting for
+vim, tmux and the like), and a double click on a button presses it
+twice.
 
 **Tests.** HesperCore: `TileActionsTests` (verbs per state, what folds at
 a width, identifiers), `DraftStartControlTests` (the split button's
@@ -2127,6 +2153,14 @@ the Tokyo Night palette by FNV of the id. `identity` objects are decoded
   between lanes), the wall scrolls sideways as one (deviation from "per
   lane": nested scroll views per lane would fight the wall's own
   scrolling and the edge fades; one sideways scroll keeps today's B).
+  A lane wider than the window keeps its heading's title in view: while
+  the lane is on screen the title follows the visible left edge, clear of
+  the edge fade (its floor grows with the scroll, so it never jumps), and
+  stops where title and ＋ ↗ ⋯ just fit before the lane's end, so it leaves
+  with the lane; the buttons stay at the lane's end (`StickyHeading`,
+  HesperCore, tests `StickyHeadingTests`; an offset update per scroll, no
+  re-layout of the wall). `make -C app layout SHOW=wall-scroll` scrolls
+  the wall halfway sideways before the dump.
 - **C treemap**: **nested** — bands by the sum of their agents' weights
   (4/2/1 as before), then the agents inside each band's rect below its
   header.
@@ -2657,7 +2691,8 @@ Mac's agents to devices approved here) and `controller.credentials.json`
 role whose credential is rejected stops and logs the login command, the
 other role and the agents keep running. New flags: `--host-credentials`,
 `--controller-credentials`, `--control-socket` (default
-`controller.sock`, `off`), `--allow-shell`, `--require-device-keys`,
+`controller.sock`, `off`), `--allow-shell`, `--allow-forward PORTS`
+(port forwards, below), `--require-device-keys`,
 `--direct auto|on|off`, `--direct-port`, `--keep-awake`,
 `--keep-awake-min-battery`. Device keys, `e2e.key`, `trusted-hosts.json`,
 `controllers.json`, the audit log, nonces and move uploads live in the
@@ -2672,7 +2707,8 @@ approve(-device), devices-local and the agent commands.
 **What the relay sees** (host publication, unsigned `snapshot`): per agent
 its local id (`terminalId`), kind (`role`), state, attention kind and
 `attentionSince`, PTY size, `exited`; the host's `short`, capabilities
-(`agents`, `e2e`, `direct`, `transfer`, `spawn`, `shell`, `ping`), keys,
+(`agents`, `e2e`, `direct`, `transfer`, `spawn`, `shell`, `ping`,
+`forward`), keys,
 machine stats. No names, tasks, attention titles/details,
 summaries, activity, paths, branches or terminal bytes: those travel only
 sealed (request results, link events, attach channels). A hesperd host
@@ -2686,18 +2722,21 @@ host `--allow-shell`), `agents.input`, `agents.answer`, `agents.stop
 {id, wait?}`, `agents.resume`, `agents.remove`, `agents.rename`,
 `agents.link`, `agents.attach`, `agents.plan`, `agents.probe`,
 `agents.export`, `download`, `transfer`, `agents.import`, `job`,
-`projects.clone`, `projects.recent`, `profiles.list`, `fs.stat`, `files.put`, `files.chunk`. Rights: observe
+`projects.clone`, `projects.recent`, `profiles.list`, `fs.stat`, `files.put`, `files.chunk`,
+`ports.open {link, ch, port}` (a port forward's connection, host
+`--allow-forward`). Rights: observe
 (list, link, ro attach, plan, probe, export, download, job, recent,
 profiles, fs.stat), answer, type (input, rw attach, files.put/chunk), transfer (spawn, stop, resume,
 remove, rename, import, transfer, clone), shell (any shell agent, plus
-the strong key to start one). Shell agents are invisible to callers
+the strong key to start one; `ports.open`). Shell agents are invisible to callers
 without the shell right (lists and link events).
 
 **Links and attach.** One link per (controller device, host): an
 `agents.link` ticket opened like the former `terminal.open` (sealed relay
 stream, or a direct stream), multiplexed (`kind | channel | len |
 payload`): channel 0 carries the host's agent events (full list, then
-each change/removal, pushed as they happen), channels > 0 one attach each,
+each change/removal, pushed as they happen), channels > 0 one attach (or
+one port forward's connection, see "As built — port forwarding") each,
 opened by a signed `agents.attach {link, ch, mode, request}` where
 `request` is the local `AttachRequest` passed through unchanged (so
 additive options such as `view` behave the same remotely). The host runs
@@ -2775,7 +2814,8 @@ attach rw; no shell without the shell right; no shell without
 `--allow-shell`; shells invisible without the right); direct path used
 and its loss falling back with the attach carrying on; move L→M→L with
 conversation and uncommitted work; reconnect after every relay socket
-dropped. Plus `internal/handoff` (full and incremental bundles, worktrees,
+dropped; port forwards (`remote_forward_test.go`, see "As built — port
+forwarding"). Plus `internal/handoff` (full and incremental bundles, worktrees,
 transcript path mapping, Codex rollouts, manifest checks), `internal/host`
 (snapshot without task text, rights, plaintext refusal, imports/exports),
 `pkg/agentlink`, `cmd/hesperctl` (device approval end to end, control
@@ -4910,6 +4950,74 @@ Review's note field and stream) are `DS.focusRingType`: off as usual,
 on while Full Keyboard Access is enabled, read when the view is made
 (a change takes effect on the next open or launch;
 `docs/design-system.md` rule 12).
+
+### As built — port forwarding (daemon)
+
+Code: `pkg/agentlink/pipe.go` (`Pipe`, the `W` window),
+`internal/host/forward.go` (`ports.open`, `--allow-forward`),
+`internal/remote/forward.go` (listeners, `forwards.json`),
+`internal/agents/server.go` and `tree.go` (`forwards.*`, person only),
+`pkg/wire/forwards.go`. Wire: `relay/docs/protocol.md` (Links,
+`ports.open`, capability `forward`).
+
+- **Use.** On the dev server: `hesperd serve --allow-forward 3000,8000-8999`
+  (or `all`), and its approval of this Mac includes the `shell` right. On
+  the Mac: `forwards.add {machine, port, local?}`; `http://localhost:LOCAL`
+  then reaches `localhost:PORT` on the server.
+- **Controller.** A forward listens on `127.0.0.1:LOCAL` and, when there
+  is IPv6, `[::1]:LOCAL`; a port taken on either address is taken (a
+  browser may try `::1` first, where a local dev server may listen alone).
+  Without `local` it takes the remote port, or a free port when that is
+  taken; a `local` that is taken is `exists`. Its id is the local port.
+  Accept errors from running out of file descriptors are retried with a
+  growing pause (up to 1 s); another error ends that listener; both show
+  in `error`. Like `ssh -L`, an open forward is usable by every user and
+  process on this Mac, not only the one that added it. A connection the
+  host closed gets what the host sent for at most 30 s, then is closed. `forwards.add` is `unavailable` for a machine that
+  is offline or does not announce `forward` (the message names the flag).
+  Each accepted connection waits up to 10 s for the machine's link, then
+  takes a new channel and sends `ports.open {link, ch, port}`; a refusal
+  closes the connection and shows in the forward's `error` until a
+  connection gets through. `conns` counts open connections. Forwards are
+  saved in `forwards.json` (state directory, 0600) and listen again when
+  hesperd starts; one whose port is taken then lists the reason in `error`.
+- **Host.** `ports.open` needs the `shell` right (device key; refused
+  while device keys are not enforced), the flag and the port in its list;
+  it dials `127.0.0.1:port`, else `[::1]:port` (2 s), never another
+  address. At most 64 forwarded connections per link; one the controller
+  closed counts until the host wrote what it sent (at most 30 s). A
+  `ports.open` whose request expired while the host connected is closed
+  again. Removing a forward on the controller sends `X` for each of its
+  connections, so the host closes its side too.
+- **Flow control.** Data frames of at most 32 KiB; each direction may send
+  256 KiB before the receiver grants more (`W`, after writing to its
+  connection, in steps of at least 64 KiB); more than granted closes the
+  channel. `X` ends a channel both ways once the sender's bytes were
+  sent; no half-close.
+- **Links.** A forwarded connection is reset (TCP RST) when its link
+  breaks or moves to the direct path; the listener stays and the next
+  connection uses the new link. Removing a forward closes its listeners and
+  connections.
+- **CLI.** `hesperctl forwards ls`, `forwards add MACHINE:PORT [--local
+  L]` (prints `localhost:L → MACHINE:PORT`), `forwards rm LOCAL|MACHINE:PORT`
+  (`cmd/hesperctl/forwards.go`); MCP tools and `hesperctl reference` come
+  from the registry.
+- **Agents.** Agents inside Hesper may list forwards but not add or
+  remove them (`forbidden`): a forward opens this Mac to another machine's
+  services without Touch ID.
+- **Compatibility.** A host without the capability is never sent
+  `ports.open` or `W` (an older host ends a link on an unknown frame
+  kind); the relay is unchanged.
+- **Tests** (`internal/transport/remote_forward_test.go`): 10 MB each way
+  through an echo server on M with no plaintext at the relay; persistence
+  across a restart; refusals (no flag, port not listed, no shell right, an
+  agent caller); a host without the capability; the direct path; a link
+  restart resetting connections and new ones working; a terminal on the
+  same link answering within 3 s during a 30 MB transfer. Plus
+  `pkg/agentlink` (window, close semantics) and `internal/host` (gates,
+  port lists, a forwarded echo).
+- **Not done:** reverse forwards (a port of the server reaching this Mac),
+  UDP, half-close, a Hesper.app view.
 
 ## Wire names kept from Ghosty
 

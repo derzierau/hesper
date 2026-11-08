@@ -276,6 +276,18 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
         #expect(t.contains("keybind = clear\n"))
         #expect(TerminalConfigText.make(user: GhosttyUserConfig()).contains("font-size = 13\n"))
     }
+
+    /// Read-only tiles hide the cursor, and the glyph under it keeps its
+    /// own color: libghostty paints the cell under a block cursor in
+    /// `cursor-text` (the background by default) even when the block is
+    /// transparent, which hid a prompt suggestion's first letter.
+    @Test func readOnlyConfigHidesCursorButNotTheGlyphUnderIt() {
+        let base = TerminalConfigText.make(user: GhosttyUserConfig())
+        let t = TerminalConfigText.readOnly(base)
+        #expect(t.hasPrefix(base))
+        #expect(t.contains("\ncursor-opacity = 0\n"))
+        #expect(t.contains("\ncursor-text = cell-foreground\n"))
+    }
 }
 
 @Suite struct Environment {

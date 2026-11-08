@@ -68,6 +68,9 @@ var methodRights = map[string]string{
 	// checkpoint; sending it back types into it.
 	"review.list": Observe, "review.diff": Observe, "review.evidence": Observe, "review.provenance": Observe,
 	"review.accept": Transfer, "review.reject": Transfer, "review.sendBack": Type,
+	// port forwards: a connection to a port on the host's loopback, which
+	// a shell there could reach anyway.
+	"ports.open": Shell,
 }
 
 // Unsigned reports the methods controllers send without a signature and

@@ -3,7 +3,7 @@ import HesperCore
 import UserNotifications
 
 /// Menu bar item: the "h." mark (its stop filled while something needs
-/// you) and a menu of agents grouped Needs you · Working · Recent, each with
+/// you, pulsing with the marks unless Reduce Motion) and a menu of agents grouped Needs you · Working · Recent, each with
 /// its state square and machine, then the app's main ways in. Menus keep
 /// the system font.
 @MainActor
@@ -11,6 +11,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let model: AppModel
     private var imageNeedsYou = false
+    /// While an approval or a question waits: the stop blinks filled / ring
+    /// at the marks' pulse rate (StateMarkKind.anyPulses).
+    private var pulseTimer: Timer?
+    private var pulseLit = true
     var showWindow: () -> Void = {}
     /// Window layer: takes the user to an agent (its window, a wall).
     var openAgent: ((String) -> Void)?
@@ -34,11 +38,39 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let needsYou = c.approval + c.question > 0
         if item.button?.image == nil || needsYou != imageNeedsYou {
             imageNeedsYou = needsYou
+            pulseLit = true
             item.button?.image = BrandMark.statusImage(needsYou: needsYou)
             item.button?.imagePosition = .imageLeading
         }
+        updatePulse()
         item.button?.title = title.isEmpty ? " \(c.total)" : " \(title)"
         item.button?.toolTip = "Hesper: \(c.total) agents, \(c.approval) approvals, \(c.question) questions, \(c.error) errors"
+    }
+
+    private func updatePulse() {
+        let states = model.registry.agents.values.filter { !model.pendingRemoval.contains($0.id) }.map(\.state)
+        let want = imageNeedsYou && StateMarkKind.anyPulses(states, reduceMotion: DS.reduceMotion)
+        if want, pulseTimer == nil {
+            let t = Timer(timeInterval: DesignTokens.pulsePeriod / 2, repeats: true) { [weak self] _ in
+                // Scheduled on the main run loop below.
+                MainActor.assumeIsolated { self?.pulseTick() }
+            }
+            RunLoop.main.add(t, forMode: .common)
+            pulseTimer = t
+        } else if !want, let t = pulseTimer {
+            t.invalidate()
+            pulseTimer = nil
+            if !pulseLit {
+                pulseLit = true
+                item.button?.image = BrandMark.statusImage(needsYou: imageNeedsYou)
+            }
+        }
+    }
+
+    private func pulseTick() {
+        guard imageNeedsYou, !DS.reduceMotion else { updatePulse(); return }
+        pulseLit.toggle()
+        item.button?.image = BrandMark.statusImage(needsYou: pulseLit)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {

@@ -249,7 +249,8 @@ final class AppModel {
         // never touch the user's defaults.
         let d = UserDefaults.standard
         let automated = env.values["perf-out"] != nil || env.values["selftest-out"] != nil || env.values["layout-out"] != nil || env.options.contains("ephemeral")
-        settings = AppSettings(persist: !automated, defaultTileFont: env.values["tile-font"].flatMap(Double.init) ?? userFontSize ?? 12)
+        settings = AppSettings(persist: !automated, defaultFont: env.values["tile-font"].flatMap(Double.init) ?? userFontSize ?? TerminalFont.defaultSize,
+                               ghosttyFont: userFontSize)
         if let a = env.values["arrangement"].flatMap(WallArrangement.init(rawValue:)) {
             arrangement = a
         } else if !automated {
@@ -259,7 +260,6 @@ final class AppModel {
             persistSettings = true
         }
         if let m = env.values["min-chars"].flatMap(Int.init) { minChars = m }
-        settings.onTileFontChanged = { [weak self] in self?.onLayoutSettingsChanged?() }
     }
 
     // MARK: Window layer integration (docs: "As built — windows")
@@ -398,10 +398,11 @@ final class AppModel {
         case .draftChanged, .draftsListed, .projectsListed, .projectChanged: normalizeDrafts()
         default: break
         }
-        if selectedID == nil || !wall.contains(where: { $0.id == selectedID }) {
-            // Shared history: a selected ghost card keeps the selection.
-            if !(selectedID?.hasPrefix("ghost:") == true && wallItems.contains(where: { $0.id == selectedID })) { selectedID = wall.first?.id }
-        }
+        // A selected draft (being written) or ghost card keeps the selection
+        // too: starting the draft scrolls to its card, not the first one.
+        let items = wallItems
+        let kept = WallSelection.kept(selectedID, cards: items.map(\.id), firstAgent: items.lazy.compactMap(\.agent).first?.id)
+        if kept != selectedID { selectedID = kept }
         if !transitions.isEmpty { onTransitions?(transitions) }
         onAgentsChanged?()
         onEvent?(e)

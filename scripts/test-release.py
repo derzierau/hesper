@@ -34,6 +34,11 @@ with tempfile.TemporaryDirectory(prefix='hesper-release-test-') as temporary:
     (assets/'Hesper-v1.2.3-x86_64.zip').unlink()
     assert subprocess.run(['python3', str(generator), 'v1.2.3', str(assets)], capture_output=True).returncode != 0
     assert (checkout/'Casks/hesper.rb').read_text() == cask
+    # hesperd reports the release version, not "dev" (the release passes it).
+    build = subprocess.run(['make', '-n', '-C', str(root/'relay'), 'build', 'VERSION=1.2.3'],
+                           capture_output=True, text=True, check=True).stdout
+    assert "-X main.version=1.2.3" in build
+    assert 'make -C relay build VERSION="${RELEASE_TAG#v}"' in (root/'.github/workflows/release.yml').read_text()
     if os.uname().sysname == 'Darwin':
         app = temp/'App & Space/Hesper.app'
         resources = app/'Contents/Resources'
@@ -49,9 +54,18 @@ with tempfile.TemporaryDirectory(prefix='hesper-release-test-') as temporary:
             (tools/tool).chmod(0o755)
         stubs = temp/'stubs'
         stubs.mkdir()
-        for tool in ('codesign', 'launchctl'):
-            (stubs/tool).write_text(stub)
-            (stubs/tool).chmod(0o755)
+        (stubs/'codesign').write_text(stub)
+        (stubs/'codesign').chmod(0o755)
+        # launchctl bootout returns before the old daemon is gone: print still
+        # finds it twice, and bootstrap fails meanwhile, as launchd does.
+        (stubs/'launchctl').write_text(stub + '''state="$HESPER_TEST_LOG.loaded"
+case "$1" in
+  bootout) echo 2 > "$state" ;;
+  print) n=$(cat "$state" 2>/dev/null || echo 0); [ "$n" -gt 0 ] || exit 113; echo $((n - 1)) > "$state" ;;
+  bootstrap) [ "$(cat "$state" 2>/dev/null || echo 0)" -eq 0 ] || { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; } ;;
+esac
+''')
+        (stubs/'launchctl').chmod(0o755)
         home = temp/'home & space'
         home.mkdir()
         env = dict(os.environ, HOME=str(home), PATH=f'{stubs}:/usr/bin:/bin', HESPER_TEST_LOG=str(temp/'calls'))
@@ -61,10 +75,15 @@ with tempfile.TemporaryDirectory(prefix='hesper-release-test-') as temporary:
         value = plistlib.loads(plist.read_bytes())
         assert value['ProgramArguments'] == [str(tools/'hesperd'), 'serve']
         assert (home/'.agents/skills/hesper').resolve() == (resources/'hesper-skill').resolve()
-        value['ProgramArguments'].append('--allow-shell')
+        flags = ['--allow-shell', '--allow-forward', '3000,8000-8999']
+        value['ProgramArguments'] += flags
         plist.write_bytes(plistlib.dumps(value))
         subprocess.run(['/bin/sh', str(resources/'hesper-setup.sh')], env=env, check=True)
-        assert '--allow-shell' in plistlib.loads(plist.read_bytes())['ProgramArguments']
+        assert plistlib.loads(plist.read_bytes())['ProgramArguments'] == [str(tools/'hesperd'), 'serve'] + flags
+        # brew upgrade's uninstall step deletes the plist; setup keeps the flags.
+        plist.unlink()
+        subprocess.run(['/bin/sh', str(resources/'hesper-setup.sh')], env=env, check=True)
+        assert plistlib.loads(plist.read_bytes())['ProgramArguments'] == [str(tools/'hesperd'), 'serve'] + flags
         assert before == {str(p): p.read_bytes() for p in app.rglob('*') if p.is_file()}
         assert 'hooks install --bin' in (temp/'calls').read_text()
 print('Release packaging checks passed')

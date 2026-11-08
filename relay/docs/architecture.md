@@ -170,6 +170,15 @@ the link moved to the direct path; input typed meanwhile is dropped, never
 replayed. A machine that cannot be reached keeps its agents listed for a
 minute.
 
+Port forwards ride the same link: the controller listens on a loopback
+port of this Mac (`forwards.add`, kept in `forwards.json`) and opens each
+accepted connection as a byte-stream channel with a signed `ports.open`;
+the host connects to that port on its own loopback, only when it runs
+with `--allow-forward` and that port is in the list, and only for a device
+with the `shell` right. `W` frames give each direction a 256 KiB window,
+so forwards never stall the link's terminals. Connections are reset when
+the link breaks or moves; the listener stays.
+
 Moves (`agents.move`) check the agent and both machines first (preflight
 errors leave it untouched), checkpoint its folder on the source, carry its
 conversation file and its code (Git bundle with the checkpoint as the
