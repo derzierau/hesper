@@ -107,9 +107,27 @@
         /// means the Mac's grid cannot be drawn here.
         private static let maxCorrections = 3
 
+        /// The key bar's colours: the holder's theme (this package names
+        /// no colour).
+        public struct KeyColors {
+            public var key: UIColor
+            public var label: UIColor
+            /// An armed or locked Ctrl.
+            public var active: UIColor
+            public var onActive: UIColor
+
+            public init(key: UIColor, label: UIColor, active: UIColor, onActive: UIColor) {
+                self.key = key
+                self.label = label
+                self.active = active
+                self.onActive = onActive
+            }
+        }
+
         /// `background` fills the cells the Mac's output leaves at the
-        /// default colour, and the rest of the view.
-        public init(background: UIColor) {
+        /// default colour, and the rest of the view; `keys` colours the key
+        /// bar over the keyboard.
+        public init(background: UIColor, keys: KeyColors) {
             session = InMemoryTerminalSession(write: { [input] data in input.send(data) }, resize: { _ in })
             terminal = UITerminalView(frame: .zero)
             terminal.layer.anchorPoint = .zero
@@ -120,7 +138,22 @@
                 fontSize: Self.fontSize
             )
             terminal.delegate = self
+            // libghostty's own key bar over the keyboard: the keys a prompt
+            // needs that the iOS keyboard lacks. Ctrl is sticky, so Ctrl
+            // then `c` interrupts.
+            terminal.inputAccessoryItems = Self.keyRow
+            terminal.inputAccessoryStyle = TerminalInputAccessoryStyle(
+                regularBackground: keys.key,
+                regularForeground: keys.label,
+                activeBackground: keys.active,
+                activeForeground: keys.onActive
+            )
         }
+
+        /// The key bar's keys, in order.
+        public static let keyRow: [TerminalInputAccessoryItem] = [
+            .esc, .tab, .ctrl, .divider, .arrowLeft, .arrowUp, .arrowDown, .arrowRight,
+        ]
 
         /// Hands the Mac's output to the terminal. Any thread; bytes that
         /// arrive before the view is on screen are buffered (1 MiB).
@@ -139,6 +172,43 @@
             target = (cols, rows)
             corrections = 0
             layoutTarget()
+        }
+
+        /// The keyboard is up: the terminal is the first responder.
+        public var keyboardUp: Bool { terminal.isFirstResponder }
+
+        /// Brings up the keyboard; every key it types goes to `onInput`.
+        /// False while the view is not in a window. The view still takes
+        /// no touches: first responder does not need them.
+        @discardableResult
+        public func focusKeyboard() -> Bool {
+            terminal.acquireProgrammaticFocus()
+        }
+
+        /// Puts the keyboard away.
+        public func blurKeyboard() {
+            guard terminal.isFirstResponder else { return }
+            terminal.resignFirstResponder()
+        }
+
+        /// A key the phone sends without the keyboard (the dock's Send).
+        public enum Key: Sendable {
+            case enter, escape, tab, up, down, left, right, ctrlC
+        }
+
+        /// Presses and releases `key`, as a hardware keyboard would. Needs
+        /// a surface (the view is drawn), not focus.
+        public func press(_ key: Key) {
+            switch key {
+            case .enter: terminal.sendKey(.enter)
+            case .escape: terminal.sendKey(.escape)
+            case .tab: terminal.sendKey(.tab)
+            case .up: terminal.sendKey(.arrowUp)
+            case .down: terminal.sendKey(.arrowDown)
+            case .left: terminal.sendKey(.arrowLeft)
+            case .right: terminal.sendKey(.arrowRight)
+            case .ctrlC: terminal.sendKey(.c, modifiers: .ctrl)
+            }
         }
 
         /// Shows the newest line.

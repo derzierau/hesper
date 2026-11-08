@@ -495,7 +495,15 @@ final class TerminalWatch {
     }
 
     private static func makeSurface() -> TerminalSurface {
-        TerminalSurface(background: Theme.uiColor(.background))
+        TerminalSurface(
+            background: Theme.uiColor(.background),
+            keys: TerminalSurface.KeyColors(
+                key: Theme.uiColor(.surface),
+                label: Theme.uiColor(.text),
+                active: Theme.uiColor(.accent),
+                onActive: Theme.uiColor(.onAccent)
+            )
+        )
     }
 
     private func observeSurface() {
