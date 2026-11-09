@@ -49,7 +49,8 @@ func NameFor(task string) string {
 }
 
 // sessionName is the --remote-control name: the task's first line,
-// controls blanked, at most 60 characters.
+// controls blanked, leading dashes dropped (Claude Code would take
+// "--bring …" for an option and exit), at most 60 characters.
 func sessionName(task, fallback string) string {
 	first, _, _ := strings.Cut(strings.TrimSpace(task), "\n")
 	first = strings.Map(func(r rune) rune {
@@ -58,6 +59,7 @@ func sessionName(task, fallback string) string {
 		}
 		return r
 	}, strings.TrimSpace(first))
+	first = strings.TrimLeft(first, "- ")
 	if first == "" {
 		first = fallback
 	}

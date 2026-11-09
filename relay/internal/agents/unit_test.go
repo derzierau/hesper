@@ -120,6 +120,14 @@ func TestNamesAndSlugs(t *testing.T) {
 	if got := sessionName("  fix\tthe bug\nmore", "x"); got != "fix the bug" {
 		t.Fatalf("%q", got)
 	}
+	// The name follows --remote-control: an option-like name would be
+	// taken for an option and Claude Code would exit.
+	if got := sessionName("--bring app fix the bug", "x"); got != "bring app fix the bug" {
+		t.Fatalf("%q", got)
+	}
+	if got := sessionName(" - -- ", "Review"); got != "Review" {
+		t.Fatalf("%q", got)
+	}
 }
 
 func TestResolveProfile(t *testing.T) {
@@ -195,7 +203,7 @@ func TestArgvPerKind(t *testing.T) {
 	r := &Registry{opt: Options{LoginShell: "/bin/zsh"}}
 	claude := &agent{Agent: wire.Agent{ID: "L/abc123", Kind: "claude", Name: "n", Task: "-v looks like a flag", SessionID: "S"}}
 	got := r.argv(claude, BuiltinProfiles()["claude-auto-rc"], false, false)
-	want := "claude --permission-mode auto --remote-control -v looks like a flag --session-id S -- -v looks like a flag"
+	want := "claude --permission-mode auto --remote-control v looks like a flag --session-id S -- -v looks like a flag"
 	if strings.Join(got, " ") != want {
 		t.Fatalf("%q", got)
 	}
