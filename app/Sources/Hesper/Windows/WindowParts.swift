@@ -306,7 +306,8 @@ final class SizeOwnership {
         guard !ts.isEmpty else { return false }
         let responder = w.firstResponder
         let targeted = ts.map { t in
-            if responder === t.surface?.view { return true }
+            // A pane without a surface is never the responder (nil === nil).
+            if let v = t.surface?.view, responder === v { return true }
             if let wall = responder as? WallView {
                 return t.role == .tile && t.interactive && t.host.isDescendant(of: wall)
             }
