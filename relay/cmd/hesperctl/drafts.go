@@ -313,10 +313,10 @@ func relaySessionLine(s *wire.RelaySession) string {
 	if s == nil || s.LastReason == "" {
 		return ""
 	}
-	// The reason holds the relay's text: no control characters reach the
-	// terminal.
+	// The reason holds the relay's text: no control or format characters
+	// (bidi overrides reorder the line) reach the terminal.
 	reason := strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return -1
 		}
 		return r

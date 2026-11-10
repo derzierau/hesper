@@ -237,7 +237,7 @@ one like any command.
 | `drafts ls` / `rm ID` | `drafts.list` / `drafts.remove` |
 | `drafts save [TASK…\|-] [--id D] [--project P] [--machine M] [--kind K] [--profile P] [--worktree] [--branch B]` | `drafts.save`: a project (id or name) sets `band` and the project's folder on the machine (its default machine, else the first with a folder) and its default profile, as the app's "New Agent in …"; a folder sets `project`; `--machine` sets `machineExplicit` (this Mac's name is stored as none); `--kind` picks the kind's default profile; `--id` changes only what is given |
 | `profiles` | `profiles.list` |
-| `status` | `hello`: daemon, version, machine, machines with online, RTT and route; after a dropped relay session `relay session: dropped N× in 5 min, last: REASON at HH:MM:SS` (none in the last 5 min: `relay session: last dropped: REASON at HH:MM:SS`; control characters in REASON are left out) |
+| `status` | `hello`: daemon, version, machine, machines with online, RTT and route; after a dropped relay session `relay session: dropped N× in 5 min, last: REASON at HH:MM:SS` (none in the last 5 min: `relay session: last dropped: REASON at HH:MM:SS`; control and format characters, such as bidi overrides, in REASON are left out) |
 
 Projects are addressed by id, unique name (exact, else ignoring case; a
 real project wins a tie with scratch folders) or folder; groups by id or
