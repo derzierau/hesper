@@ -524,7 +524,10 @@ from it that the host took the size back. All three absent: nobody owns
 the size. `sizeOwner` and `sizeOwnerHost` never appear together. The host sends
 a `changed` event (locally an `agents.changed` note) whenever they change:
 a remote owner attaches, it detaches (`X`) or a newer owner takes over
-(the latest owner wins, a local one included). When the last remote
+(the latest owner wins, a local one included). When the current owner
+detaches while earlier owner attaches are still open, the latest of
+them owns the size again and the PTY takes its grid (its last size);
+the fields follow it. When the last remote
 owner detaches, the PTY goes back to the size it had before the first
 remote owner took it, unless view attaches ask for a fit (then the fit
 applies, as before); if every fit disappears before its debounce, the

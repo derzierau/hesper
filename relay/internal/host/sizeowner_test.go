@@ -176,6 +176,9 @@ func TestAttachPublishesSizeOwner(t *testing.T) {
 	client.Close()
 	<-attached
 	<-drained
-	waitNote("nobody owns the size", func(g *wire.Agent) bool { return !g.SizeOwnerHost && g.SizeOwner == "" })
+	// The Mac lets go while the phone is still attached as owner: the
+	// size goes back to the phone.
+	waitNote("the phone owns it again", func(g *wire.Agent) bool { return !g.SizeOwnerHost && g.SizeOwner == "phone-1" })
 	reconnected.closeAll()
+	waitNote("nobody owns the size", func(g *wire.Agent) bool { return !g.SizeOwnerHost && g.SizeOwner == "" })
 }

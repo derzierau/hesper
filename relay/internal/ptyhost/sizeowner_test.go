@@ -117,7 +117,7 @@ func TestOwnerOrigin(t *testing.T) {
 	}
 
 	// A local owner takes over from the phone: owned here at once.
-	attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 46, Rows: 19}, phone)
+	phone2 := attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 46, Rows: 19}, phone)
 	expect("the phone owns again", phone, true, 3)
 	_, local := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 80, Rows: 24})
 	expect("the Mac took it back", Origin{}, true, 4)
@@ -125,13 +125,20 @@ func TestOwnerOrigin(t *testing.T) {
 	_, local2 := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 80, Rows: 24})
 	waitFor(t, "second local attached", func() bool { return tm.Viewers() == 5 })
 	expect("still the Mac", Origin{}, true, 4)
-	// The current owner lets go: nobody owns it. The older local attach
-	// is no longer the owner; its detach changes nothing.
+	// The current owner lets go: the latest owner still attached (the
+	// first local one) gets the size back, still the Mac: no call.
 	local2.Close()
-	expect("nobody", Origin{}, false, 5)
+	waitFor(t, "second local detached", func() bool { return tm.Viewers() == 4 })
+	expect("the Mac again", Origin{}, true, 4)
+	// It lets go too: back to the phone, which is still attached.
 	local.Close()
-	waitFor(t, "locals detached", func() bool { return tm.Viewers() == 3 })
-	expect("still nobody", Origin{}, false, 5)
+	expect("the phone again", phone, true, 5)
+	if c, r := tm.Size(); c != 46 || r != 19 {
+		t.Fatalf("size after falling back to the phone %dx%d", c, r)
+	}
+	// The last owner lets go: nobody.
+	phone2.Close()
+	expect("nobody", Origin{}, false, 6)
 }
 
 // attachFrom attaches from origin and drains the connection; closing the

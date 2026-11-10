@@ -65,6 +65,8 @@ type Term struct {
 	viewers map[*viewer]struct{}
 	views   map[*view]struct{} // read-only window viewers (view.go)
 	owner   *viewer
+	// ownerSeq counts owner attaches (viewer.ownerSeq).
+	ownerSeq uint64
 	// ownerFrom is where owner attached from; set once per owner attach,
 	// cleared when that owner detaches.
 	ownerFrom Origin

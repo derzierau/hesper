@@ -85,6 +85,36 @@ func TestRemoteOwnerDetachWithFitLetsFitWin(t *testing.T) {
 	}
 }
 
+// The latest owner wins; when it lets go while an earlier owner is
+// still attached, the size goes back to that earlier owner (its grid),
+// and a fit view cannot resize the PTY under it.
+func TestOwnerFallsBackToEarlierOwner(t *testing.T) {
+	tm := start(t, "lines", 120, 40)
+	tm.mu.Lock()
+	tm.cfg.FitDebounce = 30 * time.Millisecond
+	tm.mu.Unlock()
+	waitFor(t, "prompt", func() bool { return screenHas(tm, "prompt>") })
+	phone := Origin{Device: "phone-1", Name: "iPhone"}
+
+	_, mac := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 100, Rows: 30})
+	waitFor(t, "the Mac's size", sizeIs(tm, 100, 30))
+	// The Mac's tile resizes itself while it owns the size.
+	wire.WriteFrame(mac, wire.FrameResize, wire.SizePayload(90, 28))
+	waitFor(t, "the Mac's new size", sizeIs(tm, 90, 28))
+	fitView(t, tm, 50, 20)
+	remote := attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 37, Rows: 27}, phone)
+	waitFor(t, "the phone's size", sizeIs(tm, 37, 27))
+	remote.Close()
+	waitFor(t, "back to the Mac's grid", sizeIs(tm, 90, 28))
+	if o, owned := tm.SizeOwner(); !owned || o != (Origin{}) {
+		t.Fatalf("owner %+v owned %v, want the Mac", o, owned)
+	}
+	time.Sleep(5 * tm.cfg.FitDebounce)
+	if c, r := tm.Size(); c != 90 || r != 28 {
+		t.Fatalf("a fit resized the PTY under the Mac's owner: %dx%d", c, r)
+	}
+}
+
 // A fit view can disappear before its debounce runs. The Mac must still
 // recover the size it had before the phone took over.
 func TestRemoteOwnerDetachThenFitClosesRestoresSize(t *testing.T) {

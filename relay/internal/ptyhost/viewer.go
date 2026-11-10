@@ -36,6 +36,13 @@ type viewer struct {
 	wake   chan struct{}
 	// Resyncs counts the redraws a slow read caused (tests).
 	resyncs int
+	// ownerSeq orders owner attaches (0: not one); origin, cols and rows
+	// are its origin and its latest grid. The Term's lock guards them.
+	// The latest owner still attached gets the size back when a newer
+	// one detaches.
+	ownerSeq   uint64
+	origin     Origin
+	cols, rows int
 }
 
 // push queues an item; the Term's lock is held.
@@ -90,6 +97,8 @@ func (t *Term) AttachFrom(conn net.Conn, r *bufio.Reader, req wire.AttachRequest
 	if rw && req.Owner {
 		ownerChanged = t.owner == nil
 		t.owner = v
+		t.ownerSeq++
+		v.ownerSeq, v.origin, v.cols, v.rows = t.ownerSeq, origin, req.Cols, req.Rows
 		if origin == (Origin{}) {
 			// The Mac sizes it itself: nothing to give back.
 			t.restoreCols, t.restoreRows = 0, 0
@@ -159,7 +168,27 @@ func (t *Term) detach(v *viewer) {
 	t.mu.Lock()
 	delete(t.viewers, v)
 	ownerChanged, resized := false, false
+	var next *viewer
 	if t.owner == v {
+		// The latest owner still attached takes the size back.
+		for w := range t.viewers {
+			if w.ownerSeq > 0 && (next == nil || w.ownerSeq > next.ownerSeq) {
+				next = w
+			}
+		}
+	}
+	if next != nil {
+		t.owner = next
+		if next.origin == (Origin{}) {
+			t.restoreCols, t.restoreRows = 0, 0
+		}
+		if t.exit == nil && next.cols > 0 && next.rows > 0 {
+			resized, _ = t.resizeLocked(next.cols, next.rows)
+		}
+		if t.ownerFrom != next.origin {
+			t.ownerFrom, ownerChanged = next.origin, true
+		}
+	} else if t.owner == v {
 		// A remote owner gives the size back; otherwise the size stays.
 		// View attaches that ask for a fit win either way.
 		t.owner = nil
@@ -218,6 +247,9 @@ func (v *viewer) read(r *bufio.Reader) {
 			}
 			v.t.mu.Lock()
 			owner := v.t.owner == v
+			if v.ownerSeq > 0 {
+				v.cols, v.rows = cols, rows // its grid, should the size come back
+			}
 			v.t.mu.Unlock()
 			if owner {
 				v.t.Resize(cols, rows)
