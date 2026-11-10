@@ -309,7 +309,7 @@ func (f *Fleet) carry(ctx context.Context, src, dst side, local string, have []s
 		return wire.Agent{}, wire.Errorf(wire.CodeRemote, "the import's result is not an agent")
 	}
 	f.mu.Lock()
-	a = dst.m.named(a)
+	a = f.named(dst.m, a)
 	dst.m.agents[localID(a.ID)] = a
 	f.emitChangedLocked(a)
 	f.mu.Unlock()

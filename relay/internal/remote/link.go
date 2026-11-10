@@ -266,7 +266,7 @@ func (f *Fleet) event(l *link, e agentlink.Event) {
 		m.hostShort = e.Machine
 		fresh := map[string]wire.Agent{}
 		for _, a := range e.List {
-			a = m.named(a)
+			a = f.named(m, a)
 			fresh[localID(a.ID)] = a
 		}
 		for local, a := range m.agents {
@@ -279,7 +279,7 @@ func (f *Fleet) event(l *link, e agentlink.Event) {
 			f.emitChangedLocked(fresh[localID(a.ID)])
 		}
 	case e.Changed != nil:
-		a := m.named(*e.Changed)
+		a := f.named(m, *e.Changed)
 		m.agents[localID(a.ID)] = a
 		f.emitChangedLocked(a)
 	case e.Removed != "":
