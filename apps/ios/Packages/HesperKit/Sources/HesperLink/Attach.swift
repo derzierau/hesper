@@ -139,8 +139,9 @@ public final class AttachChannel: AttachStream {
     public let frames: AsyncStream<AttachFrame>
     private let continuation: AsyncStream<AttachFrame>.Continuation
     private let onClose: @Sendable (UInt32) -> Void
-    private let onResize: @Sendable (UInt32, Int, Int) -> Void
-    private let onWrite: @Sendable (UInt32, Data) -> Void
+    /// Queue a frame for the Mac; false when its queue is full.
+    private let onResize: @Sendable (UInt32, Int, Int) -> Bool
+    private let onWrite: @Sendable (UInt32, Data) -> Bool
     private let onExit: @Sendable (UInt32) -> Void
 
     private struct State {
@@ -174,8 +175,8 @@ public final class AttachChannel: AttachStream {
 
     init(
         id: UInt32, onClose: @escaping @Sendable (UInt32) -> Void,
-        onResize: @escaping @Sendable (UInt32, Int, Int) -> Void = { _, _, _ in },
-        onWrite: @escaping @Sendable (UInt32, Data) -> Void = { _, _ in },
+        onResize: @escaping @Sendable (UInt32, Int, Int) -> Bool = { _, _, _ in true },
+        onWrite: @escaping @Sendable (UInt32, Data) -> Bool = { _, _ in true },
         onExit: @escaping @Sendable (UInt32) -> Void = { _ in }
     ) {
         self.onExit = onExit
@@ -309,13 +310,16 @@ public final class AttachChannel: AttachStream {
 
     public func close() { close(RelayError(code: "closed", message: "Closed")) }
 
+    /// The Mac took no input for so long that its queue filled.
+    static let inputOverflow = RelayError(code: "overflow", message: "The Mac is not taking input")
+
     public func resize(cols: Int, rows: Int) {
         guard cols > 0, rows > 0, !state.withLock({ $0.ended }) else { return }
-        onResize(id, cols, rows)
+        if !onResize(id, cols, rows) { close(Self.inputOverflow) }
     }
 
     public func write(_ data: Data) {
         guard !data.isEmpty, !state.withLock({ $0.ended }) else { return }
-        onWrite(id, data)
+        if !onWrite(id, data) { close(Self.inputOverflow) }
     }
 }

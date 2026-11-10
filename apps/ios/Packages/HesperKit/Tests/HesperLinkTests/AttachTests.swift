@@ -255,6 +255,52 @@ import Testing
         }
     }
 
+    @Test func everyWayAnAttachEndsStopsItsDrainTask() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        let relay = FakeRelay([host])
+        let (link, updates) = try await Self.linked(host, relay: relay)
+        defer { withExtendedLifetime(updates) {} }
+        let channel = try #require(link.channel(on: "M"))
+        // The Mac's X.
+        let a = try await link.attach(agent: "M/a1", cols: 80, rows: 24)
+        host.push(kind: Self.x, channel: try #require((a as? AttachChannel)?.id), Data())
+        _ = await Self.all(a)
+        for _ in 0..<300 where await channel.drains > 0 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await channel.drains == 0)
+        // A close after it ended adds nothing.
+        a.close()
+        // The link breaking.
+        let b = try await link.attach(agent: "M/a1", cols: 80, rows: 24)
+        relay.dropAll()
+        _ = await Self.all(b)
+        for _ in 0..<300 where await channel.drains > 0 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await channel.drains == 0)
+    }
+
+    @Test func theOutboundQueueIsBoundedButAlwaysTakesTheClose() async {
+        let queue = OutboundQueue()
+        let chunk = Data(count: 64 << 10)
+        var queued = 0
+        while queue.frame(chunk) { queued += 1 }
+        #expect(queued == OutboundQueue.maxBytes / chunk.count)
+        queue.finish(with: .close)
+        var ops = 0
+        var last: HostChannel.Outbound?
+        for await op in queue.ops {
+            ops += 1
+            last = op
+        }
+        #expect(ops == queued + 1)
+        if case .close? = last {} else { Issue.record("X was not queued last") }
+    }
+
+    @Test func inputTheMacDoesNotTakeClosesTheAttach() {
+        let closed = Mutex([UInt32]())
+        let stream = AttachChannel(id: 4, onClose: { id in closed.withLock { $0.append(id) } }, onWrite: { _, _ in false })
+        stream.write(Data("x".utf8))
+        #expect(closed.withLock { $0 } == [4])
+    }
+
     @Test func demuxRoutesByChannel() async throws {
         let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
         var (link, updates) = try await Self.linked(host)

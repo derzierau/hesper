@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import HesperFleet
+import Synchronization
 
 /// Who the phone is on the relay: its device id and keys.
 public struct ControllerIdentity: Sendable {
@@ -36,6 +37,10 @@ public actor HostChannel {
     /// own controller does (internal/remote/link.go): a closed channel's
     /// number never meets a late frame of the one before.
     private var attaches: [UInt32: AttachChannel] = [:]
+    /// Each attach's queue to the Mac, until it is finished.
+    private var queues: [UInt32: OutboundQueue] = [:]
+    /// Drain tasks still running (for tests: each ends with its attach).
+    private(set) var drains = 0
     private var lastChannel: UInt32 = 0
 
     public init(relay: RelayConnection, machine: String, hostKey: Data, me: ControllerIdentity) {
@@ -189,6 +194,7 @@ extension HostChannel {
                     attaches[ch]?.receive(f.payload)
                 case (Self.kindClose, let ch) where ch > 0:
                     attaches.removeValue(forKey: ch)?.end(RelayError(code: "closed", message: "The Mac closed the terminal"))
+                    queues.removeValue(forKey: ch)?.finish()
                 default:
                     continue
                 }
@@ -208,6 +214,8 @@ extension HostChannel {
         let lost = RelayError(code: "link_lost", message: "The link to the Mac broke")
         for a in attaches.values { a.end(lost) }
         attaches = [:]
+        for q in queues.values { q.finish() }
+        queues = [:]
     }
 
     /// Opens an attach of `agent` at `cols`x`rows` on a new channel of the
@@ -231,22 +239,27 @@ extension HostChannel {
         let ch = lastChannel
         // One queue per attach, drained by one task: typed bytes, resizes
         // and the close reach the Mac in the order the phone made them.
-        let (outbound, queue) = AsyncStream.makeStream(of: Outbound.self)
+        // Every way an attach ends finishes its queue, so the task ends.
+        let queue = OutboundQueue()
         let channel = AttachChannel(id: ch) { _ in
-            queue.yield(.close)
-            queue.finish()
+            queue.finish(with: .close)
         } onResize: { _, cols, rows in
-            queue.yield(.frame(AttachDecoder.resize(cols: cols, rows: rows)))
+            queue.frame(AttachDecoder.resize(cols: cols, rows: rows))
         } onWrite: { _, data in
-            queue.yield(.frame(AttachDecoder.input(data)))
+            queue.frame(AttachDecoder.input(data))
         } onExit: { _ in
-            queue.yield(.forget)
-            queue.finish()
+            queue.finish(with: .forget)
         }
+        drains += 1
         Task { [weak self] in
-            for await op in outbound { await self?.flush(op, on: ch, link: link.id) }
+            for await op in queue.ops {
+                queue.taken(op)
+                await self?.flush(op, on: ch, link: link.id)
+            }
+            await self?.drained(ch)
         }
         attaches[ch] = channel
+        queues[ch] = queue
         let params = try Self.attachParams(link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, typing: typing, owner: owner)
         let timeout = Task {
             try await Task.sleep(for: .seconds(15))
@@ -263,11 +276,15 @@ extension HostChannel {
             channel.end(error as? RelayError ?? RelayError(code: "closed"))
             // The request may have reached the Mac, which then holds the
             // viewer (and an owner's size) until the channel closes.
-            queue.yield(.close)
-            queue.finish()
+            queue.finish(with: .close)
             throw error
         }
         return channel
+    }
+
+    private func drained(_ ch: UInt32) {
+        drains -= 1
+        queues[ch] = nil
     }
 
     /// What an attach sends the Mac, in order.
@@ -318,5 +335,45 @@ extension HostChannel {
         let sealed = link.cipher.seal(
             kind: StreamCipher.data, payload: LinkFrames.encode(kind: frame.kind, channel: frame.channel, payload: frame.payload))
         try await link.socket.send(.data(sealed))
+    }
+}
+
+/// An attach's frames for the Mac, in the order the phone made them. At
+/// most `maxBytes` of typed input and resizes wait for a link that does
+/// not keep up; past that `frame` refuses and the attach closes. The last
+/// op (`X`, or forgetting an exited attach) is always queued.
+final class OutboundQueue: Sendable {
+    static let maxBytes = 1 << 20
+    let ops: AsyncStream<HostChannel.Outbound>
+    private let continuation: AsyncStream<HostChannel.Outbound>.Continuation
+    private let queued = Mutex(0)
+
+    init() {
+        (ops, continuation) = AsyncStream.makeStream(of: HostChannel.Outbound.self)
+    }
+
+    /// Queues an inner frame; false, queueing nothing, when it would pass
+    /// the bound.
+    func frame(_ payload: Data) -> Bool {
+        let fits = queued.withLock { q in
+            guard q + payload.count <= Self.maxBytes else { return false }
+            q += payload.count
+            return true
+        }
+        guard fits else { return false }
+        continuation.yield(.frame(payload))
+        return true
+    }
+
+    /// The drain took `op` off the queue.
+    func taken(_ op: HostChannel.Outbound) {
+        if case .frame(let payload) = op { queued.withLock { $0 -= payload.count } }
+    }
+
+    /// Ends the queue after `last`; the drain sends what is queued, then
+    /// stops. Later calls do nothing.
+    func finish(with last: HostChannel.Outbound? = nil) {
+        if let last { continuation.yield(last) }
+        continuation.finish()
     }
 }
