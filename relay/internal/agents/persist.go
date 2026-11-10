@@ -100,7 +100,7 @@ func (r *Registry) restore(rec record) {
 		a.ProjectID = projectID
 	}
 	// No attach survives a restart: nobody owns the size.
-	a.SizeOwner, a.SizeOwnerName, a.SizeOwnerHost = "", "", false
+	a.clearSizeOwner()
 	// The machine's short name may have changed since.
 	a.ID, a.Machine = r.id(rec.Local), r.machine
 	r.agents[a.local] = a

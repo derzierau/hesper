@@ -641,8 +641,8 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		return err
 	}
 	a.term, a.PID, a.Exit, a.running, a.stopping = term, term.PID(), nil, true, false
-	a.SizeOwner, a.SizeOwnerName, a.SizeOwnerHost = "", "", false // a new PTY: nobody owns it
-	a.Ended = ""                                                  // runs again: no longer "killed"
+	a.clearSizeOwner() // a new PTY: nobody owns it
+	a.Ended = ""       // runs again: no longer "killed"
 	a.started, a.respawn, a.cameBack, a.answered = time.Now(), false, false, false
 	a.endedTurn, a.codexHooks, a.fromScreen, a.approvalKey = "", false, false, ""
 	a.expectPrompt = !resume && a.Task != "" && a.Kind != wire.KindShell && !deliverLater
@@ -675,6 +675,11 @@ func (r *Registry) resized(local string, gen, cols, rows int) {
 		a.Size = wire.Size{Cols: cols, Rows: rows}
 		r.changed(a)
 	}
+}
+
+// clearSizeOwner: nobody owns the size (a new PTY, a restart).
+func (a *agent) clearSizeOwner() {
+	a.SizeOwner, a.SizeOwnerName, a.SizeOwnerHost = "", "", false
 }
 
 // ownerChanged publishes who owns the PTY's size now (Term.SizeOwner).
