@@ -75,6 +75,17 @@ func TestAttachPublishesSizeOwner(t *testing.T) {
 
 	phone := Caller{Device: "phone-1", Name: "iPhone", Rights: []string{devicekey.Observe, devicekey.Type}, Verified: true}
 	req, _ := json.Marshal(wire.AttachRequest{Attach: a.ID, Mode: wire.ModeRW, Owner: true, Cols: 46, Rows: 19})
+
+	// The published owner is the authenticated caller: an attach whose
+	// caller is missing or not the routed controller is refused.
+	other := Caller{Device: "laptop-1", Name: "laptop", Rights: phone.Rights, Verified: true}
+	for what, c := range map[string]context.Context{"no caller": ctx, "another caller": WithCaller(ctx, other)} {
+		if _, err := s.Execute(c, protocol.Message{Method: "agents.attach", ControllerID: "phone-1",
+			Params: protocol.JSON(map[string]any{"link": "link-1", "ch": 2, "mode": wire.ModeRW, "request": json.RawMessage(req)}), Deadline: time.Now().Add(10 * time.Second).UnixMilli()}); err == nil {
+			t.Fatalf("%s: attach accepted", what)
+		}
+	}
+
 	if _, err := s.Execute(WithCaller(ctx, phone), protocol.Message{Method: "agents.attach", ControllerID: "phone-1",
 		Params: protocol.JSON(map[string]any{"link": "link-1", "ch": 3, "mode": wire.ModeRW, "request": json.RawMessage(req)}), Deadline: time.Now().Add(10 * time.Second).UnixMilli()}); err != nil {
 		t.Fatal(err)

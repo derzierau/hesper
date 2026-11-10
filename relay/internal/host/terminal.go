@@ -430,8 +430,15 @@ func (s *Service) attach(ctx context.Context, m protocol.Message) (json.RawMessa
 	if p.Ch == 0 || req.Cols < 0 || req.Rows < 0 || req.Cols > 1000 || req.Rows > 1000 {
 		return nil, protocol.Err("invalid_request", "Invalid channel or size")
 	}
+	// A size owner attached here is published as the authenticated caller
+	// (agent info sizeOwner, sizeOwnerName): it must be the routed
+	// controller.
+	caller, ok := CallerFrom(ctx)
+	if !ok || caller.Device != m.ControllerID {
+		return nil, protocol.Err("forbidden", "Caller is not the routed controller")
+	}
 	link := s.links.get(p.Link)
-	if link == nil || link.device != m.ControllerID {
+	if link == nil || link.device != caller.Device {
 		return nil, protocol.Err("not_found", "No such link")
 	}
 	a, err := s.agent(ctx, req.Attach)
@@ -462,10 +469,7 @@ func (s *Service) attach(ctx context.Context, m protocol.Message) (json.RawMessa
 	link.mu.Unlock()
 	req.Attach = a.ID
 	req.Owner = req.Owner && req.Mode == wire.ModeRW
-	// A size owner attached here is the calling controller (agent info
-	// sizeOwner, sizeOwnerName).
-	caller, _ := CallerFrom(ctx)
-	go term.AttachFrom(near, bufio.NewReader(near), req, ptyhost.Origin{Device: m.ControllerID, Name: caller.Name})
+	go term.AttachFrom(near, bufio.NewReader(near), req, ptyhost.Origin{Device: caller.Device, Name: caller.Name})
 	go func() {
 		// The agent's side to the controller.
 		buf := make([]byte, 32<<10)
