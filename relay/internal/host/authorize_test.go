@@ -334,6 +334,14 @@ func TestUnreadableNonceFileIsAudited(t *testing.T) {
 	if err := h.a.nonces.add("laptop-1 before", h.clock()); !errors.Is(err, errReplay) {
 		t.Fatalf("nonce before the bad line forgotten: %v", err)
 	}
+	// The file as it was is kept aside, not replaced by the part read.
+	kept, err := os.ReadFile(filepath.Join(h.dir, NoncesFile+".unread"))
+	if err != nil || string(kept) != data {
+		t.Fatalf("original not kept aside: %v (%d bytes)", err, len(kept))
+	}
+	if info, err := os.Stat(filepath.Join(h.dir, NoncesFile+".unread")); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("kept file: %v %v", info, err)
+	}
 }
 
 func TestNonceFileStaysBounded(t *testing.T) {

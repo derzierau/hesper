@@ -413,9 +413,16 @@ func openNonces(path string, now time.Time) (*nonceCache, error) {
 		}
 		// A read error or an overlong line ends the scan early. What was
 		// not read is forgotten: timestamps still bound a replay to MaxSkew,
-		// but one inside it passes once, so the caller audits this.
+		// but one inside it passes once, so the caller audits this. The
+		// file is kept aside as it was (the rewrite below would replace it
+		// with the part read), so what was not read stays on disk.
 		if err := scanner.Err(); err != nil {
 			c.lost = fmt.Errorf("%s read only in part, the rest forgotten: %w", path, err)
+			if err := os.Rename(path, path+".unread"); err != nil {
+				f.Close()
+				return nil, fmt.Errorf("keep %s aside: %w", path, err)
+			}
+			c.lost = fmt.Errorf("%w; kept as %s.unread", c.lost, path)
 		}
 		f.Close()
 	} else if !errors.Is(err, os.ErrNotExist) {
