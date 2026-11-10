@@ -66,7 +66,6 @@ struct TaskCard: View {
             }
             .controlSize(.small)
             .font(.subheadline)
-            .disabled(!model.canAnswer(agent))
         }
         .padding(DS.Spacing.m)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -112,7 +111,10 @@ struct TaskCard: View {
     }
 
     private var actions: some View {
-        ForEach(DecisionOptions.gridActions(for: agent)) { button($0) }
+        // Open only navigates, like the card body, so it stays enabled.
+        ForEach(DecisionOptions.gridActions(for: agent)) { row in
+            button(row).disabled(row.action != .open && !model.canAnswer(agent))
+        }
     }
 
     /// Open is a link (it pushes); everything else goes through `decide`.
