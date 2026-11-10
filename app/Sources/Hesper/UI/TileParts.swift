@@ -73,8 +73,8 @@ struct TileHeader: View {
                 .help("Typing goes to the agent; \(CommandRegistry.cap(.exitFocus) ?? "") leaves")
                 .accessibilityIdentifier("tile.typing")
             }
-            if let on = SizeOwner.badge(agent) {
-                // Fit to iPhone: the phone sets the size; this tile is a view.
+            if let on = SizeOwner.badge(agent, local: local, machine: machine) {
+                // Another device sets the size; this tile is a view.
                 Text(on)
                     .font(.ds(.chrome, .medium))
                     .foregroundStyle(Theme.color(.horizon))

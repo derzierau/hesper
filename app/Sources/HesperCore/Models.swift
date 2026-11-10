@@ -66,11 +66,14 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
     public var ended: String?
     /// Its worktree's last checkpoint (hesperd, on done / close / move).
     public var checkpoint: Checkpoint?
-    /// Another device (the iPhone) owns the PTY size: its controller id.
-    /// Nil while the size is the Mac's or nobody's (older daemons omit it).
+    /// A controller device owns the PTY size: its device id. Nil while the
+    /// size is this Mac's or nobody's (older daemons omit it).
     public var sizeOwner: String?
-    /// That device's name ("iPhone"); nil without `sizeOwner`.
+    /// That device's name; nil without `sizeOwner` or with enforcement off.
     public var sizeOwnerName: String?
+    /// The agent's own Mac owns the size (an owner attach there); never
+    /// together with `sizeOwner` (relay/docs/protocol.md "Size owner").
+    public var sizeOwnerHost = false
 
     /// A person named it (the app, hesperctl outside an agent): the agent
     /// no longer renames it until "Let the Agent Name It".
@@ -99,7 +102,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, machine, kind, profile, name, nameBy, task, project, projectId, worktree, branch, state, stateSince, attention, summary, activity, sessionId, size, created, pid, exit
-        case background, ended, checkpoint, sizeOwner, sizeOwnerName
+        case background, ended, checkpoint, sizeOwner, sizeOwnerName, sizeOwnerHost
     }
 
     public init(from decoder: any Decoder) throws {
@@ -130,6 +133,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
         checkpoint = (try? c.decodeIfPresent(Checkpoint.self, forKey: .checkpoint)).flatMap { $0 }.flatMap { $0.ref.isEmpty && $0.commit.isEmpty ? nil : $0 }
         sizeOwner = (try? c.decodeIfPresent(String.self, forKey: .sizeOwner)).flatMap { $0.isEmpty ? nil : $0 }
         sizeOwnerName = (try? c.decodeIfPresent(String.self, forKey: .sizeOwnerName)).flatMap { $0.isEmpty ? nil : $0 }
+        sizeOwnerHost = (try? c.decodeIfPresent(Bool.self, forKey: .sizeOwnerHost)) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -160,6 +164,7 @@ public struct Agent: Codable, Equatable, Sendable, Identifiable {
         try c.encodeIfPresent(checkpoint, forKey: .checkpoint)
         try c.encodeIfPresent(sizeOwner, forKey: .sizeOwner)
         try c.encodeIfPresent(sizeOwnerName, forKey: .sizeOwnerName)
+        if sizeOwnerHost { try c.encode(true, forKey: .sizeOwnerHost) }
     }
 
     static func date(_ s: String?) -> Date? {

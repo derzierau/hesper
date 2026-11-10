@@ -50,6 +50,7 @@ final class WindowManager: NSObject {
         // attaches as a second owner (SizeOwner).
         AgentTerminal.ownershipResolver = { [weak self] t in self?.ownership.wouldOwn(t) ?? t.ownsSize }
         AgentTerminal.onSizeOwnerChanged = { [weak self] t in self?.ownership.sizeOwnerChanged(t) }
+        AgentTerminal.localMachine = { [weak primary] in primary?.localMachine ?? "" }
         restorer.manager = self
         observeChanges { [weak self] in
             guard let self else { return }

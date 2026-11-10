@@ -213,7 +213,7 @@ final class SizeOwnership {
         if let extra, !ts.contains(where: { $0 === extra }) { ts.append(extra) }
         let id: (NSWindow?) -> Int? = { $0.map { ObjectIdentifier($0).hashValue } }
         let cs = ts.map { SizeOwner.Candidate(agentID: $0.agent.id, window: id($0.host.window), focusRole: $0.role == .focus, readWrite: $0.readWrite,
-                                              remoteOwned: SizeOwner.remoteOwned($0.agent), takingBack: $0.takingSizeBack) }
+                                              remoteOwned: $0.remoteOwned, takingBack: $0.takingSizeBack) }
         return Array(zip(ts, SizeOwner.owners(cs, ownerWindow: id(effectiveOwnerWindow))))
     }
 
@@ -229,7 +229,7 @@ final class SizeOwnership {
     /// An agent's `sizeOwner` changed: another device taking the size makes
     /// its panes views at once; a cleared owner goes through the debounce.
     func sizeOwnerChanged(_ t: AgentTerminal) {
-        if SizeOwner.remoteOwned(t.agent) { apply() } else { schedule() }
+        if t.remoteOwned { apply() } else { schedule() }
     }
 
     /// A key or click in one of our windows: the pane it goes to, if its
@@ -238,7 +238,7 @@ final class SizeOwnership {
     /// surface (replayed once it swapped in), so it is not lost.
     private func takeBack(_ e: NSEvent) -> Bool {
         guard let w = e.window, isOurs(w) else { return false }
-        let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && SizeOwner.remoteOwned($0.agent) }
+        let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && $0.remoteOwned }
         guard !ts.isEmpty else { return false }
         let target: AgentTerminal?
         if e.type == .leftMouseDown {

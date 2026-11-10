@@ -79,8 +79,14 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// Another device owns the size and this pane was typed or clicked in:
     /// it owns again at once (SizeOwner); cleared when `sizeOwner` changes.
     var takingSizeBack = false
-    /// The agent's `sizeOwner` changed (the window layer re-decides).
+    /// The agent's size owner changed (the window layer re-decides).
     static var onSizeOwnerChanged: ((AgentTerminal) -> Void)?
+    /// This Mac's machine id (an agent on it reads `sizeOwnerHost` as its
+    /// own owner attach, SizeOwner.owner).
+    static var localMachine: () -> String = { "" }
+    /// Another device owns this agent's size (SizeOwner.remoteOwned).
+    var remoteOwned: Bool { sizeOwner(agent) != nil }
+    private func sizeOwner(_ a: Agent) -> String? { SizeOwner.owner(a, local: a.machine == Self.localMachine()) }
     /// A surface is swapping in (input is held for it).
     var swapping: Bool { prewarm != nil }
     private var resolvingOwnership = false
@@ -137,8 +143,9 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         } else if surface == nil || (surface?.processExited ?? false) {
             if connected && isAttachable { scheduleReattach() }
         }
-        if old.sizeOwner != a.sizeOwner {
-            if !SizeOwner.keepsTakeBack(old: old.sizeOwner, new: a.sizeOwner) { takingSizeBack = false }
+        let (oldOwner, newOwner) = (sizeOwner(old), sizeOwner(a))
+        if oldOwner != newOwner {
+            if !SizeOwner.keepsTakeBack(old: oldOwner, new: newOwner) { takingSizeBack = false }
             Self.onSizeOwnerChanged?(self)
         }
         // A changed PTY size needs nothing here: a tile's view follows the

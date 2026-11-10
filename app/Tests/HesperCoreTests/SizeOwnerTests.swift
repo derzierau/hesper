@@ -95,7 +95,7 @@ import Testing
 }
 
 /// Fit to iPhone (docs/rebuild-contract.md "Size rule with several
-/// windows"): while another device (the iPhone) owns an agent's PTY size,
+/// windows"): while another device owns an agent's PTY size,
 /// every local pane of that agent is a view; a keystroke or a click in one
 /// takes the size back for that pane at once.
 @Suite struct SizeOwnerRemote {
@@ -149,11 +149,27 @@ import Testing
         let cs = [c("a", 1, focus: true), c("a", 2, focus: true)]
         #expect(SizeOwner.owners(cs, ownerWindow: 1) == [true, false])
         var a = Agent(id: "L/a")
-        #expect(!SizeOwner.remoteOwned(a))
+        #expect(!SizeOwner.remoteOwned(a, local: true))
         a.sizeOwner = ""
-        #expect(!SizeOwner.remoteOwned(a))
+        #expect(!SizeOwner.remoteOwned(a, local: true))
         a.sizeOwner = "dev-1"
-        #expect(SizeOwner.remoteOwned(a))
+        #expect(SizeOwner.remoteOwned(a, local: true))
+        #expect(SizeOwner.remoteOwned(a, local: false))
+    }
+
+    @Test func theAgentsOwnMacOwningIsRemoteOnlyOnAnotherMac() {
+        // Mac B's tile owned Mac A's agent; Mac A took the size back. Mac
+        // B's hesperd strips its own device id, so only sizeOwnerHost
+        // tells Mac B it lost the size: its panes must become views.
+        var a = Agent(id: "A/x")
+        a.sizeOwnerHost = true
+        #expect(SizeOwner.remoteOwned(a, local: false))
+        #expect(SizeOwner.owner(a, local: false) == SizeOwner.hostOwner)
+        // On Mac A it is its own owner attach: the normal rule.
+        #expect(!SizeOwner.remoteOwned(a, local: true))
+        // Mac B types: its owner attach clears the host owner, and Mac B's
+        // take-back gives way to the normal rule (it owns in its key window).
+        #expect(!SizeOwner.keepsTakeBack(old: SizeOwner.owner(a, local: false), new: nil))
     }
 
     @Test func aTakeBackLastsWhileTheSameRemoteOwnerIsShown() {
@@ -168,15 +184,18 @@ import Testing
 
     @Test func badgeNamesTheDevice() {
         var a = Agent(id: "L/a")
-        #expect(SizeOwner.badge(a) == nil)
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == nil)
         a.sizeOwner = "dev-1"
-        #expect(SizeOwner.badge(a) == "On iPhone")
-        a.sizeOwnerName = ""
-        #expect(SizeOwner.badge(a) == "On iPhone")
+        // No name (enforcement off): no guess at the kind of device.
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == "On another device")
         a.sizeOwnerName = "Work iPhone"
-        #expect(SizeOwner.badge(a) == "On Work iPhone")
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == "On Work iPhone")
         a.sizeOwner = nil
-        #expect(SizeOwner.badge(a) == nil)
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == nil)
+        // The agent's own Mac owns it: named on another Mac, none at home.
+        a.sizeOwnerHost = true
+        #expect(SizeOwner.badge(a, local: false, machine: "mini") == "On mini")
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == nil)
     }
 
     @Test func decodesTheOwnerFieldsAndToleratesTheirAbsence() throws {
@@ -186,7 +205,11 @@ import Testing
         let a = try JSONDecoder().decode(Agent.self, from: Data(json.utf8))
         #expect(a.sizeOwner == "c-7f")
         #expect(a.sizeOwnerName == "iPhone")
-        #expect(SizeOwner.remoteOwned(a))
+        #expect(SizeOwner.remoteOwned(a, local: true))
+        #expect(!a.sizeOwnerHost)
+        let host = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/1","sizeOwnerHost":true}"#.utf8))
+        #expect(host.sizeOwnerHost && host.sizeOwner == nil)
+        #expect(try JSONDecoder().decode(Agent.self, from: try JSONEncoder().encode(host)) == host)
         let empty = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/1","state":"working","sizeOwner":"","sizeOwnerName":""}"#.utf8))
         #expect(empty.sizeOwner == nil && empty.sizeOwnerName == nil)
         let round = try JSONDecoder().decode(Agent.self, from: try JSONEncoder().encode(a))
