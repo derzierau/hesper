@@ -41,9 +41,10 @@ Access credentials last 15 minutes; rotating refresh credentials share a 30-day
 absolute expiry. Refresh reuse durably revokes the device. Access and refresh
 credentials are stored hashed. A hub connection closes at access expiry (the
 host renews ahead and swaps connections). A terminal stream needs a valid access
-credential only to open; it then stays open while both devices stay active and
-closes within a second of a revocation or policy change, because revocation and
-policy are the controls and token expiry only governs opening. An allowlist
+credential only to open; it then stays open while both devices stay active, for
+at most 24 hours (`transport.DefaultMaxStreamAge`), and closes within a second
+of a revocation or policy change. Revocation, policy and that ceiling are the
+controls; token expiry only governs opening. An allowlist
 reload disconnects removed users immediately. The host and CLI serialize
 file renewal with a process lock and atomically replace mode-0600 credentials.
 An ambiguous refresh requires sign-in again rather than retrying a consumed token.

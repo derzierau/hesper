@@ -31,6 +31,12 @@ type terminalWorld struct {
 
 func newTerminalWorld(t *testing.T, ctx context.Context) *terminalWorld {
 	t.Helper()
+	return newTerminalWorldWith(t, ctx, nil)
+}
+
+// newTerminalWorldWith lets configure adjust the relay before the stream opens.
+func newTerminalWorldWith(t *testing.T, ctx context.Context, configure func(*transport.Server)) *terminalWorld {
+	t.Helper()
 	repo, err := storage.Open(filepath.Join(t.TempDir(), "relay.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -42,6 +48,9 @@ func newTerminalWorld(t *testing.T, ctx context.Context) *terminalWorld {
 	hub.SetPolicy(policy.Allowed)
 	app := transport.New(repo, hub)
 	app.Policy = policy
+	if configure != nil {
+		configure(app)
+	}
 	server := httptest.NewServer(app.PublicHandler())
 	t.Cleanup(server.Close)
 	t.Cleanup(app.Terminals.Close)
@@ -128,6 +137,17 @@ func TestTerminalOutlivesTokenExpiry(t *testing.T) {
 	// Past both tokens' expiry and at least one per-second repository check.
 	time.Sleep(terminalTTL + 1500*time.Millisecond)
 	w.forwards(t, ctx)
+}
+
+// A stream that outlives its tokens still closes at the relay's maximum
+// stream age, while both devices stay active.
+func TestTerminalClosesAtMaxStreamAge(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	age := terminalTTL + 1500*time.Millisecond
+	w := newTerminalWorldWith(t, ctx, func(s *transport.Server) { s.MaxStreamAge = age })
+	w.pastExpiry(t, ctx)
+	w.closesWithin(t, ctx, age+time.Second)
 }
 
 func TestTerminalClosesOnRevocation(t *testing.T) {

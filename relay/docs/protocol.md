@@ -618,9 +618,9 @@ the refresh family); that connection then closes at expiry and the host
 reconnects. Requests in flight on the old connection may be lost. A host's links (`agents.link`) do not end
 with its hub connection. Hub connections close at access expiry. A terminal
 stream (`/v1/terminal`) needs a valid access token only to open; it then stays
-open while both devices stay active and closes within a second of a revocation
-or policy change. Revocation and policy are the controls; token expiry only
-governs opening. Removed users cannot renew or reconnect.
+open while both devices stay active, for at most 24 hours, and closes within a
+second of a revocation or policy change. Revocation, policy and that ceiling
+are the controls; token expiry only governs opening. Removed users cannot renew or reconnect.
 
 
 ## Terminal streams

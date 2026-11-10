@@ -60,6 +60,19 @@ func (b *TerminalBroker) Close() {
 }
 func (s *Server) Revoke(id string) { s.Hub.Revoke(id); s.Terminals.Revoke(id) }
 
+// DefaultMaxStreamAge caps how long a terminal stream may stay open after
+// its access token expired, however long both devices stay active. It is the
+// ceiling streams had before when a credential carried no expiry.
+// The value is the owner's decision.
+const DefaultMaxStreamAge = 24 * time.Hour
+
+func (s *Server) maxStreamAge() time.Duration {
+	if s.MaxStreamAge > 0 {
+		return s.MaxStreamAge
+	}
+	return DefaultMaxStreamAge
+}
+
 var streamID = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 
 func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
@@ -158,10 +171,13 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	b.mu.Unlock()
 	defer conn.CloseNow()
 	// The access token only governs opening. An open stream lives while its
-	// device stays active: the check reads the device record, so the stream
-	// outlives token expiry and still closes within a second of a revocation
-	// or policy change, including callers that revoke directly, independent of
-	// the HTTP administration and GitHub token-reuse callbacks.
+	// device stays active, up to the maximum stream age: the check reads the
+	// device record, so the stream outlives token expiry and still closes
+	// within a second of a revocation or policy change, including callers
+	// that revoke directly, independent of the HTTP administration and GitHub
+	// token-reuse callbacks.
+	maxAge := time.NewTimer(s.maxStreamAge())
+	defer maxAge.Stop()
 	check := time.NewTicker(time.Second)
 	defer check.Stop()
 	done := make(chan struct{})
@@ -189,6 +205,8 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-p.ctx.Done():
+			return
+		case <-maxAge.C:
 			return
 		case <-check.C:
 			if !s.active(p.ctx, d) {
