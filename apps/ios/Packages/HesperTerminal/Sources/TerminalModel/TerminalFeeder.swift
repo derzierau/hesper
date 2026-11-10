@@ -80,7 +80,9 @@ public actor TerminalFeeder {
         await drain()
         generation += 1
         guard grid != current else {
-            expected = nil
+            // Also when an earlier gate is still shut: its bytes and any
+            // waiting `flush` go on now instead of waiting for the next push.
+            await open()
             return
         }
         expected = grid

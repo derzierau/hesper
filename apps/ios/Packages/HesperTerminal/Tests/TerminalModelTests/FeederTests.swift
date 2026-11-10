@@ -77,6 +77,32 @@ import Testing
         #expect(recorder.all.reduce(Data(), +) == sent)
     }
 
+    @Test func aSecondSizeInsideTheGateWaitsForTheNewestGrid() async {
+        let recorder = Recorder()
+        let feeder = TerminalFeeder(gateTimeout: .seconds(60), sink: { recorder.record($0) })
+        let other = TerminalFeeder.Grid(cols: 90, rows: 30)
+        await feeder.expect(grid: mac, current: guess)
+        await feeder.push(Data("a".utf8))
+        await feeder.expect(grid: other, current: guess)
+        // The first grid no longer opens it; the newest one does.
+        await feeder.gridChanged(to: mac)
+        #expect(recorder.all.isEmpty)
+        await feeder.gridChanged(to: other)
+        #expect(recorder.all == [Data("a".utf8)])
+    }
+
+    @Test func aSecondSizeBackToTheSurfacesGridOpensTheGate() async {
+        let recorder = Recorder()
+        let feeder = TerminalFeeder(gateTimeout: .seconds(60), sink: { recorder.record($0) })
+        await feeder.expect(grid: mac, current: guess)
+        await feeder.push(Data("a".utf8))
+        // The Mac went back to the grid the surface has: nothing to wait
+        // for, and the held bytes go at once.
+        await feeder.expect(grid: guess, current: guess)
+        #expect(recorder.all == [Data("a".utf8)])
+        await feeder.flush()
+    }
+
     @Test func aSurfaceAlreadyAtTheGridDoesNotWait() async {
         let recorder = Recorder()
         let feeder = TerminalFeeder(gateTimeout: .seconds(60), sink: { recorder.record($0) })
