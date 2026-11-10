@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
 )
@@ -312,5 +313,17 @@ func relaySessionLine(s *wire.RelaySession) string {
 	if s == nil || s.LastReason == "" {
 		return ""
 	}
-	return fmt.Sprintf("relay session: dropped %d× in 5 min, last: %s at %s", s.Drops5m, s.LastReason, s.LastAt.Local().Format("15:04:05"))
+	// The reason holds the relay's text: no control characters reach the
+	// terminal.
+	reason := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s.LastReason)
+	at := s.LastAt.Local().Format("15:04:05")
+	if s.Drops5m == 0 {
+		return fmt.Sprintf("relay session: last dropped: %s at %s", reason, at)
+	}
+	return fmt.Sprintf("relay session: dropped %d× in 5 min, last: %s at %s", s.Drops5m, reason, at)
 }
