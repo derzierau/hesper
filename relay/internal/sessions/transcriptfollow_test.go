@@ -387,3 +387,32 @@ func TestFollowAfterTooFarBehindRestarts(t *testing.T) {
 	restartedThen(t, items, texts[len(texts)-2], texts[len(texts)-1])
 	noItem(t, items, 50*time.Millisecond)
 }
+
+func TestFollowSurvivesBrieflyMissingFile(t *testing.T) {
+	// A replace that leaves the path missing for a few polls is not the
+	// end of the stream.
+	s, a, path, _ := followEnv(t, "m1")
+	items, done, _ := follow(t, s, a, 0, 10)
+	nextItem(t, items, itemWait)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond) // ten polls
+	if err := os.WriteFile(path, append(data, codexMsg("m2")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case it := <-items:
+		if it.Text != "m2" || it.Seq != int64(len(data)) {
+			t.Fatalf("after the replace: %+v, want m2 at %d", it, len(data))
+		}
+	case err := <-done:
+		t.Fatalf("follow ended: %v", err)
+	case <-time.After(itemWait):
+		t.Fatal("no item after the replace")
+	}
+}

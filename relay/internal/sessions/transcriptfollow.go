@@ -62,10 +62,11 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 
 	poll := FollowPoll
 	items, next, gen, err := f.backfill(after, limit)
+	if err != nil {
+		return fmt.Errorf("follow transcript of %s: %w", a.ID, err)
+	}
+	var failing time.Time // when the polls started failing; zero: they don't
 	for {
-		if err != nil {
-			return fmt.Errorf("follow transcript of %s: %w", a.ID, err)
-		}
 		for _, it := range items {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -76,9 +77,23 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 		}
 		// Drain a reconnect backlog in bounded batches before polling for
 		// new lines. emit runs between batches, without the index lock.
-		items, next, gen, err = f.tail(next, gen, limit)
-		if err != nil || len(items) > 0 {
-			continue
+		batch, n, g, err := f.tail(next, gen, limit)
+		items = nil
+		if err == nil {
+			failing = time.Time{}
+			items, next, gen = batch, n, g
+			if len(items) > 0 {
+				continue
+			}
+		} else {
+			// A replace can leave the path missing for a moment: retry
+			// from the same cursor until FollowRetry has passed.
+			if failing.IsZero() {
+				failing = time.Now()
+			}
+			if time.Since(failing) > FollowRetry {
+				return fmt.Errorf("follow transcript of %s: %w", a.ID, err)
+			}
 		}
 		t := time.NewTimer(poll)
 		select {
@@ -87,9 +102,12 @@ func (s *Service) FollowTranscript(ctx context.Context, a wire.Agent, after int6
 			return ctx.Err()
 		case <-t.C:
 		}
-		items, next, gen, err = f.tail(next, gen, limit)
 	}
 }
+
+// FollowRetry is how long polls of a followed transcript may keep
+// failing before the follow ends.
+var FollowRetry = 5 * time.Second
 
 // transcriptCursor resumes at an item within a source line, or at the
 // next line's offset when item is zero.
