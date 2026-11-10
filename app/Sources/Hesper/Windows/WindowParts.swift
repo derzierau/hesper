@@ -162,7 +162,10 @@ final class SizeOwnership {
     private var generation = 0
     /// Re-attaches done for ownership (tests, perf).
     private(set) var switches = 0
-    private var takeBackMonitor: Any?
+    // nonisolated(unsafe): set once in init on the main actor and read only
+    // in deinit, when no other reference to this object exists, so the two
+    // accesses can never overlap.
+    nonisolated(unsafe) private var takeBackMonitor: Any?
     /// Agents another device sized when last seen (sizeOwnerChanged, and
     /// wouldOwn for new surfaces): empty, a key skips the terminal walk.
     /// A closed agent's id may linger; it only costs that walk.
@@ -192,6 +195,10 @@ final class SizeOwnership {
                 self.schedule()
             }
         }
+    }
+
+    deinit {
+        if let takeBackMonitor { NSEvent.removeMonitor(takeBackMonitor) }
     }
 
     func schedule() {
