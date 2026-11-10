@@ -235,12 +235,13 @@ extension HostChannel {
         guard let link = openLink, lastChannel < UInt32.max else {
             throw RelayError(code: "unavailable", message: "The Mac is not linked")
         }
-        lastChannel += 1
-        let ch = lastChannel
+        let ch = lastChannel + 1
+        // Built before anything changes, the channel number included: a
+        // throw leaves nothing behind.
+        let params = try Self.attachParams(link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, typing: typing, owner: owner)
+        lastChannel = ch
         // One queue per attach, drained by one task: typed bytes, resizes
         // and the close reach the Mac in the order the phone made them.
-        // Built before anything is registered: a throw leaves nothing behind.
-        let params = try Self.attachParams(link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, typing: typing, owner: owner)
         // Every way an attach ends finishes its queue, so the task ends.
         let queue = OutboundQueue()
         let channel = AttachChannel(id: ch) { _ in
