@@ -76,7 +76,10 @@ struct TerminalView: View {
             if delay == .zero {
                 // The Mac's terminal keeps the phone's size until the phone
                 // lets go: close (X) now, while iOS still runs the app.
-                await Self.inBackgroundTask { asleep = true }
+                await Self.inBackgroundTask {
+                    watch.release()
+                    asleep = true
+                }
                 return
             }
             guard (try? await Task.sleep(for: delay)) != nil else { return }
@@ -197,6 +200,11 @@ final class TerminalWatch {
     @ObservationIgnored private var flinging: Task<Void, Never>?
     /// The surface has been fed: a new attach starts on a fresh one.
     @ObservationIgnored private var used = false
+    /// Counts `run` calls; only the newest run touches the shared state.
+    @ObservationIgnored private var runs = 0
+    /// `release()` let go of the attach; the run stops instead of
+    /// attaching again.
+    @ObservationIgnored private var released = false
     /// The last written row of the screen, read after output settles.
     @ObservationIgnored private var lastTextRow: Int?
     /// A read of the last written row is due.
@@ -223,9 +231,14 @@ final class TerminalWatch {
     /// (the view disappeared, or the attach's key changed), attaching again
     /// whenever the link breaks.
     func run(_ agent: Agent, model: FleetModel) async {
+        // `.task(id:)` does not wait for the run it cancels: an old run
+        // still flushing must not clear state the new one owns.
+        runs += 1
+        let run = runs
+        released = false
         if used { replaceSurface() }
         phase = .loading
-        while !Task.isCancelled {
+        while !Task.isCancelled, run == runs, !released {
             await waitForArea()
             let planned = model.plan(for: agent, area: viewport.view, cell: cell)
             let wanted = macTookBack ? AttachPlan.mirror(agent, typing: planned.typing) : planned
@@ -263,6 +276,10 @@ final class TerminalWatch {
             } onCancel: {
                 stream.close()
             }
+            guard run == runs else {
+                stream.close()
+                return
+            }
             surface.onInput = nil
             canType = false
             blurKeyboard()
@@ -274,7 +291,7 @@ final class TerminalWatch {
                 phase = .exited
                 return
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !released else { return }
             // The frames ended without `.exit`: the link broke.
             phase = .reconnecting
             replaceSurface()
@@ -344,7 +361,7 @@ final class TerminalWatch {
     private func consume(_ stream: any AttachStream) async -> Bool {
         let feeder = TerminalFeeder { [surface] data in surface.feed(data) }
         self.feeder = feeder
-        defer { self.feeder = nil }
+        defer { if self.feeder === feeder { self.feeder = nil } }
         for await frame in stream.frames {
             switch frame {
             case .size(let cols, let rows):
@@ -388,6 +405,14 @@ final class TerminalWatch {
         } else if canType {
             surface.focusKeyboard()
         }
+    }
+
+    /// Closes the attach now (X to the Mac) and stops the run, without
+    /// waiting for SwiftUI to cancel its task: in the background it may
+    /// not update the view before iOS suspends the app.
+    func release() {
+        released = true
+        stream?.close()
     }
 
     func blurKeyboard() {
