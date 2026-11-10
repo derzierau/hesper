@@ -2706,7 +2706,7 @@ machine of the owner: `online` (relay presence while connected), `route`
 (`direct`/`relay` while online, `""` offline), `rttMs` (median of the last
 five pings on that route, 0 until measured). `relaySession` (host role,
 after its first dropped relay session): `drops5m` (sessions that ended
-without hesperd stopping in the last five minutes), `lastReason` (why the
+without hesperd stopping in the last five minutes; the window is fixed), `lastReason` (why the
 last one ended, e.g. `relay closed the connection: …` with the relay's
 close status, the same text as the log's `host disconnected; reconnecting
 error=`) and `lastAt`.
@@ -3230,7 +3230,8 @@ sequence number; a new database = new epoch = from 0), skipping entries
 whose every stamp is the requester's (no echo), ≤ 400 entries and ≤ 384
 KiB of zstd-compressed JSON per answer (base64 twice, sealed, it stays
 well inside the relay's 1 MiB message; an entry over the budget alone is
-skipped, not sent), `{node, short, epoch, next, more, data}`. The puller asks again while `more`, one request at a time per
+skipped, not sent, and stays out of sync until it changes and fits; only
+the host logs it), `{node, short, epoch, next, more, data}`. The puller asks again while `more`, one request at a time per
 Mac, pausing 20 ms + 1 s per 8 MiB received (rate limit), and stores the
 cursor (`peers`), so an interrupted sync resumes. Pulls start when a
 link opens and when the host's **hint** arrives on its link

@@ -167,8 +167,8 @@ type HelloResult struct {
 }
 
 // RelaySession is how often the host's relay session ended without
-// hesperd stopping: drops in the last five minutes and the last one's
-// cause and time.
+// hesperd stopping: drops in the last five minutes (a fixed window, as
+// the name says) and the last one's cause and time.
 type RelaySession struct {
 	Drops5m    int       `json:"drops5m"`
 	LastReason string    `json:"lastReason"`
