@@ -365,9 +365,14 @@ final class OutboundQueue: Sendable {
             return true
         }
         guard fits else { return false }
-        continuation.yield(.frame(payload))
-        return true
+        if case .enqueued = continuation.yield(.frame(payload)) { return true }
+        // Finished already: nothing was queued, so nothing is counted.
+        taken(.frame(payload))
+        return false
     }
+
+    /// Frames queued and not yet taken (for tests).
+    var pending: Int { queued.withLock { $0.frames } }
 
     /// The drain took `op` off the queue.
     func taken(_ op: HostChannel.Outbound) {

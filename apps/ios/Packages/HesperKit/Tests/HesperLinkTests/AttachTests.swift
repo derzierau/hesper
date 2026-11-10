@@ -348,6 +348,13 @@ import Testing
         queue.finish()
     }
 
+    @Test func aFinishedOutboundQueueTakesNoFrame() {
+        let queue = OutboundQueue()
+        queue.finish()
+        #expect(!queue.frame(AttachDecoder.input(Data([1]))))
+        #expect(queue.pending == 0)
+    }
+
     @Test func inputTheMacDoesNotTakeClosesTheAttach() {
         let closed = Mutex([UInt32]())
         let stream = AttachChannel(id: 4, onClose: { id in closed.withLock { $0.append(id) } }, onWrite: { _, _ in false })
