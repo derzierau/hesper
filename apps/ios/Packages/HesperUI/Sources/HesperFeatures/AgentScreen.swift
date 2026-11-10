@@ -1,22 +1,50 @@
 import HesperCore
 import HesperDesign
 import HesperFleet
+import HesperTerminal
 import SwiftUI
 
 /// The agent view: the live terminal, and under it a dock that follows the
-/// state (concept, flow 4). The terminal is a placeholder until the mobile
-/// link library opens `agents.attach` and libghostty draws it.
+/// state (concept, flow 4). In landscape the dock is a column on the right.
 struct AgentScreen: View {
     let id: String
     @Environment(FleetModel.self) private var model
+    /// Landscape on a phone. Not the area's shape: with the keyboard up
+    /// the area is wider than tall in portrait too, and the dock must
+    /// not jump to the side then.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    /// The terminal, shared with the dock. Made on first use: a `@State`
+    /// initial value is built on every init of the view, and a terminal
+    /// allocates a libghostty surface.
+    @State private var holder = WatchHolder()
+    private var watch: TerminalWatch { holder.watch }
+
+    /// The dock's width as a column, in landscape.
+    private static let dockColumn: CGFloat = 320
 
     var body: some View {
         if let agent = model.agent(id) {
-            TerminalPlaceholder(agent: agent)
-                .safeAreaInset(edge: .bottom) { Dock(agent: agent) }
-                .navigationTitle(agent.name)
-                .navigationSubtitle(subtitle(agent))
-                .toolbarTitleDisplayMode(.inline)
+            GeometryReader { _ in
+                let wide = verticalSizeClass == .compact
+                // One layout for both, so turning the phone keeps the
+                // terminal (and its attach) instead of making a new one.
+                let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+                layout {
+                    TerminalView(agent: agent, watch: watch)
+                    if wide {
+                        Dock(agent: agent, watch: watch)
+                            .frame(width: Self.dockColumn)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                            .background(Theme.surface, ignoresSafeAreaEdges: .bottom)
+                            .overlay(alignment: .leading) { Rectangle().fill(Theme.line).frame(width: DS.Edge.line) }
+                    } else {
+                        Dock(agent: agent, watch: watch)
+                    }
+                }
+            }
+            .navigationTitle(agent.name)
+            .navigationSubtitle(subtitle(agent))
+            .toolbarTitleDisplayMode(.inline)
         } else {
             ContentUnavailableView("Agent closed", systemImage: "xmark.square", description: Text("It is no longer on any Mac."))
         }
@@ -27,38 +55,20 @@ struct AgentScreen: View {
     }
 }
 
-/// Where the terminal goes: bottom-anchored, edge to edge, always dark.
-private struct TerminalPlaceholder: View {
-    let agent: Agent
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.s) {
-            Spacer()
-            if let size = agent.size {
-                Text("Mac's size · \(size.cols) × \(size.rows)")
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Theme.Token.dim.color)
-            }
-            Text(AgentCopy.headline(agent))
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(Theme.Token.text.color)
-            Text("The live terminal arrives with the mobile link library.")
-                .font(.caption2.monospaced())
-                .foregroundStyle(Theme.Token.dim.color)
-        }
-        .padding(DS.Spacing.l)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .background(Theme.Token.background.color)
-        .environment(\.colorScheme, .dark)
-    }
+/// Holds an agent screen's terminal, made on first use. Cheap to build,
+/// so SwiftUI may build and drop it on every init of the view.
+@MainActor private final class WatchHolder {
+    lazy var watch = TerminalWatch()
 }
 
-/// The dock under the terminal: decisions when the agent needs you, a
-/// reply field while it works, Resume once it exited.
+/// The dock under the terminal, a Neon bar: the priority card's numbered
+/// options when the agent needs you (a risky Yes asks first, No… opens the
+/// deny sheet), Send while it works (Enter in the terminal: what is typed
+/// goes into the agent's own prompt), Resume once it exited.
 private struct Dock: View {
     let agent: Agent
+    let watch: TerminalWatch
     @Environment(FleetModel.self) private var model
-    @State private var reply = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.m) {
@@ -66,55 +76,65 @@ private struct Dock: View {
             case .approval, .question:
                 HStack(spacing: DS.Spacing.s) {
                     StateMark(agent.state)
-                    Text(AgentCopy.headline(agent)).font(.subheadline).lineLimit(2)
+                    Text(AgentCopy.headline(agent)).font(.subheadline).foregroundStyle(Theme.text).lineLimit(2)
                 }
-                if agent.state == .approval {
-                    HStack(spacing: DS.Spacing.s) {
-                        Button("Allow") { send(.answer(agent: agent.id, .allow)) }.primaryAction()
-                        Button("Always") { send(.answer(agent: agent.id, .always)) }.secondaryAction()
-                        Button("Deny") { send(.answer(agent: agent.id, .deny)) }.secondaryAction()
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    DecisionButtons(agent: agent)
-                }
+                DockOptions(agent: agent)
                 if let next = model.fleet.next(after: agent.id) {
                     NavigationLink(value: AgentRoute(id: next.id)) {
                         Label("Next: \(next.name) on \(model.fleet.macName(next.machine))", systemImage: "chevron.right")
                             .font(.footnote)
+                            .foregroundStyle(Theme.accent)
                     }
                 }
             case .exited, .error:
                 HStack(spacing: DS.Spacing.s) {
                     Button("Resume") { send(.resume(agent: agent.id)) }.primaryAction()
-                    Button("Close") { send(.close(agent: agent.id)) }.secondaryAction()
+                    Button("Close") { send(.close(agent: agent.id)) }.destructiveAction()
                 }
                 .frame(maxWidth: .infinity)
             default:
-                HStack(spacing: DS.Spacing.s) {
-                    TextField("Message \(agent.name)", text: $reply, axis: .vertical)
-                        .lineLimit(1...4)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, DS.Spacing.l)
-                        .padding(.vertical, DS.Spacing.m)
-                        .glassEffect(.regular, in: .capsule)
-                    Button("Send", systemImage: "arrow.up") {
-                        send(.reply(agent: agent.id, text: reply))
-                        reply = ""
-                    }
-                    .labelStyle(.iconOnly)
-                    .primaryAction()
-                    .disabled(reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                // Enter, through the surface: it needs no keyboard up. The
+                // label is full width, so the button's fill is too.
+                Button {
+                    watch.press(.enter)
+                } label: {
+                    Label("Send", systemImage: "arrow.up").frame(maxWidth: .infinity)
                 }
+                .font(.body.weight(.semibold))
+                .primaryAction()
+                .disabled(!watch.canType)
             }
         }
         .controlSize(.large)
         .disabled(model.pending.contains(agent.id) || !model.fleet.isReachable(agent))
         .padding(DS.Spacing.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .neonBar()
+        .decisions()
     }
 
     private func send(_ command: LinkCommand) {
         Task { await model.perform(command) }
+    }
+}
+
+/// The dock's numbered options, from `DecisionOptions.rows(for:)` like the
+/// priority card's; the dock's `decisions()` confirms and sends them.
+private struct DockOptions: View {
+    let agent: Agent
+    @Environment(\.decide) private var decide
+
+    var body: some View {
+        let rows = DecisionOptions.rows(for: agent)
+        if rows.isEmpty {
+            Text("Open it to answer.").font(.footnote).foregroundStyle(Theme.muted)
+        } else {
+            VStack(spacing: DS.Spacing.xs) {
+                ForEach(rows) { row in
+                    OptionRow(row: row) { decide(agent, row.action) }
+                }
+            }
+        }
     }
 }
 

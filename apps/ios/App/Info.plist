@@ -6,6 +6,13 @@
 	     rest of the Info.plist is generated from INFOPLIST_KEY_* settings. -->
 	<key>HesperAppGroup</key>
 	<string>$(HESPER_APP_GROUP)</string>
+	<!-- The Neon faces in App/Fonts (HesperDesign.Typeface); there is no
+	     INFOPLIST_KEY_* setting for this key. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>SpaceGrotesk-Bold.ttf</string>
+		<string>JetBrainsMono-Regular.ttf</string>
+	</array>
 	<!-- The relay's sign-in page returns to hesper-ios://auth
 	     (ASWebAuthenticationSession; relay/docs/protocol.md). -->
 	<key>CFBundleURLTypes</key>

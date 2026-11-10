@@ -17,9 +17,12 @@ public final class FixtureLink: LinkClient {
 
     private let state = Mutex(State())
     private let initial: [LinkUpdate]
+    private let terminalTick: Duration
 
-    public init(updates: [LinkUpdate] = Samples.initialUpdates()) {
+    /// `terminalTick`: how often a watched terminal prints a new line.
+    public init(updates: [LinkUpdate] = Samples.initialUpdates(), terminalTick: Duration = .seconds(2)) {
         initial = updates
+        self.terminalTick = terminalTick
         state.withLock { s in
             for case .event(.list(_, let agents, _), _) in updates {
                 for a in agents { s.agents[a.id] = a }
@@ -48,7 +51,7 @@ public final class FixtureLink: LinkClient {
         let update: LinkUpdate? = state.withLock { s in
             s.sent.append(command)
             switch command {
-            case .answer(let id, _), .choose(let id, _), .reply(let id, _), .resume(let id):
+            case .answer(let id, _, _), .choose(let id, _), .reply(let id, _), .resume(let id):
                 return Self.change(&s, id) {
                     $0.state = .working
                     $0.attention = nil
@@ -87,6 +90,39 @@ public final class FixtureLink: LinkClient {
         broadcast(update)
     }
 
+    /// Any sample agent's terminal: the script, then a new line every
+    /// tick until closed. A mirror gets the Mac's size; an owner attach
+    /// sizes the terminal as hesperd does: its grid and every RESIZE come
+    /// back as `.size`, and the agent names the phone as its size owner
+    /// until it lets go. Typing has no PTY here: `write` is dropped.
+    public func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) async throws -> any AttachStream {
+        guard state.withLock({ $0.agents[agent] != nil }) else { throw FixtureError.unknownAgent(agent) }
+        guard owner, sizing(on: String(agent.split(separator: "/").first ?? ""))?.canOwn == true else {
+            return ScriptedTerminal(tick: terminalTick)
+        }
+        setSizeOwner(agent, Samples.device)
+        return ScriptedTerminal(tick: terminalTick, grid: GridSize(cols: cols, rows: rows)) { [weak self] in
+            self?.setSizeOwner(agent, nil)
+        }
+    }
+
+    public func sizing(on machine: String) -> HostSizing? {
+        guard Samples.macs.contains(where: { $0.short == machine }) else { return nil }
+        return HostSizing(
+            publishesOwner: Samples.capabilities[machine]?["sizeOwner"] == true, rights: Samples.rights, device: Samples.device)
+    }
+
+    private func setSizeOwner(_ id: String, _ owner: String?) {
+        let update: LinkUpdate? = state.withLock { s in
+            guard var a = s.agents[id] else { return nil }
+            a.sizeOwner = owner
+            a.sizeOwnerName = owner == nil ? nil : Samples.deviceName
+            s.agents[id] = a
+            return .event(.changed(a), machine: a.machine)
+        }
+        if let update { broadcast(update) }
+    }
+
     private func broadcast(_ update: LinkUpdate) {
         for c in state.withLock({ Array($0.continuations.values) }) { c.yield(update) }
     }
@@ -105,6 +141,47 @@ public final class FixtureLink: LinkClient {
         let words = task.lowercased().split { !$0.isLetter && !$0.isNumber }.filter { $0.count > 2 }.prefix(3)
         return words.isEmpty ? "agent" : words.map { String($0) }.joined(separator: "-")
     }
+}
+
+/// A scripted terminal stream (`Samples.terminalScript`). With `grid` it
+/// is the size owner's: that grid first, and every RESIZE echoed.
+final class ScriptedTerminal: AttachStream {
+    let frames: AsyncStream<AttachFrame>
+    private let continuation: AsyncStream<AttachFrame>.Continuation
+    private let player: Task<Void, Never>
+    private let owner: Bool
+
+    init(tick: Duration, grid: GridSize? = nil, onEnd: (@Sendable () -> Void)? = nil) {
+        let (stream, continuation) = AsyncStream.makeStream(of: AttachFrame.self)
+        frames = stream
+        self.continuation = continuation
+        owner = grid != nil
+        let size = grid ?? GridSize(cols: Samples.terminalSize.cols, rows: Samples.terminalSize.rows)
+        player = Task {
+            continuation.yield(.size(cols: size.cols, rows: size.rows))
+            continuation.yield(.data(Samples.terminalScript))
+            var n = 1
+            while (try? await Task.sleep(for: tick)) != nil {
+                continuation.yield(.data(Samples.terminalLine(n)))
+                n += 1
+            }
+            continuation.finish()
+        }
+        continuation.onTermination = { [player] _ in
+            player.cancel()
+            onEnd?()
+        }
+    }
+
+    func resize(cols: Int, rows: Int) {
+        guard owner, cols > 0, rows > 0 else { return }
+        continuation.yield(.size(cols: cols, rows: rows))
+    }
+
+    // The script has no PTY to type into.
+    func write(_ data: Data) {}
+
+    func close() { player.cancel() }
 }
 
 public enum FixtureError: Error, Equatable, CustomStringConvertible {

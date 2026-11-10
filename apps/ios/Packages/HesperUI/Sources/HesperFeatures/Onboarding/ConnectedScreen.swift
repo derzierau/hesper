@@ -107,13 +107,15 @@ struct ConnectedScreen: View {
                 }
                 Text("relay-tests on \(name) wants to edit hub.go").font(.subheadline)
                 HStack(spacing: DS.Spacing.s) {
-                    Text("Allow").padding(.horizontal, DS.Spacing.l).padding(.vertical, DS.Spacing.xs).background(.quaternary, in: .capsule)
-                    Text("Deny").padding(.horizontal, DS.Spacing.l).padding(.vertical, DS.Spacing.xs).background(.quaternary, in: .capsule)
+                    Text("Allow").padding(.horizontal, DS.Spacing.l).padding(.vertical, DS.Spacing.xs)
+                        .background(Theme.surface2, in: .rect(cornerRadius: DS.Radius.console))
+                    Text("Deny").padding(.horizontal, DS.Spacing.l).padding(.vertical, DS.Spacing.xs)
+                        .background(Theme.surface2, in: .rect(cornerRadius: DS.Radius.console))
                 }
                 .font(.caption.weight(.medium))
             }
             .padding(DS.Spacing.l)
-            .glassEffect(.regular, in: .rect(cornerRadius: DS.Spacing.xxl))
+            .neonPanel()
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Example notification: relay-tests on \(name) wants to edit hub.go")
             Text("When an agent needs you, it shows up on your lock screen, and you can answer from there.")

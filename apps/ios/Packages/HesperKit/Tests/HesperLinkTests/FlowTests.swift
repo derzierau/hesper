@@ -248,4 +248,12 @@ import Testing
         #expect(try LiveLink.request(for: .close(agent: "M/a1")).method == "agents.close")
         #expect(try LiveLink.request(for: .removeDraft(id: "d", machine: "L")).machine == "L")
     }
+
+    @Test func aDenyCarriesWhatToDoInstead() throws {
+        let deny = try LiveLink.request(for: .answer(agent: "M/a1", .deny, message: "Use a rebase"))
+        #expect(deny.method == "agents.answer")
+        #expect(jsonObject(deny.params)["decision"] as? String == "deny")
+        #expect(jsonObject(deny.params)["message"] as? String == "Use a rebase")
+        #expect(jsonObject(try LiveLink.request(for: .answer(agent: "M/a1", .deny)).params)["message"] == nil)
+    }
 }

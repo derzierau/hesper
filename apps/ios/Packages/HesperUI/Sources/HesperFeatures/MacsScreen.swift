@@ -20,13 +20,17 @@ struct MacsScreen: View {
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, DS.Spacing.m)
                             .padding(.vertical, DS.Spacing.xs)
-                            .background(Theme.accent.opacity(0.15), in: .capsule)
+                            .background(Theme.accentTint, in: .rect(cornerRadius: DS.Radius.console))
                             .foregroundStyle(Theme.accent)
                         Text("Made up, to look around.").font(.subheadline).foregroundStyle(Theme.text2)
                         Spacer()
-                        Button("Connect yours") { Task { await onboarding.connectYours() } }
-                            .primaryAction()
-                            .controlSize(.small)
+                        Button {
+                            Task { await onboarding.connectYours() }
+                        } label: {
+                            Text("Connect yours").lineLimit(1).fixedSize()
+                        }
+                        .primaryAction()
+                        .controlSize(.small)
                     }
                     .themedRow()
                 }

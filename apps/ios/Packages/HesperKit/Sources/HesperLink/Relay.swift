@@ -1,4 +1,5 @@
 import Foundation
+import HesperFleet
 import Synchronization
 
 /// An error answer from the relay or a host (relay/docs/protocol.md,
@@ -14,6 +15,13 @@ public struct RelayError: Error, Equatable, Sendable {
 
     static let timeout = RelayError(code: "timeout", message: "No answer in time")
     static let closed = RelayError(code: "connection_lost", message: "Connection lost; outcome may be unknown.")
+}
+
+/// What a screen shows for it: the message, or the code when there is none.
+extension RelayError: CodedError {}
+
+extension RelayError: CustomStringConvertible {
+    public var description: String { message.isEmpty ? code : message }
 }
 
 /// One machine of the relay's inventory, as much of it as the phone uses.
