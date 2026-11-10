@@ -19,7 +19,9 @@ public struct TerminalRuns: Sendable, Equatable {
         return current
     }
 
-    /// Whether `run` may still write the shared state.
+    /// Whether `run` may still write the shared state. Asked again after
+    /// every await: a frame or a flush in flight can resume after a newer
+    /// run began, and must then draw nothing.
     public func owns(_ run: Int) -> Bool { run == current }
 
     /// `run` attached. False for a superseded run: it must close its stream

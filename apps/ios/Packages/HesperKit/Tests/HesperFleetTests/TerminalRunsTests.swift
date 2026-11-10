@@ -34,6 +34,18 @@ import Testing
         #expect(newDetaches && !runs.typing)
     }
 
+    @Test func aFrameInFlightOfAnAttachedRunStopsOnceANewerRunBegins() {
+        var runs = TerminalRuns()
+        let old = runs.begin()
+        let attached = runs.attached(old, typing: false)
+        // The old run awaits a frame's push; meanwhile a new run begins.
+        #expect(attached && runs.owns(old))
+        let new = runs.begin()
+        // When the push resumes, the old run may not draw (no live phase,
+        // no grid); the new one may.
+        #expect(!runs.owns(old) && runs.owns(new))
+    }
+
     @Test func theOwnerDetachesAfterItsStreamEnds() {
         var runs = TerminalRuns()
         let run = runs.begin()

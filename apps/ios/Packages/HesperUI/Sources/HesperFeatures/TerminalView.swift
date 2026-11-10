@@ -287,7 +287,7 @@ final class TerminalWatch {
             }
             canType = runs.typing
             let exited = await withTaskCancellationHandler {
-                await consume(stream)
+                await consume(stream, run: run)
             } onCancel: {
                 stream.close()
             }
@@ -371,11 +371,14 @@ final class TerminalWatch {
     }
 
     /// True when the agent exited.
-    private func consume(_ stream: any AttachStream) async -> Bool {
+    /// Draws `stream` for `run`. Every frame and every await can resume
+    /// after a newer run began: then this run stops writing.
+    private func consume(_ stream: any AttachStream, run: Int) async -> Bool {
         let feeder = TerminalFeeder { [surface] data in surface.feed(data) }
         self.feeder = feeder
         defer { if self.feeder === feeder { self.feeder = nil } }
         for await frame in stream.frames {
+            guard runs.owns(run) else { return false }
             switch frame {
             case .size(let cols, let rows):
                 if fit.size(GridSize(cols: cols, rows: rows)) { dropToMirror(cols: cols) }
@@ -383,9 +386,11 @@ final class TerminalWatch {
                 // the surface lays out the Mac's grid, or it is garbled.
                 let current = TerminalFeeder.Grid(cols: surface.grid.cols, rows: surface.grid.rows)
                 await feeder.expect(grid: .init(cols: cols, rows: rows), current: current)
+                guard runs.owns(run) else { return false }
                 showGrid(cols: cols, rows: rows)
             case .data(let data):
                 await feeder.push(data)
+                guard runs.owns(run) else { return false }
                 phase = .live
                 scheduleRead()
             case .exit:
