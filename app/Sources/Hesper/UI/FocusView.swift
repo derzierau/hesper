@@ -36,7 +36,10 @@ final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
     static let slideFadeFrom: Float = 0.35
 
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { true }
+    /// Holds keyboard focus only while its terminal cannot (a read-only
+    /// view swapping into the owner): otherwise a click on the card's
+    /// margin would take typing away from the terminal.
+    override var acceptsFirstResponder: Bool { terminal.map { $0.surface?.acceptsInput != true } ?? false }
 
     init(model: AppModel) {
         self.model = model
