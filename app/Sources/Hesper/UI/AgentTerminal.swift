@@ -253,12 +253,16 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
             if let focus = ancestor { host.window?.makeFirstResponder(focus) }
         }
         surfaceMetricsDidChange(p)
+        let ownerForTakeBack = surfaceBecameCurrent(p)
         if surfaceIsInteractive {
+            // Awaiting only: keys typed before a held click go first. Safe
+            // here: finishSwap runs from the swap's poll timer, never inside
+            // update() or a layout pass.
+            if ownerForTakeBack { flushHeldKeys(to: p) }
             for e in input.drainClicks(now: ProcessInfo.processInfo.systemUptime) { send(e, to: p.view) }
         } else {
             input.clearClicks()
         }
-        surfaceBecameCurrent(p)
     }
 
     /// A click or wheel event for the active tile's terminal: at once when
@@ -269,7 +273,11 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     @discardableResult
     func deliver(_ event: NSEvent) -> Bool {
         guard role == .tile, interactive else { return false }
-        if surfaceIsInteractive, let s = surface { send(event, to: s.view); return true }
+        if surfaceIsInteractive, let s = surface {
+            flushHeldKeys(to: s) // awaiting only; nothing to send in normal
+            send(event, to: s.view)
+            return true
+        }
         guard prewarm != nil, prewarmAttach == .owner else { return false }
         input.holdClick(event, at: event.timestamp)
         return true
@@ -304,12 +312,21 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// owner surface ends a pending take-back by getting its held keys, in
     /// order, on the next main-loop turn (never inside update() or a layout
     /// pass); keys typed until then still queue behind them (PaneInput).
-    private func surfaceBecameCurrent(_ s: any TerminalSurface) {
-        guard input.surfaceCurrent(acceptsInput: s.acceptsInput) else { return }
+    /// True: an owner surface for a pending take-back.
+    @discardableResult
+    private func surfaceBecameCurrent(_ s: any TerminalSurface) -> Bool {
+        guard input.surfaceCurrent(acceptsInput: s.acceptsInput) else { return false }
         DispatchQueue.main.async { [weak self] in
             guard let self, let current = self.surface else { return }
-            for e in self.input.deliverHeldKeys() { self.send(e, to: current.view) }
+            self.flushHeldKeys(to: current)
         }
+        return true
+    }
+
+    /// Sends a take-back's held keys to the owner surface `s` now, ending
+    /// the phase; nothing unless one is pending and its owner is current.
+    private func flushHeldKeys(to s: any TerminalSurface) {
+        for e in input.deliverHeldKeys() { send(e, to: s.view) }
     }
 
     /// Starts a size take-back; false when no owner surface can come.
