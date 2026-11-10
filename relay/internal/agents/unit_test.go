@@ -128,6 +128,20 @@ func TestNamesAndSlugs(t *testing.T) {
 	if got := sessionName(" - -- ", "Review"); got != "Review" {
 		t.Fatalf("%q", got)
 	}
+	// The agent's name stands in unchecked otherwise: spawn keeps an
+	// explicit name and a rename takes any single line.
+	if got := sessionName("", "-review"); got != "review" {
+		t.Fatalf("%q", got)
+	}
+	if got := sessionName("", "--wip"); got != "wip" {
+		t.Fatalf("%q", got)
+	}
+	if got := sessionName("", "fix\tit\x7f"); got != "fix it" {
+		t.Fatalf("%q", got)
+	}
+	if got := sessionName("--", "--"); got != "agent" {
+		t.Fatalf("%q", got)
+	}
 }
 
 func TestResolveProfile(t *testing.T) {
