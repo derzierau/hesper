@@ -67,8 +67,9 @@ public enum SizeOwner {
         /// Candidate `i` takes the size back; the key is held for its
         /// owner surface (dropped after HeldInput's max age if none comes).
         case takeBack(Int)
-        /// Candidate `i` is taking the size back and its owner surface is
-        /// still swapping in: the key waits for it.
+        /// Candidate `i` is taking the size back and its owner surface does
+        /// not take input yet (swapping in, or not started): the key waits
+        /// for it behind the earlier ones, in order.
         case hold(Int)
     }
 
@@ -76,13 +77,23 @@ public enum SizeOwner {
     /// (`typesIntoAgent`) and only for the read-write terminal it reaches
     /// (`targeted`; a focused control outside the terminal has none). A
     /// click never does: it only focuses (selecting text, activating the
-    /// window). Once taken back, keys wait while the owner surface swaps
-    /// in (`swapping`) and then go to it directly.
-    public static func keyTakeBack(_ cs: [Candidate], targeted: [Bool], swapping: [Bool], typesIntoAgent: Bool) -> KeyTakeBack {
-        guard typesIntoAgent, cs.count == targeted.count, cs.count == swapping.count,
+    /// window). Once taken back, every key waits until the owner surface
+    /// takes input (`ownerReady`) and then goes to it directly, so none
+    /// reaches the read-only view and the order stays.
+    public static func keyTakeBack(_ cs: [Candidate], targeted: [Bool], ownerReady: [Bool], typesIntoAgent: Bool) -> KeyTakeBack {
+        guard typesIntoAgent, cs.count == targeted.count, cs.count == ownerReady.count,
               let i = cs.indices.first(where: { targeted[$0] && cs[$0].remoteOwned && cs[$0].readWrite }) else { return .pass }
-        if cs[i].takingBack { return swapping[i] ? .hold(i) : .pass }
+        if cs[i].takingBack { return ownerReady[i] ? .pass : .hold(i) }
         return .takeBack(i)
+    }
+
+    /// Whether the focus changes of size take-back apply to a terminal (a
+    /// focus view holding keyboard focus while its terminal is a read-only
+    /// view): only while another device owns its size or it is taking the
+    /// size back. Otherwise keyboard focus behaves as without the feature,
+    /// as on a host that never sends an owner field.
+    public static func focusHandOff(remoteOwned: Bool, takingBack: Bool) -> Bool {
+        remoteOwned || takingBack
     }
 
     /// Seconds a take-back waits for the daemon to report the new owner;

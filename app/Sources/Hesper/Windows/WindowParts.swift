@@ -239,14 +239,14 @@ final class SizeOwnership {
         if t.remoteOwned { apply() } else { schedule() }
     }
 
-    /// A key in one of our windows: the pane it goes to, if its agent's
-    /// size is another device's, takes the size back (owner at once,
-    /// latest owner wins; SizeOwner.keyTakeBack). True: the key is held for
-    /// that pane's owner surface (replayed once it swapped in).
     private func noteRemoteOwned(_ t: AgentTerminal) {
         if t.remoteOwned { remoteOwned.insert(t.agent.id) } else { remoteOwned.remove(t.agent.id) }
     }
 
+    /// A key in one of our windows: the pane it goes to, if its agent's
+    /// size is another device's, takes the size back (owner at once,
+    /// latest owner wins; SizeOwner.keyTakeBack). True: the key is held for
+    /// that pane's owner surface (replayed in order once it takes input).
     private func takeBack(_ e: NSEvent) -> Bool {
         guard !remoteOwned.isEmpty, let w = e.window, isOurs(w) else { return false }
         let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && $0.remoteOwned }
@@ -267,7 +267,7 @@ final class SizeOwnership {
                                 readWrite: t.readWrite, remoteOwned: t.remoteOwned, takingBack: t.takingSizeBack)
         }
         let types = w.isKeyWindow && TerminalKeys.bytes(KeyChord(event: e), characters: e.characters) != nil
-        switch SizeOwner.keyTakeBack(cs, targeted: targeted, swapping: ts.map(\.swapping), typesIntoAgent: types) {
+        switch SizeOwner.keyTakeBack(cs, targeted: targeted, ownerReady: ts.map(\.ownerReady), typesIntoAgent: types) {
         case .pass:
             return false
         case .hold(let i):
@@ -279,7 +279,8 @@ final class SizeOwnership {
             apply()
             // Held even if no owner surface started (no window, link down):
             // passed on, the key would reach the view or FocusView and be
-            // lost. HeldInput drops it after its max age.
+            // lost. HeldInput drops it after its max age, as the later keys
+            // held behind it (.hold).
             t.hold(e)
             DispatchQueue.main.asyncAfter(deadline: .now() + SizeOwner.takeBackTimeout) { [weak self, weak t] in
                 guard let self, let t, t.takingSizeBack, t.remoteOwned, let since = t.takingSizeBackSince,

@@ -94,8 +94,9 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// Another device owns this agent's size (SizeOwner.remoteOwned).
     var remoteOwned: Bool { sizeOwner(agent) != nil }
     private func sizeOwner(_ a: Agent) -> String? { SizeOwner.owner(a, local: Self.isLocal(a)) }
-    /// A surface is swapping in (input is held for it).
-    var swapping: Bool { prewarm != nil }
+    /// The shown surface is the owner and takes input (no swap pending):
+    /// a take-back's held keys can go to it directly.
+    var ownerReady: Bool { prewarm == nil && surface?.acceptsInput == true }
     private var resolvingOwnership = false
     /// The active wall tile: typing goes to the agent. Its surface is a
     /// read-write attach (size owner at the tile's own grid, which is the
