@@ -167,6 +167,7 @@ final class SizeOwnership {
     /// wouldOwn for new surfaces): empty, a key skips the terminal walk.
     /// A closed agent's id may linger; it only costs that walk.
     private var remoteOwned: Set<String> = []
+    private var applyQueued = false
 
     init() {
         // Fit to iPhone: a keystroke in a pane whose agent's size another
@@ -233,10 +234,26 @@ final class SizeOwnership {
     }
 
     /// An agent's `sizeOwner` changed: another device taking the size makes
-    /// its panes views at once; a cleared owner goes through the debounce.
+    /// its panes views on the next turn of the main loop; a cleared owner
+    /// goes through the debounce.
     func sizeOwnerChanged(_ t: AgentTerminal) {
         noteRemoteOwned(t)
-        if t.remoteOwned { apply() } else { schedule() }
+        if t.remoteOwned { applySoon() } else { schedule() }
+    }
+
+    /// apply() once the current pass is done (AgentTerminal.update() calls
+    /// in the middle of the agent-list fan-out, so swapping surfaces there
+    /// would be re-entrant), but without schedule()'s debounce: the PTY is
+    /// already at the other device's grid, and an owner pane garbles until
+    /// it is a view. Several calls in one pass apply once.
+    private func applySoon() {
+        guard !applyQueued else { return }
+        applyQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.applyQueued = false
+            self.apply()
+        }
     }
 
     private func noteRemoteOwned(_ t: AgentTerminal) {
