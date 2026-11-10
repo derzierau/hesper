@@ -40,6 +40,9 @@ func TestRemoteOwnerDetachRestoresSize(t *testing.T) {
 // restore when both let go.
 func TestLocalOwnerAfterRemoteClearsRestore(t *testing.T) {
 	tm := start(t, "lines", 120, 40)
+	tm.mu.Lock()
+	tm.cfg.FitDebounce = 30 * time.Millisecond
+	tm.mu.Unlock()
 	waitFor(t, "prompt", func() bool { return screenHas(tm, "prompt>") })
 	phone := Origin{Device: "phone-1", Name: "iPhone"}
 
@@ -50,7 +53,8 @@ func TestLocalOwnerAfterRemoteClearsRestore(t *testing.T) {
 	remote.Close()
 	local.Close()
 	waitFor(t, "both detached", func() bool { return tm.Viewers() == 0 })
-	time.Sleep(50 * time.Millisecond)
+	// A restore would run at the latest on the fit debounce.
+	time.Sleep(5 * tm.cfg.FitDebounce)
 	if c, r := tm.Size(); c != 100 || r != 30 {
 		t.Fatalf("size %dx%d, want 100x30", c, r)
 	}
