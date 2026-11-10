@@ -66,6 +66,19 @@ import Testing
         #expect(!AttachPlan.retriesAsMirror("not_found") && !AttachPlan.retriesAsMirror("timeout"))
     }
 
+    struct Coded: CodedError { let code: String }
+    struct Other: Error {}
+
+    @Test func aBrokenLinkIsTriedAgainAndARefusalIsNot() {
+        for code in ["unavailable", "timeout", "link_lost", "connection_lost"] {
+            #expect(AttachPlan.triesAgain(Coded(code: code)), "\(code)")
+        }
+        for code in ["forbidden", "unsupported", "not_found", "integrity"] {
+            #expect(!AttachPlan.triesAgain(Coded(code: code)), "\(code)")
+        }
+        #expect(!AttachPlan.triesAgain(Other()))
+    }
+
     @Test func theGridIsWholeCellsAndNeverBelow20By5() {
         #expect(AttachPlan.fit(area: CGSize(width: 874, height: 300), cell: cell) == GridSize(cols: 80, rows: 12))
         #expect(AttachPlan.fit(area: CGSize(width: 100, height: 50), cell: cell) == GridSize(cols: 20, rows: 5))

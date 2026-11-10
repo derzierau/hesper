@@ -236,8 +236,16 @@ final class TerminalWatch {
                 stream = attached.stream
                 plan = attached.plan
             } catch {
-                if !Task.isCancelled { phase = .unavailable(String(describing: error)) }
-                return
+                guard !Task.isCancelled else { return }
+                // A relay reconnect can outlast one attach's wait: keep
+                // trying. Only the Mac's refusals end the terminal.
+                guard AttachPlan.triesAgain(error) else {
+                    phase = .unavailable(String(describing: error))
+                    return
+                }
+                phase = .reconnecting
+                guard (try? await Task.sleep(for: Self.backoff)) != nil else { return }
+                continue
             }
             used = true
             start(plan, device: model.device(on: agent.machine))

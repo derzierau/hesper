@@ -93,6 +93,13 @@ public struct AttachPlan: Equatable, Sendable {
     public static func retriesAsMirror(_ code: String) -> Bool {
         code == "forbidden" || code == "unsupported"
     }
+
+    /// Whether an attach that failed with `error` is tried again after a
+    /// pause: the link or the relay was down or slow, not the Mac refusing.
+    public static func triesAgain(_ error: any Error) -> Bool {
+        guard let e = error as? any CodedError else { return false }
+        return ["unavailable", "timeout", "link_lost", "connection_lost"].contains(e.code)
+    }
 }
 
 /// Whether a fitted attach still owns the size. The Mac takes it back on
