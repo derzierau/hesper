@@ -7,10 +7,16 @@ import Testing
 @Suite struct DecisionOptionsTests {
     @Test func approvalHasTheThreeClaudeRows() {
         let rows = DecisionOptions.rows(for: Samples.fleet.agents["studio/s1"]!)
-        #expect(rows.map(\.label) == ["Yes…", "Yes, and don't ask again", "No, and tell Claude what to do instead"])
+        #expect(rows.map(\.label) == ["Yes", "Yes, and don't ask again", "No, and tell Claude what to do instead"])
         #expect(rows[1].detail == "asks once more")
         #expect(rows.map(\.isDestructive) == [false, false, true])
         #expect(rows.map(\.action) == [.allow, .always, .denyWithMessage])
+    }
+
+    @Test func yesHasAnEllipsisOnlyWhenItAsksFirst() {
+        // HIG: an ellipsis promises more input; a plain Yes sends at once.
+        #expect(DecisionOptions.rows(for: Samples.fleet.agents["mini/m1"]!).first?.label == "Yes…")
+        #expect(DecisionOptions.rows(for: Samples.fleet.agents["studio/s1"]!).first?.label == "Yes")
     }
 
     @Test func questionRowsAreItsChoicesNumbered() {

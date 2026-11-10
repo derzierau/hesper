@@ -184,7 +184,7 @@ Mac). `surface` fill, 3 pt accent top edge, 1 pt `line` sides, padding
    separator (Ole's `MetaLine` grows into this).
 6. Option rows (gap 4), each 44 pt min, `surface2` fill, 1 pt `line`
    border, number in mono accent, label Medium, optional detail:
-   - Approval: `1 Yes…` → allow; `2 Yes, and don't ask again` / detail
+   - Approval: `1 Yes` → allow (`Yes…` when it asks first); `2 Yes, and don't ask again` / detail
      `asks once more` → always; `3 No, and tell Claude what to do instead`
      (destructive: `signalTint` fill, signal border, signal number and
      label) → opens Ole's deny-with-message path.

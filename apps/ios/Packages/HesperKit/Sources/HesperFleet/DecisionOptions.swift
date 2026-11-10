@@ -43,7 +43,8 @@ public enum DecisionOptions {
         switch a.state {
         case .approval:
             return [
-                DecisionRow(number: 1, label: "Yes…", action: .allow),
+                // The ellipsis only where a dialog follows (HIG).
+                DecisionRow(number: 1, label: needsConfirmation(a, .allow) ? "Yes…" : "Yes", action: .allow),
                 DecisionRow(number: 2, label: "Yes, and don't ask again", detail: "asks once more", action: .always),
                 DecisionRow(number: 3, label: "No, and tell Claude what to do instead", isDestructive: true, action: .denyWithMessage),
             ]
