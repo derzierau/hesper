@@ -77,14 +77,25 @@ public enum SizeOwner {
     /// (`typesIntoAgent`) and only for the read-write terminal it reaches
     /// (`targeted`; a focused control outside the terminal has none). A
     /// click never does: it only focuses (selecting text, activating the
-    /// window). Once taken back, every key waits until the owner surface
-    /// takes input (`ownerReady`) and then goes to it directly, so none
-    /// reaches the read-only view and the order stays.
-    public static func keyTakeBack(_ cs: [Candidate], targeted: [Bool], ownerReady: [Bool], typesIntoAgent: Bool) -> KeyTakeBack {
-        guard typesIntoAgent, cs.count == targeted.count, cs.count == ownerReady.count,
+    /// window). No take-back starts while no owner surface can come
+    /// (`ownerCanCome`: no window, too narrow, not attachable): the key goes
+    /// on as without the feature. Once taken back, every key waits until
+    /// the owner surface takes input (`ownerReady`) and then goes to it
+    /// directly, so none reaches the read-only view and the order stays.
+    public static func keyTakeBack(_ cs: [Candidate], targeted: [Bool], ownerReady: [Bool], ownerCanCome: [Bool], typesIntoAgent: Bool) -> KeyTakeBack {
+        guard typesIntoAgent, cs.count == targeted.count, cs.count == ownerReady.count, cs.count == ownerCanCome.count,
               let i = cs.indices.first(where: { targeted[$0] && cs[$0].remoteOwned && cs[$0].readWrite }) else { return .pass }
         if cs[i].takingBack { return ownerReady[i] ? .pass : .hold(i) }
-        return .takeBack(i)
+        return ownerCanCome[i] ? .takeBack(i) : .pass
+    }
+
+    /// Whether this Mac's machine id from hesperd's hello really changed
+    /// (unknown to known, or another id): only then do agents'
+    /// `sizeOwnerHost` read differently. A reconnect with the same id, or
+    /// no hello, changes nothing.
+    public static func localMachineChanged(old: String?, new: String?) -> Bool {
+        guard let new else { return false }
+        return new != old
     }
 
     /// Whether the focus changes of size take-back apply to a terminal (a
@@ -98,13 +109,8 @@ public enum SizeOwner {
 
     /// Seconds a take-back waits for the daemon to report the new owner;
     /// after that (the owner attach failed, the link is down) the pane is a
-    /// view again.
+    /// view again (PaneInput.expireTakeBack).
     public static let takeBackTimeout: TimeInterval = 5
-
-    /// Whether a take-back started at `since` (uptime) has run out.
-    public static func takeBackExpired(since: TimeInterval, now: TimeInterval) -> Bool {
-        now - since >= takeBackTimeout
-    }
 
     /// How a terminal attaches.
     public enum Attach: Equatable, Sendable {

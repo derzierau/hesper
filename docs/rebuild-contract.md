@@ -1575,7 +1575,9 @@ size, perhaps from this one), every local pane of that agent is a view
 Mac>". On the agent's own Mac `sizeOwnerHost` is its own owner and
 changes nothing. A keystroke that would type into the agent makes
 that pane the owner at once (latest owner wins; that key and any typed
-meanwhile are held and replayed into the owner surface). A click only
+meanwhile are held, in order, for the owner surface however it becomes
+current). While no owner surface can come (no window, too narrow, the
+agent not running) a key takes nothing back and goes on as usual. A click only
 focuses (selecting text, activating the window) and leaves the size with
 the other device. If the daemon has not reported the new owner after
 5 s (the owner attach failed), the pane is a view again. Keys aimed at another control leave that control's input and

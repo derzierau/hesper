@@ -108,7 +108,7 @@ import Testing
         let cs = [c("a", 1, focus: true, remote: true), c("b", 1, rw: true, remote: true)]
         let idle = [false, false]
         func key(_ targeted: [Bool], types: Bool = true) -> SizeOwner.KeyTakeBack {
-            SizeOwner.keyTakeBack(cs, targeted: targeted, ownerReady: idle, typesIntoAgent: types)
+            SizeOwner.keyTakeBack(cs, targeted: targeted, ownerReady: idle, ownerCanCome: idle.map { _ in true }, typesIntoAgent: types)
         }
         #expect(key([false, false]) == .pass) // another control has focus
         #expect(key([false, true]) == .takeBack(1))
@@ -117,14 +117,14 @@ import Testing
         #expect(key([true, false], types: false) == .pass)
         // A plain tile or a pane whose size is this Mac's: nothing to take.
         let none = [c("a", 1, remote: true), c("b", 1, rw: true)]
-        #expect(SizeOwner.keyTakeBack(none, targeted: [true, true], ownerReady: idle, typesIntoAgent: true) == .pass)
+        #expect(SizeOwner.keyTakeBack(none, targeted: [true, true], ownerReady: idle, ownerCanCome: idle.map { _ in true }, typesIntoAgent: true) == .pass)
     }
 
     @Test func keysWaitWhileTheOwnerSurfaceSwapsIn() {
         let cs = [c("a", 1, focus: true, remote: true, takingBack: true)]
-        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [false], typesIntoAgent: true) == .hold(0))
+        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [false], ownerCanCome: [true], typesIntoAgent: true) == .hold(0))
         // Swapped in: the key reaches the owner surface on its own.
-        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [true], typesIntoAgent: true) == .pass)
+        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [true], ownerCanCome: [true], typesIntoAgent: true) == .pass)
     }
 
     @Test func everyKeyOfAPendingTakeBackIsHeldInOrder() {
@@ -135,14 +135,14 @@ import Testing
         var cs = [c("a", 1, focus: true, remote: true)]
         var held: [Int] = []
         for key in 1...3 {
-            switch SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [false], typesIntoAgent: true) {
+            switch SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [false], ownerCanCome: [true], typesIntoAgent: true) {
             case .takeBack(let i): cs[i].takingBack = true; held.append(key)
             case .hold: held.append(key)
             case .pass: Issue.record("key \(key) passed to the view")
             }
         }
         #expect(held == [1, 2, 3])
-        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [true], typesIntoAgent: true) == .pass)
+        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [true], ownerCanCome: [true], typesIntoAgent: true) == .pass)
     }
 
     @Test func focusHandOffOnlyWhileTheFeatureIsInPlay() {
@@ -152,9 +152,12 @@ import Testing
         #expect(SizeOwner.focusHandOff(remoteOwned: false, takingBack: true))
     }
 
-    @Test func aTakeBackRunsOutWithoutTheDaemon() {
-        #expect(!SizeOwner.takeBackExpired(since: 100, now: 100 + SizeOwner.takeBackTimeout - 0.1))
-        #expect(SizeOwner.takeBackExpired(since: 100, now: 100 + SizeOwner.takeBackTimeout))
+    @Test func onlyARealChangeOfThisMacsIdReReadsOwners() {
+        #expect(SizeOwner.localMachineChanged(old: nil, new: "M"))
+        #expect(SizeOwner.localMachineChanged(old: "M", new: "N"))
+        #expect(!SizeOwner.localMachineChanged(old: "M", new: "M")) // a reconnect
+        #expect(!SizeOwner.localMachineChanged(old: nil, new: nil))
+        #expect(!SizeOwner.localMachineChanged(old: "M", new: nil))
     }
 
     @Test func aRemoteOwnerMakesKeyAndNonKeyPanesViews() {
@@ -268,7 +271,7 @@ import Testing
         }
         let cs = [c("a", 1, focus: true), c("a", 2, focus: true), c("b", 1, rw: true)]
         #expect(SizeOwner.owners(cs, ownerWindow: 1) == [true, false, true])
-        #expect(SizeOwner.keyTakeBack(cs, targeted: [true, true, true], ownerReady: [false, false, false], typesIntoAgent: true) == .pass)
+        #expect(SizeOwner.keyTakeBack(cs, targeted: [true, true, true], ownerReady: [false, false, false], ownerCanCome: [true, true, true], typesIntoAgent: true) == .pass)
     }
 
     @Test func badgeNamesTheDevice() {

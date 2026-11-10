@@ -303,7 +303,7 @@ final class SizeOwnership {
                                 readWrite: t.readWrite, remoteOwned: t.remoteOwned, takingBack: t.takingSizeBack)
         }
         let types = w.isKeyWindow && TerminalKeys.bytes(KeyChord(event: e), characters: e.characters) != nil
-        switch SizeOwner.keyTakeBack(cs, targeted: targeted, ownerReady: ts.map(\.ownerReady), typesIntoAgent: types) {
+        switch SizeOwner.keyTakeBack(cs, targeted: targeted, ownerReady: ts.map(\.ownerReady), ownerCanCome: ts.map(\.ownerCanCome), typesIntoAgent: types) {
         case .pass:
             return false
         case .hold(let i):
@@ -311,7 +311,7 @@ final class SizeOwnership {
             return true
         case .takeBack(let i):
             let t = ts[i]
-            t.takingSizeBack = true
+            guard t.beginTakeBack() else { return false }
             apply()
             // Held even if no owner surface started (no window, link down):
             // passed on, the key would reach the view or FocusView and be
@@ -319,9 +319,7 @@ final class SizeOwnership {
             // held behind it (.hold).
             t.hold(e)
             DispatchQueue.main.asyncAfter(deadline: .now() + SizeOwner.takeBackTimeout) { [weak self, weak t] in
-                guard let self, let t, t.takingSizeBack, t.remoteOwned, let since = t.takingSizeBackSince,
-                      SizeOwner.takeBackExpired(since: since, now: ProcessInfo.processInfo.systemUptime) else { return }
-                t.takingSizeBack = false
+                guard let self, let t, t.expireTakeBack() else { return }
                 self.apply()
             }
             return true
