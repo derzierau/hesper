@@ -24,9 +24,14 @@ type Server struct {
 	Policy     auth.AccessPolicy
 	Repository identity.Repository
 	Hub        *relay.Hub
-	mu         sync.Mutex
-	pairStart  time.Time
-	pairCount  int
+	// MaxStreamAge is the longest a terminal stream stays open; zero means
+	// DefaultMaxStreamAge. A test seam: no production constructor sets it,
+	// so the relay uses DefaultMaxStreamAge until the owner decides how the
+	// cap is configured.
+	MaxStreamAge time.Duration
+	mu           sync.Mutex
+	pairStart    time.Time
+	pairCount    int
 	// Enrollment and revocation are serialized with registration so a credential
 	// cannot become live in the hub after its persistent revocation committed.
 	enrollment sync.Mutex

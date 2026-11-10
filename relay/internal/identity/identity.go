@@ -25,6 +25,13 @@ type Device struct {
 	Revoked             bool      `json:"revoked"`
 	CredentialExpiresAt time.Time `json:"-"`
 }
+
+// Active reports whether record v is still device d: the same ID, owner and
+// role, and not revoked.
+func (d Device) Active(v Device) bool {
+	return v.ID == d.ID && v.Owner == d.Owner && v.Role == d.Role && !v.Revoked
+}
+
 type Invitation struct {
 	Owner   string    `json:"owner"`
 	Role    Role      `json:"role"`
@@ -35,6 +42,8 @@ type Repository interface {
 	Redeem(context.Context, string, string) (Device, string, error)
 	Authenticate(context.Context, string) (Device, error)
 	Devices(context.Context, string) ([]Device, error)
+	// Device reads one device record by ID, revoked or not.
+	Device(context.Context, string) (Device, error)
 	Revoke(context.Context, string) error
 }
 

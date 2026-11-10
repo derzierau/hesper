@@ -81,6 +81,37 @@ func TestExpiredInvitation(t *testing.T) {
 	}
 }
 
+// Device reads one record by ID, revoked or not, and reports unknown IDs.
+func TestDeviceReadsOneRecord(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	invitation, err := s.Invite(ctx, identity.Invitation{Owner: "a", Role: identity.Controller, Expires: time.Now().Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, _, err := s.Redeem(ctx, invitation, "phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Device(ctx, device.ID)
+	if err != nil || got.ID != device.ID || got.Owner != "a" || got.Role != identity.Controller || got.Revoked {
+		t.Fatalf("Device = %+v, %v", got, err)
+	}
+	if err := s.Revoke(ctx, device.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = s.Device(ctx, device.ID); err != nil || !got.Revoked {
+		t.Fatalf("revoked Device = %+v, %v", got, err)
+	}
+	if _, err = s.Device(ctx, "unknown"); err == nil {
+		t.Fatal("unknown device found")
+	}
+}
+
 // A relay that still had phone push left a push-v1 bucket; Open drops it.
 func TestOpenDropsLegacyPushTokens(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "relay.db")

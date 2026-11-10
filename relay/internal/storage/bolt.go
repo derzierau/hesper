@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -110,7 +111,11 @@ func (s *Bolt) Authenticate(ctx context.Context, token string) (identity.Device,
 			}
 			id = []byte(access.DeviceID)
 		}
-		if len(id) == 0 || json.Unmarshal(tx.Bucket(devices).Get(id), &device) != nil || device.Revoked {
+		var err error
+		if len(id) > 0 {
+			device, err = deviceRecord(tx, id)
+		}
+		if len(id) == 0 || err != nil || device.Revoked {
 			return protocol.Err("unauthorized", "Invalid device credential")
 		}
 		device.CredentialExpiresAt = access.Expires
@@ -136,6 +141,31 @@ func (s *Bolt) Devices(ctx context.Context, owner string) ([]identity.Device, er
 		})
 	})
 	return result, err
+}
+func (s *Bolt) Device(ctx context.Context, id string) (identity.Device, error) {
+	var device identity.Device
+	if err := ctx.Err(); err != nil {
+		return device, err
+	}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		var err error
+		device, err = deviceRecord(tx, []byte(id))
+		return err
+	})
+	return device, err
+}
+
+// deviceRecord decodes the stored record of device id, revoked or not.
+func deviceRecord(tx *bolt.Tx, id []byte) (identity.Device, error) {
+	var device identity.Device
+	value := tx.Bucket(devices).Get(id)
+	if value == nil {
+		return device, protocol.Err("not_found", "Device not found")
+	}
+	if err := json.Unmarshal(value, &device); err != nil {
+		return device, fmt.Errorf("decode device record: %w", err)
+	}
+	return device, nil
 }
 func (s *Bolt) Revoke(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {

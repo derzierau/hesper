@@ -166,7 +166,8 @@ A native app that signs in through its own callback URL needs that exact URL in
 
 ## Renewal and access changes
 
-Access tokens last 15 minutes. The host reconnects and renews automatically; CLI
+Access tokens last 15 minutes. The host renews two minutes before expiry and
+moves to a new connection without going offline; it reconnects after a drop; CLI
 commands renew as needed and `watch` reconnects. Refresh families expire after
 30 days, requiring another browser login. Credentials are written atomically with
 mode 0600; a persistent adjacent `.lock` serializes processes using the same file.

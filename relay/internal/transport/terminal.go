@@ -60,6 +60,19 @@ func (b *TerminalBroker) Close() {
 }
 func (s *Server) Revoke(id string) { s.Hub.Revoke(id); s.Terminals.Revoke(id) }
 
+// DefaultMaxStreamAge caps how long a terminal stream may stay open after
+// its access token expired, however long both devices stay active. It is the
+// ceiling streams had before when a credential carried no expiry.
+// The value is the owner's decision.
+const DefaultMaxStreamAge = 24 * time.Hour
+
+func (s *Server) maxStreamAge() time.Duration {
+	if s.MaxStreamAge > 0 {
+		return s.MaxStreamAge
+	}
+	return DefaultMaxStreamAge
+}
+
 var streamID = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 
 func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
@@ -97,13 +110,8 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	}
 	var p *terminalPair
 	if d.Role == identity.Host {
-		devices, e := s.Repository.Devices(r.Context(), d.Owner)
-		valid := false
-		for _, v := range devices {
-			if v.ID == controller && v.Owner == d.Owner && v.Role == identity.Controller && !v.Revoked {
-				valid = true
-			}
-		}
+		v, e := s.Repository.Device(r.Context(), controller)
+		valid := identity.Device{ID: controller, Owner: d.Owner, Role: identity.Controller}.Active(v)
 		count := 0
 		for _, v := range b.streams {
 			if v.host.ID == d.ID {
@@ -162,13 +170,14 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	}
 	b.mu.Unlock()
 	defer conn.CloseNow()
-	expiry := time.NewTimer(24 * time.Hour)
-	if !d.CredentialExpiresAt.IsZero() {
-		expiry.Reset(max(time.Until(d.CredentialExpiresAt), 0))
-	}
-	defer expiry.Stop()
-	// Repository checks also cover callers that revoke directly, independent of
-	// the HTTP administration and GitHub token-reuse callbacks.
+	// The access token only governs opening. An open stream lives while its
+	// device stays active, up to the maximum stream age: the check reads the
+	// device record, so the stream outlives token expiry and still closes
+	// within a second of a revocation or policy change, including callers
+	// that revoke directly, independent of the HTTP administration and GitHub
+	// token-reuse callbacks.
+	maxAge := time.NewTimer(s.maxStreamAge())
+	defer maxAge.Stop()
 	check := time.NewTicker(time.Second)
 	defer check.Stop()
 	done := make(chan struct{})
@@ -197,10 +206,10 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-p.ctx.Done():
 			return
-		case <-expiry.C:
+		case <-maxAge.C:
 			return
 		case <-check.C:
-			if _, e := s.Repository.Authenticate(p.ctx, token); e != nil {
+			if !s.active(p.ctx, d) {
 				return
 			}
 			if s.Policy != nil && !s.Policy.Allowed(d.Owner) {
@@ -208,6 +217,13 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// active reports whether device d is still enrolled under its owner, in its
+// role and not revoked. A repository error counts as inactive.
+func (s *Server) active(ctx context.Context, d identity.Device) bool {
+	v, err := s.Repository.Device(ctx, d.ID)
+	return err == nil && d.Active(v)
 }
 func (s *Server) bridge(p *terminalPair) {
 	timer := time.NewTimer(15 * time.Second)

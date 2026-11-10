@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
@@ -53,6 +54,11 @@ type Runner struct {
 	termSlots chan struct{} // links of both paths
 	changed   chan struct{} // an operation changed published state
 }
+
+// renewAhead is how long before the access credential expires Run renews
+// it and moves to a new relay connection. The relay closes a connection
+// when its credential expires (transport.Server.connect).
+var renewAhead = 2 * time.Minute
 
 func (r *Runner) init() {
 	r.setup.Do(func() {
@@ -132,13 +138,25 @@ func (r *Runner) Run(ctx context.Context) error {
 			r.Logger.Warn("direct path unavailable; everything goes through the relay", "error", err)
 		}
 	}
+	// Links opened through the relay live as long as the host, not one hub
+	// connection: their streams are sockets of their own (terminal.go).
+	r.init()
+	linkCtx, endLinks := context.WithCancel(ctx)
+	terminals := &terminalManager{ctx: linkCtx, r: r, slots: r.termSlots}
+	defer func() { endLinks(); terminals.wg.Wait() }()
+	return r.run(ctx, terminals)
+}
+
+// run connects to the relay until ctx ends or sign-in is required; the links
+// requested through the relay open with terminals.
+func (r *Runner) run(ctx context.Context, terminals *terminalManager) error {
 	backoff := time.Second
 	for ctx.Err() == nil {
 		started := time.Now()
 		if r.CredentialsPath != "" {
 			// Only the relay's explicit rejection ends the host; every other
 			// renewal failure keeps the stored credential and retries below.
-			c, err := client.FreshCredentials(ctx, r.CredentialsPath)
+			c, err := client.RenewCredentials(ctx, r.CredentialsPath, renewAhead)
 			if errors.Is(err, client.ErrSignInRequired) {
 				return err
 			}
@@ -162,8 +180,10 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 		if err == nil {
 			r.Logger.Info("host connected", "device", r.Credentials.DeviceID)
-			err = r.Serve(ctx, link)
-			link.Close()
+			err = r.serveRenewing(ctx, link, terminals)
+		}
+		if errors.Is(err, client.ErrSignInRequired) {
+			return err
 		}
 		var fault *protocol.Error
 		if errors.As(err, &fault) && fault.Code == "unauthorized" {
@@ -191,6 +211,101 @@ func (r *Runner) Run(ctx context.Context) error {
 	return nil
 }
 
+// renewRetry is how soon a failed renewal ahead of expiry is tried again,
+// and the shortest wait before any renewal.
+var renewRetry = 10 * time.Second
+
+// errNoGain: the renewed credential expires no later than the one in use
+// (the relay caps access at the refresh family's end), so a new connection
+// would not outlast the current one.
+var errNoGain = errors.New("renewed access credential expires no later than the current one")
+
+// serveRenewing serves link and, renewAhead before its credential expires,
+// renews the credential and dials a new connection while the old one still
+// serves. The relay replaces the device's old connection with the new one
+// (relay.Hub.Connect) and closes the old one, so the host never goes
+// offline. The new connection is served at once, while the old serve drains
+// (it may still be running an operation); the outcome of
+// requests in flight on the old connection is unknown, as for any
+// disconnect (protocol.md). It returns when a connection ends on its own,
+// closed.
+func (r *Runner) serveRenewing(ctx context.Context, link *client.Link, terminals *terminalManager) error {
+	var draining sync.WaitGroup
+	defer draining.Wait()
+	for {
+		serveCtx, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		draining.Add(1)
+		// link is an argument: the loop replaces it on renewal, perhaps
+		// before this goroutine has started.
+		go func(link *client.Link) { defer draining.Done(); done <- r.serve(serveCtx, link, terminals) }(link)
+		var next *client.Link
+		var c protocol.Credentials
+		// Never renew without pause: a fresh credential can have renewAhead
+		// or less left (a short access lifetime, the family's end, clock skew).
+		delay := max(time.Until(r.Credentials.ExpiresAt)-renewAhead, renewRetry)
+		renewing := r.CredentialsPath != "" && !r.Credentials.ExpiresAt.IsZero()
+		for next == nil {
+			var renew <-chan time.Time
+			var timer *time.Timer
+			if renewing {
+				timer = time.NewTimer(delay)
+				renew = timer.C
+			}
+			select {
+			case err := <-done:
+				if timer != nil {
+					timer.Stop()
+				}
+				stop()
+				return err
+			case <-renew:
+			}
+			var err error
+			c, next, err = r.redial(ctx)
+			if errors.Is(err, client.ErrSignInRequired) {
+				stop()
+				<-done
+				return err
+			}
+			if errors.Is(err, errNoGain) {
+				// Serve until the relay closes the connection at expiry;
+				// Run then reconnects with whatever the stored credential is.
+				renewing = false
+				continue
+			}
+			if err != nil && ctx.Err() == nil {
+				r.Logger.Warn("cannot renew the relay connection before it expires; retrying", "error", err)
+			}
+			delay = renewRetry
+		}
+		// The relay already serves next and closed the old connection; its
+		// serve ends on its own, without holding up next.
+		stop()
+		r.Credentials, link = c, next
+		r.Logger.Info("host connection renewed", "device", c.DeviceID)
+	}
+}
+
+// redial renews the stored credential and dials a connection with it.
+func (r *Runner) redial(ctx context.Context) (protocol.Credentials, *client.Link, error) {
+	c, err := client.RenewCredentials(ctx, r.CredentialsPath, renewAhead)
+	if err != nil {
+		return c, nil, fmt.Errorf("renew credential ahead of expiry: %w", err)
+	}
+	if c.Token == r.Credentials.Token {
+		return c, nil, errors.New("renew credential ahead of expiry: access credential was not renewed")
+	}
+	if !c.ExpiresAt.After(r.Credentials.ExpiresAt) {
+		return c, nil, errNoGain
+	}
+	link, err := client.Dial(ctx, c)
+	if err != nil {
+		return c, nil, fmt.Errorf("dial renewed connection: %w", err)
+	}
+	return c, link, nil
+}
+
 // openE2E opens one sealed request (timed for the latency harness).
 func (r *Runner) openE2E(m protocol.Message) (protocol.Message, *hostSession, string, error) {
 	started := time.Now()
@@ -200,13 +315,21 @@ func (r *Runner) openE2E(m protocol.Message) (protocol.Message, *hostSession, st
 
 // Serve executes one operation at a time. The reader remains active for protocol
 // heartbeats; bounded queues and request deadlines prevent unbounded stale work.
+// The links it opens end with it.
 func (r *Runner) Serve(parent context.Context, link *client.Link) error {
 	r.init()
 	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-	defer link.Close()
 	terminals := &terminalManager{ctx: ctx, r: r, slots: r.termSlots}
 	defer func() { cancel(); terminals.wg.Wait() }()
+	return r.serve(ctx, link, terminals)
+}
+
+// serve is Serve with the links opened by terminals, which may outlive it.
+// It closes link.
+func (r *Runner) serve(parent context.Context, link *client.Link, terminals *terminalManager) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	defer link.Close()
 	requests := make(chan protocol.Message, 16)
 	readDone := make(chan struct{})
 	go func() {
@@ -271,8 +394,16 @@ func (r *Runner) Serve(parent context.Context, link *client.Link) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if debounce != nil {
+				// A replaced serve hands a change it took on to the next.
+				r.republish()
+			}
 			return ctx.Err()
 		case <-r.Events:
+			if ctx.Err() != nil {
+				r.republish()
+				return ctx.Err()
+			}
 			// A change (a Hesper hook, a branch or presence read in the
 			// background) is published at once: after EventSettle, which
 			// gathers a burst, and no sooner than PublishGap after the last
@@ -284,6 +415,7 @@ func (r *Runner) Serve(parent context.Context, link *client.Link) error {
 		case <-debounce:
 			debounce = nil
 			if err := publish(); err != nil {
+				r.republish()
 				return err
 			}
 		case <-poll.C:
@@ -368,7 +500,12 @@ func (r *Runner) Serve(parent context.Context, link *client.Link) error {
 			}
 		case <-r.changed:
 			// A request on the direct path changed what snapshots show.
+			if ctx.Err() != nil {
+				r.republish()
+				return ctx.Err()
+			}
 			if err := publish(); err != nil {
+				r.republish()
 				return err
 			}
 		}

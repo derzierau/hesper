@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -228,5 +229,32 @@ func TestFailedSaveKeepsTheOldCredential(t *testing.T) {
 	}
 	if after, _ := os.ReadFile(path); string(after) != string(before) {
 		t.Fatal("credentials file changed although the save failed")
+	}
+}
+
+// RenewCredentials renews ahead of FreshCredentials' minute, and keeps a
+// credential with more than within left.
+func TestRenewCredentialsRenewsWithin(t *testing.T) {
+	var refreshes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refreshes.Add(1)
+		json.NewEncoder(w).Encode(protocol.Credentials{DeviceID: "device", Role: "host", Token: "new-access", RefreshToken: "new-refresh", ExpiresAt: time.Now().Add(15 * time.Minute)})
+	}))
+	defer server.Close()
+	c := expiring(server.URL)
+	c.ExpiresAt = time.Now().Add(90 * time.Second)
+	path, _ := savedFile(t, c)
+	if got, err := FreshCredentials(context.Background(), path); err != nil || got.Token != "old-access" {
+		t.Fatal("renewed with more than a minute left", got.Token, err)
+	}
+	if got, err := RenewCredentials(context.Background(), path, time.Minute); err != nil || got.Token != "old-access" {
+		t.Fatal("renewed with more than within left", got.Token, err)
+	}
+	got, err := RenewCredentials(context.Background(), path, 2*time.Minute)
+	if err != nil || got.Token != "new-access" || refreshes.Load() != 1 {
+		t.Fatal("not renewed within", got.Token, err, refreshes.Load())
+	}
+	if stored, _ := LoadCredentials(path); stored.Token != "new-access" {
+		t.Fatal("renewed pair not saved")
 	}
 }

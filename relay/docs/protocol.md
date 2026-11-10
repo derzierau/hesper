@@ -609,8 +609,18 @@ client's behalf. An app should separately manage connection state and drafts,
 keeping an unsent draft distinct from an ambiguously delivered command.
 
 The CLI `watch` reconnects observation automatically; raw SDK callers own renewal
-and reconnect policy. Host agents renew credentials on reconnect. Active sockets
-close at access expiry, and removed users cannot renew or reconnect.
+and reconnect policy. Host agents renew their access credential two minutes
+before it expires and dial a new connection while the old one still serves; the
+relay replaces the old connection, so the host stays online. It waits at least
+ten seconds between renewal attempts, and stops renewing a connection when the
+new access credential would expire no later than the current one (the end of
+the refresh family); that connection then closes at expiry and the host
+reconnects. Requests in flight on the old connection may be lost. A host's links (`agents.link`) do not end
+with its hub connection. Hub connections close at access expiry. A terminal
+stream (`/v1/terminal`) needs a valid access token only to open; it then stays
+open while both devices stay active, for at most 24 hours, and closes within a
+second of a revocation or policy change. Revocation, policy and that ceiling
+are the controls; token expiry only governs opening. Removed users cannot renew or reconnect.
 
 
 ## Terminal streams
