@@ -310,6 +310,32 @@ func TestOversizedNonceFileIsReadAndRewritten(t *testing.T) {
 	}
 }
 
+func TestUnreadableNonceFileIsAudited(t *testing.T) {
+	// A line too long to scan ends the read early. What follows it is
+	// forgotten, so a replay inside MaxSkew passes once: the owner sees
+	// that in the audit log.
+	h := newAuthHarness(t)
+	laptop := &devicekey.Software{Dir: t.TempDir()}
+	h.approve("laptop-1", laptop, "laptop", ApproveOptions{}, "type")
+	expiry := h.clock().Add(time.Minute).UnixMilli()
+	data := fmt.Sprintf("%d laptop-1 before\n%d laptop-1 %s\n%d laptop-1 after\n",
+		expiry, expiry, strings.Repeat("x", 128<<10), expiry)
+	if err := os.WriteFile(filepath.Join(h.dir, NoncesFile), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h.a = h.authorizer()
+	if _, err := h.a.Authorize(context.Background(), h.signed("laptop-1", laptop, "agents.input", inputParams, false)); err != nil {
+		t.Fatal(err)
+	}
+	audit := h.audit()
+	if !strings.Contains(audit, `"event":"replay_cache.reset"`) || !strings.Contains(audit, NoncesFile) {
+		t.Fatalf("partial read not audited:\n%s", audit)
+	}
+	if err := h.a.nonces.add("laptop-1 before", h.clock()); !errors.Is(err, errReplay) {
+		t.Fatalf("nonce before the bad line forgotten: %v", err)
+	}
+}
+
 func TestNonceFileStaysBounded(t *testing.T) {
 	// Steady traffic with few live nonces must not let the file grow.
 	path := filepath.Join(t.TempDir(), NoncesFile)

@@ -203,14 +203,21 @@ func (a *Authorizer) Authorize(ctx context.Context, m protocol.Message) (Caller,
 		}
 		return Caller{}, a.refuse(ctx, m, c.Device, c.Name, detail, "Request signature does not verify")
 	}
+	var lost error
 	a.mu.Lock()
 	if a.nonces == nil {
 		a.nonces, err = openNonces(a.Store.path(NoncesFile), now)
+		if err == nil {
+			lost = a.nonces.lost
+		}
 	}
 	if err == nil {
 		err = a.nonces.add(c.Device+" "+auth.Nonce, now)
 	}
 	a.mu.Unlock()
+	if lost != nil {
+		a.Audit("replay_cache.reset", map[string]any{"ok": false, "detail": lost.Error()})
+	}
 	if errors.Is(err, errReplay) {
 		return Caller{}, a.refuse(ctx, m, c.Device, c.Name, "replayed nonce", "Request was already received (replay)")
 	}
@@ -382,13 +389,17 @@ type nonceCache struct {
 	lines int
 	kept  int // entries left by the last rewrite
 	file  *os.File
+	// lost: why the file was not read to its end (nil if it was); the
+	// caller audits it.
+	lost error
 }
 
 func openNonces(path string, now time.Time) (*nonceCache, error) {
 	c := &nonceCache{path: path, seen: map[string]int64{}}
 	if f, err := openOwnFile(path); err == nil {
-		// Read line by line and with no size limit: the file is the host's
-		// own state, and one it cannot read would refuse every request.
+		// Read line by line, with no limit on the file's size: the file is
+		// the host's own state, and one it cannot read would refuse every
+		// request.
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			fields := strings.Fields(scanner.Text())
@@ -402,7 +413,11 @@ func openNonces(path string, now time.Time) (*nonceCache, error) {
 			c.seen[fields[1]+" "+fields[2]] = expiry
 		}
 		// A read error or an overlong line ends the scan early. What was
-		// not read is forgotten: timestamps still bound a replay to MaxSkew.
+		// not read is forgotten: timestamps still bound a replay to MaxSkew,
+		// but one inside it passes once, so the caller audits this.
+		if err := scanner.Err(); err != nil {
+			c.lost = fmt.Errorf("%s read only in part, the rest forgotten: %w", path, err)
+		}
 		f.Close()
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
