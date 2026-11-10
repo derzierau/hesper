@@ -202,7 +202,9 @@ iPhone bundles `JetBrainsMono-Regular.ttf` (source tree:
 ### Space Grotesk
 
 Bundled in Hesper for iPhone as `SpaceGrotesk-Bold.ttf` (source tree:
-`apps/ios/App/Fonts/`), the static Bold from the 2.0.0 release.
+`apps/ios/App/Fonts/`), the static Bold from the 2.0.0 release. The
+iPhone app ships the license with both of its fonts' copyright notices
+as `OFL.txt` in its bundle (source tree: `apps/ios/App/Fonts/OFL.txt`).
 
 - Version: 2.0.0
 - URL: https://github.com/floriankarsten/space-grotesk
