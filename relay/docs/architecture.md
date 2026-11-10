@@ -62,8 +62,18 @@ cannot issue controller requests or impersonate another host's replies. Local
 host input permission is a further boundary: a read-only host rejects mutations
 even from its owner's authenticated and approved controller.
 
-Local administration is served on a Unix socket with mode `0600`. No admin
-routes exist on the public listener. Revocation is committed before the live
+Local administration is served on a Unix socket with mode `0600`. The public
+listener has no admin HTTP routes. One administrative action is also reachable
+over the hub: a connected controller can list its owner's devices and revoke
+any of them but itself (`devices`, `revoke`; protocol.md, "Devices"). The
+relay checks only that the target belongs to the caller's owner, is not
+revoked and is not the caller. It does not know the per-host rights in
+`controllers.json`, and the message is not signed with the device key, so
+every controller identity of an owner that the relay accepts can revoke the
+owner's hosts and controllers on the relay, whether or not any host approved
+it. Whether to narrow this (for example to a signed request from a pinned
+device key, to controllers only, or to a fresh sign-in) is awaiting the
+owner's decision. Revocation is committed before the live
 connection is removed. Enrollment and revocation are synchronized so an in-flight
 pairing cannot restore a revoked identity in memory.
 

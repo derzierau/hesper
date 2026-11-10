@@ -226,6 +226,10 @@ Errors, as a `result` with `error`:
 | `invalid_request` | `deviceId` is missing or longer than 128 bytes |
 
 Hosts may send neither message. The usual message rate limit applies.
+Any controller of the owner may send both: the relay checks the owner and
+the not-self rule only, not a host's approval or rights, and `revoke` is not
+signed with the device key. Who may revoke is awaiting the owner's decision
+(see architecture.md, "Identity and trust").
 
 On each Mac, hesperd merges this list with its own files and removes a
 device in one step. These are local-socket methods, called by a person
