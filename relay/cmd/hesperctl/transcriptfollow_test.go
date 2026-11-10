@@ -76,6 +76,10 @@ func TestTranscriptSince(t *testing.T) {
 	if !restarted || len(items) != 2 {
 		t.Fatalf("rewrite: %v %v", seqsOf(items), restarted)
 	}
+	// Rewritten with more than a page: the newest page, and the gap said.
+	if items, restarted, gap, _ := transcriptSince(pager(seqs[:60], 50), 5000); !restarted || !gap || len(items) != 50 {
+		t.Fatalf("long rewrite: %d items, restarted %v gap %v", len(items), restarted, gap)
+	}
 	// Emptied.
 	if items, restarted, _, _ := transcriptSince(pager(nil, 50), 1290); !restarted || len(items) != 0 {
 		t.Fatalf("emptied: %v %v", seqsOf(items), restarted)

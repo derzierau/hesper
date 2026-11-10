@@ -958,7 +958,7 @@ func transcriptCommand(ctx context.Context, f *flag.FlagSet, args []string) erro
 				last = -1
 			}
 			if gap {
-				fmt.Fprintf(os.Stderr, "hesperctl: more than %d new items; older ones skipped\n", wire.TranscriptMaxLimit)
+				fmt.Fprintln(os.Stderr, "hesperctl: older new items skipped (page back with --before)")
 			}
 			last = printTranscript(items, *asJSON, last)
 		}
@@ -968,9 +968,9 @@ func transcriptCommand(ctx context.Context, f *flag.FlagSet, args []string) erro
 // transcriptSince is the items above last, oldest first, paged back from
 // the end with fetch (agents.transcript's before; 0 the end). restarted:
 // the newest item lies below last or the transcript is empty while last
-// is not (it was rewritten), and items is the newest page. gap: more
-// than wire.TranscriptMaxLimit items are new; items is the newest of
-// them.
+// is not (it was rewritten), and items is the newest page. gap: items
+// is only the newest of the new items, more than wire.TranscriptMaxLimit,
+// or after a restart more than one page.
 func transcriptSince(fetch func(before int64) (wire.TranscriptPage, error), last int64) (items []wire.TranscriptItem, restarted, gap bool, err error) {
 	var before int64
 	for first := true; ; first = false {
@@ -979,7 +979,7 @@ func transcriptSince(fetch func(before int64) (wire.TranscriptPage, error), last
 			return nil, false, false, err
 		}
 		if first && last >= 0 && (len(p.Items) == 0 || p.Items[len(p.Items)-1].Seq < last) {
-			return p.Items, true, false, nil
+			return p.Items, true, p.More, nil
 		}
 		k := sort.Search(len(p.Items), func(i int) bool { return p.Items[i].Seq > last })
 		items = append(slices.Clone(p.Items[k:]), items...)
