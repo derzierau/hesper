@@ -97,6 +97,9 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// The shown surface is the owner and takes input (no swap pending):
     /// a take-back's held keys can go to it directly.
     var ownerReady: Bool { prewarm == nil && surface?.acceptsInput == true }
+    /// The focus changes of take-back apply (SizeOwner.focusHandOff); off
+    /// on a host that never sends an owner field.
+    var focusHandOff: Bool { SizeOwner.focusHandOff(remoteOwned: remoteOwned, takingBack: takingSizeBack) }
     private var resolvingOwnership = false
     /// The active wall tile: typing goes to the agent. Its surface is a
     /// read-write attach (size owner at the tile's own grid, which is the
@@ -236,7 +239,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         // takes typing too: as a view it could not be first responder.
         let takeFocus = surfaceIsInteractive || (role == .focus && p.acceptsInput && (hadFocus || host.window?.isKeyWindow == true))
         if takeFocus, let w = host.window { w.makeFirstResponder(p.view) }
-        if role == .focus, hadFocus, !p.acceptsInput {
+        if role == .focus, hadFocus, !p.acceptsInput, focusHandOff {
             var ancestor = host.superview
             while let view = ancestor, !(view is FocusView) { ancestor = view.superview }
             if let focus = ancestor { host.window?.makeFirstResponder(focus) }
