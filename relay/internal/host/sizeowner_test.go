@@ -80,12 +80,21 @@ func TestAttachPublishesSizeOwner(t *testing.T) {
 	req, _ := json.Marshal(wire.AttachRequest{Attach: a.ID, Mode: wire.ModeRW, Owner: true, Cols: 46, Rows: 19})
 
 	// The published owner is the authenticated caller: an attach whose
-	// caller is missing or not the routed controller is refused.
+	// caller is missing or not the routed controller is forbidden; a link
+	// of another device stays not_found, as before.
 	other := Caller{Device: "laptop-1", Name: "laptop", Rights: phone.Rights, Verified: true}
-	for what, c := range map[string]context.Context{"no caller": ctx, "another caller": WithCaller(ctx, other)} {
-		if _, err := s.Execute(c, protocol.Message{Method: "agents.attach", ControllerID: "phone-1",
-			Params: protocol.JSON(map[string]any{"link": "link-1", "ch": 2, "mode": wire.ModeRW, "request": json.RawMessage(req)}), Deadline: time.Now().Add(10 * time.Second).UnixMilli()}); err == nil {
-			t.Fatalf("%s: attach accepted", what)
+	for _, tc := range []struct {
+		what, device, code string
+		ctx                context.Context
+	}{
+		{"no caller", "phone-1", "forbidden", ctx},
+		{"another caller", "phone-1", "forbidden", WithCaller(ctx, other)},
+		{"another device's link", "laptop-1", "not_found", WithCaller(ctx, other)},
+	} {
+		_, err := s.Execute(tc.ctx, protocol.Message{Method: "agents.attach", ControllerID: tc.device,
+			Params: protocol.JSON(map[string]any{"link": "link-1", "ch": 2, "mode": wire.ModeRW, "request": json.RawMessage(req)}), Deadline: time.Now().Add(10 * time.Second).UnixMilli()})
+		if pe := protocol.PublicError(err); err == nil || pe == nil || pe.Code != tc.code {
+			t.Fatalf("%s: err %v, want code %s", tc.what, err, tc.code)
 		}
 	}
 

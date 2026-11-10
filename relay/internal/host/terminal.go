@@ -430,16 +430,16 @@ func (s *Service) attach(ctx context.Context, m protocol.Message) (json.RawMessa
 	if p.Ch == 0 || req.Cols < 0 || req.Rows < 0 || req.Cols > 1000 || req.Rows > 1000 {
 		return nil, protocol.Err("invalid_request", "Invalid channel or size")
 	}
+	link := s.links.get(p.Link)
+	if link == nil || link.device != m.ControllerID {
+		return nil, protocol.Err("not_found", "No such link")
+	}
 	// A size owner attached here is published as the authenticated caller
 	// (agent info sizeOwner, sizeOwnerName): it must be the routed
 	// controller.
 	caller, ok := CallerFrom(ctx)
 	if !ok || caller.Device != m.ControllerID {
 		return nil, protocol.Err("forbidden", "Caller is not the routed controller")
-	}
-	link := s.links.get(p.Link)
-	if link == nil || link.device != caller.Device {
-		return nil, protocol.Err("not_found", "No such link")
 	}
 	a, err := s.agent(ctx, req.Attach)
 	if err != nil {
