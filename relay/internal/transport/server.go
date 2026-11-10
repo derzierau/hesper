@@ -25,7 +25,9 @@ type Server struct {
 	Repository identity.Repository
 	Hub        *relay.Hub
 	// MaxStreamAge is the longest a terminal stream stays open; zero means
-	// DefaultMaxStreamAge.
+	// DefaultMaxStreamAge. A test seam: no production constructor sets it,
+	// so the relay uses DefaultMaxStreamAge until the owner decides how the
+	// cap is configured.
 	MaxStreamAge time.Duration
 	mu           sync.Mutex
 	pairStart    time.Time
