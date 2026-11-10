@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -252,6 +253,24 @@ func (h *Helper) Sign(digest []byte, opts Options) ([]byte, error) {
 // ReadPrivateFile reads a small file that must be a regular file of this
 // user that nobody else can read or write (mode 0600 or stricter).
 func ReadPrivateFile(path string) ([]byte, error) {
+	f, err := OpenPrivateFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > 4<<20 {
+		return nil, fmt.Errorf("%s is too large", path)
+	}
+	return io.ReadAll(f)
+}
+
+// OpenPrivateFile opens a file with ReadPrivateFile's checks but no size
+// limit.
+func OpenPrivateFile(path string) (*os.File, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -265,10 +284,7 @@ func ReadPrivateFile(path string) ([]byte, error) {
 	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
 		return nil, fmt.Errorf("%s belongs to another user", path)
 	}
-	if info.Size() > 4<<20 {
-		return nil, fmt.Errorf("%s is too large", path)
-	}
-	return os.ReadFile(path)
+	return os.Open(path)
 }
 
 // WriteNewPrivateFile stores data at path (mode 0600) only if nothing is
