@@ -7,7 +7,7 @@ import Testing
 private final class AttachSpy: LinkClient, @unchecked Sendable {
     // Written by `attach` and read by the test after it returned; one
     // test, one task, so no two accesses overlap.
-    var asked: [(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool)] = []
+    var asked: [(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool, view: Bool)] = []
     var host: HostSizing?
     /// The code an owner attach is refused with.
     var refuseOwner: String?
@@ -18,11 +18,23 @@ private final class AttachSpy: LinkClient, @unchecked Sendable {
 
     func updates() -> AsyncStream<LinkUpdate> { AsyncStream { $0.finish() } }
     func perform(_ command: LinkCommand) async throws {}
-    func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) async throws -> any AttachStream {
-        asked.append((agent, cols, rows, typing, owner))
+    func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool, view: Bool) async throws -> any AttachStream {
+        asked.append((agent, cols, rows, typing, owner, view))
         if owner, let code = refuseOwner { throw Refused(code: code) }
         if typing, !owner, let code = refuseTyping { throw Refused(code: code) }
         return Ended()
+    }
+    func transcript(agent: String, before: Int64?, limit: Int) async throws -> TranscriptPage {
+        TranscriptPage(items: [], more: false)
+    }
+    func transcriptText(agent: String, seq: Int64, offset: Int, limit: Int) async throws -> TranscriptTextChunk {
+        throw Refused(code: "unsupported")
+    }
+    func transcriptStream(agent: String, after: Int64?, limit: Int) async throws -> any TranscriptStream {
+        throw Refused(code: "unsupported")
+    }
+    func screen(agent: String, rows: Int, scrollback: Int) async throws -> ScreenText {
+        throw Refused(code: "unsupported")
     }
     func sizing(on machine: String) -> HostSizing? { host }
 
@@ -115,5 +127,23 @@ private final class AttachSpy: LinkClient, @unchecked Sendable {
         _ = try await FleetModel(link: spy).attach(Agent(id: "mini/m2"))
         #expect(spy.asked.map(\.cols) == [80])
         #expect(spy.asked.map(\.rows) == [24])
+    }
+
+    @Test func aTypingTextViewNeverOwnsTheTerminalSize() async throws {
+        let spy = AttachSpy()
+        let agent = Agent(id: "studio/s1", size: GridSize(cols: 97, rows: 56))
+        _ = try await FleetModel(link: spy).attachView(agent, size: agent.size!, typing: true)
+        #expect(spy.asked.map(\.view) == [true])
+        #expect(spy.asked.map(\.owner) == [false])
+        #expect(spy.asked.map(\.typing) == [true])
+    }
+
+    @Test func aReadOnlyTextViewNeverAsksToType() async throws {
+        let spy = AttachSpy()
+        let agent = Agent(id: "studio/s1", size: GridSize(cols: 97, rows: 56))
+        _ = try await FleetModel(link: spy).attachView(agent, size: agent.size!, typing: false)
+        #expect(spy.asked.map(\.view) == [true])
+        #expect(spy.asked.map(\.owner) == [false])
+        #expect(spy.asked.map(\.typing) == [false])
     }
 }

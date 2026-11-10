@@ -57,7 +57,7 @@ import Testing
         }
         #expect(replies == [AttachReply(ok: true, cols: 97, rows: 56)])
         // RESIZE (1) only goes to the Mac, an unknown type is skipped.
-        #expect(frames == [.data(Data("hi".utf8)), .size(cols: 120, rows: 40), .scroll, .exit])
+        #expect(frames == [.data(Data("hi".utf8)), .size(cols: 120, rows: 40), .scroll(ScrollState(offset: 0, max: 9, new: 0)), .exit])
     }
 
     @Test func aLargeFrameSplitInPiecesDecodes() throws {
@@ -78,9 +78,13 @@ import Testing
         var payload = Data(#"{"ok":true,"cols":80,"rows":24}"#.utf8) + Data([10])
         let bytes = Data((0..<20_000).map { UInt8($0 & 0xff) })
         for b in bytes { payload += Self.inner(0, Data([b])) }
-        stream.receive(payload + Self.inner(4, Data()) + Self.inner(0, Data("x".utf8)))
+        let scroll = Data(#"{"offset":0,"max":0,"new":0}"#.utf8)
+        stream.receive(payload + Self.inner(4, scroll) + Self.inner(0, Data("x".utf8)))
         stream.close()
-        #expect(await Self.all(stream) == [.size(cols: 80, rows: 24), .data(bytes), .scroll, .data(Data("x".utf8))])
+        #expect(
+            await Self.all(stream) == [
+                .size(cols: 80, rows: 24), .data(bytes), .scroll(ScrollState(offset: 0, max: 0, new: 0)), .data(Data("x".utf8)),
+            ])
     }
 
     @Test(.timeLimit(.minutes(1))) func aSecondWaitForTheReplyFailsAndTheFirstStillGetsIt() async throws {
@@ -154,6 +158,145 @@ import Testing
                 #"{"ch":3,"link":"L1","mode":"rw","request":{"attach":"M/a1","cols":97,"history":true,"mode":"rw","owner":false,"rows":56}}"#
                     .utf8))
         #expect(got == want as? NSDictionary)
+    }
+
+    @Test func testAttachParamsView() throws {
+        let params = try HostChannel.attachParams(
+            link: "L1", ch: 3, agent: "M/a1", cols: 97, rows: 56, typing: true, owner: false, view: true)
+        let got = try #require(try JSONSerialization.jsonObject(with: params) as? NSDictionary)
+        // A view replays no history and never sizes the PTY.
+        let want = try JSONSerialization.jsonObject(
+            with: Data(
+                #"{"ch":3,"link":"L1","mode":"rw","request":{"attach":"M/a1","cols":97,"mode":"rw","rows":56,"view":{"cols":97,"rows":56}}}"#
+                    .utf8))
+        #expect(got == want as? NSDictionary)
+        let ro = try HostChannel.attachParams(link: "L1", ch: 3, agent: "M/a1", cols: 97, rows: 56, typing: false, owner: false, view: true)
+        #expect((try JSONSerialization.jsonObject(with: ro) as? [String: Any])?["mode"] as? String == "ro")
+    }
+
+    @Test func testAttachParamsMirrorUnchanged() throws {
+        let params = try HostChannel.attachParams(
+            link: "L1", ch: 3, agent: "M/a1", cols: 97, rows: 56, typing: true, owner: false, view: false)
+        let want =
+            #"{"ch":3,"link":"L1","mode":"rw","request":{"attach":"M\/a1","cols":97,"history":true,"mode":"rw","owner":false,"rows":56}}"#
+        #expect(String(decoding: params, as: UTF8.self) == want)
+    }
+
+    @Test func testAttachReplyEchoesView() throws {
+        var decoder = AttachDecoder()
+        let line = Data(#"{"ok":true,"cols":120,"rows":40,"view":{"rows":56,"cols":97}}"#.utf8) + Data([10])
+        #expect(try decoder.append(line).reply?.view == AttachReply.View(rows: 56, cols: 97))
+    }
+
+    @Test func testScrollFrameDecodes() throws {
+        let frame = try AttachDecoder.frame(type: 4, Data(#"{"offset":3,"max":10,"new":2}"#.utf8))
+        #expect(frame == .scroll(ScrollState(offset: 3, max: 10, new: 2)))
+        #expect(throws: RelayError.self) { try AttachDecoder.frame(type: 4, Data("nope".utf8)) }
+    }
+
+    @Test func testAViewIsSizedFromItsEcho() async throws {
+        let channel = AttachChannel(id: 3, onClose: { _ in })
+        channel.receive(Data(#"{"ok":true,"cols":120,"rows":40,"view":{"rows":56,"cols":97}}"#.utf8) + Data([10]))
+        channel.close()
+        var frames: [AttachFrame] = []
+        for await frame in channel.frames { frames.append(frame) }
+        #expect(frames == [.size(cols: 97, rows: 56)])
+    }
+
+    @Test func testTranscriptStreamSplitsLines() async throws {
+        let stream = TranscriptChannel(id: 2) { _ in }
+        let bytes =
+            Data(#"{"seq":1,"kind":"user","text":"hi"}"#.utf8) + Data([10])
+            + Data(#"{"seq":40,"kind":"assistant","text":"hello"}"#.utf8) + Data([10])
+        // Three D frames, the second item split in its middle.
+        for chunk in [bytes[0..<10], bytes[10..<50], bytes[50...]] { stream.receive(Data(chunk)) }
+        stream.end(.closed)
+        var items: [TranscriptItem] = []
+        for await item in stream.items { items.append(item) }
+        #expect(items == [TranscriptItem(seq: 1, kind: .user, text: "hi"), TranscriptItem(seq: 40, kind: .assistant, text: "hello")])
+    }
+
+    @Test func testTranscriptOverlongLineEndsStream() async throws {
+        let closed = Mutex([UInt32]())
+        let stream = TranscriptChannel(id: 2) { id in closed.withLock { $0.append(id) } }
+        let long = Data(repeating: 0x61, count: TranscriptChannel.maxLine / 2)
+        // A line twice over the bound, in three frames, then a good one.
+        stream.receive(Data(#"{"seq":1,"kind":"user","text":""#.utf8) + long)
+        stream.receive(long + long)
+        stream.receive(Data(#""}"#.utf8) + Data([10]) + Data(#"{"seq":2,"kind":"user","text":"ok"}"#.utf8) + Data([10]))
+        #expect(stream.ended == .oversized)
+        #expect(closed.withLock { $0 } == [2])
+        var items: [TranscriptItem] = []
+        for await item in stream.items { items.append(item) }
+        #expect(items.isEmpty)
+    }
+
+    @Test func testTranscriptQueueOverflowClosesBeforeDroppingAnItem() async throws {
+        let closed = Mutex([UInt32]())
+        let stream = TranscriptChannel(id: 7) { id in closed.withLock { $0.append(id) } }
+        let max = TranscriptChannel.maxQueuedItems
+        for seq in 1...(max + 1) {
+            stream.receive(Data("{\"seq\":\(seq),\"kind\":\"user\",\"text\":\"message\"}\n".utf8))
+        }
+        #expect(stream.ended == .overflow)
+        #expect(closed.withLock { $0 } == [7])
+        var items: [TranscriptItem] = []
+        for await item in stream.items { items.append(item) }
+        #expect(items.map(\.seq) == Array(1...max).map(Int64.init))
+
+        let resumed = TranscriptChannel(id: 8) { id in closed.withLock { $0.append(id) } }
+        for seq in max...(max + 4) {
+            resumed.receive(Data("{\"seq\":\(seq),\"kind\":\"user\",\"text\":\"message\"}\n".utf8))
+        }
+        resumed.close()
+        for await item in resumed.items { items.append(item) }
+        let log = TranscriptLog(items)
+        #expect(log.items.map(\.seq) == Array(1...(max + 4)).map(Int64.init))
+    }
+
+    /// hesperd sends the newest page at open, one frame per item, then a
+    /// backlog in batches of up to 64 lines, before the reader takes any.
+    @Test func testTranscriptBackfillArrivesWhole() async throws {
+        let stream = TranscriptChannel(id: 3) { _ in }
+        for seq in 1...(200 + 64) {
+            stream.receive(Data("{\"seq\":\(seq),\"kind\":\"assistant\",\"text\":\"line\"}\n".utf8))
+        }
+        #expect(stream.ended == nil)
+        stream.close()
+        var items: [TranscriptItem] = []
+        for await item in stream.items { items.append(item) }
+        #expect(items.count == 264)
+    }
+
+    /// Large items are bounded by bytes too; taking them frees room.
+    @Test func testTranscriptQueueIsBoundedByBytes() async throws {
+        let stream = TranscriptChannel(id: 5) { _ in }
+        let text = String(repeating: "x", count: 900 << 10)
+        func line(_ seq: Int) -> Data { Data("{\"seq\":\(seq),\"kind\":\"user\",\"text\":\"\(text)\"}\n".utf8) }
+        for seq in 1...4 { stream.receive(line(seq)) }
+        #expect(stream.ended == nil)
+        var it = stream.items.makeAsyncIterator()
+        #expect(await it.next()?.seq == 1)
+        stream.receive(line(5))
+        #expect(stream.ended == nil)
+        stream.receive(line(6))
+        #expect(stream.ended == .overflow)
+        stream.close()  // already ended when bounded; keeps the drain finite
+        var rest: [Int64] = []
+        while let item = await it.next() { rest.append(item.seq) }
+        #expect(rest == [2, 3, 4, 5])
+    }
+
+    /// A line split over many frames is joined once, not copied per frame.
+    @Test func testTranscriptLineOverManyFrames() async throws {
+        let stream = TranscriptChannel(id: 4) { _ in }
+        let line = Data(#"{"seq":5,"kind":"user","text":"\#(String(repeating: "x", count: 10_000))"}"#.utf8) + Data([10])
+        for i in stride(from: 0, to: line.count, by: 7) { stream.receive(line[i..<min(i + 7, line.count)]) }
+        stream.receive(Data(#"{"seq":6,"kind":"user","text":"b"}"#.utf8) + Data([10, 10]))
+        stream.close()
+        var items: [TranscriptItem] = []
+        for await item in stream.items { items.append(item) }
+        #expect(items.map(\.seq) == [5, 6] && items[0].text?.count == 10_000)
     }
 
     @Test func inputFrameBytes() {

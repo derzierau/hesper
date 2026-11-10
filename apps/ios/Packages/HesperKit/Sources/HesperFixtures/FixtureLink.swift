@@ -19,7 +19,8 @@ public final class FixtureLink: LinkClient {
     private let initial: [LinkUpdate]
     private let terminalTick: Duration
 
-    /// `terminalTick`: how often a watched terminal prints a new line.
+    /// `terminalTick`: how often a watched terminal prints a new line and
+    /// an open transcript stream gets a new item.
     public init(updates: [LinkUpdate] = Samples.initialUpdates(), terminalTick: Duration = .seconds(2)) {
         initial = updates
         self.terminalTick = terminalTick
@@ -94,8 +95,11 @@ public final class FixtureLink: LinkClient {
     /// tick until closed. A mirror gets the Mac's size; an owner attach
     /// sizes the terminal as hesperd does: its grid and every RESIZE come
     /// back as `.size`, and the agent names the phone as its size owner
-    /// until it lets go. Typing has no PTY here: `write` is dropped.
-    public func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) async throws -> any AttachStream {
+    /// until it lets go. Typing has no PTY here: `write` is dropped. A
+    /// view plays as a mirror.
+    public func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool, view: Bool) async throws
+        -> any AttachStream
+    {
         guard state.withLock({ $0.agents[agent] != nil }) else { throw FixtureError.unknownAgent(agent) }
         guard owner, sizing(on: String(agent.split(separator: "/").first ?? ""))?.canOwn == true else {
             return ScriptedTerminal(tick: terminalTick)
@@ -104,6 +108,52 @@ public final class FixtureLink: LinkClient {
         return ScriptedTerminal(tick: terminalTick, grid: GridSize(cols: cols, rows: rows)) { [weak self] in
             self?.setSizeOwner(agent, nil)
         }
+    }
+
+    /// Any sample agent's transcript (`Samples.transcript`), a page at a
+    /// time, newest first.
+    public func transcript(agent: String, before: Int64?, limit: Int) async throws -> TranscriptPage {
+        guard state.withLock({ $0.agents[agent] != nil }) else { throw FixtureError.unknownAgent(agent) }
+        let older = Samples.transcript.filter { item in before.map { item.seq < $0 } ?? true }
+        let page = older.suffix(max(limit, 0))
+        return TranscriptPage(items: Array(page), more: page.count < older.count)
+    }
+
+    public func transcriptText(agent: String, seq: Int64, offset: Int, limit: Int) async throws -> TranscriptTextChunk {
+        guard state.withLock({ $0.agents[agent] != nil }) else { throw FixtureError.unknownAgent(agent) }
+        guard let item = Samples.transcript.first(where: { $0.seq == seq && ($0.kind == .user || $0.kind == .assistant) }),
+            let text = item.text
+        else { throw FixtureError.unknownTranscriptItem(seq) }
+        let bytes = Array(text.utf8)
+        guard offset >= 0, offset <= bytes.count, String(bytes: bytes[..<offset], encoding: .utf8) != nil else {
+            throw FixtureError.invalidTranscriptOffset(offset)
+        }
+        var end = min(offset + min(max(limit, 4), 65_536), bytes.count)
+        while end > offset, String(bytes: bytes[offset..<end], encoding: .utf8) == nil { end -= 1 }
+        return TranscriptTextChunk(text: String(decoding: bytes[offset..<end], as: UTF8.self), next: end, more: end < bytes.count)
+    }
+
+    /// Any sample agent's transcript as it grows: the sample items after
+    /// `after` (the newest `limit` without it, the next `limit` with it),
+    /// then a new item every `terminalTick` until closed.
+    public func transcriptStream(agent: String, after: Int64?, limit: Int) async throws -> any TranscriptStream {
+        guard state.withLock({ $0.agents[agent] != nil }) else { throw FixtureError.unknownAgent(agent) }
+        let backfill: ArraySlice<TranscriptItem>
+        if let after {
+            backfill = Samples.transcript.filter { $0.seq > after }.prefix(max(limit, 0))
+        } else {
+            backfill = Samples.transcript.suffix(max(limit, 0))
+        }
+        return ScriptedTranscript(backfill: Array(backfill), tick: terminalTick)
+    }
+
+    /// Any sample agent's screen: the terminal script as plain text.
+    public func screen(agent: String, rows: Int, scrollback: Int) async throws -> ScreenText {
+        guard state.withLock({ $0.agents[agent] != nil }) else { throw FixtureError.unknownAgent(agent) }
+        let script = String(decoding: Samples.terminalScript, as: UTF8.self)
+        return ScreenText(
+            text: script.replacing(#/\u{1b}\[[0-9;?]*[A-Za-z]/#, with: ""), rows: 40, cols: Samples.terminalSize.cols,
+            alt: false)
     }
 
     public func sizing(on machine: String) -> HostSizing? {
@@ -184,13 +234,43 @@ final class ScriptedTerminal: AttachStream {
     func close() { player.cancel() }
 }
 
+/// A scripted transcript stream: the backfill, then
+/// `Samples.transcriptItem(n)` every tick.
+final class ScriptedTranscript: TranscriptStream {
+    let items: AsyncStream<TranscriptItem>
+    // The script ends only when the phone closes it.
+    var ended: TranscriptEnd? { player.isCancelled ? .closed : nil }
+    private let player: Task<Void, Never>
+
+    init(backfill: [TranscriptItem], tick: Duration) {
+        let (stream, continuation) = AsyncStream.makeStream(of: TranscriptItem.self)
+        items = stream
+        player = Task {
+            for item in backfill { continuation.yield(item) }
+            var n = 1
+            while (try? await Task.sleep(for: tick)) != nil {
+                continuation.yield(Samples.transcriptItem(n))
+                n += 1
+            }
+            continuation.finish()
+        }
+        continuation.onTermination = { [player] _ in player.cancel() }
+    }
+
+    func close() { player.cancel() }
+}
+
 public enum FixtureError: Error, Equatable, CustomStringConvertible {
     case unknownAgent(String)
     case unknownDraft(String, machine: String)
+    case unknownTranscriptItem(Int64)
+    case invalidTranscriptOffset(Int)
     public var description: String {
         switch self {
         case .unknownAgent(let id): "No agent \(id) on the sample Macs."
         case .unknownDraft(let id, let machine): "No draft \(id) on \(machine)."
+        case .unknownTranscriptItem(let seq): "No sample message at \(seq)."
+        case .invalidTranscriptOffset(let offset): "Invalid sample message byte offset \(offset)."
         }
     }
 }

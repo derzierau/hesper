@@ -170,6 +170,27 @@ final class FakeHost: Sendable {
             if reply.contains(#""ok":true"#) { bytes += AttachTests.inner(0, Data("hi".utf8)) }
             push(kind: UInt8(ascii: "D"), channel: ch, bytes, on: stream)
             return ["id": o["id"]!, "result": [String: Any]()]
+        case "agents.transcriptText":
+            return ["id": o["id"]!, "result": ["text": "é", "next": 2, "more": true]]
+        case "agents.transcriptStream":
+            guard let stream = params["link"] as? String, state.withLock({ $0.links[stream] != nil }),
+                let ch = (params["ch"] as? NSNumber)?.uint32Value, ch > 0
+            else { return ["id": o["id"]!, "error": ["code": "not_found", "message": "No such link"]] }
+            // As hesperd for a reconnect whose `after` is past the end or
+            // too far behind: the restart marker, then the newest items.
+            var lines = ""
+            if params["after"] != nil { lines += #"{"seq":-1,"kind":"system","text":"Transcript restarted"}"# + "\n" }
+            lines += #"{"seq":10,"at":1762600000123,"kind":"user","text":"new"}"# + "\n"
+            lines += #"{"seq":42,"kind":"assistant","text":"reply"}"# + "\n"
+            push(kind: UInt8(ascii: "D"), channel: ch, Data(lines.utf8), on: stream)
+            return ["id": o["id"]!, "result": [String: Any]()]
+        case "agents.screen":
+            // As hesperd's wire.ScreenResult: `alt` is omitted when false
+            // and `cursor` is sent while the cursor shows.
+            return [
+                "id": o["id"]!,
+                "result": ["text": "$ ls\nREADME.md\n$", "rows": 24, "cols": 80, "cursor": ["col": 2, "row": 1]],
+            ]
         case "drafts.list":
             return ["id": o["id"]!, "result": [[String: Any]]()]
         case "drafts.save":

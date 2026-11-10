@@ -41,6 +41,8 @@ public actor HostChannel {
     private var queues: [UInt32: OutboundQueue] = [:]
     /// Drain tasks still running (for tests: each ends with its attach).
     private(set) var drains = 0
+    /// Open transcript streams by channel, numbered with the attaches.
+    private var transcripts: [UInt32: TranscriptChannel] = [:]
     private var lastChannel: UInt32 = 0
 
     public init(relay: RelayConnection, machine: String, hostKey: Data, me: ControllerIdentity) {
@@ -165,8 +167,8 @@ extension HostChannel {
 
     /// Opens the link (`agents.link`) and reads it until the stream ends;
     /// throws when it breaks. Channel 0's events go to `yield`, `D` frames
-    /// to the attach on their channel, `X` ends it; other frames are
-    /// dropped. Open attaches end when the link does.
+    /// to the attach or transcript stream on their channel, `X` ends it;
+    /// other frames are dropped. Open attaches end when the link does.
     func link(_ yield: @Sendable (LinkEvent) -> Void) async throws {
         let ticket = try JSONSerialization.jsonObject(with: try await call("agents.link")) as? [String: Any]
         guard let id = ticket?["id"] as? String, let secret = (ticket?["e2e"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
@@ -191,10 +193,11 @@ extension HostChannel {
                 case (Self.kindEvent, 0):
                     if let event = try? LinkEvent.decode(f.payload) { yield(event) }
                 case (Self.kindData, let ch) where ch > 0:
-                    attaches[ch]?.receive(f.payload)
+                    if let a = attaches[ch] { a.receive(f.payload) } else { transcripts[ch]?.receive(f.payload) }
                 case (Self.kindClose, let ch) where ch > 0:
                     attaches.removeValue(forKey: ch)?.end(RelayError(code: "closed", message: "The Mac closed the terminal"))
                     queues.removeValue(forKey: ch)?.finish()
+                    transcripts.removeValue(forKey: ch)?.end(.closedByMac)
                 default:
                     continue
                 }
@@ -216,14 +219,18 @@ extension HostChannel {
         attaches = [:]
         for q in queues.values { q.finish() }
         queues = [:]
+        for t in transcripts.values { t.end(.linkLost) }
+        transcripts = [:]
     }
 
     /// Opens an attach of `agent` at `cols`x`rows` on a new channel of the
     /// link, waiting up to `wait` for the link to be up: read only,
-    /// read-write, or as the size owner (`attachParams`). Returns once the Mac's reply line
-    /// said ok; throws its error otherwise, `timeout` when no reply came.
+    /// read-write, as the size owner, or as a view at its own grid
+    /// (`attachParams`). Returns once the Mac's reply line said ok;
+    /// throws its error otherwise, `timeout` when no reply came.
     public func attach(
-        agent: String, cols: Int, rows: Int, typing: Bool = false, owner: Bool = false, wait: Duration = .seconds(10)
+        agent: String, cols: Int, rows: Int, typing: Bool = false, owner: Bool = false, view: Bool = false,
+        wait: Duration = .seconds(10)
     ) async throws -> AttachChannel {
         let clock = ContinuousClock()
         let deadline = clock.now + wait
@@ -238,7 +245,8 @@ extension HostChannel {
         let ch = lastChannel + 1
         // Built before anything changes, the channel number included: a
         // throw leaves nothing behind.
-        let params = try Self.attachParams(link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, typing: typing, owner: owner)
+        let params = try Self.attachParams(
+            link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, typing: typing, owner: owner, view: view)
         lastChannel = ch
         // One queue per attach, drained by one task: typed bytes, resizes
         // and the close reach the Mac in the order the phone made them.
@@ -316,14 +324,82 @@ extension HostChannel {
         }
     }
 
+    /// The open link and a new channel number on it, waiting up to `wait`
+    /// for the link to be up. Transcript streams only: an attach takes its
+    /// number once its params are built (`attach`).
+    private func nextChannel(wait: Duration) async throws -> (OpenLink, UInt32) {
+        let clock = ContinuousClock()
+        let deadline = clock.now + wait
+        // Polled: the link comes back on its own retry loop (LiveLink).
+        while openLink == nil {
+            guard clock.now < deadline else { throw RelayError(code: "unavailable", message: "The Mac is not linked") }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        guard let link = openLink, lastChannel < UInt32.max else {
+            throw RelayError(code: "unavailable", message: "The Mac is not linked")
+        }
+        lastChannel += 1
+        return (link, lastChannel)
+    }
+
+    /// Streams `agent`'s transcript on a new channel of the link
+    /// (`agents.transcriptStream`): the items after `after`, at most
+    /// `limit` of them first, then each new one, until `close()`.
+    public func transcriptStream(agent: String, after: Int64?, limit: Int, wait: Duration = .seconds(10)) async throws
+        -> TranscriptChannel
+    {
+        let link: OpenLink
+        let ch: UInt32
+        do {
+            (link, ch) = try await nextChannel(wait: wait)
+        } catch let e as RelayError {
+            // The link is down, not the transcript: `unavailable` is left
+            // for the daemon's answer (no transcript file yet), which the
+            // view asks again at a slower pace (`TranscriptFollow`).
+            throw RelayError(code: "link_lost", message: e.message)
+        }
+        let stream = TranscriptChannel(id: ch) { [weak self] id in
+            Task { await self?.closed(id, link: link.id) }
+        }
+        // Registered before the call: the first items may beat its answer.
+        transcripts[ch] = stream
+        var params: [String: Any] = ["link": link.id, "ch": Int(ch), "id": agent, "limit": limit]
+        if let after { params["after"] = after }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: params, options: .sortedKeys)
+            _ = try await call("agents.transcriptStream", params: data)
+        } catch {
+            // Thrown or cancelled after the channel was registered: the
+            // Mac may have opened it, so `X` tells it to stop sending.
+            stream.end(.closed)
+            await closed(ch, link: link.id)
+            throw error
+        }
+        return stream
+    }
+
+    /// The phone closed a transcript stream: `X` on its channel, if its
+    /// link is still the open one. An attach's close goes through its
+    /// queue (`flush`).
+    private func closed(_ ch: UInt32, link: String) async {
+        guard transcripts.removeValue(forKey: ch) != nil, openLink?.id == link else { return }
+        try? await send(frame: LinkFrames.Frame(kind: Self.kindClose, channel: ch, payload: Data()))
+    }
+
     /// `agents.attach`'s params (relay/docs/protocol.md, "Links"): the
     /// local attach request, its mode repeated for the rights table. A
     /// typing attach is `rw` (right `type`), any other `ro`; the size
-    /// owner (always typing) makes the PTY take `cols`x`rows`. All replay
-    /// the history first.
-    static func attachParams(link: String, ch: UInt32, agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) throws -> Data {
-        let mode = typing || owner ? "rw" : "ro"
-        let request: [String: Any] = ["attach": agent, "mode": mode, "cols": cols, "rows": rows, "owner": owner, "history": true]
+    /// owner (always typing) makes the PTY take `cols`x`rows`. Mirrors
+    /// replay the history first; a view gets its own `cols`x`rows` grid
+    /// of the screen instead, with no history and no owner.
+    static func attachParams(
+        link: String, ch: UInt32, agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool, view: Bool = false
+    ) throws -> Data {
+        let mode = typing || (owner && !view) ? "rw" : "ro"
+        let request: [String: Any] =
+            view
+            ? ["attach": agent, "mode": mode, "cols": cols, "rows": rows, "view": ["rows": rows, "cols": cols]]
+            : ["attach": agent, "mode": mode, "cols": cols, "rows": rows, "owner": owner, "history": true]
         return try JSONSerialization.data(
             withJSONObject: ["link": link, "ch": Int(ch), "mode": mode, "request": request] as [String: Any], options: .sortedKeys)
     }

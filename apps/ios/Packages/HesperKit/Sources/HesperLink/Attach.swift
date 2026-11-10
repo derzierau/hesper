@@ -1,23 +1,37 @@
 import Foundation
+import HesperCore
 import HesperFleet
 import Synchronization
 
 /// The host's answer line on an attach channel (Go's wire.AttachReply):
-/// ok with the PTY's size, or an error.
+/// ok with the PTY's size (and a view's own grid), or an error.
 public struct AttachReply: Equatable, Sendable, Decodable {
+    /// A view's grid, echoed from the request.
+    public struct View: Equatable, Sendable, Decodable {
+        public var rows: Int
+        public var cols: Int
+
+        public init(rows: Int, cols: Int) {
+            self.rows = rows
+            self.cols = cols
+        }
+    }
+
     public var ok: Bool
     public var cols: Int?
     public var rows: Int?
+    public var view: View?
     public var error: RelayError?
 
-    public init(ok: Bool, cols: Int? = nil, rows: Int? = nil, error: RelayError? = nil) {
+    public init(ok: Bool, cols: Int? = nil, rows: Int? = nil, view: View? = nil, error: RelayError? = nil) {
         self.ok = ok
         self.cols = cols
         self.rows = rows
+        self.view = view
         self.error = error
     }
 
-    enum CodingKeys: String, CodingKey { case ok, cols, rows, error }
+    enum CodingKeys: String, CodingKey { case ok, cols, rows, view, error }
     struct Failure: Decodable {
         var code: String?
         var message: String?
@@ -28,6 +42,7 @@ public struct AttachReply: Equatable, Sendable, Decodable {
         ok = try c.decodeIfPresent(Bool.self, forKey: .ok) ?? false
         cols = try c.decodeIfPresent(Int.self, forKey: .cols)
         rows = try c.decodeIfPresent(Int.self, forKey: .rows)
+        view = try c.decodeIfPresent(View.self, forKey: .view)
         // hesperd sends {code, message}; a bare string is taken as the code.
         if let f = try? c.decodeIfPresent(Failure.self, forKey: .error) {
             error = RelayError(code: f.code ?? "", message: f.message ?? "")
@@ -112,6 +127,13 @@ public struct AttachDecoder: Sendable {
         return Data([0, UInt8(n >> 24), UInt8(n >> 16 & 0xff), UInt8(n >> 8 & 0xff), UInt8(n & 0xff)]) + bytes
     }
 
+    /// A scroll frame's JSON (wire.ScrollState).
+    private struct Scroll: Decodable {
+        var offset: Int
+        var max: Int
+        var new: Int
+    }
+
     /// One frame; nil for RESIZE (it only goes to the Mac) and unknown types.
     static func frame(type: UInt8, _ payload: Data) throws -> AttachFrame? {
         switch type {
@@ -121,7 +143,11 @@ public struct AttachDecoder: Sendable {
             let b = [UInt8](payload)
             return .size(cols: Int(b[0]) << 8 | Int(b[1]), rows: Int(b[2]) << 8 | Int(b[3]))
         case 3: return .exit
-        case 4: return .scroll
+        case 4:
+            guard let s = try? JSONDecoder().decode(Scroll.self, from: payload) else {
+                throw RelayError(code: "integrity", message: "Invalid scroll frame")
+            }
+            return .scroll(ScrollState(offset: s.offset, max: s.max, new: s.new))
         default: return nil
         }
     }
@@ -225,7 +251,11 @@ public final class AttachChannel: AttachStream {
             close(e)
         case .success(let (reply, frames)):
             if let reply {
-                if reply.ok, let cols = reply.cols, let rows = reply.rows, cols > 0, rows > 0 {
+                // A view's bytes are drawn at its own grid, echoed in the
+                // reply; anyone else's at the PTY's.
+                let cols = reply.view?.cols ?? reply.cols
+                let rows = reply.view?.rows ?? reply.rows
+                if reply.ok, let cols, let rows, cols > 0, rows > 0 {
                     guard enqueue(.size(cols: cols, rows: rows)) else { return }
                 }
                 resolve(.success(reply))
@@ -356,4 +386,142 @@ public final class AttachChannel: AttachStream {
         guard !data.isEmpty, !state.withLock({ $0.ended }) else { return }
         if !onWrite(id, data) { close(Self.inputOverflow) }
     }
+}
+
+/// One transcript stream on a channel of a host's link
+/// (`agents.transcriptStream`): its `D` frames carry newline-delimited
+/// JSON items, split anywhere. `close()` sends `X` and ends the stream.
+public final class TranscriptChannel: TranscriptStream {
+    /// A line's bound is the wire frame limit. A longer item ends the
+    /// stream so the phone cannot silently skip it.
+    static let maxLine = 1 << 20
+    /// Items the reader has not taken yet. hesperd writes the newest
+    /// page (200) at open and a backlog in batches of up to 64 lines,
+    /// faster than the main actor lays rows out; more than that ends the
+    /// stream with `.overflow`, and the store reopens after the last item
+    /// it holds.
+    static let maxQueuedItems = 1024
+    /// And at most this many bytes of item JSON, as the attach's bound:
+    /// an item may be up to `maxLine`.
+    static let maxQueuedBytes = 4 << 20
+    public let id: UInt32
+    public let items: AsyncStream<TranscriptItem>
+    private let continuation: AsyncStream<(TranscriptItem, Int)>.Continuation
+    private let queue: Queue
+    private let onClose: @Sendable (UInt32) -> Void
+
+    private struct State {
+        var buffer = Data()
+        var ended: TranscriptEnd?
+    }
+    private let state = Mutex(State())
+
+    public var ended: TranscriptEnd? { state.withLock { $0.ended } }
+
+    init(id: UInt32, onClose: @escaping @Sendable (UInt32) -> Void) {
+        self.id = id
+        self.onClose = onClose
+        let (inner, continuation) = AsyncStream.makeStream(
+            of: (TranscriptItem, Int).self, bufferingPolicy: .bufferingOldest(Self.maxQueuedItems))
+        let queue = Queue(inner.makeAsyncIterator())
+        self.continuation = continuation
+        self.queue = queue
+        // Each item taken gives its bytes back to the bound.
+        items = AsyncStream { await queue.next() }
+    }
+
+    /// The items not taken yet and their bytes.
+    private final class Queue: @unchecked Sendable {
+        // Safe: `bytes` and `reading` are Mutexes. `iterator` is touched
+        // only inside `next()`, and `reading` traps a second `next()` that
+        // starts before the first returned, so no two calls overlap (two
+        // readers of `items` at once trap here instead of racing), as the
+        // terminal attach's queue does.
+        private var iterator: AsyncStream<(TranscriptItem, Int)>.Iterator
+        let bytes = Mutex(0)
+        private let reading = Mutex(false)
+
+        init(_ iterator: AsyncStream<(TranscriptItem, Int)>.Iterator) { self.iterator = iterator }
+
+        func next() async -> TranscriptItem? {
+            let alone = reading.withLock { r in
+                defer { r = true }
+                return !r
+            }
+            precondition(alone, "A transcript stream's items have one reader at a time")
+            defer { reading.withLock { $0 = false } }
+            guard let (item, n) = await iterator.next(isolation: nil) else { return nil }
+            bytes.withLock { $0 -= n }
+            return item
+        }
+    }
+
+    /// The payload of one `D` frame for this channel. A line that does
+    /// not decode is skipped (a newer daemon's); an oversized line ends
+    /// the stream before any later item can pass it.
+    func receive(_ payload: Data) {
+        let (lines, oversized) = state.withLock { s -> ([Data], Bool) in
+            guard s.ended == nil else { return ([], false) }
+            // Only the new bytes are searched, and the consumed head is
+            // dropped once, so a line over many frames is not re-copied.
+            var searchFrom = s.buffer.endIndex
+            s.buffer += payload
+            var start = s.buffer.startIndex
+            var lines: [Data] = []
+            while let nl = s.buffer[searchFrom...].firstIndex(of: 10) {
+                if nl - start > Self.maxLine {
+                    s.buffer = Data()
+                    return (lines, true)
+                }
+                lines.append(Data(s.buffer[start..<nl]))
+                start = nl + 1
+                searchFrom = start
+            }
+            s.buffer.removeSubrange(s.buffer.startIndex..<start)
+            if s.buffer.count > Self.maxLine {
+                s.buffer = Data()
+                return (lines, true)
+            }
+            return (lines, false)
+        }
+        for line in lines where !line.isEmpty {
+            if let item = try? JSONDecoder().decode(TranscriptItem.self, from: line) {
+                let fits = queue.bytes.withLock { b in
+                    guard b + line.count <= Self.maxQueuedBytes else { return false }
+                    b += line.count
+                    return true
+                }
+                guard fits else {
+                    close(reason: .overflow)
+                    return
+                }
+                let result = continuation.yield((item, line.count))
+                if case .enqueued = result { continue }
+                // Not queued: its bytes were never taken, so give them back.
+                queue.bytes.withLock { $0 -= line.count }
+                if case .dropped = result { close(reason: .overflow) }
+                return
+            }
+        }
+        if oversized { close(reason: .oversized) }
+    }
+
+    /// Ends the stream without telling the host (it closed the channel,
+    /// or the link is gone); `ended` says which. True the first time.
+    @discardableResult func end(_ reason: TranscriptEnd) -> Bool {
+        let first = state.withLock { s in
+            guard s.ended == nil else { return false }
+            s.ended = reason
+            return true
+        }
+        guard first else { return false }
+        continuation.finish()
+        return true
+    }
+
+    private func close(reason: TranscriptEnd) {
+        if end(reason) { onClose(id) }
+    }
+
+    public func close() { close(reason: .closed) }
 }

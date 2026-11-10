@@ -14,6 +14,9 @@ public final class FleetModel {
     public private(set) var pending: Set<String> = []
     /// The last command that failed, for one alert.
     public var failure: String?
+    /// Agents shown as the raw terminal (the agent view's menu), for the
+    /// app's run: leaving the agent and coming back keeps the choice.
+    public var rawTerminal: Set<String> = []
 
     private let link: any LinkClient
     private var task: Task<Void, Never>?
@@ -124,6 +127,39 @@ public final class FleetModel {
 
     /// This phone's controller id on `machine`, as `Agent.sizeOwner` names it.
     public func device(on machine: String) -> String? { link.sizing(on: machine)?.device }
+
+    /// How `machine` sizes and types for this phone; nil when it has not said.
+    public func sizing(on machine: String) -> HostSizing? { link.sizing(on: machine) }
+
+    /// Watches `agent`'s terminal as a view (`attach` with `view`): it
+    /// never takes part in sizing, and types when `typing`. Throws when the
+    /// Mac refused it or is not linked.
+    public func attachView(_ agent: Agent, size: GridSize, typing: Bool) async throws -> any AttachStream {
+        try await link.attach(agent: agent.id, cols: size.cols, rows: size.rows, typing: typing, owner: false, view: true)
+    }
+
+    /// The `limit` transcript items of `agent` before `before` (nil: the
+    /// end), oldest first.
+    public func transcript(_ agent: Agent, before: Int64?, limit: Int) async throws -> TranscriptPage {
+        try await link.transcript(agent: agent.id, before: before, limit: limit)
+    }
+
+    /// One bounded part of a user or assistant message, starting at a
+    /// UTF-8 byte offset.
+    public func transcriptText(_ agent: Agent, seq: Int64, offset: Int, limit: Int) async throws -> TranscriptTextChunk {
+        try await link.transcriptText(agent: agent.id, seq: seq, offset: offset, limit: limit)
+    }
+
+    /// `agent`'s transcript as it grows: the items after `after` (nil: the
+    /// newest `limit`), then every new one.
+    public func transcriptStream(_ agent: Agent, after: Int64?, limit: Int) async throws -> any TranscriptStream {
+        try await link.transcriptStream(agent: agent.id, after: after, limit: limit)
+    }
+
+    /// `agent`'s screen as plain text, with up to `scrollback` lines above it.
+    public func screen(_ agent: Agent, rows: Int, scrollback: Int) async throws -> ScreenText {
+        try await link.screen(agent: agent.id, rows: rows, scrollback: scrollback)
+    }
 
     /// Attaches by `plan`. An owner attach the Mac refuses for lack of the
     /// right or support (`AttachPlan.retriesAsMirror`) is made again as a

@@ -171,7 +171,15 @@ public final class LiveLink: LinkClient {
     /// it waits (up to 10 s) for the Mac's channel; an attach open when a
     /// link breaks ends (its frames finish without `.exit`) and the caller
     /// attaches again, which waits for the relink.
-    public func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) async throws -> any AttachStream {
+    public func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool, view: Bool) async throws
+        -> any AttachStream
+    {
+        try await linked(agent).attach(agent: agent, cols: cols, rows: rows, typing: typing, owner: owner, view: view, wait: .zero)
+    }
+
+    /// The channel of the agent's Mac once its link is up, waiting up to
+    /// 10 s while the relay reconnects.
+    private func linked(_ agent: String) async throws -> HostChannel {
         let machine = String(agent.split(separator: "/").first ?? "")
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(10)
@@ -183,11 +191,57 @@ public final class LiveLink: LinkClient {
             guard found.known else { throw RelayError(code: "unavailable", message: "\(machine) is not connected") }
             // A channel of the previous relay connection may linger until
             // `follow` clears it: only one whose link is up will do.
-            if let channel = found.channel, await channel.linked {
-                return try await channel.attach(agent: agent, cols: cols, rows: rows, typing: typing, owner: owner, wait: .zero)
-            }
+            if let channel = found.channel, await channel.linked { return channel }
             guard clock.now < deadline else { throw RelayError(code: "unavailable", message: "\(machine) is not connected") }
             try await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    public func transcript(agent: String, before: Int64?, limit: Int) async throws -> TranscriptPage {
+        var params: [String: JSONValue] = ["id": .string(agent), "limit": .number(Double(limit))]
+        if let before { params["before"] = .number(Double(before)) }
+        return try await read(agent, "agents.transcript", params, as: TranscriptPage.self)
+    }
+
+    public func transcriptText(agent: String, seq: Int64, offset: Int, limit: Int) async throws -> TranscriptTextChunk {
+        let params: [String: JSONValue] = [
+            "id": .string(agent), "seq": .number(Double(seq)),
+            "offset": .number(Double(offset)), "limit": .number(Double(limit)),
+        ]
+        return try await read(agent, "agents.transcriptText", params, as: TranscriptTextChunk.self)
+    }
+
+    /// Like `attach`, it waits for the Mac's link; the stream ends when
+    /// the link breaks and the caller asks again after its last item.
+    public func transcriptStream(agent: String, after: Int64?, limit: Int) async throws -> any TranscriptStream {
+        let channel: HostChannel
+        do {
+            channel = try await linked(agent)
+        } catch let e as RelayError where e.code == "unavailable" {
+            // The Mac is not connected: a link failure, apart from the
+            // daemon's `unavailable` (see `HostChannel.transcriptStream`).
+            throw RelayError(code: "link_lost", message: e.message)
+        }
+        return try await channel.transcriptStream(agent: agent, after: after, limit: limit, wait: .zero)
+    }
+
+    public func screen(agent: String, rows: Int, scrollback: Int) async throws -> ScreenText {
+        let params: [String: JSONValue] = [
+            "id": .string(agent), "rows": .number(Double(rows)), "scrollback": .number(Double(scrollback)),
+        ]
+        return try await read(agent, "agents.screen", params, as: ScreenText.self)
+    }
+
+    /// One read on the agent's Mac, its result decoded.
+    private func read<T: Decodable>(_ agent: String, _ method: String, _ params: [String: JSONValue], as: T.Type) async throws -> T {
+        let machine = String(agent.split(separator: "/").first ?? "")
+        let channel = state.withLock { s in s.ids[machine].flatMap { s.channels[$0] } }
+        guard let channel else { throw RelayError(code: "unavailable", message: "\(machine) is not connected") }
+        let result = try await channel.call(method, params: try JSONEncoder().encode(JSONValue.object(params)))
+        do {
+            return try JSONDecoder().decode(T.self, from: result)
+        } catch {
+            throw RelayError(code: "integrity", message: "Invalid \(method) answer")
         }
     }
 

@@ -96,6 +96,7 @@ import Testing
         #expect(host.params("agents.answer")?["decision"] as? String == "allow")
         try await link.perform(.reply(agent: "M/a1", text: "go <on>"))
         #expect(host.params("agents.input")?["text"] as? String == "go <on>")
+        #expect(host.params("agents.input")?["paste"] as? Bool == true)
         #expect(host.params("agents.input")?["submit"] as? Bool == true)
         let draft = Draft(id: "d1", text: "later")
         try await link.perform(.saveDraft(draft, machine: "M"))

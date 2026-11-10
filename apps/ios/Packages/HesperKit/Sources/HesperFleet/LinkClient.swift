@@ -61,8 +61,25 @@ public protocol LinkClient: Sendable {
     /// the size owner, so the PTY takes this grid (`AttachPlan`). Throws
     /// when the Mac refused it or is not linked. The stream ends without
     /// `.exit` when the link broke: show "Reconnecting…" and attach again
-    /// (it waits for the relink).
-    func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) async throws -> any AttachStream
+    /// (it waits for the relink). A view (`view` true) asks for a
+    /// `cols`×`rows` window onto the terminal that the phone scrolls
+    /// itself (`.scroll` frames say where it is); read-write when
+    /// `typing`.
+    func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool, view: Bool) async throws
+        -> any AttachStream
+
+    /// A page of the agent's transcript, oldest first: up to `limit` items
+    /// before `before` (a `seq`), the newest when nil.
+    func transcript(agent: String, before: Int64?, limit: Int) async throws -> TranscriptPage
+    /// A bounded UTF-8 part of one user or assistant message.
+    func transcriptText(agent: String, seq: Int64, offset: Int, limit: Int) async throws -> TranscriptTextChunk
+    /// The agent's transcript as it grows: the items after `after` (at
+    /// most `limit` of them first), then each new one.
+    func transcriptStream(agent: String, after: Int64?, limit: Int) async throws -> any TranscriptStream
+    /// The agent's terminal as plain text (`agents.screen`): the screen at
+    /// `rows` and up to `scrollback` rows above it. A shell agent's
+    /// history, which has no transcript.
+    func screen(agent: String, rows: Int, scrollback: Int) async throws -> ScreenText
 
     /// What `machine` lets this phone do with a terminal's size; nil when
     /// the Mac is not known (yet).
@@ -70,6 +87,11 @@ public protocol LinkClient: Sendable {
 }
 
 extension LinkClient {
+    /// A mirror or fitted attach, not a view.
+    public func attach(agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool) async throws -> any AttachStream {
+        try await attach(agent: agent, cols: cols, rows: rows, typing: typing, owner: owner, view: false)
+    }
+
     /// A read-only mirror attach.
     public func attach(agent: String, cols: Int, rows: Int) async throws -> any AttachStream {
         try await attach(agent: agent, cols: cols, rows: rows, typing: false, owner: false)
@@ -84,12 +106,12 @@ public protocol CodedError: Error {
 
 /// What a watched terminal sends (relay/pkg/wire/frame.go): its bytes,
 /// its grid size (first from the attach's reply, then at every resize), a
-/// scroll state, and its exit, the last frame.
+/// view's scroll state, and its exit, the last frame.
 public enum AttachFrame: Equatable, Sendable {
     case data(Data)
     case size(cols: Int, rows: Int)
     case exit
-    case scroll
+    case scroll(ScrollState)
 }
 
 /// An open attach. `frames` ends after `.exit`, when the Mac closed it,
