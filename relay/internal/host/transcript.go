@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net"
 
 	"github.com/derzierau/hesper/relay/pkg/agentlink"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
@@ -92,11 +91,8 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 	if _, err := s.Sessions.TranscriptPath(a); err != nil {
 		return nil, publicError(err)
 	}
-	// closeChan closes a channel's pipe; this channel has no terminal
-	// behind it, so the pipe is never read.
-	near, far := net.Pipe()
-	near.Close()
-	c := &hostChan{in: make(chan []byte, chanQueue), done: make(chan struct{}), pipe: far}
+	// No terminal behind this channel, so no pipe.
+	c := &hostChan{in: make(chan []byte, chanQueue), done: make(chan struct{})}
 	link.mu.Lock()
 	switch {
 	case link.ctx.Err() != nil:

@@ -70,7 +70,7 @@ type hostLink struct {
 type hostChan struct {
 	in   chan []byte
 	done chan struct{}
-	pipe net.Conn
+	pipe net.Conn // nil for a channel with no byte stream behind it (a transcript stream)
 	once sync.Once
 	fwd  *agentlink.Pipe // a port forward's (forward.go; in unused)
 	// A forward's state, under the link's mu: draining (counted in
@@ -382,10 +382,7 @@ func (l *hostLink) closeChan(ch uint32, notify bool) {
 		l.drainForward(c) // the controller's X: what it sent is written first
 		return
 	}
-	c.once.Do(func() {
-		close(c.done)
-		c.pipe.Close()
-	})
+	c.end()
 	if notify {
 		l.conn.Write(l.ctx, agentlink.KindClose, ch, nil)
 	}
@@ -397,11 +394,18 @@ func (l *hostLink) closeAll() {
 	l.chans = map[uint32]*hostChan{}
 	l.mu.Unlock()
 	for _, c := range chans {
-		c.once.Do(func() {
-			close(c.done)
-			c.pipe.Close()
-		})
+		c.end()
 	}
+}
+
+// end closes c's done and its pipe, once.
+func (c *hostChan) end() {
+	c.once.Do(func() {
+		close(c.done)
+		if c.pipe != nil {
+			c.pipe.Close()
+		}
+	})
 }
 
 // attach answers agents.attach: the agent's terminal on a channel of the
