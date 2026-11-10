@@ -171,6 +171,8 @@ final class SizeOwnership {
     /// A closed agent's id may linger; it only costs that walk.
     private var remoteOwned: Set<String> = []
     private var applyQueued = false
+    /// This Mac's machine id as last re-read (localMachineChanged).
+    private var localMachine: String?
 
     init() {
         // Fit to iPhone: a keystroke in a pane whose agent's size another
@@ -263,11 +265,14 @@ final class SizeOwnership {
         }
     }
 
-    /// This Mac's machine id may have become known (hesperd's hello): an
-    /// agent's `sizeOwnerHost` may read differently now (SizeOwner.owner),
-    /// with no agent change to say so. Re-reads every terminal once the
-    /// event has been applied.
-    func localMachineChanged() {
+    /// hesperd's hello named this Mac (`id`). Only when that id really
+    /// changed (SizeOwner.localMachineChanged) may an agent's
+    /// `sizeOwnerHost` read differently, with no agent change to say so:
+    /// every terminal is re-read once the event has been applied. A
+    /// reconnect with the same id does nothing.
+    func localMachineChanged(_ id: String?) {
+        guard SizeOwner.localMachineChanged(old: localMachine, new: id) else { return }
+        localMachine = id
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             for t in self.terminals() { self.noteRemoteOwned(t) }
