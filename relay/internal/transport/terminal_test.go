@@ -141,15 +141,18 @@ func TestTerminalOutlivesTokenExpiry(t *testing.T) {
 	w.forwards(t, ctx)
 }
 
-// A stream that outlives its tokens still closes at the relay's maximum
-// stream age, while both devices stay active.
+// The rule for a stream whose access tokens expired while both devices stay
+// approved: it stays open past expiry and past a device check, then closes
+// at the relay's maximum stream age.
 func TestTerminalClosesAtMaxStreamAge(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	age := terminalTTL + 1500*time.Millisecond
+	age := terminalTTL + 2500*time.Millisecond
 	w := newTerminalWorldWith(t, ctx, func(s *transport.Server) { s.MaxStreamAge = age })
 	w.pastExpiry(t, ctx)
-	w.closesWithin(t, ctx, age+time.Second)
+	time.Sleep(1100 * time.Millisecond) // at least one per-second device check
+	w.forwards(t, ctx)
+	w.closesWithin(t, ctx, age)
 }
 
 func TestTerminalClosesOnRevocation(t *testing.T) {
