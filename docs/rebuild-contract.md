@@ -190,7 +190,9 @@ Codex `function_call` and `custom_tool_call` items are `tool`,
 "[image]" for an image). A `custom_tool_call`'s summary is its
 free-text `input`'s first line, clipped to 80 runes. A system item with a negative `seq` is a marker: the phone
 drops what it has; the newest items follow; today only "Transcript
-restarted". A page (and a stream's backfill without `after`) stops
+restarted". A stream also sends it first when its `after` lies at or
+past the transcript's end (rewritten shorter while the phone was away)
+or more than 1000 source lines back. A page (and a stream's backfill without `after`) stops
 before the item that would take it past 384 KiB of JSON. A cursor may
 land inside a source line; the next page includes the earlier items of
 that line. A single stream item remains below the relay's 1 MiB frame.

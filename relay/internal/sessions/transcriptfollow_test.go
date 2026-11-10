@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -347,4 +348,42 @@ func TestFollowStopsOnCancel(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+}
+
+// restartedThen reads the restart marker, then want's texts in order.
+func restartedThen(t *testing.T, items <-chan wire.TranscriptItem, want ...string) {
+	t.Helper()
+	if it := nextItem(t, items, itemWait); it.Seq != -1 || it.Kind != wire.ItemSystem || it.Text != "Transcript restarted" {
+		t.Fatalf("first item %+v, want the restart marker", it)
+	}
+	for _, w := range want {
+		if it := nextItem(t, items, itemWait); it.Text != w {
+			t.Fatalf("item %+v, want %s", it, w)
+		}
+	}
+}
+
+func TestFollowAfterBeyondEndRestarts(t *testing.T) {
+	// The phone last saw m5; while it was away the rollout was rewritten
+	// shorter. Its cursor lies past the end: it must drop what it holds.
+	s, a, path, offs := followEnv(t, "m1", "m2", "m3", "m4", "m5")
+	if err := os.WriteFile(path, []byte(codexMsg("n1")+codexMsg("n2")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items, _, _ := follow(t, s, a, offs[4], 1)
+	restartedThen(t, items, "n2")
+	noItem(t, items, 50*time.Millisecond)
+}
+
+func TestFollowAfterTooFarBehindRestarts(t *testing.T) {
+	// More than TranscriptMaxLimit lines missed: the newest limit items
+	// after the marker, not the whole backlog.
+	texts := make([]string, wire.TranscriptMaxLimit+5)
+	for i := range texts {
+		texts[i] = fmt.Sprintf("m%d", i)
+	}
+	s, a, _, offs := followEnv(t, texts...)
+	items, _, _ := follow(t, s, a, offs[2], 2)
+	restartedThen(t, items, texts[len(texts)-2], texts[len(texts)-1])
+	noItem(t, items, 50*time.Millisecond)
 }
