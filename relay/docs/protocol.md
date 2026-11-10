@@ -534,10 +534,13 @@ applies, as before); if every fit disappears before its debounce, the
 pre-takeover size comes back instead. A local owner in between keeps its
 own size. A restarted host starts with none of them (`agents.json` may
 still hold old values; they are ignored on load). A
-controlling hesperd shows its own device's ownership as local (it omits
-`sizeOwner` and `sizeOwnerName` when `sizeOwner` is its own device id)
-and passes `sizeOwnerHost` on unchanged: there it means the agent's
-machine owns the size. Hosts that set `capabilities.sizeOwner` send
+controlling hesperd omits `sizeOwner` and `sizeOwnerName` when
+`sizeOwner` is its own device id and passes `sizeOwnerHost` on
+unchanged (there it means the agent's machine owns the size). So to a
+controlling hesperd's own clients all three absent means "neither
+another device nor the agent's machine owns the size": either nobody
+or this Mac. A client tells those apart by its own attach (it knows
+whether it holds an owner attach); hesperd does not say. Hosts that set `capabilities.sizeOwner` send
 `sizeOwnerHost`; older hosts send none of the three fields.
 
 A byte-stream channel (a port forward) carries raw bytes in `D` frames of
