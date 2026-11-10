@@ -275,6 +275,42 @@ func TestTranscriptIndexBusy(t *testing.T) {
 	}
 }
 
+// Close stops a first pass at its next pause (every MiB read) and drops
+// the indexes kept for IndexKeep.
+func TestTranscriptIndexStopsOnClose(t *testing.T) {
+	texts := make([]string, 3000)
+	for i := range texts {
+		texts[i] = strings.Repeat("x", 1024)
+	}
+	s, a, _, _ := followEnv(t, texts...)
+	oldWait, oldHook := transcriptWait, transcriptIndexHook
+	t.Cleanup(func() { transcriptWait, transcriptIndexHook = oldWait, oldHook })
+	release := make(chan struct{})
+	transcriptWait = time.Millisecond
+	transcriptIndexHook = func() { <-release }
+	if _, err := s.Transcript(context.Background(), a, 0, 0); err == nil {
+		t.Fatal("page during the first pass: no busy")
+	}
+	s.mu.Lock()
+	f := s.transcripts[a.Kind+":"+a.SessionID]
+	s.mu.Unlock()
+	s.Close()
+	close(release)
+	select {
+	case <-f.ready:
+	case <-time.After(itemWait):
+		t.Fatal("first pass still running")
+	}
+	if !errors.Is(f.err, errClosed) {
+		t.Fatalf("first pass after Close: %v, want errClosed", f.err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.transcripts) != 0 {
+		t.Fatalf("%d indexes kept after Close", len(s.transcripts))
+	}
+}
+
 // The index outlives its last user by IndexKeep: a later page reuses
 // it; after IndexKeep it is gone.
 func TestTranscriptIndexKeep(t *testing.T) {

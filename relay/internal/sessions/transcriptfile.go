@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -58,6 +59,12 @@ func openTranscript(path, kind string) (*transcriptFile, error) {
 // shrank was rewritten and is indexed again from the start. f.mu is held
 // (or f is not shared yet).
 func (f *transcriptFile) update() error {
+	return f.index(nil)
+}
+
+// index is update, calling pause every MiB read (readLinesAt); its error
+// ends the pass.
+func (f *transcriptFile) index(pause func() error) error {
 	fh, err := os.Open(f.path)
 	if err != nil {
 		return fmt.Errorf("open transcript: %w", err)
@@ -82,7 +89,7 @@ func (f *transcriptFile) update() error {
 		if len(itemsFrom(f.kind, line, base+off)) > 0 {
 			f.offsets = append(f.offsets, base+off)
 		}
-	}, nil)
+	}, pause)
 	f.size = base + n
 	if err != nil {
 		return fmt.Errorf("read transcript: %w", err)
@@ -359,14 +366,32 @@ func (s *Service) transcriptIndex(key, kind, path string) *transcriptFile {
 	return f
 }
 
+// errIndexDropped ends a first pass whose index was dropped: IndexKeep
+// passed with no user.
+var errIndexDropped = errors.New("transcript index dropped")
+
 // indexTranscript is f's first pass. A pass that failed is dropped, so
-// the next user tries again.
+// the next user tries again. Every MiB it stops if the service closed
+// (errClosed) or nobody wants the index any more.
 func (s *Service) indexTranscript(key string, f *transcriptFile) {
 	if transcriptIndexHook != nil {
 		transcriptIndexHook()
 	}
+	pause := func() error {
+		select {
+		case <-s.stop:
+			return errClosed
+		default:
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.transcripts[key] != f {
+			return errIndexDropped
+		}
+		return nil
+	}
 	f.mu.Lock()
-	err := f.update()
+	err := f.index(pause)
 	f.mu.Unlock()
 	if err != nil {
 		s.mu.Lock()
