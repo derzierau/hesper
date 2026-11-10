@@ -134,12 +134,14 @@ func TestHostRenewsBeforeExpiryWithoutDroppingLinks(t *testing.T) {
 	runner := &Runner{Service: &Service{}, CredentialsPath: path, Credentials: protocol.Credentials{Role: "host"}, PollInterval: time.Hour, Logger: slog.New(slog.NewTextHandler(logs, nil))}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// Run's link manager, reachable here: it ends with run.
+	runner.init()
+	linkCtx, endLinks := context.WithCancel(ctx)
+	links := &terminalManager{ctx: linkCtx, r: runner, slots: runner.termSlots}
 	done := make(chan error, 1)
-	go func() { done <- runner.Run(ctx) }()
+	go func() { defer endLinks(); done <- runner.run(ctx, links) }()
 
 	waitFor(t, "the first connection", func() bool { return slices.Contains(fake.log(), "open access-1") })
-	var links *terminalManager
-	waitFor(t, "the relay link manager", func() bool { links = runner.relayLinks.Load(); return links != nil })
 	// A link opened now derives its context from the manager's (openLink).
 	link, closeLink := context.WithCancel(links.ctx)
 	defer closeLink()

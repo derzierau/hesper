@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/derzierau/hesper/relay/internal/perf"
@@ -54,9 +53,6 @@ type Runner struct {
 	setup     sync.Once
 	termSlots chan struct{} // links of both paths
 	changed   chan struct{} // an operation changed published state
-	// relayLinks opens the links requested through the relay; they live
-	// as long as Run, across hub reconnections.
-	relayLinks atomic.Pointer[terminalManager]
 }
 
 // renewAhead is how long before the access credential expires Run renews
@@ -147,8 +143,13 @@ func (r *Runner) Run(ctx context.Context) error {
 	r.init()
 	linkCtx, endLinks := context.WithCancel(ctx)
 	terminals := &terminalManager{ctx: linkCtx, r: r, slots: r.termSlots}
-	r.relayLinks.Store(terminals)
 	defer func() { endLinks(); terminals.wg.Wait() }()
+	return r.run(ctx, terminals)
+}
+
+// run connects to the relay until ctx ends or sign-in is required; the links
+// requested through the relay open with terminals.
+func (r *Runner) run(ctx context.Context, terminals *terminalManager) error {
 	backoff := time.Second
 	for ctx.Err() == nil {
 		started := time.Now()
