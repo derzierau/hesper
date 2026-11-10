@@ -34,6 +34,21 @@ import Testing
         #expect(c.working == Samples.fleet.counts.working)
     }
 
+    @Test func allCountsExitedAgentsThatHomeLeavesOut() {
+        let f = Samples.fleet
+        let exited = f.agents.values.filter { $0.state == .exited }.map(\.id)
+        #expect(!exited.isEmpty)
+        let h = f.home(.all)
+        let shown = Set(([h.priority].compactMap { $0 } + h.needsYou + h.readyToReview + h.working).map(\.id))
+        #expect(shown.isDisjoint(with: exited))
+        #expect(f.homeCounts.all == f.agents.count)
+    }
+
+    @Test func needsYouScopeKeepsTheAttentionQueueOrder() {
+        let h = Samples.fleet.home(.needsYou)
+        #expect(([h.priority].compactMap { $0 } + h.needsYou).map(\.id) == Samples.fleet.needsYou.map(\.id))
+    }
+
     @Test func anEmptyFleetIsEmptyEverywhere() {
         let f = Fleet()
         for s in HomeScope.allCases { #expect(f.home(s).isEmpty) }
