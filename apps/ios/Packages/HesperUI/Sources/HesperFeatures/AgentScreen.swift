@@ -13,8 +13,11 @@ struct AgentScreen: View {
     /// the area is wider than tall in portrait too, and the dock must
     /// not jump to the side then.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    /// The terminal, shared with the dock.
-    @State private var watch = TerminalWatch()
+    /// The terminal, shared with the dock. Made on first use: a `@State`
+    /// initial value is built on every init of the view, and a terminal
+    /// allocates a libghostty surface.
+    @State private var holder = WatchHolder()
+    private var watch: TerminalWatch { holder.watch }
 
     /// The dock's width as a column, in landscape.
     private static let dockColumn: CGFloat = 320
@@ -50,6 +53,12 @@ struct AgentScreen: View {
     private func subtitle(_ a: Agent) -> String {
         [model.fleet.macName(a.machine), a.project, a.branch].compactMap(\.self).joined(separator: " · ")
     }
+}
+
+/// Holds an agent screen's terminal, made on first use. Cheap to build,
+/// so SwiftUI may build and drop it on every init of the view.
+@MainActor private final class WatchHolder {
+    lazy var watch = TerminalWatch()
 }
 
 /// The dock under the terminal, a Neon bar: the priority card's numbered
