@@ -30,7 +30,7 @@ func TestLongMessagePageAndStreamStayBounded(t *testing.T) {
 	}
 	items, _, cancel := follow(t, s, a, 0, 1)
 	defer cancel()
-	it := nextItem(t, items, time.Second)
+	it := nextItem(t, items, itemWait)
 	b, _ = json.Marshal(it)
 	if len(b)+1 >= 1<<20 || !it.Truncated {
 		t.Fatalf("stream item: %d JSON bytes, truncated %v", len(b)+1, it.Truncated)

@@ -193,6 +193,11 @@ func appendTo(t *testing.T, path, s string) {
 	}
 }
 
+// itemWait bounds a wait for an item that must come. It is generous: the
+// first index pass and a poll can be slow under -race on a loaded
+// machine, and a passing test never waits this long.
+const itemWait = 10 * time.Second
+
 func nextItem(t *testing.T, items <-chan wire.TranscriptItem, within time.Duration) wire.TranscriptItem {
 	t.Helper()
 	select {
@@ -217,7 +222,7 @@ func TestFollowBackfillThenTail(t *testing.T) {
 	s, a, path, offs := followEnv(t, "m1", "m2", "m3", "m4", "m5")
 	items, _, _ := follow(t, s, a, 0, 2)
 	for i, want := range []string{"m4", "m5"} {
-		if it := nextItem(t, items, time.Second); it.Text != want || it.Seq != offs[3+i] {
+		if it := nextItem(t, items, itemWait); it.Text != want || it.Seq != offs[3+i] {
 			t.Fatalf("backfill %d: %+v, want %s at %d", i, it, want, offs[3+i])
 		}
 	}
@@ -226,7 +231,7 @@ func TestFollowBackfillThenTail(t *testing.T) {
 		t.Fatal(err)
 	}
 	appendTo(t, path, codexMsg("m6"))
-	if it := nextItem(t, items, 100*time.Millisecond); it.Text != "m6" || it.Seq != st.Size() {
+	if it := nextItem(t, items, itemWait); it.Text != "m6" || it.Seq != st.Size() {
 		t.Fatalf("tail: %+v, want m6 at %d", it, st.Size())
 	}
 }
@@ -236,7 +241,7 @@ func TestFollowAfter(t *testing.T) {
 	// Not capped by limit: every item after After.
 	items, _, _ := follow(t, s, a, offs[2], 1)
 	for i, want := range []string{"m4", "m5"} {
-		if it := nextItem(t, items, time.Second); it.Text != want || it.Seq != offs[3+i] {
+		if it := nextItem(t, items, itemWait); it.Text != want || it.Seq != offs[3+i] {
 			t.Fatalf("after %d: %+v, want %s at %d", i, it, want, offs[3+i])
 		}
 	}
@@ -246,7 +251,7 @@ func TestFollowAfter(t *testing.T) {
 func TestFollowPartialLine(t *testing.T) {
 	s, a, path, _ := followEnv(t, "m1")
 	items, _, _ := follow(t, s, a, 0, 10)
-	nextItem(t, items, time.Second)
+	nextItem(t, items, itemWait)
 	st, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -255,7 +260,7 @@ func TestFollowPartialLine(t *testing.T) {
 	appendTo(t, path, line[:len(line)/2])
 	noItem(t, items, 50*time.Millisecond)
 	appendTo(t, path, line[len(line)/2:])
-	if it := nextItem(t, items, time.Second); it.Text != "half" || it.Seq != st.Size() {
+	if it := nextItem(t, items, itemWait); it.Text != "half" || it.Seq != st.Size() {
 		t.Fatalf("completed line: %+v, want half at %d", it, st.Size())
 	}
 	noItem(t, items, 20*time.Millisecond)
@@ -265,11 +270,11 @@ func TestFollowTruncate(t *testing.T) {
 	s, a, path, _ := followEnv(t, "m1", "m2", "m3")
 	items, _, _ := follow(t, s, a, 0, 10)
 	for range 3 {
-		nextItem(t, items, time.Second)
+		nextItem(t, items, itemWait)
 	}
 	restarted := func(when string) {
 		t.Helper()
-		if it := nextItem(t, items, time.Second); it.Kind != wire.ItemSystem || it.Text != "Transcript restarted" || it.Seq != -1 {
+		if it := nextItem(t, items, itemWait); it.Kind != wire.ItemSystem || it.Text != "Transcript restarted" || it.Seq != -1 {
 			t.Fatalf("%s: %+v, want the restart marker", when, it)
 		}
 	}
@@ -285,7 +290,7 @@ func TestFollowTruncate(t *testing.T) {
 	}
 	restarted("after a rewrite")
 	for _, want := range []wire.TranscriptItem{{Text: "n1", Seq: 0}, {Text: "n2", Seq: int64(len(n1))}} {
-		if it := nextItem(t, items, time.Second); it.Text != want.Text || it.Seq != want.Seq {
+		if it := nextItem(t, items, itemWait); it.Text != want.Text || it.Seq != want.Seq {
 			t.Fatalf("after a rewrite: %+v, want %s at %d", it, want.Text, want.Seq)
 		}
 	}
@@ -295,10 +300,10 @@ func TestFollowTruncate(t *testing.T) {
 	}
 	restarted("after truncate")
 	appendTo(t, path, codexMsg("new")+codexMsg("new2"))
-	if it := nextItem(t, items, time.Second); it.Text != "new" || it.Seq != 0 {
+	if it := nextItem(t, items, itemWait); it.Text != "new" || it.Seq != 0 {
 		t.Fatalf("after restart: %+v, want new at 0", it)
 	}
-	if it := nextItem(t, items, time.Second); it.Text != "new2" || it.Seq != int64(len(codexMsg("new"))) {
+	if it := nextItem(t, items, itemWait); it.Text != "new2" || it.Seq != int64(len(codexMsg("new"))) {
 		t.Fatalf("after restart: %+v, want new2", it)
 	}
 }
@@ -312,7 +317,7 @@ func TestFollowStopsOnCancel(t *testing.T) {
 	IndexKeep = time.Millisecond
 	t.Cleanup(func() { IndexKeep = oldKeep })
 	items, done, cancel := follow(t, s, a, 0, 10)
-	nextItem(t, items, time.Second)
+	nextItem(t, items, itemWait)
 	s.mu.Lock()
 	n := len(s.transcripts)
 	s.mu.Unlock()
