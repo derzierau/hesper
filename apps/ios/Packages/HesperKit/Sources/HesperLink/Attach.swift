@@ -164,14 +164,23 @@ public final class AttachChannel: AttachStream {
     /// The reader's side of the unbounded inner stream, and what waits in
     /// it: frames and data bytes yielded but not yet taken.
     private final class Queue: @unchecked Sendable {
-        // Safe: `queued` is a Mutex. Only `frames`' unfolding closure
-        // touches `iterator`, and an AsyncStream calls it for one `next()`
-        // at a time.
+        // Safe: `queued` and `reading` are Mutexes. `iterator` is touched
+        // only inside `next()`, and `reading` traps a second `next()` that
+        // starts before the first returned, so no two calls overlap. An
+        // attach's frames have one reader (two iterators of `frames`
+        // reading at once trap here instead of racing).
         var iterator: AsyncStream<AttachFrame>.Iterator
         let queued = Mutex((frames: 0, bytes: 0))
+        private let reading = Mutex(false)
         init(_ stream: AsyncStream<AttachFrame>) { iterator = stream.makeAsyncIterator() }
 
         func next() async -> AttachFrame? {
+            let alone = reading.withLock { r in
+                defer { r = true }
+                return !r
+            }
+            precondition(alone, "An attach's frames have one reader at a time")
+            defer { reading.withLock { $0 = false } }
             guard let f = await iterator.next() else { return nil }
             queued.withLock { q in
                 q.frames -= 1
