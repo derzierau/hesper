@@ -109,10 +109,13 @@ type Agent struct {
 	ReviewBase string `json:"reviewBase,omitempty"`
 	// SizeOwner is the controller device id whose attach owns the PTY's
 	// size (a phone that took the terminal over); SizeOwnerName is its
-	// name in controllers.json. Both empty when the size is owned on this
-	// Mac or by nobody. They clear on restart.
+	// name in controllers.json (empty when the host does not verify
+	// devices). SizeOwnerHost is true while an attach on the agent's own
+	// Mac owns the size (it took the size back). All three empty: nobody
+	// owns it. A restart clears them.
 	SizeOwner     string `json:"sizeOwner,omitempty"`
 	SizeOwnerName string `json:"sizeOwnerName,omitempty"`
+	SizeOwnerHost bool   `json:"sizeOwnerHost,omitempty"`
 }
 
 // EndedKilled is Agent.Ended after agents.kill.

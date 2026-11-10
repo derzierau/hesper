@@ -641,8 +641,8 @@ func (r *Registry) start(a *agent, profile wire.Profile, resume bool) error {
 		return err
 	}
 	a.term, a.PID, a.Exit, a.running, a.stopping = term, term.PID(), nil, true, false
-	a.SizeOwner, a.SizeOwnerName = "", "" // a new PTY: nobody remote owns it
-	a.Ended = ""                          // runs again: no longer "killed"
+	a.SizeOwner, a.SizeOwnerName, a.SizeOwnerHost = "", "", false // a new PTY: nobody owns it
+	a.Ended = ""                                                  // runs again: no longer "killed"
 	a.started, a.respawn, a.cameBack, a.answered = time.Now(), false, false, false
 	a.endedTurn, a.codexHooks, a.fromScreen, a.approvalKey = "", false, false, ""
 	a.expectPrompt = !resume && a.Task != "" && a.Kind != wire.KindShell && !deliverLater
@@ -685,14 +685,15 @@ func (r *Registry) ownerChanged(local string, gen int) {
 	if a == nil || a.gen != gen || a.term == nil {
 		return
 	}
-	o := a.term.SizeOwner()
+	o, owned := a.term.SizeOwner()
 	if o.Device == "" {
 		o.Name = ""
 	}
-	if o.Device == a.SizeOwner && o.Name == a.SizeOwnerName {
+	host := owned && o.Device == ""
+	if o.Device == a.SizeOwner && o.Name == a.SizeOwnerName && host == a.SizeOwnerHost {
 		return
 	}
-	a.SizeOwner, a.SizeOwnerName = o.Device, o.Name
+	a.SizeOwner, a.SizeOwnerName, a.SizeOwnerHost = o.Device, o.Name, host
 	r.changed(a)
 }
 

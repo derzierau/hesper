@@ -95,7 +95,7 @@ func TestRemoteOwnerDetachThenFitClosesRestoresSize(t *testing.T) {
 	waitFor(t, "the phone's size", sizeIs(tm, 37, 27))
 	view := fitView(t, tm, 90, 30)
 	owner.Close()
-	waitFor(t, "the phone released", func() bool { return tm.SizeOwner() == (Origin{}) })
+	waitFor(t, "the phone released", func() bool { _, owned := tm.SizeOwner(); return !owned })
 	view.Close()
 	waitFor(t, "the fit view closed", func() bool {
 		tm.mu.Lock()

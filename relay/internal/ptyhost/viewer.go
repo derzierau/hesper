@@ -88,6 +88,7 @@ func (t *Term) AttachFrom(conn net.Conn, r *bufio.Reader, req wire.AttachRequest
 	t.mu.Lock()
 	resized, ownerChanged := false, false
 	if rw && req.Owner {
+		ownerChanged = t.owner == nil
 		t.owner = v
 		if origin == (Origin{}) {
 			// The Mac sizes it itself: nothing to give back.
@@ -169,9 +170,7 @@ func (t *Term) detach(v *viewer) {
 			t.restoreCols, t.restoreRows = 0, 0
 		}
 		t.scheduleFit()
-		if t.ownerFrom != (Origin{}) {
-			t.ownerFrom, ownerChanged = Origin{}, true
-		}
+		t.ownerFrom, ownerChanged = Origin{}, true
 	}
 	cols, rows := t.cols, t.rows
 	t.mu.Unlock()

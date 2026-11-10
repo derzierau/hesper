@@ -45,8 +45,9 @@ type Config struct {
 	OnResize func(cols, rows int)
 	// OnExit is told how the process ended, once all its output is in.
 	OnExit func(*wire.Exit)
-	// OnOwner is told that the origin of the size owner changed (read
-	// Term.SizeOwner); it runs with the Term's lock released.
+	// OnOwner is told that the size owner changed between nobody, this
+	// Mac and a remote origin (read Term.SizeOwner); it runs with the
+	// Term's lock released.
 	OnOwner func()
 	// FitDebounce: how long view fits must settle before they size the
 	// PTY (0: FitDebounce).
@@ -92,12 +93,12 @@ type Origin struct {
 	Device, Name string
 }
 
-// SizeOwner is the origin of the current size owner: the zero Origin when
-// the owner is local or there is none.
-func (t *Term) SizeOwner() Origin {
+// SizeOwner is the origin of the current size owner and whether there is
+// one: owned with the zero Origin is a local owner (this Mac).
+func (t *Term) SizeOwner() (o Origin, owned bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.ownerFrom
+	return t.ownerFrom, t.owner != nil
 }
 
 // Default size of a new PTY.

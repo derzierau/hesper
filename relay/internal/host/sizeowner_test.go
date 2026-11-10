@@ -1,8 +1,11 @@
 package host
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"io"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -144,6 +147,35 @@ func TestAttachPublishesSizeOwner(t *testing.T) {
 	waitNote("the reconnect owns the size", func(g *wire.Agent) bool {
 		return g.SizeOwner == "phone-1" && g.SizeOwnerName == "iPhone" && g.Size == wire.Size{Cols: 46, Rows: 19}
 	})
+
+	// The Mac takes the size back from the phone: sizeOwnerHost, so the
+	// phone can tell that from nobody owning it.
+	term, err := reg.Term(a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, client := net.Pipe()
+	attached := make(chan struct{})
+	go func() {
+		defer close(attached)
+		term.Attach(server, bufio.NewReader(server), wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 80, Rows: 24})
+	}()
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		io.Copy(io.Discard, client)
+	}()
+	waitNote("the Mac took the size back", func(g *wire.Agent) bool {
+		return g.SizeOwnerHost && g.SizeOwner == "" && g.SizeOwnerName == ""
+	})
+	got, _ = reg.Get(a.ID)
+	data, _ = json.Marshal(got)
+	if !strings.Contains(string(data), `"sizeOwnerHost":true`) || strings.Contains(string(data), `"sizeOwner":`) {
+		t.Fatalf("agent info with the Mac owning %s", data)
+	}
+	client.Close()
+	<-attached
+	<-drained
+	waitNote("nobody owns the size", func(g *wire.Agent) bool { return !g.SizeOwnerHost && g.SizeOwner == "" })
 	reconnected.closeAll()
-	waitNote("the reconnect released the size", func(g *wire.Agent) bool { return g.SizeOwner == "" && g.SizeOwnerName == "" })
 }

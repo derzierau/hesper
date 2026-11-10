@@ -506,18 +506,22 @@ channels per link.
 #### Size owner
 
 The `Agent` objects in `agents.list`, the link's `E` events (`list`,
-`changed`) and the local socket's `agents.changed` notes carry two
+`changed`) and the local socket's `agents.changed` notes carry three
 optional fields (omitted when empty):
 
 ```json
 {"id":"M/a7f3k2", "size":{"cols":46,"rows":19}, "sizeOwner":"DEVICE_ID", "sizeOwnerName":"iPhone"}
+{"id":"M/a7f3k2", "size":{"cols":120,"rows":40}, "sizeOwnerHost":true}
 ```
 
 `sizeOwner` is the controller device id whose `agents.attach` (`rw`,
 `owner: true`) owns the PTY's size; `sizeOwnerName` is that device's name
-in the host's `controllers.json` (absent while enforcement is off). Both
-are absent while the size is owned on the host itself (a local
-`hesperd attach --owner`, a Hesper.app tile) or by nobody. The host sends
+in the host's `controllers.json` (absent while enforcement is off, so a
+client labels such an owner without assuming its kind). `sizeOwnerHost:
+true` says the size is owned on the host itself (a local `hesperd attach
+--owner`, a Hesper.app tile): a controller that owned the size learns
+from it that the host took the size back. All three absent: nobody owns
+the size. `sizeOwner` and `sizeOwnerHost` never appear together. The host sends
 a `changed` event (locally an `agents.changed` note) whenever they change:
 a remote owner attaches, it detaches (`X`) or a newer owner takes over
 (the latest owner wins, a local one included). When the last remote
@@ -525,9 +529,13 @@ owner detaches, the PTY goes back to the size it had before the first
 remote owner took it, unless view attaches ask for a fit (then the fit
 applies, as before); if every fit disappears before its debounce, the
 pre-takeover size comes back instead. A local owner in between keeps its
-own size. They are not persisted: a restarted host starts with none. A
+own size. A restarted host starts with none of them (`agents.json` may
+still hold old values; they are ignored on load). A
 controlling hesperd shows its own device's ownership as local (it omits
-both fields when `sizeOwner` is its own device id).
+`sizeOwner` and `sizeOwnerName` when `sizeOwner` is its own device id)
+and passes `sizeOwnerHost` on unchanged: there it means the agent's
+machine owns the size. Hosts that set `capabilities.sizeOwner` send
+`sizeOwnerHost`; older hosts send none of the three fields.
 
 A byte-stream channel (a port forward) carries raw bytes in `D` frames of
 at most 32 KiB and has flow control: each side may send 256 KiB, and the
