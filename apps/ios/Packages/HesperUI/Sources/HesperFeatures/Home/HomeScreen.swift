@@ -78,7 +78,7 @@ struct HomeScreen: View {
         }
     }
 
-    /// Ole's empty copy; the Working scope says what it lacks.
+    /// The Inbox's empty copy; the Working scope says what it lacks.
     private func empty(working: Int) -> some View {
         Group {
             if scope == .working {
@@ -91,7 +91,7 @@ struct HomeScreen: View {
                     systemImage: "tray",
                     description: Text(
                         working > 0
-                            ? "\(working) agents are working. You'll get a notification when one asks for you."
+                            ? "\(working == 1 ? "1 agent is" : "\(working) agents are") working. You'll get a notification when one asks for you."
                             : "Tap Speak to start an agent.")
                 )
             }

@@ -65,8 +65,8 @@ struct Console: View {
         .sensoryFeedback(.start, trigger: talk.isDown) { _, down in down }
         .sensoryFeedback(.warning, trigger: talk.away) { _, isAway in isAway }
         .accessibilityElement()
-        .accessibilityLabel("New task")
-        .accessibilityHint("Say a task. Hold to talk, let go to review it.")
+        .accessibilityLabel("Speak")
+        .accessibilityHint("Starts a new task. Say a task. Hold to talk, let go to review it.")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction {
             dictation.start()
