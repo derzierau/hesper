@@ -274,6 +274,7 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
         #expect(t.contains("background = #1a1b26\n"))
         #expect(t.contains("palette = 15=#c0caf5\n"))
         #expect(t.contains("keybind = clear\n"))
+        #expect(t.contains("adjust-cell-height = 10%\n"))
         #expect(TerminalConfigText.make(user: GhosttyUserConfig()).contains("font-size = 13\n"))
     }
 

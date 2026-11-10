@@ -68,6 +68,10 @@ public struct GhosttyUserConfig: Equatable, Sendable {
 /// no padding (the app frames terminals itself), no shell integration (the
 /// command is `hesperd attach`, not a shell).
 public enum TerminalConfigText {
+    /// Extra line height over the font's own cell, in percent
+    /// (`adjust-cell-height`). `FontFit` estimates cells with it too.
+    public static let cellHeightPercent = 10
+
     public static func make(user: GhosttyUserConfig, scrollbackBytes: Int = 2_000_000) -> String {
         var lines: [String] = []
         for f in user.fontFamilies { lines.append("font-family = \(f)") }
@@ -75,6 +79,7 @@ public enum TerminalConfigText {
         if let t = user.fontThicken { lines.append("font-thicken = \(t)") }
         for f in user.fontFeatures { lines.append("font-feature = \(f)") }
         lines += [
+            "adjust-cell-height = \(cellHeightPercent)%",
             "background = \(TokyoNight.background)",
             "foreground = \(TokyoNight.foreground)",
             "cursor-color = \(TokyoNight.foreground)",
