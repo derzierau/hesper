@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"os"
 	"testing"
 
 	"github.com/derzierau/hesper/relay/pkg/wire"
@@ -20,6 +22,27 @@ func pager(seqs []int64, n int) func(before int64) (wire.TranscriptPage, error) 
 		}
 		p.More = start > 0
 		return p, nil
+	}
+}
+
+// A clipped message preview is marked like a clipped result.
+func TestPrintTranscriptMarksTruncated(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	printTranscript([]wire.TranscriptItem{
+		{Seq: 1, Kind: wire.ItemUser, Text: "long ask", Truncated: true},
+		{Seq: 2, Kind: wire.ItemAssistant, Text: "long reply", Truncated: true},
+		{Seq: 3, Kind: wire.ItemAssistant, Text: "short"},
+	}, false, -1)
+	os.Stdout = old
+	w.Close()
+	out, _ := io.ReadAll(r)
+	if want := "› long ask…\nlong reply…\nshort\n"; string(out) != want {
+		t.Fatalf("printed %q, want %q", out, want)
 	}
 }
 

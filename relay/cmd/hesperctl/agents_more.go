@@ -1010,9 +1010,14 @@ func printTranscript(items []wire.TranscriptItem, asJSON bool, after int64) int6
 			fmt.Println(string(line))
 			continue
 		}
+		// A clipped message preview ends in "…", as a clipped result does.
+		text := it.Text
+		if it.Truncated && (it.Kind == wire.ItemUser || it.Kind == wire.ItemAssistant) {
+			text += "…"
+		}
 		switch it.Kind {
 		case wire.ItemUser:
-			fmt.Println("› " + it.Text)
+			fmt.Println("› " + text)
 		case wire.ItemTool:
 			fmt.Println(dim(strings.TrimSpace("⏺ " + it.Tool + " " + it.Summary)))
 		case wire.ItemResult:
@@ -1022,7 +1027,7 @@ func printTranscript(items []wire.TranscriptItem, asJSON bool, after int64) int6
 			}
 			fmt.Println("⎿ " + first)
 		default:
-			fmt.Println(it.Text)
+			fmt.Println(text)
 		}
 	}
 	return after
