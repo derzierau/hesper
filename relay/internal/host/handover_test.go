@@ -17,6 +17,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/derzierau/hesper/relay/pkg/client"
+	"github.com/derzierau/hesper/relay/pkg/e2e"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 )
 
@@ -46,12 +47,15 @@ type handoverRelay struct {
 	lifetime  time.Duration
 	familyEnd time.Time
 	// request, if set, is sent to the host on the first connection.
-	request   string
-	refreshes atomic.Int32
-	mu        sync.Mutex
-	expiry    map[string]time.Time
-	current   *websocket.Conn
-	events    []string
+	request string
+	// probeRenewed pings the host on every later connection and sends it a
+	// request it answers without the operation lock (an end-to-end hello).
+	probeRenewed bool
+	refreshes    atomic.Int32
+	mu           sync.Mutex
+	expiry       map[string]time.Time
+	current      *websocket.Conn
+	events       []string
 }
 
 func (f *handoverRelay) record(event string) {
@@ -104,14 +108,24 @@ func (f *handoverRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.request != "" && token == "access-1" {
 			c.Write(ctx, websocket.MessageText, protocol.JSON(protocol.Message{Version: protocol.Version, Type: "request", ID: "r1", Method: f.request}))
 		}
+		if f.probeRenewed && token != "access-1" {
+			go func() {
+				pingCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+				defer stop()
+				if c.Ping(pingCtx) == nil {
+					f.record("pong " + token)
+				}
+			}()
+			c.Write(ctx, websocket.MessageText, protocol.JSON(protocol.Message{Version: protocol.Version, Type: "request", ID: "r2", Method: e2e.HelloMethod}))
+		}
 		for ctx.Err() == nil {
 			_, data, err := c.Read(ctx)
 			if err != nil {
 				break
 			}
 			var m protocol.Message
-			if json.Unmarshal(data, &m) == nil && m.Type == "snapshot" {
-				f.record("snapshot " + token)
+			if json.Unmarshal(data, &m) == nil && (m.Type == "snapshot" || m.Type == "result") {
+				f.record(m.Type + " " + token)
 			}
 		}
 		c.CloseNow()
@@ -225,7 +239,7 @@ func TestHostServesRenewedConnectionWhileOldOneDrains(t *testing.T) {
 	ahead, retry := renewAhead, renewRetry
 	renewAhead, renewRetry = 2*time.Second, 200*time.Millisecond
 	defer func() { renewAhead, renewRetry = ahead, retry }()
-	fake := &handoverRelay{lifetime: 3 * time.Second, request: "agents.list", expiry: map[string]time.Time{}}
+	fake := &handoverRelay{lifetime: 3 * time.Second, request: "agents.list", probeRenewed: true, expiry: map[string]time.Time{}}
 	server := httptest.NewServer(fake)
 	defer server.Close()
 	path, _ := expiringHostFile(t, server.URL)
@@ -248,7 +262,11 @@ func TestHostServesRenewedConnectionWhileOldOneDrains(t *testing.T) {
 
 	waitFor(t, "the renewed connection", func() bool { return slices.Contains(fake.log(), "open access-2") })
 	deadline := time.Now().Add(time.Second)
-	for !slices.Contains(fake.log(), "snapshot access-2") {
+	served := func() bool {
+		events := fake.log()
+		return slices.Contains(events, "snapshot access-2") && slices.Contains(events, "pong access-2") && slices.Contains(events, "result access-2")
+	}
+	for !served() {
 		if time.Now().After(deadline) {
 			t.Fatalf("renewed connection not served while the old one drains: %v", fake.log())
 		}
