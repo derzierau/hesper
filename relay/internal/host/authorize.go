@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"slices"
@@ -202,14 +203,21 @@ func (a *Authorizer) Authorize(ctx context.Context, m protocol.Message) (Caller,
 		}
 		return Caller{}, a.refuse(ctx, m, c.Device, c.Name, detail, "Request signature does not verify")
 	}
+	var lost error
 	a.mu.Lock()
 	if a.nonces == nil {
 		a.nonces, err = openNonces(a.Store.path(NoncesFile), now)
+		if err == nil {
+			lost = a.nonces.lost
+		}
 	}
 	if err == nil {
 		err = a.nonces.add(c.Device+" "+auth.Nonce, now)
 	}
 	a.mu.Unlock()
+	if lost != nil {
+		a.Audit("replay_cache.reset", map[string]any{"ok": false, "detail": lost.Error()})
+	}
 	if errors.Is(err, errReplay) {
 		return Caller{}, a.refuse(ctx, m, c.Device, c.Name, "replayed nonce", "Request was already received (replay)")
 	}
@@ -379,13 +387,20 @@ type nonceCache struct {
 	path  string
 	seen  map[string]int64
 	lines int
+	kept  int // entries left by the last rewrite
 	file  *os.File
+	// lost: why the file was not read to its end (nil if it was); the
+	// caller audits it.
+	lost error
 }
 
 func openNonces(path string, now time.Time) (*nonceCache, error) {
 	c := &nonceCache{path: path, seen: map[string]int64{}}
-	if data, err := devicekey.ReadPrivateFile(path); err == nil {
-		scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	if f, err := devicekey.OpenPrivateFile(path); err == nil {
+		// Read line by line, with no limit on the file's size: the file is
+		// the host's own state, and one it cannot read would refuse every
+		// request.
+		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
 			fields := strings.Fields(scanner.Text())
 			if len(fields) != 3 {
@@ -397,6 +412,29 @@ func openNonces(path string, now time.Time) (*nonceCache, error) {
 			}
 			c.seen[fields[1]+" "+fields[2]] = expiry
 		}
+		// A read error or an overlong line ends the scan early. What was
+		// not read is forgotten: timestamps still bound a replay to MaxSkew,
+		// but one inside it passes once, so the caller audits this. The
+		// file is copied aside first and stays in place until the atomic
+		// rewrite below replaces it: after a crash at any point the next
+		// start finds the old file again and reports it again.
+		if err := scanner.Err(); err != nil {
+			c.lost = fmt.Errorf("%s read only in part, the rest forgotten: %w", path, err)
+			kept, err := keepAside(f, path)
+			f.Close()
+			if err != nil {
+				// Fail closed: without the copy the rewrite would lose the
+				// unread part for good.
+				return nil, fmt.Errorf("keep %s aside: %w", path, err)
+			}
+			if kept != "" {
+				c.lost = fmt.Errorf("%w; kept as %s", c.lost, kept)
+			} else {
+				c.lost = fmt.Errorf("%w; not kept: %d copies are already there", c.lost, nonceCopies)
+			}
+		} else {
+			f.Close()
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -404,6 +442,41 @@ func openNonces(path string, now time.Time) (*nonceCache, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// nonceCopies bounds the copies of partly read nonce files.
+const nonceCopies = 3
+
+// keepAside copies f to the first free "<path>.unread.N" (N ≤
+// nonceCopies) and returns its name; "" when all are taken. An earlier
+// copy is never replaced.
+func keepAside(f *os.File, path string) (string, error) {
+	for i := 1; i <= nonceCopies; i++ {
+		name := fmt.Sprintf("%s.unread.%d", path, i)
+		out, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, err = f.Seek(0, io.SeekStart)
+		if err == nil {
+			_, err = io.Copy(out, f)
+		}
+		if err == nil {
+			err = out.Sync()
+		}
+		if closeErr := out.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			os.Remove(name)
+			return "", fmt.Errorf("copy to %s: %w", name, err)
+		}
+		return name, nil
+	}
+	return "", nil
 }
 
 // rewrite drops expired entries and starts a fresh file.
@@ -427,7 +500,7 @@ func (c *nonceCache) rewrite(now time.Time) error {
 	if err != nil {
 		return err
 	}
-	c.file, c.lines = f, len(c.seen)
+	c.file, c.lines, c.kept = f, len(c.seen), len(c.seen)
 	return nil
 }
 
@@ -435,7 +508,9 @@ func (c *nonceCache) add(key string, now time.Time) error {
 	if expiry, ok := c.seen[key]; ok && expiry > now.UnixMilli() {
 		return errReplay
 	}
-	if c.lines > 4096 && c.lines > 2*len(c.seen) {
+	// Compare with what the last rewrite kept, not with seen: seen also
+	// holds expired entries until a rewrite, so it grows with the file.
+	if c.lines > 4096 && c.lines > 2*c.kept {
 		if err := c.rewrite(now); err != nil {
 			return err
 		}

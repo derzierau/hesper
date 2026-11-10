@@ -16,7 +16,7 @@ import (
 // is enough). A pull asks for the entries changed after the last
 // sequence number it got from that node (deltas only; a peer whose
 // database is new — another epoch — starts over), in batches of at most
-// 400 entries and ~600 KB of zstd-compressed JSON, one request at a
+// 400 entries and 384 KiB of zstd-compressed JSON, one request at a
 // time with a pause between batches, so an initial sync of thousands of
 // entries never floods the link. A link opening and the host's change
 // hints (a tiny event on the link) start a pull. Merging is the same
@@ -53,9 +53,17 @@ func (s *Service) peerSet() Peers {
 }
 
 // batch limits of a pull.
+//
+// pullBytes keeps a page's answer inside one relay message
+// (protocol.MaxMessageBytes, 1 MiB; the relay drops the host's
+// connection for a bigger one). The compressed bytes travel base64 in the
+// result's JSON (× 4/3), and that JSON sealed and base64 again in the
+// end-to-end channel's frame (× 4/3): 16/9 of the page plus the
+// envelopes. 384 KiB × 16/9 ≈ 683 KiB, a third of the limit to spare;
+// 600 KiB was 1.07 MB on the wire.
 var (
 	pullEntries   = 400
-	pullBytes     = 600 << 10 // compressed
+	pullBytes     = 384 << 10 // compressed
 	pullPause     = 20 * time.Millisecond
 	pullRate      = time.Duration(8 << 20) // bytes per second
 	pullHintDelay = 250 * time.Millisecond
@@ -148,6 +156,14 @@ func (s *Service) pull(p pullParams) (pullResult, error) {
 		if len(packed) > pullBytes && limit > 1 {
 			limit /= 2
 			continue
+		}
+		if len(packed) > pullBytes && len(recs) > 0 {
+			// One entry over the budget alone (the index's caps keep an
+			// entry far below it): sending it would break the link, not just this
+			// pull, so it is left out of sync until it changes, and the
+			// page moves past it.
+			s.opt.Logf("history: entry %s is %d bytes compressed, over a pull's %d; not synced", recs[0].Key(), len(packed), pullBytes)
+			recs, packed = nil, nil
 		}
 		res.Next, res.Count, res.Data = next, len(recs), packed
 		res.More = len(rows) == limit && next < s.db.highSeq()

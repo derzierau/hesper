@@ -161,6 +161,18 @@ type HelloResult struct {
 	Version  string    `json:"version"`
 	Machine  string    `json:"machine"`
 	Machines []Machine `json:"machines"`
+	// RelaySession: the host role's dropped relay sessions; absent
+	// without the host role or before the first drop.
+	RelaySession *RelaySession `json:"relaySession,omitempty"`
+}
+
+// RelaySession is how often the host's relay session ended without
+// hesperd stopping: drops in the last five minutes (a sliding window
+// whose length is fixed, as the name says) and the last one's cause and time.
+type RelaySession struct {
+	Drops5m    int       `json:"drops5m"`
+	LastReason string    `json:"lastReason"`
+	LastAt     time.Time `json:"lastAt"`
 }
 
 // SpawnParams are agents.spawn's. Worktree is true (a new worktree) or a

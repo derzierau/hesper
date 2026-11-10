@@ -83,6 +83,17 @@ type Server struct {
 	// uploads: the agent each files.put upload is for (tree.go).
 	uploads map[string]uploadTarget
 	app     *appBridge // app control (appbridge.go)
+	// relaySession (under mu) tells hello the host role's dropped relay
+	// sessions; nil without the host role.
+	relaySession func() *wire.RelaySession
+}
+
+// SetRelaySession lets hello report the host role's relay session (the
+// host role starts after the server).
+func (s *Server) SetRelaySession(f func() *wire.RelaySession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.relaySession = f
 }
 
 // NewServer serves reg.
@@ -515,7 +526,14 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		if remote != nil {
 			machines = append(machines, remote.Machines()...)
 		}
-		return wire.HelloResult{Daemon: "hesperd", Version: Version, Machine: reg.machine, Machines: machines}, nil
+		hello := wire.HelloResult{Daemon: "hesperd", Version: Version, Machine: reg.machine, Machines: machines}
+		s.mu.Lock()
+		relaySession := s.relaySession
+		s.mu.Unlock()
+		if relaySession != nil {
+			hello.RelaySession = relaySession()
+		}
+		return hello, nil
 	case "agents.list":
 		list := reg.List()
 		if remote != nil {
