@@ -273,12 +273,16 @@ final class SizeOwnership {
     /// is applied again only if the id really changed
     /// (SizeOwner.localMachineChanged) or a terminal's reading did.
     func helloReceived(_ id: String?) {
-        let idChanged = SizeOwner.localMachineChanged(old: localMachine, new: id)
+        let previous = localMachine
+        let idChanged = SizeOwner.localMachineChanged(old: previous, new: id)
         if idChanged { localMachine = id }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let before = self.remoteOwned
-            for t in self.terminals() { self.noteRemoteOwned(t) }
+            for t in self.terminals() {
+                if idChanged { t.localMachineChanged(from: previous) }
+                self.noteRemoteOwned(t)
+            }
             if idChanged || self.remoteOwned != before { self.apply() }
         }
     }

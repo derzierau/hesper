@@ -213,6 +213,9 @@ import Testing
         // Another device took over: the take-back is over.
         #expect(SizeOwner.endsTakeBack(old: "dev-1", new: "dev-2"))
         #expect(SizeOwner.endsTakeBack(old: nil, new: "dev-1"))
+        // The agent's other Mac took it (seen once the hello names this Mac).
+        #expect(SizeOwner.endsTakeBack(old: nil, new: SizeOwner.hostOwner))
+        #expect(SizeOwner.endsTakeBack(old: "dev-1", new: SizeOwner.hostOwner))
     }
 
     @Test func aSizeHandedBackToAnEarlierOwnerIsFollowed() {

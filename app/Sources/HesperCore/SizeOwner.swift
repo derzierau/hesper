@@ -151,9 +151,10 @@ public enum SizeOwner {
     public static func remoteOwned(_ a: Agent, local: Bool?) -> Bool { owner(a, local: local) != nil }
 
     /// Whether a pane's take-back ends because the agent's owner
-    /// (`owner(_:local:)`) went from `old` to `new`: only when another
-    /// remote owner took over. The daemon settling it (no other owner)
-    /// does not end it: the pane still awaits its owner surface.
+    /// (`owner(_:local:)`) went from `old` to `new`: whenever it became
+    /// another owner, a device or the agent's other Mac (`hostOwner`). The
+    /// daemon settling it (no other owner) does not end it: the pane still
+    /// awaits its owner surface.
     public static func endsTakeBack(old: String?, new: String?) -> Bool {
         guard let new, !new.isEmpty else { return false }
         return old != new

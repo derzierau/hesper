@@ -308,6 +308,13 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// Calls a pending take-back off at once, dropping its keys.
     func endTakeBack() { input.endTakeBack() }
 
+    /// This Mac's machine id changed from `previous`: the agent's owner may
+    /// read differently now; another owner ends a take-back, as in update().
+    func localMachineChanged(from previous: String?) {
+        let old = SizeOwner.owner(agent, local: previous.map { agent.machine == $0 })
+        if SizeOwner.endsTakeBack(old: old, new: sizeOwner(agent)) { input.endTakeBack() }
+    }
+
     /// Every surface that becomes current (finishSwap, createSurface): an
     /// owner surface ends a pending take-back by getting its held keys, in
     /// order, on the next main-loop turn (never inside update() or a layout
