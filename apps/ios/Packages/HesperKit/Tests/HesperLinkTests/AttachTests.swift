@@ -83,6 +83,29 @@ import Testing
         #expect(await Self.all(stream) == [.size(cols: 80, rows: 24), .data(bytes), .scroll, .data(Data("x".utf8))])
     }
 
+    @Test(.timeLimit(.minutes(1))) func aSecondWaitForTheReplyFailsAndTheFirstStillGetsIt() async throws {
+        let stream = AttachChannel(id: 7, onClose: { _ in })
+        let first = Task { try await stream.reply() }
+        // Let the first wait register.
+        for _ in 0..<100 where !stream.awaitingReply { try await Task.sleep(for: .milliseconds(5)) }
+        await #expect(throws: RelayError(code: "busy", message: "The reply is already awaited")) { _ = try await stream.reply() }
+        stream.receive(Data(#"{"ok":true,"cols":80,"rows":24}"#.utf8) + Data([10]))
+        #expect(try await first.value == AttachReply(ok: true, cols: 80, rows: 24))
+        stream.close()
+    }
+
+    @Test func aCancelledReaderClosesTheAttach() async throws {
+        let closed = Mutex([UInt32]())
+        let stream = AttachChannel(id: 9) { id in closed.withLock { $0.append(id) } }
+        let reader = Task { await Self.all(stream) }
+        try await Task.sleep(for: .milliseconds(20))
+        reader.cancel()
+        _ = await reader.value
+        // The next frame finds no reader: the attach closes (X).
+        stream.receive(Data(#"{"ok":true,"cols":80,"rows":24}"#.utf8) + Data([10]) + Self.inner(0, Data("x".utf8)))
+        #expect(closed.withLock { $0 } == [9])
+    }
+
     @Test func aReplyErrorIsAnObjectOrAString() throws {
         var object = AttachDecoder()
         let r = try object.append(Data(#"{"ok":false,"error":{"code":"forbidden","message":"no observe right"}}"#.utf8) + Data([10]))

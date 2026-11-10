@@ -261,7 +261,12 @@ public final class AttachChannel: AttachStream {
         }
         switch continuation.yield(frame) {
         case .enqueued: return true
-        case .dropped, .terminated: return false
+        case .terminated:
+            // The reader went away (its task was cancelled): close, so the
+            // Mac stops streaming and the attach is unregistered.
+            close(RelayError(code: "closed", message: "Nobody reads the terminal"))
+            return false
+        case .dropped: return false
         @unknown default: return false
         }
     }
@@ -293,6 +298,9 @@ public final class AttachChannel: AttachStream {
             try await withCheckedThrowingContinuation { c in
                 let ready = state.withLock { s -> Result<AttachReply, RelayError>? in
                     if let r = s.reply { return r }
+                    // One waiter: a second would replace the first, which
+                    // then never resumes.
+                    guard s.waiter == nil else { return .failure(RelayError(code: "busy", message: "The reply is already awaited")) }
                     s.waiter = c
                     return nil
                 }
@@ -332,6 +340,9 @@ public final class AttachChannel: AttachStream {
     }
 
     public func close() { close(RelayError(code: "closed", message: "Closed")) }
+
+    /// Someone waits in `reply()` now (for tests).
+    var awaitingReply: Bool { state.withLock { $0.waiter != nil } }
 
     /// The Mac took no input for so long that its queue filled.
     static let inputOverflow = RelayError(code: "overflow", message: "The Mac is not taking input")
