@@ -163,6 +163,10 @@ final class SizeOwnership {
     /// Re-attaches done for ownership (tests, perf).
     private(set) var switches = 0
     private var takeBackMonitor: Any?
+    /// Agents another device sized when last seen (sizeOwnerChanged, and
+    /// wouldOwn for new surfaces): empty, a key skips the terminal walk.
+    /// A closed agent's id may linger; it only costs that walk.
+    private var remoteOwned: Set<String> = []
 
     init() {
         // Fit to iPhone: a keystroke in a pane whose agent's size another
@@ -221,6 +225,7 @@ final class SizeOwnership {
     /// Whether `t` owns its agent's size now (AgentTerminal asks when it
     /// makes a surface). Others of the same agent follow in the next apply.
     func wouldOwn(_ t: AgentTerminal) -> Bool {
+        noteRemoteOwned(t)
         let all = owners(including: t)
         let owns = all.first { $0.0 === t }?.1 ?? false
         if owns, all.contains(where: { $0.0 !== t && $0.0.agent.id == t.agent.id && $0.0.readWrite && $0.0.ownsSize }) { schedule() }
@@ -230,6 +235,7 @@ final class SizeOwnership {
     /// An agent's `sizeOwner` changed: another device taking the size makes
     /// its panes views at once; a cleared owner goes through the debounce.
     func sizeOwnerChanged(_ t: AgentTerminal) {
+        noteRemoteOwned(t)
         if t.remoteOwned { apply() } else { schedule() }
     }
 
@@ -237,8 +243,12 @@ final class SizeOwnership {
     /// size is another device's, takes the size back (owner at once,
     /// latest owner wins; SizeOwner.keyTakeBack). True: the key is held for
     /// that pane's owner surface (replayed once it swapped in).
+    private func noteRemoteOwned(_ t: AgentTerminal) {
+        if t.remoteOwned { remoteOwned.insert(t.agent.id) } else { remoteOwned.remove(t.agent.id) }
+    }
+
     private func takeBack(_ e: NSEvent) -> Bool {
-        guard let w = e.window, isOurs(w) else { return false }
+        guard !remoteOwned.isEmpty, let w = e.window, isOurs(w) else { return false }
         let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && $0.remoteOwned }
         guard !ts.isEmpty else { return false }
         let responder = w.firstResponder
