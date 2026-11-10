@@ -290,3 +290,28 @@ func TestDevicesCall(t *testing.T) {
 		t.Errorf("bad params: %v", err)
 	}
 }
+
+// Controller names come from the device: one named like another's id
+// must not block or redirect the removal of that id.
+func TestRemoveMatchesTheApprovalByIDOnly(t *testing.T) {
+	e := newRemovalEnv(t)
+	list, _, err := e.store.LoadControllers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range list.Controllers {
+		if list.Controllers[i].Device == "ctl-w" {
+			list.Controllers[i].Name = "dev-x"
+		}
+	}
+	if err := e.store.saveControllers(list); err != nil {
+		t.Fatal(err)
+	}
+	res, err := e.svc.Remove(context.Background(), "dev-x", true)
+	if err != nil || res.Approval != wire.StepDone {
+		t.Fatalf("remove: %+v %v", res, err)
+	}
+	if a, _, _ := e.state(t); !slices.Equal(a, []string{"ctl-w"}) {
+		t.Errorf("approved %v", a)
+	}
+}

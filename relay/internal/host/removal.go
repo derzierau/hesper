@@ -233,7 +233,7 @@ func (s *DevicesService) Remove(ctx context.Context, id string, localOnly bool) 
 		res.Relay = wire.StepDone
 	}
 	if approved(id) {
-		_, err := s.Store.Revoke(id)
+		_, err := s.Store.RevokeID(id)
 		res.Approval = step(err)
 	}
 	if pinned {
