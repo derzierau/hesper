@@ -1,6 +1,7 @@
 # Hesper for iPhone: concept
 
-Status: concept, 31 Oct 2026; capture updated 2 Nov 2026. Wireframes in
+Status: concept, 31 Oct 2026; capture updated 2 Nov 2026; the terminal's
+first version (watching) built 7 Nov 2026. Wireframes in
 [`wireframes/`](wireframes/) (round 4 draws the writable terminal and iPad,
 round 5 the mic circle that replaced the Search tab), critique between rounds
 in [`critique.md`](critique.md), the writable terminal researched in
@@ -40,7 +41,7 @@ Three rules hold the design together:
 | 1 | See what needs me, across every Mac | Inbox tab, lock screen, Live Activity, widget | `agents.link` events (channel 0) |
 | 2 | Answer or approve | Inbox row, agent dock, notification action | `agents.answer`, `agents.input` (digit for choices) |
 | 3 | Start an agent, or keep a task for later, on any Mac and project | Mic circle next to the tabs, Siri / Action button | `agents.spawn`, `drafts.save`, `projects.recent`, `profiles.list` |
-| 4 | Follow and steer | Agent view: live writable terminal plus reply dock | `agents.attach` `rw` (`owner: false`; `owner: true` after Fit to iPhone), `agents.input` for the reply field |
+| 4 | Follow and steer | Agent view: live writable terminal plus dock | `agents.attach` `rw` (`owner: false`; `owner: true` after Fit to iPhone); keys as frame type 0 |
 | 5 | Stop, resume, close | Agent menu, swipe on rows | `agents.stop`, `agents.resume`, `agents.close` |
 | 6 | Judge the result | Review sheet from the Inbox | `review.list`, `review.diff`, `review.evidence`, `review.accept`, `review.sendBack` |
 | 7 | Know the Macs are fine | Macs tab | inventory (`machines`, `machine.updated`), `snapshot` stats |
@@ -53,23 +54,27 @@ should not reimplement.
 ## Information architecture
 
 ```
-Tab bar (Liquid Glass)
-├── Inbox        what waits for me: Needs you, then Ready to review
+Home             scope bar (All · Needs you · Working) + menu (Agents,
+│                Macs, Search, Settings); the priority decision; task grids
 ├── Agents       everything that runs, grouped by project, Mac as meta;
 │                a search field (agents, projects, past sessions) and
 │                Later (tasks kept for later, parked drafts on every Mac)
 └── Macs         machines, their health, pairing
-Mic circle       beside the tabs: say or type a task, start it or keep it
-Agent view       pushed from any row; live writable terminal + dock;
+Console          Speak (push-to-talk) and Type at the bottom
+Agent view       pushed from any row; live terminal (watching; typing
+                 later) + dock;
                  portrait and landscape (iPad: the detail column)
 Sheets           Capture · Review · Deny with a message · Pair a Mac
 System surfaces  notifications · one fleet Live Activity · widgets · controls · App Intents
 ```
 
-Why three tabs and a mic:
+Why Home, a menu and a console (the Neon redesign, [`neon.md`](neon.md),
+replaced the three tabs and the mic circle on 7 Nov):
 
-- **Inbox** is the Mac's ⌘J and ⌘R in one place: things that wait for the
-  owner. It can be empty, and empty is the goal ("Nothing needs you").
+- **Home** is the Mac's ⌘J and ⌘R in one place: the one decision that
+  matters most on top, then what needs the owner, what is ready to review
+  and what is working. The scope bar narrows it to Needs you or Working.
+  Needs you can be empty, and empty is the goal ("Nothing needs you").
   Codex, Claude Code Remote Control and Cursor all lead with one run list
   that flags "needs input"
   ([Codex mobile](https://learn.chatgpt.com/docs/mobile.md),
@@ -79,27 +84,22 @@ Why three tabs and a mic:
   Mac's automatic bands (by project; one level dropped when everything is in
   one project). Rows carry the agent's own activity line, not a terminal
   preview, so the list costs no terminal streams.
-- **Macs** exists because machines fail in ways the owner must see (lid
+- **Macs** (in the menu) exists because machines fail in ways the owner must see (lid
   closed, offline, unpaired). A plain status line beats a dot: Tailscale
   found that an activity dot "caused more confusion"
   ([forum](https://forum.tailscale.com/t/online-status-in-app/2107)).
-- **Search** is the field at the top of Agents (`.searchable`). On a phone
-  the owner drops tasks far more often than they search, so search gave
-  its place to capture (decided, round 5).
+- **Search** is the field at the top of Agents (`.searchable`); the menu's
+  Search opens Agents with it focused. On a phone the owner drops tasks
+  far more often than they search, so capture gets the bottom of the
+  screen, not search (decided, round 5).
 
-**The mic circle** sits where the Search circle was: a glass circle in the
-accent beside the tab capsule. It listens from the moment it is touched:
-a tap opens the capture sheet still listening; holding is push-to-talk
-(the words show at the top of the screen, letting go opens the sheet with them,
-sliding off the circle cancels). The sheet has a keyboard button. It is a button, not a tab, so the tab bar still holds
-navigation only ([HIG tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars.md)).
-The system bar has no slot for an action (the search-role tab is drawn
-inside the capsule on current iOS), so on iPhone the app draws the bar
-itself under the three root screens; pushed screens such as the agent view
-have no bar. iPad keeps the system tabs with a "New task" item.
-It replaces the New agent accessory: one way in, and the lists keep the
-space the accessory covered.
-The Inbox tab badge shows the needs-you count; nothing else is badged.
+**The console** at the bottom of Home holds Speak and Type. Speak listens
+from the moment it is touched: a tap opens the capture sheet still
+listening; holding is push-to-talk (the words show at the top of the
+screen, letting go opens the sheet with them, sliding off cancels). Type
+opens the sheet with the keyboard. It is the app's own bar, not a system
+tab bar, because no system control carries push-to-talk. Pushed screens
+such as the agent view have no console; iPad gets the same console.
 
 ## Key flows
 
@@ -131,8 +131,8 @@ more in the agent view). A question with no options says "Open to answer".
 
 ### 3. Drop a task from anywhere (20 seconds)
 
-1. Hold the **mic circle** and speak, then let go; or tap it and speak
-   until Done. Typing is one button away in the sheet.
+1. Hold **Speak** on Home's console and speak, then let go; or tap it and
+   speak until Done. **Type** opens the sheet with the keyboard.
 2. One sheet: the text first (live while listening, editable after), then
    one destination line
    "hesper on mini" (the last-used or most recent project from
@@ -159,16 +159,48 @@ in the language it was said in.
 
 ### 4. Follow and steer
 
-The agent view is the agent's real terminal. Under it sits the dock:
+The agent view shows the agent as text, in the raw terminal's type: its
+transcript above (`›` and what you asked, the replies with inline
+markdown, each tool call one `⏺` line that a tap opens to its result),
+and under a hairline the agent's live screen as text rows, all of them
+while it works (a shell's always), the prompt's few once it is idle. The
+terminal's active cursor row stays below the scroll as its direct input,
+centered in a tall touch area above the keyboard;
+the other visible rows scroll with the transcript. The
+live rows are drawn at the agent's terminal size and follow it when the
+Mac resizes it. The history starts over when the agent's session
+changes or the Mac rewinds its transcript; queued items from the old
+session are discarded. When the link breaks it
+reconnects on its own. If the phone's 1024-item buffer fills during a
+backfill, it closes the stream and reopens at once after the last item
+held, without a status change. When the Mac cannot continue after what
+the phone holds (the transcript was rewritten, or the phone is more than
+1000 lines behind) it sends the restart marker and the newest page; the
+phone drops what it held. The phone keeps at most 5000 items: the oldest
+go as new ones arrive, and scrolling up pages them back. A transcript
+item above the wire limit stops the view with a newer-Hesper message
+instead of silently omitting the item. A Mac without transcripts
+("History needs a newer Hesper") also stops asking; a refusal of the
+phone's rights stops with the Mac's message. Links in agent output open
+only web pages, and a link whose text is not its address shows the
+address. Pasted or dictated text is sent as one bracketed paste with ESC
+removed. "Raw terminal" in the view's menu
+shows the agent's real terminal in its place, and stays chosen for that
+agent until the app quits. Long user messages and replies show a preview
+with **Show full text**. That opens a reader which fetches one 64 KiB
+part at a time; Next part and Previous part replace the visible text.
+A dock appears for decisions, exited agents, errors, and Raw Terminal's
+Send button:
 
 - **needs you**: the decision as native buttons (Allow · Always · Deny…,
   or the numbered choices). Deny… opens a field for "tell Claude what to do
   instead".
-- **working, done, idle**: a reply field ("Message migrations"), a mic, and
-  a **Keyboard** button that puts the focus in the terminal itself. The
-  reply field sends whole messages with `agents.input`. In the terminal,
-  every key goes straight to the agent, as on the Mac. The PTY keeps the
-  Mac's size until the owner taps Fit to iPhone.
+- **working, done, idle**: in the text transcript, the terminal's own input
+  row stays above the Home indicator or keyboard. Tapping it opens the
+  keyboard; typed characters and Return go directly to the terminal, with
+  the key bar (Esc, Tab, Ctrl, arrows). There is no separate message draft
+  or Send button. In Raw Terminal, Send still presses Enter. A fitted raw
+  terminal shrinks to the rows above the keyboard.
 - **exited**: Resume and Close.
 - **error**: the error line, Open on Mac, Resume, Close.
 
@@ -245,6 +277,27 @@ for confirmation (`requestConfirmation`,
 
 ## The terminal on a phone
 
+**Built so far (10 Nov 2026): watching, scrolling, typing and the fit.**
+The agent view attaches read-write (`mode: rw`, right `type`) when the
+phone has that right, read-only (`mode: ro`, right `observe`) otherwise,
+with no Face ID; a vertical drag scrolls the agent as wheel input, with
+momentum. On a `rw` attach a tap brings up the keyboard with libghostty's
+key bar, and keys go to the agent. On a Mac that publishes
+`capabilities.sizeOwner` the phone takes the size when the view opens
+(automatic, the owner's decision of 7 Nov, replacing the explicit tap
+below) and lets go when it closes. Replies, answers and Speak go through
+the dock. Readable and fit width, pinch, double tap, pan, "Live ↓" and
+landscape work as below; the view follows the last row with text rather
+than the cursor, which the renderer does not report. Selection and links
+are still to come.
+
+Two parts need hesperd changes that are not merged yet. Scrollback on a
+read-only attach needs #65 (`ptyhost` sends history only to `rw` today).
+The fit needs #67, which publishes `sizeOwner` and the capability, adds
+an optional `sizeOwnerHost: true` when the agent's own Mac owns the
+size, and may leave out the owner's name. Without them the phone
+mirrors the Mac's grid, and a read-only attach starts without history.
+
 The terminal is writable, like the Mac's. Typing and owning the size are
 separate in hesperd, so the phone can type without resizing anything
 ([research](writable-terminal.md)). It renders with libghostty through
@@ -258,12 +311,12 @@ and scrolling.
 never garbles, and the Mac's tile is untouched.
 
 - **Readable** (default when the PTY is wider than about 90 columns): a
-  fixed font of about 9 pt, a "120 cols →" label, pan for the rest. **Fit
+  fixed font of about 18 pt, a "120 cols →" label, pan for the rest. **Fit
   width** (default for narrower PTYs): the font scales so every column
   fits. Double tap toggles; pinch zooms. While typing, the view follows
   the cursor.
-- **Landscape** (decided). The agent view rotates, and at about 9 pt a
-  120-column terminal fits the width. The dock moves to the side. The rest
+- **Landscape** (decided). The agent view rotates and shows more
+  columns at the same font. The dock moves to the side. The rest
   of the app stays portrait on iPhone.
 - **Bottom-anchored**: the newest line sits just above the dock or the
   keyboard.
@@ -329,25 +382,18 @@ In scope (decided). One app, adaptive:
 
 ## Visual language
 
-The Mac's design system, adapted to iOS 26:
+The Neon control console, the owner's Figma direction; tokens, type and
+layout are in [neon.md](neon.md), which supersedes this section's
+earlier Liquid Glass version:
 
-- **Colours**: the `Theme` tokens in Dusk and Daylight
-  ([design system](../design-system.md)). Signal red only on the
-  needs-you marks and the Inbox badge, never on buttons; the primary
-  action (Allow, Start, Accept) is tinted with the accent (`working`);
-  question amber, done green, error red.
-- **State marks are squares**, 8 pt on the phone, needs-you pulses (not
-  under Reduce Motion). Same shape on the Mac and phone.
-- **Glass only for navigation**: tab bar, mic circle, toolbars, the agent
-  dock and sheets. Lists and the terminal stay solid; no glass on glass;
-  tint only the primary action
-  ([WWDC25-219](https://developer.apple.com/videos/play/wwdc2025/219/)).
-- **Type**: SF Pro for UI at Dynamic Type sizes (Geist is a Mac choice; on
-  iOS the system face scales with accessibility settings for free), SF Mono
-  for meta and commands. Weights 400/500/600.
-- **Shapes**: capsules for buttons, concentric corners for sheets and the
-  dock, terminals edge to edge.
-- **Motion**: calm, no springs, off under Reduce Motion.
+- **Neon tokens**: dark background, cyan accent for action, magenta
+  signal for "needs you"; every colour comes from `Theme`.
+- **Square corners**: 2 pt on everything; the state marks stay 8 pt
+  squares.
+- **No glass**: surfaces are solid with 1 pt borders.
+- **Type**: Space Grotesk Bold for headlines, JetBrains Mono for commands,
+  counts and captions, SF Pro for the rest, all at Dynamic Type sizes.
+- **Dark only** for now.
 
 ## What the phone leaves out
 
@@ -385,6 +431,14 @@ the app backgrounds. On return, the first frame is a full redraw, about
 costs well under 1% of a core. Rows update at most at the display rate,
 coalesced per agent.
 
+The phone buffers up to 16 MiB of terminal output while the renderer
+catches up, joining a payload's adjacent data frames into one, so a burst
+of small frames or a full history replay never counts as falling behind.
+If it falls further behind than that, it closes only
+that attach. The terminal shows Reconnecting, opens a new attach and takes
+the Mac's full redraw; it never continues drawing a stream with missing
+bytes. Other attaches and the Mac's link keep reading.
+
 **Battery.** No background sockets: WebSockets do not run in the
 background and the app is suspended shortly after leaving the foreground
 ([forum](https://developer.apple.com/forums/thread/716118)). While
@@ -411,8 +465,9 @@ What core Hesper (`main`) needs before this app can ship, in order:
    protocol (enrollment, device and strong keys, `devices.request`, signed
    requests, Noise channel, links) usable from Swift. *Built*:
    `HesperLink` in `apps/ios/Packages/HesperKit` (`LiveLink`,
-   `LivePairing`); still to come: attaches on the link (`agents.attach`,
-   core job 4) and the direct path.
+   `LivePairing`) and read-only, read-write and owner attaches (items 8
+   to 10); still to come: the
+   direct path.
 2. **Push from the relay**: APNs alerts on entering approval, question or
    error, ids only; the phone fills in text end to end. Plus a presence
    signal so a Mac in active use suppresses pushes.
@@ -426,8 +481,9 @@ What core Hesper (`main`) needs before this app can ship, in order:
 7. **`agents.move` driven by a Mac on the phone's behalf** (later).
 8. **Attach channels in the mobile client library**: open an
    `agents.attach` on a link, then read and write its `D` frames and close
-   it with `X` (HesperLink drops them today). This is needed for the
-   writable terminal (Mirror). No protocol change.
+   it with `X`. No protocol change. *Built* for watching:
+   `HostChannel.attach` opens a read-only attach and reads its `D` frames;
+   writing them comes with typing.
 9. **Who owns the size, in hesperd**: record whether the size owner is
    local or a remote device. Publish it as `sizeOwner` in the agent's info
    and events, and set `capabilities.sizeOwner` in the snapshot. Both are

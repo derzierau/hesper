@@ -11,8 +11,9 @@ This file ships inside `Hesper.app/Contents/Resources/THIRD_PARTY_NOTICES.md`.
 
 | Component | Version | License | Distributed in |
 |---|---|---|---|
-| Ghostty (libghostty) | commit 35a81a980bb9 | MIT | Hesper.app |
-| libghostty-spm (GhosttyKit.xcframework) | 2.2.2026100501 | MIT | Hesper.app |
+| Ghostty (libghostty) | commit 35a81a980bb9 | MIT | Hesper.app; Hesper for iPhone |
+| libghostty-spm (GhosttyKit.xcframework) | 2.2.2026100501 | MIT | Hesper.app; Hesper for iPhone (also GhosttyTerminal) |
+| DisplayLink (Lakr233) | 3.0.1 | MIT | Hesper for iPhone |
 | Zig standard library and compiler-rt | as used by Ghostty | MIT | Hesper.app |
 | libxev | as pinned by Ghostty | MIT | Hesper.app |
 | zig-objc | as pinned by Ghostty | MIT | Hesper.app |
@@ -24,7 +25,8 @@ This file ships inside `Hesper.app/Contents/Resources/THIRD_PARTY_NOTICES.md`.
 | Highway | as pinned by Ghostty | Apache-2.0 OR BSD-3-Clause | Hesper.app |
 | Wuffs | v0.4 | Apache-2.0 (see note) | Hesper.app |
 | GNU gettext (libintl) | as pinned by Ghostty | LGPL-2.1-or-later | Hesper.app built with the prebuilt libghostty only (see note); not in release builds |
-| JetBrains Mono | 2.304 | OFL-1.1 | Hesper.app (embedded in libghostty) |
+| JetBrains Mono | 2.304 | OFL-1.1 | Hesper.app (embedded in libghostty); Hesper for iPhone |
+| Space Grotesk | 2.0.0 | OFL-1.1 | Hesper for iPhone |
 | Symbols Nerd Font | 3.4.0 | MIT / OFL-1.1 (see note) | Hesper.app (embedded in libghostty) |
 | Geist, Geist Mono | as bundled | OFL-1.1 | Hesper.app |
 | Go standard library | toolchain version | BSD-3-Clause | hesperd, hesperctl, hesper-relay |
@@ -45,6 +47,26 @@ This file ships inside `Hesper.app/Contents/Resources/THIRD_PARTY_NOTICES.md`.
 | modernc.org/mathutil | v1.7.1 | BSD-3-Clause | hesperd |
 | modernc.org/memory | v1.11.0 | BSD-3-Clause | hesperd |
 | modernc.org/sqlite (incl. SQLite) | v1.56.0 | BSD-3-Clause, public domain | hesperd |
+
+---
+
+## Hesper for iPhone
+
+The agent view draws a Mac's terminal with libghostty through
+libghostty-spm's `GhosttyTerminal` library (package
+`apps/ios/Packages/HesperTerminal`). It links the same prebuilt
+`GhosttyKit.xcframework` (its iOS slices) as Hesper.app, so the libraries
+listed for libghostty under Hesper for macOS apply to it as well; that list
+was made from the macOS slice and has not been checked separately against
+the iOS slices. `GhosttyTerminal` depends on DisplayLink.
+
+### DisplayLink
+
+- Version: 3.0.1 (revision 41bea2661e04bebcb1c4f15fc0b6197850100fdd)
+- URL: https://github.com/Lakr233/DisplayLink
+- License: MIT
+- Copyright (c) 2024 Lakr Aream
+- Full text: [MIT License](#mit-license)
 
 ---
 
@@ -188,12 +210,27 @@ on how it was built (details and relink instructions: `docs/licensing.md`):
 
 ### JetBrains Mono
 
-Embedded in libghostty as Ghostty's built-in fallback font.
+Embedded in libghostty as Ghostty's built-in fallback font. Hesper for
+iPhone bundles `JetBrainsMono-Regular.ttf` (source tree:
+`apps/ios/App/Fonts/`) from the same release.
 
 - Version: 2.304
 - URL: https://github.com/JetBrains/JetBrainsMono
 - License: SIL Open Font License 1.1
 - Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+- Full text: [SIL Open Font License 1.1](#sil-open-font-license-11)
+
+### Space Grotesk
+
+Bundled in Hesper for iPhone as `SpaceGrotesk-Bold.ttf` (source tree:
+`apps/ios/App/Fonts/`), the static Bold from the 2.0.0 release. The
+iPhone app ships the license with both of its fonts' copyright notices
+as `OFL.txt` in its bundle (source tree: `apps/ios/App/Fonts/OFL.txt`).
+
+- Version: 2.0.0
+- URL: https://github.com/floriankarsten/space-grotesk
+- License: SIL Open Font License 1.1
+- Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)
 - Full text: [SIL Open Font License 1.1](#sil-open-font-license-11)
 
 ### Symbols Nerd Font
@@ -1584,9 +1621,9 @@ END OF TERMS AND CONDITIONS
 
 ### SIL Open Font License 1.1
 
-Applies to Geist, Geist Mono and JetBrains Mono (and parts of the Nerd
-Fonts glyph sets), each with its own copyright notice as listed. The text
-below is `app/Resources/Fonts/OFL.txt`, shipped as `Fonts/OFL.txt`.
+Applies to Geist, Geist Mono, JetBrains Mono and Space Grotesk (and parts
+of the Nerd Fonts glyph sets), each with its own copyright notice as
+listed. The text below is `app/Resources/Fonts/OFL.txt`, shipped as `Fonts/OFL.txt`.
 
 ```text
 Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font.git)

@@ -69,6 +69,16 @@ final class FakeHost: Sendable {
         var approvedKey: Data?
         var requests: [(method: String, params: Data)] = []
         var streams: [String: Data] = [:]
+        /// The served links by stream id, the newest last in `served`.
+        var links: [String: (cipher: StreamCipher, pipe: Pipe)] = [:]
+        var served: [String] = []
+        /// What `agents.attach` answers on the channel: this reply line,
+        /// then (when ok) one data frame "hi".
+        var attachReply = #"{"ok":true,"cols":97,"rows":56}"#
+        /// Accept `agents.attach` but send nothing on the channel.
+        var silentAttach = false
+        /// The frames the phone sent on its links.
+        var received: [LinkFrames.Frame] = []
     }
     let state = Mutex(State())
 
@@ -148,6 +158,39 @@ final class FakeHost: Sendable {
             let secret = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
             state.withLock { $0.streams[stream] = secret }
             return ["id": o["id"]!, "result": ["id": stream, "e2e": secret.base64EncodedString()]]
+        case "agents.attach":
+            guard let stream = params["link"] as? String, state.withLock({ $0.links[stream] != nil }),
+                let ch = (params["ch"] as? NSNumber)?.uint32Value, ch > 0
+            else { return ["id": o["id"]!, "error": ["code": "not_found", "message": "No such link"]] }
+            // As hesperd: the reply line and the first frames travel on
+            // the channel, possibly before the call's answer.
+            let (reply, silent) = state.withLock { ($0.attachReply, $0.silentAttach) }
+            if silent { return ["id": o["id"]!, "result": [String: Any]()] }
+            var bytes = Data(reply.utf8) + Data([10])
+            if reply.contains(#""ok":true"#) { bytes += AttachTests.inner(0, Data("hi".utf8)) }
+            push(kind: UInt8(ascii: "D"), channel: ch, bytes, on: stream)
+            return ["id": o["id"]!, "result": [String: Any]()]
+        case "agents.transcriptText":
+            return ["id": o["id"]!, "result": ["text": "é", "next": 2, "more": true]]
+        case "agents.transcriptStream":
+            guard let stream = params["link"] as? String, state.withLock({ $0.links[stream] != nil }),
+                let ch = (params["ch"] as? NSNumber)?.uint32Value, ch > 0
+            else { return ["id": o["id"]!, "error": ["code": "not_found", "message": "No such link"]] }
+            // As hesperd for a reconnect whose `after` is past the end or
+            // too far behind: the restart marker, then the newest items.
+            var lines = ""
+            if params["after"] != nil { lines += #"{"seq":-1,"kind":"system","text":"Transcript restarted"}"# + "\n" }
+            lines += #"{"seq":10,"at":1762600000123,"kind":"user","text":"new"}"# + "\n"
+            lines += #"{"seq":42,"kind":"assistant","text":"reply"}"# + "\n"
+            push(kind: UInt8(ascii: "D"), channel: ch, Data(lines.utf8), on: stream)
+            return ["id": o["id"]!, "result": [String: Any]()]
+        case "agents.screen":
+            // As hesperd's wire.ScreenResult: `alt` is omitted when false
+            // and `cursor` is sent while the cursor shows.
+            return [
+                "id": o["id"]!,
+                "result": ["text": "$ ls\nREADME.md\n$", "rows": 24, "cols": 80, "cursor": ["col": 2, "row": 1]],
+            ]
         case "drafts.list":
             return ["id": o["id"]!, "result": [[String: Any]]()]
         case "drafts.save":
@@ -162,12 +205,38 @@ final class FakeHost: Sendable {
     func serve(stream: String, to pipe: Pipe) throws {
         guard let secret = state.withLock({ $0.streams[stream] }) else { return pipe.close() }
         let cipher = try StreamCipher(secret: secret, streamID: stream, host: true)
+        state.withLock { s in
+            s.links[stream] = (cipher, pipe)
+            s.served.append(stream)
+        }
         pipe.push(.text(#"{"type":"ready"}"#))
         let event = Data(#"{"machine":"\#(short)","list":\#(agents),"full":true}"#.utf8)
         let frame = LinkFrames.encode(kind: UInt8(ascii: "E"), channel: 0, payload: event)
         pipe.push(.data(cipher.seal(kind: StreamCipher.data, payload: frame.prefix(5))))
         pipe.push(.data(cipher.seal(kind: StreamCipher.data, payload: frame.dropFirst(5))))
     }
+
+    /// Sends one sealed link frame on a link (the newest by default).
+    func push(kind: UInt8, channel: UInt32, _ payload: Data, on stream: String? = nil) {
+        // Sealing and pushing under the lock keeps the counter order.
+        state.withLock { s in
+            guard let id = stream ?? s.served.last, let l = s.links[id] else { return }
+            l.pipe.push(
+                .data(l.cipher.seal(kind: StreamCipher.data, payload: LinkFrames.encode(kind: kind, channel: channel, payload: payload))))
+        }
+    }
+
+    /// A message the phone sent on a link: one sealed frame.
+    func receive(stream: String, _ message: SocketMessage) {
+        guard case .data(let sealed) = message else { return }
+        state.withLock { s in
+            guard let l = s.links[stream], let (_, payload) = try? l.cipher.open(sealed) else { return }
+            var frames = LinkFrames()
+            s.received += (try? frames.append(payload)) ?? []
+        }
+    }
+
+    var received: [LinkFrames.Frame] { state.withLock { $0.received } }
 }
 
 /// The relay: routes requests to its hosts and bridges link streams.
@@ -188,7 +257,7 @@ final class FakeRelay: SocketFactory {
             #expect(expectHeader(request, subprotocol == "ghosty.terminal.v1"))
             let stream = request.value(forHTTPHeaderField: "X-Ghosty-Stream") ?? ""
             for h in hosts { try h.serve(stream: stream, to: pipe) }
-            return FakeSocket(inbound: pipe, outbound: { _ in })
+            return FakeSocket(inbound: pipe, outbound: { [hosts] m in for h in hosts { h.receive(stream: stream, m) } })
         }
         #expect(expectHeader(request, subprotocol == "ghosty.v2"))
         let machines = hosts.map {

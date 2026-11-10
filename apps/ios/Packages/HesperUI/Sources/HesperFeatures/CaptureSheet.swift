@@ -5,19 +5,20 @@ import SwiftUI
 
 /// Drop a task or an idea into Hesper (wireframes round 5): say it or
 /// type it, then start an agent now or keep it for later as a parked draft
-/// on a Mac.
+/// on a Mac. A Neon panel with the console's accent on top
+/// (docs/iphone/neon.md, "Capture sheet").
 struct CaptureSheet: View {
     /// How the sheet opens.
     enum Opening: Hashable {
-        /// A tap on the mic: `dictation` is already listening.
+        /// A tap on Speak: `dictation` is already listening.
         case listening
-        /// Released after holding the mic: what was said.
+        /// Released after holding Speak: what was said.
         case said(String)
-        /// The keyboard (VoiceOver's "Type a task", or no speech).
+        /// Type, VoiceOver's "Type a task", or no speech.
         case typing
     }
 
-    /// The mic's dictation, shared with the tab bar so listening carries on
+    /// Speak's dictation, shared with the console so listening carries on
     /// from the tap into the sheet.
     let dictation: Dictation
     let opening: Opening
@@ -32,69 +33,48 @@ struct CaptureSheet: View {
     @FocusState private var typing: Bool
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: DS.Spacing.l) {
-                if dictation.isListening {
-                    listening
-                } else {
-                    TextField("What should happen?", text: $text, axis: .vertical)
-                        .font(.title3)
-                        .lineLimit(3...8)
-                        .focused($typing)
-                    if case .unavailable(let why) = dictation.phase {
-                        Text(why).font(.footnote).foregroundStyle(Theme.dim)
-                    }
-                }
-                destinationRow
-                Spacer(minLength: 0)
-                HStack(spacing: DS.Spacing.m) {
-                    Button {
-                        Task { await keep() }
-                    } label: {
-                        Text("Keep for later").frame(maxWidth: .infinity)
-                    }
-                    .secondaryAction()
-                    Button {
-                        Task { await start() }
-                    } label: {
-                        Text("Start now").frame(maxWidth: .infinity)
-                    }
-                    .primaryAction()
-                }
-                .controlSize(.large)
-                .disabled(!canSend)
-            }
-            .padding(DS.Spacing.l)
-            .background(Theme.background)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Discard", systemImage: "xmark", role: .cancel) {
-                        dictation.cancel()
-                        dismiss()
-                    }
-                }
-                ToolbarItemGroup(placement: .confirmationAction) {
-                    if dictation.isListening {
-                        Button("Type", systemImage: "keyboard") {
-                            Task {
-                                await stopListening()
-                                typing = true
-                            }
-                        }
-                        Button("Done", systemImage: "stop.fill") { Task { await stopListening() } }
-                            .tint(Theme.accent)
-                    } else {
-                        Button("Record", systemImage: "mic.fill") {
-                            typing = false
-                            dictation.start()
-                        }
-                    }
+        VStack(alignment: .leading, spacing: DS.Spacing.l) {
+            header
+            if dictation.isListening {
+                listening
+            } else {
+                TextField("What should happen?", text: $text, axis: .vertical)
+                    .font(.title3)
+                    .lineLimit(3...8)
+                    .focused($typing)
+                if case .unavailable(let why) = dictation.phase {
+                    Text(why).font(.footnote).foregroundStyle(Theme.muted)
                 }
             }
+            destinationRow
+            Spacer(minLength: 0)
+            HStack(spacing: DS.Spacing.m) {
+                Button {
+                    Task { await keep() }
+                } label: {
+                    Text("Keep for later").frame(maxWidth: .infinity, minHeight: DS.Size.sheetAction)
+                }
+                .secondaryAction()
+                Button {
+                    Task { await start() }
+                } label: {
+                    Text("Start now").frame(maxWidth: .infinity, minHeight: DS.Size.sheetAction)
+                }
+                .primaryAction()
+            }
+            .font(.headline)
+            .disabled(!canSend)
         }
+        .padding(DS.Spacing.l)
+        .background(Theme.surface)
+        .neonPanel(edge: Theme.accent)
+        .presentationBackground(Theme.surface)
         .presentationDetents([.medium, .large])
+        // The Macs may still be arriving when the sheet opens (at launch).
+        .onChange(of: model.fleet.destinations, initial: true) { _, all in
+            destination = destination ?? all.first
+        }
         .task {
-            destination = destination ?? model.fleet.destinations.first
             switch opening {
             case .listening: break
             case .said(let said): text = said
@@ -107,34 +87,98 @@ struct CaptureSheet: View {
         .onDisappear { dictation.cancel() }
     }
 
+    /// Discard on the left; Type and Done while listening, else Record,
+    /// on the right. Square Neon buttons, not the toolbar's glass circles.
+    private var header: some View {
+        HStack(spacing: DS.Spacing.grid) {
+            Button("Discard", systemImage: "xmark", role: .cancel) {
+                dictation.cancel()
+                dismiss()
+            }
+            .secondaryAction(square: true)
+            Spacer(minLength: 0)
+            if dictation.isListening {
+                Button("Type", systemImage: "keyboard") {
+                    Task {
+                        await stopListening()
+                        typing = true
+                    }
+                }
+                .secondaryAction(square: true)
+                Button("Done", systemImage: "stop.fill") { Task { await stopListening() } }
+                    .primaryAction(square: true)
+            } else {
+                Button("Record", systemImage: "mic.fill") {
+                    typing = false
+                    dictation.start()
+                }
+                .primaryAction(square: true)
+            }
+        }
+        .labelStyle(.iconOnly)
+        .font(.body.weight(.semibold))
+    }
+
     /// The live transcript: settled text solid, the guess dimmed.
     private var listening: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.s) {
             HStack(spacing: DS.Spacing.s) {
-                Image(systemName: "waveform").symbolEffect(.variableColor.iterative).foregroundStyle(Theme.accent)
-                Text("Listening").font(.headline)
+                Circle().fill(Theme.signal).frame(width: DS.Size.captionDot, height: DS.Size.captionDot)
+                Text("Listening…").font(Typeface.heading())
                 Spacer()
+                Image(systemName: "waveform")
+                    .symbolEffect(.variableColor.iterative)
+                    .font(.title3)
+                    .foregroundStyle(Theme.accent)
                 if case .listening(let since) = dictation.phase {
-                    Text(since, style: .timer).font(.footnote.monospacedDigit()).foregroundStyle(Theme.dim)
+                    Text(since, style: .timer)
+                        .font(Typeface.mono(12, relativeTo: .caption))
+                        .foregroundStyle(Theme.muted)
                 }
             }
             let said = text.isEmpty ? dictation.settled : text + " " + dictation.settled
-            Text("\(said)\(Text(dictation.guess).foregroundStyle(Theme.dim))")
-                .font(.title3)
+            Text("\(said)\(Text(dictation.guess).foregroundStyle(Theme.muted))")
+                .font(.body)
                 .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
+            Text("Tap Done when you have said it, or Type to use the keyboard.")
+                .font(.caption2)
+                .foregroundStyle(Theme.muted)
         }
     }
 
+    /// Where the task goes, as an option row that opens the picker.
     private var destinationRow: some View {
-        LabeledContent("Where") {
+        Menu {
             Picker("Where", selection: $destination) {
                 ForEach(model.fleet.destinations, id: \.self) { d in
-                    Text("\(d.project) on \(model.fleet.macName(d.machine))").tag(Optional(d))
+                    Text(name(d)).tag(Optional(d))
                 }
             }
-            .pickerStyle(.menu)
+        } label: {
+            HStack(spacing: DS.Spacing.m) {
+                Text("Where").font(.subheadline).foregroundStyle(Theme.muted)
+                Text(destination.map(name) ?? "No Mac")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Spacer(minLength: DS.Spacing.s)
+                Image(systemName: "chevron.down").foregroundStyle(Theme.accent)
+            }
+            .padding(.horizontal, DS.Spacing.l)
+            .frame(minHeight: DS.Size.control)
+            .background(Theme.surface2, in: .rect(cornerRadius: DS.Radius.console))
+            .overlay {
+                RoundedRectangle(cornerRadius: DS.Radius.console).strokeBorder(Theme.line, lineWidth: DS.Edge.line)
+            }
+            .contentShape(.rect)
         }
-        .foregroundStyle(Theme.dim)
+        .disabled(model.fleet.destinations.isEmpty)
+        .accessibilityLabel("Where")
+        .accessibilityValue(destination.map(name) ?? "No Mac")
+    }
+
+    private func name(_ d: Destination) -> String {
+        "\(d.project) on \(model.fleet.macName(d.machine))"
     }
 
     private var task: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }

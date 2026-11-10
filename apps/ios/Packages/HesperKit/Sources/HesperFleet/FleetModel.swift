@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import HesperCore
 import Observation
@@ -13,6 +14,9 @@ public final class FleetModel {
     public private(set) var pending: Set<String> = []
     /// The last command that failed, for one alert.
     public var failure: String?
+    /// Agents shown as the raw terminal (the agent view's menu), for the
+    /// app's run: leaving the agent and coming back keeps the choice.
+    public var rawTerminal: Set<String> = []
 
     private let link: any LinkClient
     private var task: Task<Void, Never>?
@@ -104,4 +108,83 @@ public final class FleetModel {
     }
 
     public func agent(_ id: String) -> Agent? { fleet.agents[id] }
+
+    /// The grid asked for when the Mac has not reported the agent's size.
+    public static let fallbackSize = AttachPlan.fallbackSize
+
+    /// Watches an agent's terminal at the Mac's current grid size
+    /// (`fallbackSize` when it has not said): a mirror. Throws when the
+    /// Mac refused it or is not linked.
+    public func attach(_ agent: Agent) async throws -> any AttachStream {
+        try await attach(agent, plan: .mirror(agent)).stream
+    }
+
+    /// How to attach `agent`'s terminal shown in `area` points with cells
+    /// of `cell`: fitted where its Mac lets the phone own the size.
+    public func plan(for agent: Agent, area: CGSize, cell: CGSize) -> AttachPlan {
+        AttachPlan.make(agent, host: link.sizing(on: agent.machine), area: area, cell: cell)
+    }
+
+    /// This phone's controller id on `machine`, as `Agent.sizeOwner` names it.
+    public func device(on machine: String) -> String? { link.sizing(on: machine)?.device }
+
+    /// How `machine` sizes and types for this phone; nil when it has not said.
+    public func sizing(on machine: String) -> HostSizing? { link.sizing(on: machine) }
+
+    /// Watches `agent`'s terminal as a view (`attach` with `view`): it
+    /// never takes part in sizing, and types when `typing`. Throws when the
+    /// Mac refused it or is not linked.
+    public func attachView(_ agent: Agent, size: GridSize, typing: Bool) async throws -> any AttachStream {
+        try await link.attach(agent: agent.id, cols: size.cols, rows: size.rows, typing: typing, owner: false, view: true)
+    }
+
+    /// The `limit` transcript items of `agent` before `before` (nil: the
+    /// end), oldest first.
+    public func transcript(_ agent: Agent, before: Int64?, limit: Int) async throws -> TranscriptPage {
+        try await link.transcript(agent: agent.id, before: before, limit: limit)
+    }
+
+    /// One bounded part of a user or assistant message, starting at a
+    /// UTF-8 byte offset.
+    public func transcriptText(_ agent: Agent, seq: Int64, offset: Int, limit: Int) async throws -> TranscriptTextChunk {
+        try await link.transcriptText(agent: agent.id, seq: seq, offset: offset, limit: limit)
+    }
+
+    /// `agent`'s transcript as it grows: the items after `after` (nil: the
+    /// newest `limit`), then every new one.
+    public func transcriptStream(_ agent: Agent, after: Int64?, limit: Int) async throws -> any TranscriptStream {
+        try await link.transcriptStream(agent: agent.id, after: after, limit: limit)
+    }
+
+    /// `agent`'s screen as plain text, with up to `scrollback` lines above it.
+    public func screen(_ agent: Agent, rows: Int, scrollback: Int) async throws -> ScreenText {
+        try await link.screen(agent: agent.id, rows: rows, scrollback: scrollback)
+    }
+
+    /// Attaches by `plan`. An owner attach the Mac refuses for lack of the
+    /// right or support (`AttachPlan.retriesAsMirror`) is made again as a
+    /// mirror that keeps the plan's typing; a read-write mirror refused as
+    /// `forbidden` is made once more read only, and that answer stands.
+    /// Returns the stream and the plan it runs.
+    public func attach(_ agent: Agent, plan: AttachPlan) async throws -> (stream: any AttachStream, plan: AttachPlan) {
+        guard plan.owner else { return try await mirror(agent, plan: plan) }
+        do {
+            return (try await open(agent, plan), plan)
+        } catch let e as any CodedError where AttachPlan.retriesAsMirror(e.code) {
+            return try await mirror(agent, plan: .mirror(agent, typing: plan.typing))
+        }
+    }
+
+    private func mirror(_ agent: Agent, plan: AttachPlan) async throws -> (stream: any AttachStream, plan: AttachPlan) {
+        do {
+            return (try await open(agent, plan), plan)
+        } catch let e as any CodedError where plan.typing && e.code == "forbidden" {
+            let readOnly = AttachPlan.readOnly(agent)
+            return (try await open(agent, readOnly), readOnly)
+        }
+    }
+
+    private func open(_ agent: Agent, _ plan: AttachPlan) async throws -> any AttachStream {
+        try await link.attach(agent: agent.id, cols: plan.grid.cols, rows: plan.grid.rows, typing: plan.typing, owner: plan.owner)
+    }
 }

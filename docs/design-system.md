@@ -279,6 +279,34 @@ the same color, and libghostty uses `window-padding-color = background`.
 FocusView (and with it every AgentWindow) has `inset` 0. The surface fills
 the area and libghostty sizes the PTY from it.
 
+## Terminal colors (phone)
+
+The iPhone draws an agent's screen as native text. `Theme.ansi(_:)` and
+`Theme.color(_:default:)` in `HesperDesign/AnsiPalette.swift` map its
+colors: RGB passes through, 16–231 are the xterm 6×6×6 cube, 232–255 its
+greys, and nil (or an index outside 0…255) is the default text or
+background. That file is the one place besides `NeonPalette` with literal
+hex. The 16:
+
+| # | Name | Value | Role |
+|---|---|---|---|
+| 0 | black | `background` 0x070A0D | the screen itself |
+| 1 | red | 0xFF5C57 | errors, deletions |
+| 2 | green | 0x5AF78E | success, additions |
+| 3 | yellow | 0xF3F99D | warnings |
+| 4 | blue | 0x57C7FF | paths, links; clear of the accent's cyan |
+| 5 | magenta | `signal` 0xFF55CE | Neon's signal |
+| 6 | cyan | `accent` 0x64F5FF | Neon's accent |
+| 7 | white | `text` 0xF0F6F7 | the text color |
+| 8 | bright black | `muted` 0x9BAFB8 | dim and meta text |
+| 9 | bright red | 0xFF8A85 | |
+| 10 | bright green | 0x8AFFAD | |
+| 11 | bright yellow | 0xFFFDC2 | |
+| 12 | bright blue | 0x8AD8FF | |
+| 13 | bright magenta | 0xFF8ADD | signal, lighter |
+| 14 | bright cyan | 0xA6F9FF | accent, lighter |
+| 15 | bright white | 0xFFFFFF | full white, above the text color |
+
 ## What phase 0 did not change (for the phase owners)
 
 - **Tile geometry**: `Metrics.wall` keeps header 32, gap 14, margin 20 and

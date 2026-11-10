@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import HesperFleet
+import Synchronization
 
 /// Who the phone is on the relay: its device id and keys.
 public struct ControllerIdentity: Sendable {
@@ -23,6 +24,26 @@ public actor HostChannel {
     let hostKey: Data
     private var session: E2ESession?
     private var created = Date.distantPast
+
+    /// The link stream while `link` reads it: its ticket id (the `link`
+    /// of `agents.attach`), socket and cipher.
+    private struct OpenLink {
+        let id: String
+        let socket: any RelaySocket
+        let cipher: StreamCipher
+    }
+    private var openLink: OpenLink?
+    /// Open attaches by channel. Channel numbers only grow, as the Mac's
+    /// own controller does (internal/remote/link.go): a closed channel's
+    /// number never meets a late frame of the one before.
+    private var attaches: [UInt32: AttachChannel] = [:]
+    /// Each attach's queue to the Mac, until it is finished.
+    private var queues: [UInt32: OutboundQueue] = [:]
+    /// Drain tasks still running (for tests: each ends with its attach).
+    private(set) var drains = 0
+    /// Open transcript streams by channel, numbered with the attaches.
+    private var transcripts: [UInt32: TranscriptChannel] = [:]
+    private var lastChannel: UInt32 = 0
 
     public init(relay: RelayConnection, machine: String, hostKey: Data, me: ControllerIdentity) {
         self.relay = relay
@@ -142,8 +163,12 @@ public struct LinkFrames: Sendable {
 }
 
 extension HostChannel {
-    /// Opens the link (`agents.link`) and yields channel 0's events until
-    /// the stream ends; throws when it breaks.
+    static let kindEvent = UInt8(ascii: "E"), kindData = UInt8(ascii: "D"), kindClose = UInt8(ascii: "X")
+
+    /// Opens the link (`agents.link`) and reads it until the stream ends;
+    /// throws when it breaks. Channel 0's events go to `yield`, `D` frames
+    /// to the attach or transcript stream on their channel, `X` ends it;
+    /// other frames are dropped. Open attaches end when the link does.
     func link(_ yield: @Sendable (LinkEvent) -> Void) async throws {
         let ticket = try JSONSerialization.jsonObject(with: try await call("agents.link")) as? [String: Any]
         guard let id = ticket?["id"] as? String, let secret = (ticket?["e2e"] as? String).flatMap({ Data(base64Encoded: $0) }) else {
@@ -151,7 +176,11 @@ extension HostChannel {
         }
         let cipher = try StreamCipher(secret: secret, streamID: id)
         let socket = try await relay.openStream(id)
-        defer { socket.close() }
+        openLink = OpenLink(id: id, socket: socket, cipher: cipher)
+        defer {
+            socket.close()
+            linkEnded(id)
+        }
         var frames = LinkFrames()
         while !Task.isCancelled {
             guard case .data(let sealed) = try await socket.receive() else {
@@ -159,9 +188,282 @@ extension HostChannel {
             }
             let (kind, payload) = try cipher.open(sealed)
             guard kind == StreamCipher.data else { continue }
-            for f in try frames.append(payload) where f.kind == UInt8(ascii: "E") && f.channel == 0 {
-                if let event = try? LinkEvent.decode(f.payload) { yield(event) }
+            for f in try frames.append(payload) {
+                switch (f.kind, f.channel) {
+                case (Self.kindEvent, 0):
+                    if let event = try? LinkEvent.decode(f.payload) { yield(event) }
+                case (Self.kindData, let ch) where ch > 0:
+                    if let a = attaches[ch] { a.receive(f.payload) } else { transcripts[ch]?.receive(f.payload) }
+                case (Self.kindClose, let ch) where ch > 0:
+                    attaches.removeValue(forKey: ch)?.end(RelayError(code: "closed", message: "The Mac closed the terminal"))
+                    queues.removeValue(forKey: ch)?.finish()
+                    transcripts.removeValue(forKey: ch)?.end(.closedByMac)
+                default:
+                    continue
+                }
             }
         }
+    }
+
+    /// The channels of the attaches open now.
+    var openChannels: Set<UInt32> { Set(attaches.keys) }
+
+    /// Whether the link stream is open now.
+    var linked: Bool { openLink != nil }
+
+    private func linkEnded(_ id: String) {
+        guard openLink?.id == id else { return }
+        openLink = nil
+        let lost = RelayError(code: "link_lost", message: "The link to the Mac broke")
+        for a in attaches.values { a.end(lost) }
+        attaches = [:]
+        for q in queues.values { q.finish() }
+        queues = [:]
+        for t in transcripts.values { t.end(.linkLost) }
+        transcripts = [:]
+    }
+
+    /// Opens an attach of `agent` at `cols`x`rows` on a new channel of the
+    /// link, waiting up to `wait` for the link to be up: read only,
+    /// read-write, as the size owner, or as a view at its own grid
+    /// (`attachParams`). Returns once the Mac's reply line said ok;
+    /// throws its error otherwise, `timeout` when no reply came.
+    public func attach(
+        agent: String, cols: Int, rows: Int, typing: Bool = false, owner: Bool = false, view: Bool = false,
+        wait: Duration = .seconds(10)
+    ) async throws -> AttachChannel {
+        let clock = ContinuousClock()
+        let deadline = clock.now + wait
+        // Polled: the link comes back on its own retry loop (LiveLink).
+        while openLink == nil {
+            guard clock.now < deadline else { throw RelayError(code: "unavailable", message: "The Mac is not linked") }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        guard let link = openLink, lastChannel < UInt32.max else {
+            throw RelayError(code: "unavailable", message: "The Mac is not linked")
+        }
+        let ch = lastChannel + 1
+        // Built before anything changes, the channel number included: a
+        // throw leaves nothing behind.
+        let params = try Self.attachParams(
+            link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, typing: typing, owner: owner, view: view)
+        lastChannel = ch
+        // One queue per attach, drained by one task: typed bytes, resizes
+        // and the close reach the Mac in the order the phone made them.
+        // Every way an attach ends finishes its queue, so the task ends.
+        let queue = OutboundQueue()
+        let channel = AttachChannel(id: ch) { _ in
+            queue.finish(with: .close)
+        } onResize: { _, cols, rows in
+            queue.frame(AttachDecoder.resize(cols: cols, rows: rows))
+        } onWrite: { _, data in
+            queue.frame(AttachDecoder.input(data))
+        } onExit: { _ in
+            queue.finish(with: .forget)
+        }
+        drains += 1
+        Task { [weak self] in
+            for await op in queue.ops {
+                queue.taken(op)
+                await self?.flush(op, on: ch, link: link.id)
+            }
+            await self?.drained(ch)
+        }
+        attaches[ch] = channel
+        queues[ch] = queue
+        let timeout = Task {
+            try await Task.sleep(for: .seconds(15))
+            channel.end(.timeout)
+        }
+        defer { timeout.cancel() }
+        do {
+            _ = try await call("agents.attach", params: params)
+            let reply = try await channel.reply()
+            // A refusal without a reason gets its own code: `unavailable`
+            // means the link is down, and that is tried again.
+            guard reply.ok else { throw reply.error ?? RelayError(code: "refused", message: "The Mac refused the terminal") }
+        } catch {
+            channel.end(error as? RelayError ?? RelayError(code: "closed"))
+            // The request may have reached the Mac, which then holds the
+            // viewer (and an owner's size) until the channel closes.
+            queue.finish(with: .close)
+            throw error
+        }
+        return channel
+    }
+
+    private func drained(_ ch: UInt32) {
+        drains -= 1
+        queues[ch] = nil
+    }
+
+    /// What an attach sends the Mac, in order.
+    enum Outbound: Sendable {
+        /// An inner frame (typed bytes or RESIZE) in a `D` frame.
+        case frame(Data)
+        /// `X`: the phone closed the attach.
+        case close
+        /// The agent exited: the Mac closes the channel, the phone only
+        /// drops it.
+        case forget
+    }
+
+    /// Sends one queued frame on an attach's channel, if the attach is
+    /// still open and its link is still the open one. `close` removes it
+    /// and sends `X`, unless the Mac closed the channel first.
+    private func flush(_ op: Outbound, on ch: UInt32, link: String) async {
+        switch op {
+        case .frame(let payload):
+            guard attaches[ch] != nil, openLink?.id == link else { return }
+            try? await send(frame: LinkFrames.Frame(kind: Self.kindData, channel: ch, payload: payload))
+        case .close:
+            guard attaches.removeValue(forKey: ch) != nil, openLink?.id == link else { return }
+            try? await send(frame: LinkFrames.Frame(kind: Self.kindClose, channel: ch, payload: Data()))
+        case .forget:
+            attaches[ch] = nil
+        }
+    }
+
+    /// The open link and a new channel number on it, waiting up to `wait`
+    /// for the link to be up. Transcript streams only: an attach takes its
+    /// number once its params are built (`attach`).
+    private func nextChannel(wait: Duration) async throws -> (OpenLink, UInt32) {
+        let clock = ContinuousClock()
+        let deadline = clock.now + wait
+        // Polled: the link comes back on its own retry loop (LiveLink).
+        while openLink == nil {
+            guard clock.now < deadline else { throw RelayError(code: "unavailable", message: "The Mac is not linked") }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        guard let link = openLink, lastChannel < UInt32.max else {
+            throw RelayError(code: "unavailable", message: "The Mac is not linked")
+        }
+        lastChannel += 1
+        return (link, lastChannel)
+    }
+
+    /// Streams `agent`'s transcript on a new channel of the link
+    /// (`agents.transcriptStream`): the items after `after`, at most
+    /// `limit` of them first, then each new one, until `close()`.
+    public func transcriptStream(agent: String, after: Int64?, limit: Int, wait: Duration = .seconds(10)) async throws
+        -> TranscriptChannel
+    {
+        let link: OpenLink
+        let ch: UInt32
+        do {
+            (link, ch) = try await nextChannel(wait: wait)
+        } catch let e as RelayError {
+            // The link is down, not the transcript: `unavailable` is left
+            // for the daemon's answer (no transcript file yet), which the
+            // view asks again at a slower pace (`TranscriptFollow`).
+            throw RelayError(code: "link_lost", message: e.message)
+        }
+        let stream = TranscriptChannel(id: ch) { [weak self] id in
+            Task { await self?.closed(id, link: link.id) }
+        }
+        // Registered before the call: the first items may beat its answer.
+        transcripts[ch] = stream
+        var params: [String: Any] = ["link": link.id, "ch": Int(ch), "id": agent, "limit": limit]
+        if let after { params["after"] = after }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: params, options: .sortedKeys)
+            _ = try await call("agents.transcriptStream", params: data)
+        } catch {
+            // Thrown or cancelled after the channel was registered: the
+            // Mac may have opened it, so `X` tells it to stop sending.
+            stream.end(.closed)
+            await closed(ch, link: link.id)
+            throw error
+        }
+        return stream
+    }
+
+    /// The phone closed a transcript stream: `X` on its channel, if its
+    /// link is still the open one. An attach's close goes through its
+    /// queue (`flush`).
+    private func closed(_ ch: UInt32, link: String) async {
+        guard transcripts.removeValue(forKey: ch) != nil, openLink?.id == link else { return }
+        try? await send(frame: LinkFrames.Frame(kind: Self.kindClose, channel: ch, payload: Data()))
+    }
+
+    /// `agents.attach`'s params (relay/docs/protocol.md, "Links"): the
+    /// local attach request, its mode repeated for the rights table. A
+    /// typing attach is `rw` (right `type`), any other `ro`; the size
+    /// owner (always typing) makes the PTY take `cols`x`rows`. Mirrors
+    /// replay the history first; a view gets its own `cols`x`rows` grid
+    /// of the screen instead, with no history and no owner.
+    static func attachParams(
+        link: String, ch: UInt32, agent: String, cols: Int, rows: Int, typing: Bool, owner: Bool, view: Bool = false
+    ) throws -> Data {
+        let mode = typing || (owner && !view) ? "rw" : "ro"
+        let request: [String: Any] =
+            view
+            ? ["attach": agent, "mode": mode, "cols": cols, "rows": rows, "view": ["rows": rows, "cols": cols]]
+            : ["attach": agent, "mode": mode, "cols": cols, "rows": rows, "owner": owner, "history": true]
+        return try JSONSerialization.data(
+            withJSONObject: ["link": link, "ch": Int(ch), "mode": mode, "request": request] as [String: Any], options: .sortedKeys)
+    }
+
+    /// Sends one frame on the open link: `X` to close a channel, RESIZE
+    /// to size an owner attach, typed bytes for a read-write one.
+    func send(frame: LinkFrames.Frame) async throws {
+        guard let link = openLink else { throw RelayError(code: "unavailable", message: "The Mac is not linked") }
+        // Sealed and handed to the socket in one actor turn, so the
+        // implicit counters reach the Mac in order.
+        let sealed = link.cipher.seal(
+            kind: StreamCipher.data, payload: LinkFrames.encode(kind: frame.kind, channel: frame.channel, payload: frame.payload))
+        try await link.socket.send(.data(sealed))
+    }
+}
+
+/// An attach's frames for the Mac, in the order the phone made them. At
+/// most `maxBytes` of typed input and resizes wait for a link that does
+/// not keep up; past that `frame` refuses and the attach closes. The last
+/// op (`X`, or forgetting an exited attach) is always queued.
+final class OutboundQueue: Sendable {
+    /// Bytes and frames: a flood of one-byte writes is bounded by count,
+    /// long ones by bytes.
+    static let maxBytes = 1 << 20, maxFrames = 4096
+    let ops: AsyncStream<HostChannel.Outbound>
+    private let continuation: AsyncStream<HostChannel.Outbound>.Continuation
+    private let queued = Mutex((bytes: 0, frames: 0))
+
+    init() {
+        (ops, continuation) = AsyncStream.makeStream(of: HostChannel.Outbound.self)
+    }
+
+    /// Queues an inner frame; false, queueing nothing, when it would pass
+    /// the bound.
+    func frame(_ payload: Data) -> Bool {
+        let fits = queued.withLock { q in
+            guard q.bytes + payload.count <= Self.maxBytes, q.frames < Self.maxFrames else { return false }
+            q.bytes += payload.count
+            q.frames += 1
+            return true
+        }
+        guard fits else { return false }
+        if case .enqueued = continuation.yield(.frame(payload)) { return true }
+        // Finished already: nothing was queued, so nothing is counted.
+        taken(.frame(payload))
+        return false
+    }
+
+    /// Frames queued and not yet taken (for tests).
+    var pending: Int { queued.withLock { $0.frames } }
+
+    /// The drain took `op` off the queue.
+    func taken(_ op: HostChannel.Outbound) {
+        guard case .frame(let payload) = op else { return }
+        queued.withLock { q in
+            q.bytes -= payload.count
+            q.frames -= 1
+        }
+    }
+
+    /// Ends the queue after `last`; the drain sends what is queued, then
+    /// stops. Later calls do nothing.
+    func finish(with last: HostChannel.Outbound? = nil) {
+        if let last { continuation.yield(last) }
+        continuation.finish()
     }
 }

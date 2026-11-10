@@ -2,6 +2,7 @@ import AVFoundation
 import HesperFleet
 import Observation
 import Speech
+import Synchronization
 import UIKit
 
 /// On-device dictation for capture (concept, flow 3). `settled` is text
@@ -112,6 +113,16 @@ final class Dictation {
         prepare()
         return text
     }
+
+    #if DEBUG
+        /// Listening without the microphone, with `said` heard so far: the
+        /// `HESPER_CAPTURE=listening` screenshot.
+        func pretend(_ said: String) {
+            settled = said
+            guess = ""
+            phase = .listening(since: .now)
+        }
+    #endif
 
     /// Stops without waiting; what was said is dropped.
     func cancel() {
@@ -279,17 +290,34 @@ nonisolated final class Converter: @unchecked Sendable {
         let ratio = format.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
         guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
-        var consumed = false
+        let input = InputOnce(buffer)
         var error: NSError?
         converter.convert(to: out, error: &error) { _, status in
-            if consumed {
+            guard let buffer = input.take() else {
                 status.pointee = .noDataNow
                 return nil
             }
-            consumed = true
             status.pointee = .haveData
             return buffer
         }
         return error == nil ? out : nil
+    }
+}
+
+/// One buffer supplied to one synchronous converter call.
+// @unchecked Sendable: the mutex makes taking the buffer atomic; the
+// converter reads the returned buffer before convert(to:) returns.
+nonisolated private final class InputOnce: @unchecked Sendable {
+    private let buffer: AVAudioPCMBuffer
+    private let taken = Mutex(false)
+
+    init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
+
+    func take() -> AVAudioPCMBuffer? {
+        taken.withLock { taken in
+            guard !taken else { return nil }
+            taken = true
+            return buffer
+        }
     }
 }

@@ -1,6 +1,7 @@
 # XcodeGen spec for the iPhone and iPad app. `make project` writes
 # Hesper.xcodeproj (generated, git-ignored). The targets stay thin: logic is
-# in Packages/HesperKit, screens in Packages/HesperUI.
+# in Packages/HesperKit, screens in Packages/HesperUI, the terminal in
+# Packages/HesperTerminal.
 name: Hesper
 options:
   deploymentTarget:
@@ -19,6 +20,8 @@ packages:
     path: Packages/HesperKit
   HesperUI:
     path: Packages/HesperUI
+  HesperTerminal:
+    path: Packages/HesperTerminal
 targets:
   Hesper:
     type: application
@@ -28,12 +31,16 @@ targets:
     dependencies:
       - package: HesperUI
         product: HesperFeatures
+      - package: HesperUI
+        product: HesperDesign
       - package: HesperKit
         product: HesperFleet
       - package: HesperKit
         product: HesperFixtures
       - package: HesperKit
         product: HesperLink
+      - package: HesperTerminal
+        product: HesperTerminal
       - target: HesperWidgets
       - target: NotificationService
     settings:
@@ -47,6 +54,8 @@ targets:
         INFOPLIST_FILE: App/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Hesper
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Dark only for now (docs/iphone/neon.md).
+        INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight

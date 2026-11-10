@@ -1,5 +1,37 @@
 # A writable terminal on the iPhone
 
+Status, 8 Nov 2026, transcript view: the agent view now shows the
+transcript as text above the agent's live screen; the libghostty
+terminal described below is the "Raw terminal" in the view's menu.
+Typing in the default view goes through a typing view attach (`view`,
+no `fit`, so the Mac's size is untouched; `rw` when the plan allows,
+`ro` once the Mac refuses) and the app's own key bar; the dock's Send
+presses Enter in whichever view is shown.
+
+Status, 8 Nov 2026: the Mirror attaches `rw` without `owner` when the
+phone has the `type` right, `ro` otherwise (a `forbidden` reply to `rw`
+retries `ro` once). Take over is built on the phone, automatic when the
+agent view opens (the owner's decision of 7 Nov, replacing the explicit
+tap), on hosts that publish `capabilities.sizeOwner`. A vertical drag
+reaches the agent as wheel input (mouse reports or arrow keys, frame
+type 0), so Claude Code's transcript scrolls; a flick keeps going with
+momentum. Typing ships on a `rw` attach: a tap on the terminal brings
+up the keyboard (a second tap or a swipe down puts it away), with
+libghostty's key bar above it (Esc, Tab, a sticky Ctrl, the arrows);
+every key goes to the agent as frame type 0, and the dock's Send
+presses Enter. A fitted grid shrinks to the rows above the keyboard
+(RESIZE, 300 ms debounce). The prebuilt libghostty-spm framework
+includes LGPL libintl, so before an App Store release the iOS slice needs
+the source build the Mac uses.
+
+Depends on hesperd changes not yet merged: #65 sends the scrollback
+preamble to read-only attaches too (today `ptyhost/viewer.go` sends it
+only for `rw`, so a `ro` Mirror starts without history), and #67
+publishes `sizeOwner` and `capabilities.sizeOwner`, with an optional
+`sizeOwnerHost: true` when the agent's own Mac owns the size and an
+owner's name that may be absent. Without #67 the phone never asks for
+the size and stays in Mirror.
+
 Research, 2026-10-31. Question: can the iPhone app have a terminal you
 type into, as on the Mac (live agent, full keys, selection, scrollback),
 instead of the read-only terminal plus reply panel of the concept
@@ -251,7 +283,7 @@ leaves, the size stays (`relay/internal/ptyhost/viewer.go:142-146`). So:
    once (latest owner wins). The phone sees the change in the same field
    and drops back to Mirror.
 4. **The phone lets go.** It closes the channel (`X`) when the terminal
-   screen goes away or the scene resigns active, inside a
+   screen goes away or the scene enters the background, inside a
    `beginBackgroundTask`. As a backstop, hesperd already drops a viewer
    that takes nothing for 30 s (`relay/internal/ptyhost/viewer.go:19`).
    Optional: release ownership after a shorter stall (say 10 s) for remote
@@ -317,7 +349,8 @@ agent info and its event, `relay/docs/protocol.md`,
   A suspended app runs no code, and there are no long-lived background
   sockets ([Apple DTS](https://developer.apple.com/forums/thread/685525)).
   So the terminal is foreground-only, as the concept already says. Detach,
-  and release ownership, when the scene resigns active. On return,
+  and release ownership, when the scene enters the background. Temporary
+  inactivity keeps the attach and its size ownership. On return,
   reattach: the first frame is a full redraw (45.7 ms to the first frame
   over the relay), so resuming is cheap. Blink's location trick to stay
   alive conflicts with guideline 2.5.4. Don't use it. Push and the 2 s
@@ -400,7 +433,7 @@ Phone (iOS 26)                         hesperd (Mac)
 | SwiftTerm v1.99.2 doesn't build with Swift 6.2.4 | the fallback needs a pin | pin v1.99.0 if it is ever used |
 | Grid not exactly the PTY's in Mirror (rounding) | garbled TUI, as on the Mac | check on a device first; snap the surface size to whole cells |
 | Mac and phone fight over the size | the PTY ping-pongs | only an explicit tap takes over; the Mac's latest owner wins; debounce; the phone drops to Mirror when it loses |
-| A stale remote owner (phone suspended) | Mac stuck at the phone's size for up to 30 s | release on resign-active; optional shorter stall timeout for remote owners |
+| A stale remote owner (phone suspended) | Mac stuck at the phone's size for up to 30 s | release on background; optional shorter stall timeout for remote owners |
 | Cellular latency | sluggish typing | Speak & Type for long text; measure; adaptive prediction later |
 | App Review 4.2.7 | rejection | review notes; the terminal is a secondary screen, not the product's core |
 | No device data yet | performance, battery, IME unknown | device spike before M4 (see effort) |

@@ -6,54 +6,58 @@ import HesperSurfaces
 import SwiftUI
 import WidgetKit
 
-/// The app: three tabs (Inbox, Agents, Macs) and the mic in the circle
-/// next to them, for dropping a task or an idea into Hesper (wireframes
-/// round 5). The mic opens capture and is never selected, so the tabs
-/// stay navigation only. On iPhone the circle is `CaptureBar`; on iPad
-/// it is a "New task" item among the system tabs.
+/// The app: Home, the owner's control console, at the root of one
+/// navigation stack (docs/iphone/neon.md). Its menu pushes Agents, Macs,
+/// Search and Settings; the Speak / Type console sits under Home.
 public struct RootView: View {
-    enum Tab: Hashable { case inbox, agents, macs, capture }
-
     @Environment(FleetModel.self) private var model
-    @State private var tab = Tab.inbox
-    /// The mic's dictation: the tab bar starts it, the sheet carries on.
+    @State private var path = NavigationPath()
+    /// Speak's dictation: the console starts it, the sheet carries on.
     @State private var dictation = Dictation()
     @State private var talk = Talk()
     @State private var capture: Capture?
     @State private var kept: KeptTask?
-    /// When the app last went to the background, for the Inbox's
+    /// When the app last went to the background, for Home's
     /// notifications card.
     @State private var awaySince: Date?
     @Environment(\.scenePhase) private var scenePhase
 
-    public init() {}
+    public init() {
+        #if DEBUG
+            // `HESPER_CAPTURE=listening` (or `typing`) opens the capture
+            // sheet at launch, for screenshots in a headless simulator,
+            // where nobody can press Speak. `listening` shows a sample
+            // transcript without the microphone.
+            switch ProcessInfo.processInfo.environment["HESPER_CAPTURE"] {
+            case "listening":
+                let dictation = Dictation()
+                dictation.pretend("Add a dark mode toggle to the settings screen")
+                _dictation = State(initialValue: dictation)
+                _capture = State(initialValue: Capture(opening: .listening))
+            case "typing":
+                _capture = State(initialValue: Capture(opening: .typing))
+            default: break
+            }
+            // `HESPER_OPEN=agent:<id>` (or `agents`, `macs`, `settings`)
+            // pushes that screen at launch, for the same screenshots.
+            if let open = ProcessInfo.processInfo.environment["HESPER_OPEN"] {
+                var path = NavigationPath()
+                if open.hasPrefix("agent:") {
+                    path.append(AgentRoute(id: String(open.dropFirst("agent:".count))))
+                } else if let route = MenuRoute.allCases.first(where: { "\($0)" == open }) {
+                    path.append(route)
+                }
+                _path = State(initialValue: path)
+            }
+        #endif
+    }
 
     public var body: some View {
-        TabView(selection: selection) {
-            SwiftUI.Tab("Inbox", systemImage: "tray", value: Tab.inbox) {
-                NavigationStack {
-                    InboxScreen(awaySince: awaySince).captureBar(tab: $tab, dictation: dictation, talk: $talk, capture: open)
-                        .agentDestinations()
-                }
-            }
-            .badge(model.fleet.counts.needsYou)
-
-            SwiftUI.Tab("Agents", systemImage: "square.grid.2x2", value: Tab.agents) {
-                NavigationStack {
-                    AgentsScreen().captureBar(tab: $tab, dictation: dictation, talk: $talk, capture: open).agentDestinations()
-                }
-            }
-
-            SwiftUI.Tab("Macs", systemImage: "macbook", value: Tab.macs) {
-                NavigationStack { MacsScreen().captureBar(tab: $tab, dictation: dictation, talk: $talk, capture: open) }
-            }
-
-            // iPad only: the system tabs show it; selecting it opens capture.
-            SwiftUI.Tab("New task", systemImage: "mic.fill", value: Tab.capture) {
-                Color.clear
-            }
+        NavigationStack(path: $path) {
+            HomeScreen(awaySince: awaySince) { path.append($0) }
+                .console(dictation: dictation, talk: $talk, capture: open)
+                .agentDestinations()
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
         .sheet(item: $capture) { c in
             CaptureSheet(dictation: dictation, opening: c.opening) { k in withAnimation { kept = k } }
         }
@@ -69,6 +73,7 @@ public struct RootView: View {
             if let kept { KeptToast(kept: kept) { withAnimation { self.kept = nil } } }
         }
         .tint(Theme.accent)
+        .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { awaySince = .now }
         }
@@ -97,8 +102,8 @@ public struct RootView: View {
 /// "Kept on mini · hesper", with Undo, for a few seconds after Keep for
 /// later. The idea is safe on the Mac; Undo removes it again.
 private struct KeptToast: View {
-    /// The floating tab bar's height and margin, so the toast sits above it.
-    static let tabBarClearance: CGFloat = 80
+    /// The console's height, so the toast sits above it.
+    static let consoleClearance: CGFloat = DS.Size.console + DS.Spacing.l + DS.Spacing.m
 
     let kept: KeptTask
     let done: () -> Void
@@ -121,9 +126,9 @@ private struct KeptToast: View {
         .padding(.leading, DS.Spacing.l)
         .padding(.trailing, DS.Spacing.s)
         .padding(.vertical, DS.Spacing.s)
-        .glassEffect()
+        .neonPanel()
         .padding(.horizontal, DS.Spacing.l)
-        .padding(.bottom, Self.tabBarClearance)
+        .padding(.bottom, Self.consoleClearance)
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .task(id: kept.id) {
             try? await Task.sleep(for: .seconds(4))
@@ -152,20 +157,6 @@ extension RootView {
 
     private func open(_ opening: CaptureSheet.Opening) {
         capture = Capture(opening: opening)
-    }
-
-    /// The tab selection; choosing the mic opens capture and keeps the tab.
-    private var selection: Binding<Tab> {
-        Binding {
-            tab
-        } set: { new in
-            if new == .capture {
-                dictation.start()
-                open(.listening)
-            } else {
-                tab = new
-            }
-        }
     }
 }
 

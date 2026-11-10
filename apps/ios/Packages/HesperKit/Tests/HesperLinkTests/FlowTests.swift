@@ -96,6 +96,7 @@ import Testing
         #expect(host.params("agents.answer")?["decision"] as? String == "allow")
         try await link.perform(.reply(agent: "M/a1", text: "go <on>"))
         #expect(host.params("agents.input")?["text"] as? String == "go <on>")
+        #expect(host.params("agents.input")?["paste"] as? Bool == true)
         #expect(host.params("agents.input")?["submit"] as? Bool == true)
         let draft = Draft(id: "d1", text: "later")
         try await link.perform(.saveDraft(draft, machine: "M"))
@@ -247,5 +248,13 @@ import Testing
         #expect(spawn.machine == "M" && spawn.method == "agents.spawn" && jsonObject(spawn.params)["machine"] == nil)
         #expect(try LiveLink.request(for: .close(agent: "M/a1")).method == "agents.close")
         #expect(try LiveLink.request(for: .removeDraft(id: "d", machine: "L")).machine == "L")
+    }
+
+    @Test func aDenyCarriesWhatToDoInstead() throws {
+        let deny = try LiveLink.request(for: .answer(agent: "M/a1", .deny, message: "Use a rebase"))
+        #expect(deny.method == "agents.answer")
+        #expect(jsonObject(deny.params)["decision"] as? String == "deny")
+        #expect(jsonObject(deny.params)["message"] as? String == "Use a rebase")
+        #expect(jsonObject(try LiveLink.request(for: .answer(agent: "M/a1", .deny)).params)["message"] == nil)
     }
 }

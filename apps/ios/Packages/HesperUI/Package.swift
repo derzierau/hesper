@@ -4,9 +4,10 @@ import PackageDescription
 // The iPhone app's screens (iOS only; built and previewed in Xcode). The
 // logic they show is in ../HesperKit.
 //
-//   HesperDesign    colours, state marks and controls from the Mac's
-//                   design system (docs/design-system.md)
-//   HesperFeatures  the tabs, the agent view, New agent and the root view
+//   HesperDesign    the Neon console's colours, type, state marks and
+//                   controls (docs/iphone/neon.md)
+//   HesperFeatures  the tabs, the agent view (its terminal from
+//                   ../HesperTerminal), New agent and the root view
 
 // UI code is main-actor by default (SE-0466), with the same upcoming
 // features as HesperKit.
@@ -16,6 +17,8 @@ let settings: [SwiftSetting] = [
     .enableUpcomingFeature("InferIsolatedConformances"),
     .enableUpcomingFeature("ExistentialAny"),
     .enableUpcomingFeature("MemberImportVisibility"),
+    // `make build` relies on this: Config/Base.xcconfig.
+    .treatAllWarnings(as: .error),
 ]
 
 let package = Package(
@@ -28,12 +31,16 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../HesperKit"),
+        .package(path: "../HesperTerminal"),
         .package(path: "../../../../app"),
     ],
     targets: [
         .target(
             name: "HesperDesign",
-            dependencies: [.product(name: "HesperCore", package: "app")],
+            dependencies: [
+                .product(name: "HesperCore", package: "app"),
+                .product(name: "HesperSurfaces", package: "HesperKit"),
+            ],
             swiftSettings: settings
         ),
         .target(
@@ -44,6 +51,8 @@ let package = Package(
                 .product(name: "HesperFleet", package: "HesperKit"),
                 .product(name: "HesperFixtures", package: "HesperKit"),
                 .product(name: "HesperSurfaces", package: "HesperKit"),
+                .product(name: "HesperTerminal", package: "HesperTerminal"),
+                .product(name: "TerminalModel", package: "HesperTerminal"),
             ],
             swiftSettings: settings
         ),
