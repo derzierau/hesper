@@ -217,6 +217,22 @@ private func agent(_ id: String, _ state: AgentState, since: TimeInterval = 0, m
         #expect(a.created != nil && a.isRunning && a.exit == nil)
     }
 
+    @Test func sizeOwnerRoundTripsAndIsAbsentWhenLocal() throws {
+        let json = #"{"id":"L/x","state":"working","sizeOwner":"phone-1","sizeOwnerName":"iPhone"}"#
+        let a = try JSONDecoder().decode(Agent.self, from: Data(json.utf8))
+        #expect(a.sizeOwner == "phone-1" && a.sizeOwnerName == "iPhone")
+        let again = try JSONDecoder().decode(Agent.self, from: try JSONEncoder().encode(a))
+        #expect(again.sizeOwner == "phone-1" && again.sizeOwnerName == "iPhone")
+        // An owner's name may be absent; empty strings and older daemons
+        // (no fields) read as nil, and nil is not encoded.
+        let unnamed = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/x","sizeOwner":"phone-1","sizeOwnerName":""}"#.utf8))
+        #expect(unnamed.sizeOwner == "phone-1" && unnamed.sizeOwnerName == nil)
+        let local = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/x","state":"working"}"#.utf8))
+        #expect(local.sizeOwner == nil && local.sizeOwnerName == nil)
+        let encoded = try #require(String(data: try JSONEncoder().encode(local), encoding: .utf8))
+        #expect(!encoded.contains("sizeOwner"))
+    }
+
     @Test func exitObjectAndUnknownStates() throws {
         let a = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/x","state":"exited","exit":{"code":null,"signal":"SIGHUP"}}"#.utf8))
         #expect(a.exit == ExitInfo(code: nil, signal: "SIGHUP") && !a.isRunning && a.machine == "L")
