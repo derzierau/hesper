@@ -21,9 +21,9 @@ import (
 // agents.transcript: an agent's transcript in pages of items. The first
 // page reads the file once and keeps the byte offset of every line that
 // has items; a page re-reads and parses only the lines it returns, and a
-// later page indexes only what was appended since. A page is made of
-// whole lines, so Before (an item's Seq, which lies inside its line)
-// names a line.
+// later page indexes only what was appended since. A page may start or
+// end inside a line: Before (an item's Seq, which lies inside its line)
+// names that line and the item within it.
 
 // transcriptFile indexes one transcript: the offset of every line that
 // produced items.

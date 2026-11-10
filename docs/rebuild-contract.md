@@ -176,7 +176,7 @@ view that draws the conversation itself (the phone):
 | `summary` | one short line saying what a tool call works on (below) |
 | `id` | a tool call's id |
 | `of` | a result's tool call id |
-| `truncated` | a message preview or result's `text` was clipped; use `agents.transcriptText` with the message's `seq` for its complete text |
+| `truncated` | a message preview or result's `text` was clipped; for a user or assistant message use `agents.transcriptText` with its `seq` for the complete text; a result's full output is not served |
 | `ok` | results only: false when the tool reported an error (Claude Code `is_error`) |
 
 Dropped: thinking, `isMeta` and sidechain (subagent) lines, Codex

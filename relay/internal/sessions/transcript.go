@@ -14,9 +14,8 @@ import (
 // (docs/rebuild-contract.md, "Transcript items"). A line is parsed on
 // its own with the decode structs of shared history; the n-th item of a
 // line (from 0) gets the line's byte offset plus n as its Seq. What
-// shared history
-// drops (thinking, meta and sidechain lines, Codex reasoning and token
-// events, injected user text) is dropped here too.
+// shared history drops (thinking, meta and sidechain lines, Codex
+// reasoning and token events, injected user text) is dropped here too.
 
 // A result's text is clipped to resultLines lines or resultBytes bytes,
 // whichever comes first; a summary to summaryRunes runes.

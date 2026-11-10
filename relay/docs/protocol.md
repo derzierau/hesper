@@ -425,7 +425,7 @@ closures as `direct.closed`.
 ping goes unanswered for 2 s or the connection fails; a request that may
 have reached the host is resent through the relay only when idempotent
 (`snapshot`, `ping`, `agents.list`, `agents.plan`, `agents.probe`,
-`agents.screen`, `agents.transcript`, `download`, `projects.recent`, `profiles.list`, `fs.stat`; identical inner request), anything else fails `connection_lost`. Controllers fetch a new
+`agents.screen`, `agents.transcript`, `agents.transcriptText`, `download`, `projects.recent`, `profiles.list`, `fs.stat`; identical inner request), anything else fails `connection_lost`. Controllers fetch a new
 offer through the relay every 10 minutes; the host closes direct
 connections of a device that has not done so for 30 minutes, or that it no
 longer approves.
