@@ -220,4 +220,48 @@ private func collect(_ client: DaemonClient, until: @escaping ([DaemonEvent]) ->
         conn.close()
         await #expect(throws: ConnectionError.closed) { try await conn.call("hello") }
     }
+
+    @Test func listsAndRemovesDevices() async throws {
+        let server = try ScriptedServer()
+        defer { server.stop() }
+        server.handler = { req, s, fd in
+            switch req["method"]?.stringValue {
+            case DevicesRPC.list: s.reply(fd, req, result: devicesListJSON)
+            case DevicesRPC.remove: s.reply(fd, req, result: ["relay": "done", "approval": "done", "trust": "skipped", "names": "done"])
+            default: standard(req, s, fd)
+            }
+        }
+        let client = DaemonClient(socketPath: server.path)
+        client.start()
+        _ = await collect(client) { $0.contains { if case .reconciled = $0 { return true }; return false } }
+        let list = try await client.devices()
+        #expect(list.map(\.id) == ["host-self", "ctl-self", "host-b", "ctl-old", "phone-a"])
+        let out = try await client.removeDevice("host-b", localOnly: true)
+        #expect(out.summary == "Removed from this Mac; still signed in to the relay")
+        let sent = server.received.last { $0["method"]?.stringValue == DevicesRPC.remove }
+        #expect(sent?["params"] == ["deviceId": "host-b", "localOnly": true])
+        client.stop()
+    }
+
+    @Test func anOldDaemonHasNoDevices() async throws {
+        let server = try ScriptedServer()
+        defer { server.stop() }
+        server.handler = { req, s, fd in
+            if req["method"]?.stringValue == DevicesRPC.list {
+                s.replyError(fd, req, code: -32601, message: "method not found", dataCode: "not_found")
+            } else {
+                standard(req, s, fd)
+            }
+        }
+        let client = DaemonClient(socketPath: server.path)
+        client.start()
+        _ = await collect(client) { $0.contains { if case .reconciled = $0 { return true }; return false } }
+        do {
+            _ = try await client.devices()
+            Issue.record("expected an error")
+        } catch {
+            #expect(DevicesFailure(error) == .unsupportedDaemon)
+        }
+        client.stop()
+    }
 }

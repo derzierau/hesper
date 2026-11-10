@@ -116,7 +116,16 @@ Sec-WebSocket-Protocol: ghosty.v2
 
 The server requires `ghosty.v2`, text JSON messages, and `v: 2` in each message.
 Browser Origin-bearing requests are not currently accepted. The server initially
-sends a `hello` message containing device ID and role in `result`.
+sends a `hello` message containing device ID, role and, from relays that have
+them, `features` in `result`:
+
+```json
+{"v":2,"type":"hello","result":{"deviceId":"DEVICE_ID","role":"controller","features":["devices"]}}
+```
+
+`features` lists optional relay messages: `devices` means the relay answers
+`devices` and `revoke` (see [Devices](#devices)). A missing `features` means
+none.
 
 A controller receives a full `machines` inventory on connection. It replaces all
 previous inventory. Subsequent `machine.updated` messages replace only the named
@@ -177,6 +186,89 @@ disconnected, never silently given a partial inventory; reconnect resets state.
 Offline machines have `online: false` and no snapshot. An online machine can have
 no snapshot while initializing. Adapter errors replace the snapshot with an
 `error` object; do not display old state as current.
+
+### Devices
+
+A controller lists and revokes its owner's devices; the relay answers these
+itself, no host is involved. Send them only when `hello` lists the
+`devices` feature: an older relay treats either as a protocol violation and
+closes the connection.
+
+```json
+{"v":2,"type":"devices","id":"client-request-id"}
+```
+
+The answer echoes `id` and lists every device of the caller's owner that is
+not revoked, the caller included, sorted by `id`. `online`: it has a live
+connection to the relay. `push`: it has an APNs registration (a phone).
+
+```json
+{"v":2,"type":"devices","id":"client-request-id","devices":[
+  {"id":"HOST_ID","name":"My Mac","role":"host","online":true,"push":false},
+  {"id":"PHONE_ID","name":"My iPhone","role":"controller","online":false,"push":true}]}
+```
+
+```json
+{"v":2,"type":"revoke","id":"client-request-id","deviceId":"PHONE_ID"}
+```
+
+`revoke` does what the administrator's `DELETE /v1/devices/{id}` does: the
+device is revoked for good (pairing again gives a new id), its access and
+refresh credentials are deleted, its relay connection and terminal streams
+close, and a host's controllers get `machine.updated` with `removed: true`.
+Success is `{"v":2,"type":"result","id":"client-request-id","result":{}}`.
+Errors, as a `result` with `error`:
+
+| Code | When |
+| --- | --- |
+| `not_found` | The id is unknown, already revoked or another owner's device; the relay does not tell these apart |
+| `forbidden` | The id is the caller's own device |
+| `invalid_request` | `deviceId` is missing or longer than 128 bytes |
+
+Hosts may send neither message. The usual message rate limit applies.
+Any controller of the owner may send both: the relay checks the owner and
+the not-self rule only, not a host's approval or rights, and `revoke` is not
+signed with the device key. Who may revoke is awaiting the owner's decision
+(see architecture.md, "Identity and trust").
+
+On each Mac, hesperd merges this list with its own files and removes a
+device in one step. These are local-socket methods, called by a person
+only (an agent gets `forbidden`):
+
+| Method | Params | Result | Errors |
+| --- | --- | --- | --- |
+| `devices.list` | – | `{devices:[{id, name, short?, role, kind, online, self, approvedHere, trustedHere, relay}]}` | – |
+| `devices.remove` | `{deviceId, localOnly?}` | `{relay, approval, trust, names}` | `invalid`, `forbidden`, `unavailable`, `unsupported`, `not_found`, a relay code |
+
+`devices.list` is the union of the relay's `devices` (when the controller
+connection is up and `hello` lists `devices`; `relay: true`), this host's
+`controllers.json` (`approvedHere`), `trusted-hosts.json` (`trustedHere`)
+and `machines.json` (`short`). `kind` is `iphone` exactly when the relay
+says `push`, else `mac`; `self` marks this Mac's own host and controller
+ids. Sorted: this Mac, then Macs by short name, then iPhones by name.
+Without the relay the list is this Mac's files, every entry offline.
+When this Mac has the controller role but the relay could not be asked
+(unreachable, too old, or its error), the result adds
+`relayUnavailable` with the reason; older clients ignore it.
+
+`devices.remove` revokes the device on the relay first, then removes its
+approval here, its pinned key and its `machines.json` entry. Each result
+field is `"done"`, `"skipped"` (nothing to do) or the step's error text.
+The relay is skipped for a device it does not list (already revoked, or
+known only here). Only the given id is revoked: a Mac's controller
+record is not bound to its host id and names are not unique, so it is
+removed as a device of its own. This Mac's own two ids are `forbidden`.
+Only this Mac's files change: other Macs keep the device's approval in
+their `controllers.json`, and with it any open direct-path connection or
+link, until it is revoked there (`hesperctl devices-local --revoke`).
+Nothing changes here when the relay step cannot run: `unavailable` (no
+controller role, or the relay is unreachable), `unsupported` ("The relay
+needs an update to remove devices": its `hello` has no `devices`, and it
+is never probed), or the relay's refusal with its code. `not_found` from
+`revoke` for a device the relay just listed counts as done. With
+`localOnly: true` the relay is not asked and only the local steps run.
+Every removal is audited as `device.removed` with the four outcomes. A
+daemon older than this answers `-32601` (method not found).
 
 ## Host operations
 

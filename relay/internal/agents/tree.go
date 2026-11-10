@@ -36,8 +36,8 @@ import (
 //     letParentAnswer — never itself, never another agent's;
 //   - every other method that changes an agent (treeMutating), and rw
 //     attaches (verified callers only): the caller's descendants only;
-//   - adding or removing a port forward or a pairing offer (treePerson):
-//     never.
+//   - adding or removing a port forward or a pairing offer, listing or
+//     removing devices (treePerson): never.
 
 // Agent tree limits (settings.json maxAgentDepth, maxAgentChildren).
 const (
@@ -306,8 +306,9 @@ var treeFiles = map[string]bool{"files.put": true, "files.chunk": true}
 
 // treePerson are the methods only a person may call: a port forward opens
 // this Mac to another machine's services without Touch ID; a pairing offer
-// lets a device in.
-var treePerson = map[string]bool{"forwards.add": true, "forwards.remove": true, "devices.offer": true, "devices.offerCancel": true}
+// lets a device in; removing a device signs it out of the relay.
+var treePerson = map[string]bool{"forwards.add": true, "forwards.remove": true, "devices.offer": true, "devices.offerCancel": true,
+	"devices.list": true, "devices.remove": true}
 
 // startSession runs a session start (treeStarting): an agent's makes its
 // child (parent the caller, depth the caller's + 1, within the limits,

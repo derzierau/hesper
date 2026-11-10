@@ -79,6 +79,9 @@ type Options struct {
 	// Devices (optional; the host role's pairing offers) serves
 	// devices.offer, devices.offerCancel and devices.paired (devicehook.go).
 	Devices Devices
+	// Removal (optional) serves devices.list and devices.remove
+	// (devicehook.go).
+	Removal DeviceRemoval
 }
 
 func (o *Options) defaults() {

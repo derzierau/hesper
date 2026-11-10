@@ -128,6 +128,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
 | `forwards.list` / `forwards.add` / `forwards.remove` | – / `{machine, port, local?}` / `{id}` (the local port, or `machine:port`) | `[Forward]` / `Forward` / `{}`: port forwards to other machines' loopback (added, see "As built — port forwarding"; a person only adds or removes) |
 | `devices.offer` / `devices.offerCancel` | `{rights?}` / `{id}` | `{payload, expires, id}` / `{}`: pairing offers of the host role, and the notification `devices.paired {offer, device, name, rights}` on `agents.subscribe` (added, see `relay/docs/protocol.md`, Pairing offers; a person only; `hesperctl phone`) |
+| `devices.list` / `devices.remove` | – / `{deviceId, localOnly?}` | `{devices:[Device]}` / `{relay, approval, trust, names}`: every device of the owner, and removing one from the relay and this Mac (added, see `relay/docs/protocol.md` "Devices"; a person only) |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
@@ -1358,6 +1359,25 @@ expire; a rights change cancels them), cancels the open ones with
 hesperd without `devices.offer` gets the `hesperctl approve` hint).
 Focus ⌘↩ zooms the card to the
 window and back (200 ms; Reduce Motion: none).
+
+**Removing a device (Settings › Machines & pairing).** The pane lists
+`devices.list`: Machines are the hosts (this Mac first, no Remove on
+it), then "Other sign-ins" (a Mac's controller records that are not
+this Mac's); iPhones are their own list (name, online mark). A trailing
+Remove… shows on hover and asks `Remove “<name>”?` ("It can no longer
+reach this Mac, this Mac forgets it, and it is signed out of your
+relay. Other Macs keep their own approval until you remove it there.
+Pair it again to bring it back.", Remove / Cancel). The result line
+shows for 5 s: "Removed", "Removed from this Mac; still signed in to
+the relay" after Remove here, or the first step that failed (prefixed
+"Signed out of the relay, but" when the relay step was done). A list
+whose relay could not be asked says "Showing this Mac's devices only:
+<reason>." A relay
+that is down changes nothing ("Not removed: the relay is unreachable.
+Try again later."); a relay too old to revoke asks `Remove here only?`
+and then runs `devices.remove` with `localOnly`. An older hesperd
+(`-32601`) keeps the plain Machines list and shows `hesperctl
+devices-local --revoke NAME` for iPhones, with no Remove buttons.
 
 **One tile font; the PTY follows the tile.** Every wall tile uses the
 same font (Settings › Font size, default the user's Ghostty font, 9–16

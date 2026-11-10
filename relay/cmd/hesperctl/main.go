@@ -48,13 +48,21 @@ func init() {
 			Output: "{approved, note} or {denied}"},
 		{Name: "devices-local", Summary: "List or revoke the controllers this host approved", Usage: "devices-local [--revoke NAME] [--json]",
 			Output: "{controllers, pending, enforcing}, with --revoke {revoked}"},
+		{Name: "forget", Destructive: true, Summary: "Remove a device from the relay and this Mac", Usage: "forget NAME|ID [--local-only] [--json]",
+			Help: "Revokes the device on the relay (its relay sign-in ends), then drops its approval on this host, its pinned key and its machines.json entry, through hesperd. " +
+				"Other Macs keep their own approval and open direct connections; revoke it there with devices-local --revoke. " +
+				"A Mac's controller record is a device of its own and is removed separately. This Mac itself is refused. " +
+				"Without a reachable relay nothing changes; --local-only (for a relay too old to remove devices) forgets it here only. " +
+				"revoke is the relay operator's tool on the admin socket.",
+			Output: "{relay, approval, trust, names}: each \"done\", \"skipped\" or the step's error"},
 		{Name: "login", NoMCP: true, Summary: "Enroll this device with the relay (GitHub sign-in)", Usage: "login --name NAME --out FILE [--role R] [--relay URL]",
 			Help: relayHelp, Output: "{deviceId, role, credentialsFile}"},
 		{Name: "pair", NoMCP: true, Summary: "Enroll with an invitation (development relays)", Usage: "pair [--relay URL] --name NAME --out FILE [--invitation-file F]",
 			Help: relayHelp, Output: "{deviceId, role, credentialsFile}"},
 		{Name: "invite", Summary: "Create an invitation (relay admin socket)", Usage: "invite [--owner O] [--role R] [--admin-socket S]"},
 		{Name: "devices", ReadOnly: true, Summary: "List the relay's devices (relay admin socket)", Usage: "devices [--admin-socket S]"},
-		{Name: "revoke", Destructive: true, Summary: "Revoke a device (relay admin socket)", Usage: "revoke --device ID [--admin-socket S]"},
+		{Name: "revoke", Destructive: true, Summary: "Revoke a device (relay admin socket)", Usage: "revoke --device ID [--admin-socket S]",
+			Help: "For the relay's operator, on the relay server: revokes on the relay only. To remove one of your devices from the relay and this Mac, use forget."},
 		{Name: "watch", NoMCP: true, Summary: "Print the machine inventory as it changes", Usage: "watch [--credentials F]",
 			Help: "One JSON inventory per change, until interrupted. " + route, Output: "a stream of machine inventories"},
 		{Name: "request", Summary: "Send one host operation through the relay", Usage: "request --machine ID [--method M] [--params FILE|-]",
@@ -101,6 +109,8 @@ func relayCommand(ctx context.Context, f *flag.FlagSet, command string, args []s
 		return approveCommand(f, args[1:])
 	case "devices-local":
 		return devicesLocalCommand(f, args[1:])
+	case "forget":
+		return forgetCommand(ctx, f, args[1:])
 	case "invite", "devices", "revoke":
 		socket := f.String("admin-socket", ".state/admin.sock", "Local relay admin socket")
 		owner := f.String("owner", "personal", "Owner namespace")

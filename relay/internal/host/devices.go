@@ -481,6 +481,16 @@ func (s Store) Deny(query string, now time.Time) (Pending, error) {
 // Revoke removes an approved controller by name or device ID. Its requests
 // are refused from the next one on.
 func (s Store) Revoke(query string) (Controller, error) {
+	return s.revoke(query, func(c Controller) bool { return c.Device == query || strings.EqualFold(c.Name, query) })
+}
+
+// RevokeID removes the approved controller with device id, never one
+// that only names itself like it.
+func (s Store) RevokeID(id string) (Controller, error) {
+	return s.revoke(id, func(c Controller) bool { return c.Device == id })
+}
+
+func (s Store) revoke(query string, matches func(Controller) bool) (Controller, error) {
 	unlock, err := s.lock()
 	if err != nil {
 		return Controller{}, err
@@ -492,7 +502,7 @@ func (s Store) Revoke(query string) (Controller, error) {
 	}
 	match := -1
 	for i, c := range list.Controllers {
-		if c.Device == query || strings.EqualFold(c.Name, query) {
+		if matches(c) {
 			if match >= 0 {
 				return Controller{}, fmt.Errorf("%q matches more than one controller; use its device ID", query)
 			}

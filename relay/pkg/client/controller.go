@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"maps"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -25,6 +26,11 @@ type Controller struct {
 	pending map[string]chan protocol.Message
 	updates chan []protocol.Machine
 	done    chan struct{}
+
+	// The relay's hello: features it announced (guarded by mu); hello
+	// closes when it arrived. nil through a fleet sync, which has none.
+	features []string
+	hello    chan struct{}
 
 	// The end-to-end channel (e2e.go): its configuration, one channel per
 	// host, and the latest inventory (ready closes with the first one).
@@ -49,7 +55,7 @@ func NewController(ctx context.Context, credentials protocol.Credentials) (*Cont
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	c := &Controller{link: link, device: credentials.DeviceID, ctx: ctx, cancel: cancel, pending: map[string]chan protocol.Message{}, updates: make(chan []protocol.Machine, 1), done: make(chan struct{}), ready: make(chan struct{})}
+	c := &Controller{link: link, device: credentials.DeviceID, ctx: ctx, cancel: cancel, pending: map[string]chan protocol.Message{}, updates: make(chan []protocol.Machine, 1), done: make(chan struct{}), ready: make(chan struct{}), hello: make(chan struct{})}
 	go c.read()
 	go func() {
 		t := time.NewTicker(15 * time.Second)
@@ -78,6 +84,21 @@ func (c *Controller) read() {
 		m, err := c.link.Read(c.ctx)
 		if err != nil {
 			return
+		}
+		if m.Type == "hello" {
+			var info struct {
+				Features []string `json:"features"`
+			}
+			json.Unmarshal(m.Result, &info)
+			c.mu.Lock()
+			c.features = info.Features
+			c.mu.Unlock()
+			select {
+			case <-c.hello:
+			default:
+				close(c.hello)
+			}
+			continue
 		}
 		if m.ID != "" {
 			c.mu.Lock()
@@ -161,6 +182,53 @@ func (c *Controller) Machines(ctx context.Context) ([]protocol.Machine, error) {
 	m, err := c.exchange(ctx, protocol.Message{Type: "list"})
 	return m.Machines, err
 }
+
+// Devices lists the owner's devices that are not revoked, this one
+// included (the relay's "devices"). Ask only when Supports("devices"): an
+// older relay closes the connection instead of answering.
+func (c *Controller) Devices(ctx context.Context) ([]protocol.Device, error) {
+	m, err := c.exchange(ctx, protocol.Message{Type: "devices"})
+	if err != nil {
+		return nil, err
+	}
+	return m.Devices, nil
+}
+
+// Revoke revokes one of the owner's devices on the relay (the relay's
+// "revoke"): not_found for an unknown or foreign id, forbidden for this
+// device. The same Supports("devices") rule applies.
+func (c *Controller) Revoke(ctx context.Context, id string) error {
+	_, err := c.exchange(ctx, protocol.Message{Type: "revoke", DeviceID: id})
+	return err
+}
+
+// WaitHello waits for the relay's hello, the first message on a
+// connection, so Features is known. Through a fleet sync it returns at
+// once (no features).
+func (c *Controller) WaitHello(ctx context.Context) error {
+	if c.hello == nil {
+		return nil
+	}
+	select {
+	case <-c.hello:
+		return nil
+	case <-ctx.Done():
+		return protocol.Err("timeout", "No hello from the relay")
+	case <-c.ctx.Done():
+		return protocol.Err("connection_lost", "Disconnected before the relay's hello")
+	}
+}
+
+// Features are the optional relay messages the relay's hello announced;
+// empty before hello arrived (see WaitHello) and on older relays.
+func (c *Controller) Features() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.features)
+}
+
+// Supports reports whether the relay announced feature in its hello.
+func (c *Controller) Supports(feature string) bool { return slices.Contains(c.Features(), feature) }
 
 // SetSigner makes Request sign every request but snapshot with this
 // device's keys (Part K). Without a signer requests go unsigned, which only
