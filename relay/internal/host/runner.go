@@ -236,7 +236,9 @@ func (r *Runner) serveRenewing(ctx context.Context, link *client.Link, terminals
 		serveCtx, stop := context.WithCancel(ctx)
 		done := make(chan error, 1)
 		draining.Add(1)
-		go func() { defer draining.Done(); done <- r.serve(serveCtx, link, terminals) }()
+		// link is an argument: the loop replaces it on renewal, perhaps
+		// before this goroutine has started.
+		go func(link *client.Link) { defer draining.Done(); done <- r.serve(serveCtx, link, terminals) }(link)
 		var next *client.Link
 		var c protocol.Credentials
 		// Never renew without pause: a fresh credential can have renewAhead
