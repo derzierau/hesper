@@ -334,13 +334,71 @@ func TestUnreadableNonceFileIsAudited(t *testing.T) {
 	if err := h.a.nonces.add("laptop-1 before", h.clock()); !errors.Is(err, errReplay) {
 		t.Fatalf("nonce before the bad line forgotten: %v", err)
 	}
-	// The file as it was is kept aside, not replaced by the part read.
-	kept, err := os.ReadFile(filepath.Join(h.dir, NoncesFile+".unread"))
+	// The file as it was is copied aside, not replaced by the part read.
+	kept, err := os.ReadFile(filepath.Join(h.dir, NoncesFile+".unread.1"))
 	if err != nil || string(kept) != data {
 		t.Fatalf("original not kept aside: %v (%d bytes)", err, len(kept))
 	}
-	if info, err := os.Stat(filepath.Join(h.dir, NoncesFile+".unread")); err != nil || info.Mode().Perm() != 0600 {
+	if info, err := os.Stat(filepath.Join(h.dir, NoncesFile+".unread.1")); err != nil || info.Mode().Perm() != 0600 {
 		t.Fatalf("kept file: %v %v", info, err)
+	}
+}
+
+// Each partly read file gets its own copy, and at most three are kept:
+// an earlier copy is never replaced.
+func TestPartlyReadNonceFileCopiesAreBounded(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, NoncesFile)
+	now := time.UnixMilli(1_700_000_000_000)
+	for i := 1; i <= 4; i++ {
+		data := fmt.Sprintf("%d laptop-1 n%d\n%s\n", now.Add(time.Minute).UnixMilli(), i, strings.Repeat("x", 128<<10))
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := openNonces(path, now)
+		if err != nil {
+			t.Fatalf("open %d: %v", i, err)
+		}
+		c.file.Close()
+		if c.lost == nil {
+			t.Fatalf("open %d: partial read not reported", i)
+		}
+		if i == 4 && !strings.Contains(c.lost.Error(), "not kept") {
+			t.Fatalf("fourth copy: %v", c.lost)
+		}
+	}
+	for i := 1; i <= 3; i++ {
+		kept, err := os.ReadFile(fmt.Sprintf("%s.unread.%d", path, i))
+		if err != nil || !strings.Contains(string(kept), fmt.Sprintf(" n%d\n", i)) {
+			t.Fatalf("copy %d: %v", i, err)
+		}
+	}
+	if _, err := os.Stat(path + ".unread.4"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a fourth copy: %v", err)
+	}
+}
+
+// A partly read file that cannot be copied aside refuses (fail closed)
+// and stays in place untouched.
+func TestNonceFileThatCannotBeKeptAsideRefuses(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores the directory's mode")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, NoncesFile)
+	data := fmt.Sprintf("1 laptop-1 old\n%s\n", strings.Repeat("x", 128<<10))
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0700)
+	if _, err := openNonces(path, time.UnixMilli(1_700_000_000_000)); err == nil {
+		t.Fatal("opened without a copy of the unread part")
+	}
+	if kept, err := os.ReadFile(path); err != nil || string(kept) != data {
+		t.Fatalf("original changed: %v", err)
 	}
 }
 

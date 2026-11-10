@@ -134,9 +134,12 @@ Code: `relay/macos/hesper-keys/main.swift` (helper), `relay/pkg/devicekey`
 - **Replay cache**: `nonces.log` (0600) lines `<expiry ms> <device>
   <nonce>`, appended (no fsync) before the request runs, reloaded on start
   at any size (the 4 MiB limit for keys does not apply; a line it cannot
-  read ends the load: the file is kept as it was in `nonces.log.unread`,
-  replacing an older one, a new `nonces.log` holds what was read, and
-  `replay_cache.reset` is audited with the reason), compacted once it
+  read ends the load: the file is copied as it was to the first free
+  `nonces.log.unread.N`, N ≤ 3, never replacing an earlier copy (all three
+  taken: no copy, said in the audit), then atomically replaced by what was
+  read, and `replay_cache.reset` is audited with the reason; when the copy
+  cannot be written the host fails closed, refusing signed requests and
+  leaving the file untouched until it can), compacted once it
   holds twice the nonces the last compaction kept (and at least 4096
   lines); at most 200 000 live nonces (then refused). Clocks must agree
   within 60 s; a Touch ID prompt answered after more than 60 s fails as

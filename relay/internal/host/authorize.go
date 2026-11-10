@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"slices"
@@ -414,17 +415,26 @@ func openNonces(path string, now time.Time) (*nonceCache, error) {
 		// A read error or an overlong line ends the scan early. What was
 		// not read is forgotten: timestamps still bound a replay to MaxSkew,
 		// but one inside it passes once, so the caller audits this. The
-		// file is kept aside as it was (the rewrite below would replace it
-		// with the part read), so what was not read stays on disk.
+		// file is copied aside first and stays in place until the atomic
+		// rewrite below replaces it: after a crash at any point the next
+		// start finds the old file again and reports it again.
 		if err := scanner.Err(); err != nil {
 			c.lost = fmt.Errorf("%s read only in part, the rest forgotten: %w", path, err)
-			if err := os.Rename(path, path+".unread"); err != nil {
-				f.Close()
+			kept, err := keepAside(f, path)
+			f.Close()
+			if err != nil {
+				// Fail closed: without the copy the rewrite would lose the
+				// unread part for good.
 				return nil, fmt.Errorf("keep %s aside: %w", path, err)
 			}
-			c.lost = fmt.Errorf("%w; kept as %s.unread", c.lost, path)
+			if kept != "" {
+				c.lost = fmt.Errorf("%w; kept as %s", c.lost, kept)
+			} else {
+				c.lost = fmt.Errorf("%w; not kept: %d copies are already there", c.lost, nonceCopies)
+			}
+		} else {
+			f.Close()
 		}
-		f.Close()
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -432,6 +442,41 @@ func openNonces(path string, now time.Time) (*nonceCache, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// nonceCopies bounds the copies of partly read nonce files.
+const nonceCopies = 3
+
+// keepAside copies f to the first free "<path>.unread.N" (N ≤
+// nonceCopies) and returns its name; "" when all are taken. An earlier
+// copy is never replaced.
+func keepAside(f *os.File, path string) (string, error) {
+	for i := 1; i <= nonceCopies; i++ {
+		name := fmt.Sprintf("%s.unread.%d", path, i)
+		out, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, err = f.Seek(0, io.SeekStart)
+		if err == nil {
+			_, err = io.Copy(out, f)
+		}
+		if err == nil {
+			err = out.Sync()
+		}
+		if closeErr := out.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			os.Remove(name)
+			return "", fmt.Errorf("copy to %s: %w", name, err)
+		}
+		return name, nil
+	}
+	return "", nil
 }
 
 // rewrite drops expired entries and starts a fresh file.
