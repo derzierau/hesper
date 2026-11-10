@@ -340,6 +340,14 @@ import Testing
         if case .close? = last {} else { Issue.record("X was not queued last") }
     }
 
+    @Test func theOutboundQueueBoundsTinyFramesByCount() {
+        let queue = OutboundQueue()
+        var queued = 0
+        while queued < 10_000, queue.frame(AttachDecoder.input(Data([1]))) { queued += 1 }
+        #expect(queued == OutboundQueue.maxFrames)
+        queue.finish()
+    }
+
     @Test func inputTheMacDoesNotTakeClosesTheAttach() {
         let closed = Mutex([UInt32]())
         let stream = AttachChannel(id: 4, onClose: { id in closed.withLock { $0.append(id) } }, onWrite: { _, _ in false })

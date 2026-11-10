@@ -344,10 +344,12 @@ extension HostChannel {
 /// not keep up; past that `frame` refuses and the attach closes. The last
 /// op (`X`, or forgetting an exited attach) is always queued.
 final class OutboundQueue: Sendable {
-    static let maxBytes = 1 << 20
+    /// Bytes and frames: a flood of one-byte writes is bounded by count,
+    /// long ones by bytes.
+    static let maxBytes = 1 << 20, maxFrames = 4096
     let ops: AsyncStream<HostChannel.Outbound>
     private let continuation: AsyncStream<HostChannel.Outbound>.Continuation
-    private let queued = Mutex(0)
+    private let queued = Mutex((bytes: 0, frames: 0))
 
     init() {
         (ops, continuation) = AsyncStream.makeStream(of: HostChannel.Outbound.self)
@@ -357,8 +359,9 @@ final class OutboundQueue: Sendable {
     /// the bound.
     func frame(_ payload: Data) -> Bool {
         let fits = queued.withLock { q in
-            guard q + payload.count <= Self.maxBytes else { return false }
-            q += payload.count
+            guard q.bytes + payload.count <= Self.maxBytes, q.frames < Self.maxFrames else { return false }
+            q.bytes += payload.count
+            q.frames += 1
             return true
         }
         guard fits else { return false }
@@ -368,7 +371,11 @@ final class OutboundQueue: Sendable {
 
     /// The drain took `op` off the queue.
     func taken(_ op: HostChannel.Outbound) {
-        if case .frame(let payload) = op { queued.withLock { $0 -= payload.count } }
+        guard case .frame(let payload) = op else { return }
+        queued.withLock { q in
+            q.bytes -= payload.count
+            q.frames -= 1
+        }
     }
 
     /// Ends the queue after `last`; the drain sends what is queued, then
