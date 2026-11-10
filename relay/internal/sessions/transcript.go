@@ -225,39 +225,39 @@ func codexItems(line []byte, off int64) []wire.TranscriptItem {
 // joined by spaces); the pattern for Grep and Glob; the description for
 // Agent and Task. Other tools have none.
 func toolSummary(name string, input json.RawMessage) string {
-	var in struct {
-		FilePath     string          `json:"file_path"`
-		Path         string          `json:"path"`
-		NotebookPath string          `json:"notebook_path"`
-		Command      json.RawMessage `json:"command"`
-		Pattern      string          `json:"pattern"`
-		Description  string          `json:"description"`
-	}
+	// Fields one by one: a field of another type than expected blanks
+	// only itself, not the summary.
+	var in map[string]json.RawMessage
 	if json.Unmarshal(input, &in) != nil {
 		return ""
+	}
+	str := func(key string) string {
+		var v string
+		json.Unmarshal(in[key], &v) // not a string: ""
+		return v
 	}
 	var s string
 	switch name {
 	case "Read", "Edit", "Write", "NotebookEdit":
-		p := in.FilePath
+		p := str("file_path")
 		if p == "" {
-			p = in.Path
+			p = str("path")
 		}
 		if p == "" {
-			p = in.NotebookPath
+			p = str("notebook_path")
 		}
 		if p != "" {
 			s = filepath.Base(p)
 		}
 	case "Bash", "shell":
 		var argv []string
-		if json.Unmarshal(in.Command, &s) != nil && json.Unmarshal(in.Command, &argv) == nil {
+		if s = str("command"); s == "" && json.Unmarshal(in["command"], &argv) == nil {
 			s = strings.Join(argv, " ")
 		}
 	case "Grep", "Glob":
-		s = in.Pattern
+		s = str("pattern")
 	case "Agent", "Task":
-		s = in.Description
+		s = str("description")
 	}
 	return shortLine(s)
 }

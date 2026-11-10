@@ -154,6 +154,10 @@ func TestToolSummary(t *testing.T) {
 		{"Task", `{"description":"Audit"}`, "Audit"},
 		{"WebFetch", `{"url":"https://example.com"}`, ""},
 		{"Read", `not json`, ""},
+		// A field of another type does not blank the others.
+		{"Read", `{"file_path":"/work/yak/a.go","path":5}`, "a.go"},
+		{"Grep", `{"pattern":"func Test","description":["x"]}`, "func Test"},
+		{"Bash", `{"command":"ls","description":{}}`, "ls"},
 		{"Bash", ``, ""},
 	} {
 		if got := toolSummary(c.name, json.RawMessage(c.input)); got != c.want {
