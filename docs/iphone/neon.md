@@ -251,7 +251,8 @@ layouts stay as Ole built them.
   1 pt `line` top edge) whose approval/question controls are the same
   numbered option rows as the hero; message field = `surface` with `line`
   border, Send = accent square. Terminal placeholder unchanged.
-  The placeholder has since become the live terminal (watching only,
+  The placeholder has since become the live terminal (writable on a `rw`
+  attach,
   `docs/iphone/concept.md` "The terminal on a phone"): the Mac's grid on
   `background`, readable (a font of about 18 pt, with an "N cols →" hint
   and pan) or fit width, pinch to zoom, double tap to switch, a drag to

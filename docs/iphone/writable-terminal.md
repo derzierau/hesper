@@ -16,6 +16,14 @@ presses Enter. A fitted grid shrinks to the rows above the keyboard
 includes LGPL libintl, so before an App Store release the iOS slice needs
 the source build the Mac uses.
 
+Depends on hesperd changes not yet merged: #65 sends the scrollback
+preamble to read-only attaches too (today `ptyhost/viewer.go` sends it
+only for `rw`, so a `ro` Mirror starts without history), and #67
+publishes `sizeOwner` and `capabilities.sizeOwner`, with an optional
+`sizeOwnerHost: true` when the agent's own Mac owns the size and an
+owner's name that may be absent. Without #67 the phone never asks for
+the size and stays in Mirror.
+
 Research, 2026-10-31. Question: can the iPhone app have a terminal you
 type into, as on the Mac (live agent, full keys, selection, scrollback),
 instead of the read-only terminal plus reply panel of the concept

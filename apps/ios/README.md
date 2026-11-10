@@ -141,8 +141,14 @@ terminal can be checked without a Mac.
 
 In the order of the concept's "Core work":
 
-1. Typing in the terminal. The agent view already shows the live
-   terminal, watching only. On a Mac that publishes
+Built: the live terminal, writable on a `rw` attach (below). Its
+scrollback on a read-only attach needs hesperd #65, and the fit needs
+hesperd #67 (`sizeOwner`, the capability, an optional `sizeOwnerHost`
+when the agent's own Mac owns the size, an owner's name that may be
+absent); without them the phone mirrors with no history on `ro`.
+
+1. Terminal selection and links. The agent view shows the live
+   terminal. On a Mac that publishes
    `capabilities.sizeOwner` it fits the Mac's terminal to the phone when
    it opens: an owner attach (`rw`) at the grid that
    fits the area above the dock at a true 18 pt, unscaled, no sideways

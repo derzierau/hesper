@@ -246,16 +246,26 @@ for confirmation (`requestConfirmation`,
 
 ## The terminal on a phone
 
-**Built so far (8 Nov 2026): watching and scrolling.** The agent view
-attaches read-write (`mode: rw`, right `type`) when the phone has that
-right, read-only (`mode: ro`, right `observe`) otherwise, with no Face
-ID, and draws the Mac's grid with no keyboard; a vertical drag scrolls
-the agent as wheel input, with momentum. Replies, answers and Speak go
-through the dock.
-Readable and fit width, pinch, double tap, pan, "Live ↓" and landscape
-work as below; the view follows the last row with text rather than the
-cursor, which the renderer does not report. Typing, Fit to iPhone,
-selection and links are still to come.
+**Built so far (10 Nov 2026): watching, scrolling, typing and the fit.**
+The agent view attaches read-write (`mode: rw`, right `type`) when the
+phone has that right, read-only (`mode: ro`, right `observe`) otherwise,
+with no Face ID; a vertical drag scrolls the agent as wheel input, with
+momentum. On a `rw` attach a tap brings up the keyboard with libghostty's
+key bar, and keys go to the agent. On a Mac that publishes
+`capabilities.sizeOwner` the phone takes the size when the view opens
+(automatic, the owner's decision of 7 Nov, replacing the explicit tap
+below) and lets go when it closes. Replies, answers and Speak go through
+the dock. Readable and fit width, pinch, double tap, pan, "Live ↓" and
+landscape work as below; the view follows the last row with text rather
+than the cursor, which the renderer does not report. Selection and links
+are still to come.
+
+Two parts need hesperd changes that are not merged yet. Scrollback on a
+read-only attach needs #65 (`ptyhost` sends history only to `rw` today).
+The fit needs #67, which publishes `sizeOwner` and the capability, adds
+an optional `sizeOwnerHost: true` when the agent's own Mac owns the
+size, and may leave out the owner's name. Without them the phone
+mirrors the Mac's grid, and a read-only attach starts without history.
 
 The terminal is writable, like the Mac's. Typing and owning the size are
 separate in hesperd, so the phone can type without resizing anything
@@ -424,7 +434,8 @@ What core Hesper (`main`) needs before this app can ship, in order:
    protocol (enrollment, device and strong keys, `devices.request`, signed
    requests, Noise channel, links) usable from Swift. *Built*:
    `HesperLink` in `apps/ios/Packages/HesperKit` (`LiveLink`,
-   `LivePairing`) and read-only attaches (item 8); still to come: the
+   `LivePairing`) and read-only, read-write and owner attaches (items 8
+   to 10); still to come: the
    direct path.
 2. **Push from the relay**: APNs alerts on entering approval, question or
    error, ids only; the phone fills in text end to end. Plus a presence
