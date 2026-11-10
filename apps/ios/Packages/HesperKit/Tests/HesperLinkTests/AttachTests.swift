@@ -60,6 +60,29 @@ import Testing
         #expect(frames == [.data(Data("hi".utf8)), .size(cols: 120, rows: 40), .scroll, .exit])
     }
 
+    @Test func aLargeFrameSplitInPiecesDecodes() throws {
+        // A 4 MiB frame in 1 MiB pieces, after a size frame.
+        let large = Data((0..<(4 << 20)).map { UInt8($0 % 251) })
+        let split = Self.inner(2, Data([0, 90, 0, 30])) + Self.inner(0, large)
+        var decoder = AttachDecoder()
+        _ = try decoder.append(Data("{\"ok\":true}\n".utf8))
+        var frames: [AttachFrame] = []
+        for start in stride(from: 0, to: split.count, by: 1 << 20) {
+            frames += try decoder.append(Data(split[start..<min(start + (1 << 20), split.count)])).frames
+        }
+        #expect(frames == [.size(cols: 90, rows: 30), .data(large)])
+    }
+
+    @Test func tinyFramesOfOnePayloadArriveAsOne() async {
+        let stream = AttachChannel(id: 7, onClose: { _ in })
+        var payload = Data(#"{"ok":true,"cols":80,"rows":24}"#.utf8) + Data([10])
+        let bytes = Data((0..<20_000).map { UInt8($0 & 0xff) })
+        for b in bytes { payload += Self.inner(0, Data([b])) }
+        stream.receive(payload + Self.inner(4, Data()) + Self.inner(0, Data("x".utf8)))
+        stream.close()
+        #expect(await Self.all(stream) == [.size(cols: 80, rows: 24), .data(bytes), .scroll, .data(Data("x".utf8))])
+    }
+
     @Test func aReplyErrorIsAnObjectOrAString() throws {
         var object = AttachDecoder()
         let r = try object.append(Data(#"{"ok":false,"error":{"code":"forbidden","message":"no observe right"}}"#.utf8) + Data([10]))

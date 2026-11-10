@@ -46,6 +46,10 @@ public struct AttachDecoder: Sendable {
     /// (wire.MaxFrame).
     static let maxReply = 64 << 10, maxFrame = 1 << 24
     private var buffer = Data()
+    /// Bytes at the front of `buffer` already decoded. They are dropped
+    /// only once they are a large share of it, so a big frame arriving in
+    /// pieces is not recopied on every piece.
+    private var consumed = 0
     private var replied = false
 
     public init() {}
@@ -53,6 +57,10 @@ public struct AttachDecoder: Sendable {
     /// Appends bytes and returns the reply (once) and the frames they
     /// complete. Throws `integrity` on a malformed stream.
     public mutating func append(_ bytes: Data) throws -> (reply: AttachReply?, frames: [AttachFrame]) {
+        if consumed > 0, consumed >= 1 << 20 || consumed * 2 >= buffer.count {
+            buffer = Data(buffer[(buffer.startIndex + consumed)...])
+            consumed = 0
+        }
         buffer += bytes
         var reply: AttachReply?
         if !replied {
@@ -66,13 +74,13 @@ public struct AttachDecoder: Sendable {
             }
             reply = r
             replied = true
-            buffer = Data(buffer[(nl + 1)...])
+            consumed = nl + 1 - buffer.startIndex
         }
         var frames: [AttachFrame] = []
-        // Read on from an offset and drop the consumed bytes once: copying
-        // the rest after every frame is quadratic in a payload of many.
-        var at = buffer.startIndex
-        defer { buffer = Data(buffer[at...]) }
+        // Read on from an offset: copying the rest after every frame is
+        // quadratic in a payload of many.
+        var at = buffer.startIndex + consumed
+        defer { consumed = at - buffer.startIndex }
         while buffer.endIndex - at >= 5 {
             let b = [UInt8](buffer[at..<at + 5])
             let length = Int(b[1...4].reduce(UInt32(0)) { $0 << 8 | UInt32($1) })
@@ -253,13 +261,19 @@ public final class AttachChannel: AttachStream {
     /// small writes costs the reader one wake-up.
     static func coalesced(_ frames: [AttachFrame]) -> [AttachFrame] {
         var out: [AttachFrame] = []
+        // The run of data is appended in place, once per frame, not copied.
+        var run: Data?
         for f in frames {
-            if case .data(let more) = f, case .data(let bytes)? = out.last {
-                out[out.count - 1] = .data(bytes + more)
-            } else {
-                out.append(f)
+            if case .data(let more) = f {
+                if run == nil { run = Data() }
+                run?.append(more)
+                continue
             }
+            if let bytes = run { out.append(.data(bytes)) }
+            run = nil
+            out.append(f)
         }
+        if let bytes = run { out.append(.data(bytes)) }
         return out
     }
 
