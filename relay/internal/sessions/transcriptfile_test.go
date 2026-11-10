@@ -340,6 +340,34 @@ func TestTranscriptIndexReplacedKeepsPass(t *testing.T) {
 	}
 }
 
+// A replaced index whose last user is gone is dropped at once: nobody
+// can find it again, so its first pass stops.
+func TestTranscriptIndexReplacedAndReleasedStops(t *testing.T) {
+	texts := make([]string, 3000)
+	for i := range texts {
+		texts[i] = strings.Repeat("x", 1024)
+	}
+	s, a, path, _ := followEnv(t, texts...)
+	oldHook := transcriptIndexHook
+	t.Cleanup(func() { transcriptIndexHook = oldHook })
+	release := make(chan struct{})
+	transcriptIndexHook = func() { <-release }
+	key := a.Kind + ":" + a.SessionID
+	old := s.transcriptIndex(key, a.Kind, path)
+	moved := s.transcriptIndex(key, a.Kind, path+".moved")
+	defer s.releaseTranscript(key, moved)
+	s.releaseTranscript(key, old)
+	close(release)
+	select {
+	case <-old.ready:
+	case <-time.After(itemWait):
+		t.Fatal("first pass still running")
+	}
+	if !errors.Is(old.err, errIndexDropped) {
+		t.Fatalf("released replaced index's first pass: %v, want errIndexDropped", old.err)
+	}
+}
+
 // After Close no index is made: the closed error, and nothing kept.
 func TestTranscriptAfterClose(t *testing.T) {
 	s, a, path, _ := followEnv(t, "one")

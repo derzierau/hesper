@@ -44,8 +44,9 @@ type transcriptFile struct {
 	// IndexKeep after the last. s.mu guards both.
 	refs int
 	idle *time.Timer
-	// dropped: IndexKeep passed with no user and the index was dropped;
-	// its first pass, if still running, stops (s.mu guards it).
+	// dropped: the index has no user and never will: IndexKeep passed
+	// with none, or its last user left after it was replaced in the map.
+	// Its first pass, if still running, stops (s.mu guards it).
 	dropped bool
 }
 
@@ -376,8 +377,8 @@ func (s *Service) transcriptIndex(key, kind, path string) *transcriptFile {
 	return f
 }
 
-// errIndexDropped ends a first pass whose index was dropped: IndexKeep
-// passed with no user.
+// errIndexDropped ends a first pass whose index was dropped (see
+// transcriptFile.dropped).
 var errIndexDropped = errors.New("transcript index dropped")
 
 // indexTranscript is f's first pass. A pass that failed is dropped, so
@@ -414,11 +415,18 @@ func (s *Service) indexTranscript(key string, f *transcriptFile) {
 }
 
 // releaseTranscript drops a user of key's index f; IndexKeep after the
-// last one, f is dropped unless it was used or replaced meanwhile.
+// last one, f is dropped unless it was used or replaced meanwhile. A
+// replaced f is dropped when its last user leaves.
 func (s *Service) releaseTranscript(key string, f *transcriptFile) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if f.refs--; f.refs > 0 || s.transcripts[key] != f {
+	if f.refs--; f.refs > 0 {
+		return
+	}
+	if s.transcripts[key] != f {
+		// Replaced (the transcript moved) or never stored (after Close):
+		// nobody can find it again, so it is dropped now.
+		f.dropped = true
 		return
 	}
 	var t *time.Timer
