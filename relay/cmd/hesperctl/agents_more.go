@@ -958,7 +958,11 @@ func transcriptCommand(ctx context.Context, f *flag.FlagSet, args []string) erro
 				last = -1
 			}
 			if gap {
-				fmt.Fprintln(os.Stderr, "hesperctl: older new items skipped (page back with --before)")
+				if restarted {
+					fmt.Fprintln(os.Stderr, "hesperctl: transcript restarted; showing the newest page (page back with --before)")
+				} else {
+					fmt.Fprintln(os.Stderr, "hesperctl: older new items skipped (page back with --before)")
+				}
 			}
 			last = printTranscript(items, *asJSON, last)
 		}
