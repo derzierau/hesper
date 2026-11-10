@@ -84,3 +84,20 @@ func TestAnswersOverTheRelaysLimitAreRefusedNotSent(t *testing.T) {
 		t.Fatalf("next answer: error %v, result %s", reply.Error, reply.Result)
 	}
 }
+
+// The relay forwards an answer under the controller's request ID (up to
+// 128 characters; the host saw the relay's own) and the controller reads
+// with the same limit: an answer that only just fits on the host's
+// connection would break the controller's.
+func TestFitsLeavesRoomForTheRelaysForwarding(t *testing.T) {
+	answer := func(n int) protocol.Message {
+		return protocol.Message{Type: "result", ID: "r-1", Result: json.RawMessage(`"` + strings.Repeat("x", n) + `"`)}
+	}
+	exact := protocol.MaxMessageBytes - len(protocol.JSON(answer(0)))
+	if fits(answer(exact - 64)) {
+		t.Fatal("an answer 64 bytes under the limit fits; forwarded, it is over it")
+	}
+	if !fits(answer(protocol.MaxMessageBytes / 2)) {
+		t.Fatal("a half-size answer does not fit")
+	}
+}

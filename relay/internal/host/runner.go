@@ -215,12 +215,15 @@ func (r *Runner) answer(id string, via *hostSession, innerID string, result json
 
 // fits: the relay takes m (protocol.MaxMessageBytes per message). Most
 // answers are far below; only a big one is measured as it is sent (its
-// JSON can grow: HTML characters are escaped to six bytes).
+// JSON can grow: HTML characters are escaped to six bytes). 4 KiB stay
+// free for what the relay changes when it forwards: the controller's
+// request ID (up to 128 characters) replaces the relay's, and the
+// controller reads with the same limit.
 func fits(m protocol.Message) bool {
 	if len(m.Result) <= protocol.MaxMessageBytes/8 {
 		return true
 	}
-	return len(protocol.JSON(m)) <= protocol.MaxMessageBytes
+	return len(protocol.JSON(m)) <= protocol.MaxMessageBytes-4<<10
 }
 
 // openE2E opens one sealed request (timed for the latency harness).
