@@ -48,23 +48,32 @@ func NameFor(task string) string {
 	return Slugify(first, 40)
 }
 
-// sessionName is the --remote-control name: the task's first line,
-// controls blanked, at most 60 characters.
+// sessionName is the --remote-control name: the task's first line, else
+// the agent's name, else "agent". Either is cleaned the same way:
+// controls blanked, leading dashes dropped (Claude Code would take
+// "--bring …" for an option and exit), at most 60 characters.
 func sessionName(task, fallback string) string {
-	first, _, _ := strings.Cut(strings.TrimSpace(task), "\n")
-	first = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return ' '
-		}
-		return r
-	}, strings.TrimSpace(first))
-	if first == "" {
-		first = fallback
+	clean := func(s string) string {
+		s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
+		s = strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f {
+				return ' '
+			}
+			return r
+		}, s)
+		return strings.TrimSpace(strings.TrimLeft(s, "- "))
 	}
-	if utf8.RuneCountInString(first) > 60 {
-		first = string([]rune(first)[:60])
+	name := clean(task)
+	if name == "" {
+		name = clean(fallback)
 	}
-	return first
+	if name == "" {
+		name = "agent"
+	}
+	if utf8.RuneCountInString(name) > 60 {
+		name = string([]rune(name)[:60])
+	}
+	return name
 }
 
 type git struct {
