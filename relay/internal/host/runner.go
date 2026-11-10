@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"sync"
@@ -209,8 +210,14 @@ func (r *Runner) Run(ctx context.Context) error {
 	return nil
 }
 
-// renewRetry is how soon a failed renewal ahead of expiry is tried again.
+// renewRetry is how soon a failed renewal ahead of expiry is tried again,
+// and the shortest wait before any renewal.
 var renewRetry = 10 * time.Second
+
+// errNoGain: the renewed credential expires no later than the one in use
+// (the relay caps access at the refresh family's end), so a new connection
+// would not outlast the current one.
+var errNoGain = errors.New("renewed access credential expires no later than the current one")
 
 // serveRenewing serves link and, renewAhead before its credential expires,
 // renews the credential and dials a new connection while the old one still
@@ -225,11 +232,14 @@ func (r *Runner) serveRenewing(ctx context.Context, link *client.Link, terminals
 		go func() { done <- r.serve(serveCtx, link, terminals) }()
 		var next *client.Link
 		var c protocol.Credentials
-		delay := time.Until(r.Credentials.ExpiresAt) - renewAhead
+		// Never renew without pause: a fresh credential can have renewAhead
+		// or less left (a short access lifetime, the family's end, clock skew).
+		delay := max(time.Until(r.Credentials.ExpiresAt)-renewAhead, renewRetry)
+		renewing := r.CredentialsPath != "" && !r.Credentials.ExpiresAt.IsZero()
 		for next == nil {
 			var renew <-chan time.Time
 			var timer *time.Timer
-			if r.CredentialsPath != "" && !r.Credentials.ExpiresAt.IsZero() {
+			if renewing {
 				timer = time.NewTimer(delay)
 				renew = timer.C
 			}
@@ -249,6 +259,12 @@ func (r *Runner) serveRenewing(ctx context.Context, link *client.Link, terminals
 				<-done
 				return err
 			}
+			if errors.Is(err, errNoGain) {
+				// Serve until the relay closes the connection at expiry;
+				// Run then reconnects with whatever the stored credential is.
+				renewing = false
+				continue
+			}
 			if err != nil && ctx.Err() == nil {
 				r.Logger.Warn("cannot renew the relay connection before it expires; retrying", "error", err)
 			}
@@ -266,14 +282,17 @@ func (r *Runner) serveRenewing(ctx context.Context, link *client.Link, terminals
 func (r *Runner) redial(ctx context.Context) (protocol.Credentials, *client.Link, error) {
 	c, err := client.RenewCredentials(ctx, r.CredentialsPath, renewAhead)
 	if err != nil {
-		return c, nil, err
+		return c, nil, fmt.Errorf("renew credential ahead of expiry: %w", err)
 	}
 	if c.Token == r.Credentials.Token {
-		return c, nil, errors.New("access credential was not renewed")
+		return c, nil, errors.New("renew credential ahead of expiry: access credential was not renewed")
+	}
+	if !c.ExpiresAt.After(r.Credentials.ExpiresAt) {
+		return c, nil, errNoGain
 	}
 	link, err := client.Dial(ctx, c)
 	if err != nil {
-		return c, nil, err
+		return c, nil, fmt.Errorf("dial renewed connection: %w", err)
 	}
 	return c, link, nil
 }

@@ -39,9 +39,11 @@ func (b *lockedBuffer) String() string {
 // handoverRelay acts like the relay for one host: every refresh issues an
 // access token that lasts lifetime, a connection closes when its token
 // expires, and a new connection replaces the device's previous one
-// (relay.Hub.Connect).
+// (relay.Hub.Connect). A non-zero familyEnd caps every token there, as the
+// relay caps access tokens at the refresh family's expiry.
 type handoverRelay struct {
 	lifetime  time.Duration
+	familyEnd time.Time
 	refreshes atomic.Int32
 	mu        sync.Mutex
 	expiry    map[string]time.Time
@@ -66,6 +68,9 @@ func (f *handoverRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/v1/auth/refresh":
 		n := f.refreshes.Add(1)
 		c := protocol.Credentials{DeviceID: "laptop", Role: "host", Token: fmt.Sprintf("access-%d", n), RefreshToken: fmt.Sprintf("refresh-%d", n), ExpiresAt: time.Now().Add(f.lifetime), RefreshExpiresAt: time.Now().Add(time.Hour)}
+		if !f.familyEnd.IsZero() && f.familyEnd.Before(c.ExpiresAt) {
+			c.ExpiresAt = f.familyEnd
+		}
 		f.mu.Lock()
 		f.expiry[c.Token] = c.ExpiresAt
 		f.mu.Unlock()
@@ -118,9 +123,9 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 // connection at expiry: a second connection is up before the first one
 // closes, and the links opened on the first one outlive it.
 func TestHostRenewsBeforeExpiryWithoutDroppingLinks(t *testing.T) {
-	ahead := renewAhead
-	renewAhead = 2 * time.Second
-	defer func() { renewAhead = ahead }()
+	ahead, retry := renewAhead, renewRetry
+	renewAhead, renewRetry = 2*time.Second, 200*time.Millisecond
+	defer func() { renewAhead, renewRetry = ahead, retry }()
 	fake := &handoverRelay{lifetime: 3 * time.Second, expiry: map[string]time.Time{}}
 	server := httptest.NewServer(fake)
 	defer server.Close()
@@ -159,5 +164,43 @@ func TestHostRenewsBeforeExpiryWithoutDroppingLinks(t *testing.T) {
 	}
 	if link.Err() == nil {
 		t.Fatal("links outlived the host")
+	}
+}
+
+// A renewed token with no more than renewAhead left never makes the host
+// renew without pause: it waits at least renewRetry between attempts, and a
+// token that expires no later than the current one ends renewal for the
+// connection.
+func TestHostRenewalPacesShortTokens(t *testing.T) {
+	ahead, retry := renewAhead, renewRetry
+	renewAhead, renewRetry = 2*time.Second, 300*time.Millisecond
+	defer func() { renewAhead, renewRetry = ahead, retry }()
+	for _, tc := range []struct {
+		name string
+		fake *handoverRelay
+		max  int32
+	}{
+		// Every token lasts less than renewAhead (a short access TTL).
+		{"short lifetime", &handoverRelay{lifetime: 1500 * time.Millisecond}, 8},
+		// The refresh family ends soon: every token expires at its end.
+		{"family end", &handoverRelay{lifetime: time.Hour, familyEnd: time.Now().Add(2500 * time.Millisecond)}, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.fake.expiry = map[string]time.Time{}
+			server := httptest.NewServer(tc.fake)
+			defer server.Close()
+			path, _ := expiringHostFile(t, server.URL)
+			runner := &Runner{Service: &Service{}, CredentialsPath: path, Credentials: protocol.Credentials{Role: "host"}, PollInterval: time.Hour, Logger: slog.New(slog.NewTextHandler(&lockedBuffer{}, nil))}
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- runner.Run(ctx) }()
+			waitFor(t, "the first connection", func() bool { return slices.Contains(tc.fake.log(), "open access-1") })
+			time.Sleep(time.Second)
+			cancel()
+			<-done
+			if n := tc.fake.refreshes.Load(); n > tc.max {
+				t.Fatalf("%d refreshes in about a second, want at most %d", n, tc.max)
+			}
+		})
 	}
 }
