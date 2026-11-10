@@ -111,7 +111,7 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	var p *terminalPair
 	if d.Role == identity.Host {
 		v, e := s.Repository.Device(r.Context(), controller)
-		valid := v.ID == controller && v.Owner == d.Owner && v.Role == identity.Controller && !v.Revoked
+		valid := identity.Device{ID: controller, Owner: d.Owner, Role: identity.Controller}.Active(v)
 		count := 0
 		for _, v := range b.streams {
 			if v.host.ID == d.ID {
@@ -223,7 +223,7 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 // role and not revoked. A repository error counts as inactive.
 func (s *Server) active(ctx context.Context, d identity.Device) bool {
 	v, err := s.Repository.Device(ctx, d.ID)
-	return err == nil && v.ID == d.ID && v.Owner == d.Owner && v.Role == d.Role && !v.Revoked
+	return err == nil && d.Active(v)
 }
 func (s *Server) bridge(p *terminalPair) {
 	timer := time.NewTimer(15 * time.Second)

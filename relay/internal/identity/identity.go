@@ -25,6 +25,13 @@ type Device struct {
 	Revoked             bool      `json:"revoked"`
 	CredentialExpiresAt time.Time `json:"-"`
 }
+
+// Active reports whether record v is still device d: the same ID, owner and
+// role, and not revoked.
+func (d Device) Active(v Device) bool {
+	return v.ID == d.ID && v.Owner == d.Owner && v.Role == d.Role && !v.Revoked
+}
+
 type Invitation struct {
 	Owner   string    `json:"owner"`
 	Role    Role      `json:"role"`
