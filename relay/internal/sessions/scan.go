@@ -392,6 +392,11 @@ const pauseEvery = 1 << 20
 // read, also inside a long line (an error stops the reading: Close
 // interrupts a pass within about that much reading).
 func readLines(r io.Reader, fn func(line []byte), pause func() error) (int64, error) {
+	return readLinesAt(r, func(line []byte, _ int64) { fn(line) }, pause)
+}
+
+// readLinesAt is readLines that also passes each line's byte offset in r.
+func readLinesAt(r io.Reader, fn func(line []byte, off int64), pause func() error) (int64, error) {
 	br := bufio.NewReaderSize(r, 1<<20)
 	var consumed, sincePause, pending int64
 	var long []byte
@@ -426,9 +431,9 @@ func readLines(r io.Reader, fn func(line []byte), pause func() error) (int64, er
 		if !tooLong {
 			if long != nil {
 				long = append(long, chunk...)
-				fn(bytes.TrimRight(long, "\r\n"))
+				fn(bytes.TrimRight(long, "\r\n"), consumed)
 			} else {
-				fn(bytes.TrimRight(chunk, "\r\n"))
+				fn(bytes.TrimRight(chunk, "\r\n"), consumed)
 			}
 		}
 		long, tooLong, pending = nil, false, 0

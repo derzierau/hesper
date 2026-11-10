@@ -102,6 +102,7 @@ hesperctl ls --json | jq -r '.[] | "\(.id) \(.state) \(.name) \(.attention.title
 hesperctl ls --json | jq -r '.[] | select(.state=="approval" or .state=="question" or .state=="error") | .id'
 hesperctl show ID --json            # attention + numbered choices
 hesperctl screen ID --json | jq -r .text   # the terminal as plain text
+hesperctl transcript ID --limit 20  # the conversation: messages, tool calls, results
 hesperctl result ID --json          # last final message (message null: none yet)
 ```
 

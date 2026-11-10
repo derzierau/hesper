@@ -153,15 +153,74 @@ On attach the daemon first sends a DATA frame that redraws the current screen
 exactly (from its `internal/vt` screen copy: clear, every row with attributes,
 cursor position and modes, alternate screen), then live output.
 
+**Transcript items** (added) are what `agents.transcript` and
+`agents.transcriptStream` send (`relay/docs/protocol.md`): an agent's
+Claude Code or Codex transcript parsed, one JSON object per item, for a
+view that draws the conversation itself (the phone):
+
+```json
+{"seq": 1834211, "at": 1762600000123, "kind": "user", "text": "…"}
+{"seq": 1835077, "kind": "assistant", "text": "…"}
+{"seq": 1836002, "kind": "tool", "tool": "Read", "summary": "TerminalView.swift", "id": "toolu_…"}
+{"seq": 1838410, "kind": "result", "of": "toolu_…", "text": "…", "truncated": true, "ok": true}
+{"seq": 1900120, "kind": "system", "text": "Context compacted"}
+```
+
+| Field | Meaning |
+|---|---|
+| `seq` | byte offset of the item's line in the transcript file, plus the item's index within the line (0 for the first; a line is longer than its item count, so this never reaches the next line's offset): unique per item, monotonic, stable across daemon restarts; pages are cut at it (`before`, `after`) and views key items by it |
+| `at` | the line's timestamp in Unix ms, when it has one |
+| `kind` | `user`, `assistant`, `tool`, `result` or `system` |
+| `text` | a user or assistant message's first 4 KiB of UTF-8 text (or all of it when shorter); a result's clipped output; a system notice |
+| `tool` | a tool call's tool (Codex: the `function_call`'s or `custom_tool_call`'s name) |
+| `summary` | one short line saying what a tool call works on (below) |
+| `id` | a tool call's id |
+| `of` | a result's tool call id |
+| `truncated` | a message preview or result's `text` was clipped; for a user or assistant message use `agents.transcriptText` with its `seq` for the complete text; a result's full output is not served |
+| `ok` | results only: false when the tool reported an error (Claude Code `is_error`) |
+
+Dropped: thinking, `isMeta` and sidechain (subagent) lines, Codex
+`reasoning` and token events, and user text starting with `<`,
+`[Request interrupted` or `Caveat:` (as shared history does). A Claude
+Code `isCompactSummary` line becomes one `system` item "Context
+compacted"; a transcript that shrinks, `system` "Transcript restarted".
+Codex `function_call` and `custom_tool_call` items are `tool`,
+`function_call_output` and `custom_tool_call_output` items `result`
+(an output of content blocks: their text joined by newlines,
+"[image]" for an image). A `custom_tool_call`'s summary is its
+free-text `input`'s first line, clipped to 80 runes. A system item with a negative `seq` is a marker: the phone
+drops what it has; the newest items follow; today only "Transcript
+restarted". A stream also sends it first when its `after` lies at or
+past the transcript's end (rewritten shorter while the phone was away)
+or more than 1000 source lines back. A page (and a stream's backfill without `after`) stops
+before the item that would take it past 384 KiB of JSON. A cursor may
+land inside a source line; the next page includes the earlier items of
+that line. A single stream item remains below the relay's 1 MiB frame.
+
+`agents.transcriptText` retrieves complete user or assistant text by
+`seq`, in chunks of at most 64 KiB of UTF-8 bytes. `offset` and `next`
+are byte offsets in the full text; repeat at `next` while `more` is true.
+Tool names and call IDs are capped at 4 KiB in transcript items so one
+malformed source line cannot make an item exceed a page or link frame.
+
+**Summary rule.** Read, Edit and Write: the file's base name; Bash and
+Codex `shell`: the command's first line, clipped to 80 runes; Grep and
+Glob: the pattern; Agent and Task: its `description`; any other tool:
+empty (views show the tool name alone).
+
+**Clip rule.** A result's `text` is clipped to 60 lines or 4 KiB,
+whichever comes first, with `truncated: true`.
+
 **Size rule.** An agent's PTY has exactly one size. The size owner is the most
-recent `owner:true` rw attachment (the app's focused view); when it detaches,
+recent `owner:true` rw attachment without `view` (the app's focused view;
+a typing view, below, never owns); when it detaches,
 the size stays (unless view attaches ask for a fit, below). Every other
 viewer receives bytes for that grid: the app renders tiles by choosing the
 font size that fits `cols × rows` into the tile (scaled live tiles), never by
 resizing the PTY.
 
 **View attaches** (added with the layout rework, see "As built — layout"): an
-`ro` attach may ask for a window onto the screen instead of the screen:
+attach may ask for a window onto the screen instead of the screen:
 `"view":{"rows":R,"cols":C,"anchor":"bottom"}` (`rows`/`cols` 0 or missing:
 the request's `cols`/`rows`; `anchor` only `bottom`). The daemon renders,
 from its screen copy, the R rows that end at the lower of the last non-blank
@@ -169,7 +228,11 @@ row and the cursor's row, each clipped to C columns, and afterwards only the
 rows that changed (each render one `?2026` synchronized update, at most one
 per 8 ms; the first after a quiet period at once). The viewer gets no SIZE
 frames; its RESIZE sets the window (`cols, rows`), never the PTY. The reply
-echoes `"view":{rows, cols, anchor}`. A `rw` view is refused (`invalid`).
+echoes `"view":{rows, cols, anchor}`. `rw` with `view` is a typing view
+(the iPhone's text view): input accepted, rows as a view, never owner, never
+fit. Its DATA frames go to the PTY as from a plain `rw` attach; it gets no
+scrollback preamble and no redraw, and `owner` and `fit` in its request are
+ignored. An `ro` view discards DATA.
 
 **As built — fit** (additive): a view attach may add `"fit":{"cols":C,"rows":R}`,
 the grid its tile would like the PTY to have (the app sends its tile's
@@ -675,7 +738,8 @@ tracking (mouse, focus, kitty keyboard flags, cursor shape), `Resize` and
   frame and a fresh redraw (then live output). A viewer that takes nothing
   for 30 s is dropped.
 - `ro`: DATA from the client is discarded. RESIZE applies only from the
-  current owner (most recent `rw` + `owner:true`); an `ro` attach never owns.
+  current owner (most recent `rw` + `owner:true`, not a view); an `ro`
+  attach or a typing view never owns.
   When the owner detaches the size stays and nobody owns it.
 - The daemon is the agent's terminal: it answers DA1/DA2/DA3, DSR 5/6
   (CPR), XTVERSION (`hesperd`), DECRQM, kitty `CSI ? u`, `CSI 14/16/18 t`,

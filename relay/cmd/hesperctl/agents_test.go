@@ -26,6 +26,12 @@ func daemon(t *testing.T) (*agents.Registry, string, string) {
 // daemonWith is daemon with more profiles.
 func daemonWith(t *testing.T, extra map[string]wire.Profile) (*agents.Registry, string, string) {
 	t.Helper()
+	return daemonSessions(t, extra, nil)
+}
+
+// daemonSessions is daemonWith with a shared history (nil: none).
+func daemonSessions(t *testing.T, extra map[string]wire.Profile, sessions agents.Sessions) (*agents.Registry, string, string) {
+	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "gctl")
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +56,7 @@ func daemonWith(t *testing.T, extra map[string]wire.Profile) (*agents.Registry, 
 	sock := filepath.Join(dir, "state", "hesperd.sock")
 	reg, err := agents.Open(agents.Options{StateDir: filepath.Join(dir, "state"), ConfigDir: config, Socket: sock, Machine: "L",
 		Env: os.Environ(), LoginShell: "/bin/sh", ClaudeConfig: filepath.Join(dir, "claude.json"), CodexHome: filepath.Join(dir, "codex"),
-		WorktreeRoot: filepath.Join(dir, "wt"), StopGrace: time.Second, Logf: t.Logf})
+		WorktreeRoot: filepath.Join(dir, "wt"), StopGrace: time.Second, Logf: t.Logf, Sessions: sessions})
 	if err != nil {
 		t.Fatal(err)
 	}

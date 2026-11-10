@@ -165,15 +165,13 @@ func TestViewResizeChangesTheWindow(t *testing.T) {
 	}
 }
 
-func TestViewMustBeReadOnly(t *testing.T) {
+func TestViewAnchorMustBeBottom(t *testing.T) {
 	tm := start(t, "echo", 80, 24)
-	vc := attachView(t, tm, wire.AttachRequest{Attach: "x", Mode: wire.ModeRW, View: &wire.View{Rows: 3}})
-	if vc.rep.OK || vc.rep.Error == nil || vc.rep.Error.Code != wire.CodeInvalid {
-		t.Fatalf("reply %+v", vc.rep)
-	}
-	vc = attachView(t, tm, wire.AttachRequest{Attach: "x", Mode: wire.ModeRO, View: &wire.View{Rows: 3, Anchor: "top"}})
-	if vc.rep.OK {
-		t.Fatal("unknown anchor accepted")
+	for _, mode := range []string{wire.ModeRO, wire.ModeRW} {
+		vc := attachView(t, tm, wire.AttachRequest{Attach: "x", Mode: mode, View: &wire.View{Rows: 3, Anchor: "top"}})
+		if vc.rep.OK || vc.rep.Error == nil || vc.rep.Error.Code != wire.CodeInvalid {
+			t.Fatalf("%s: unknown anchor accepted: %+v", mode, vc.rep)
+		}
 	}
 }
 

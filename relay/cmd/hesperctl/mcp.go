@@ -860,13 +860,22 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 
+// mcpEnv is set in a tool call's environment: a command that never ends
+// on its own refuses to run as a tool.
+const mcpEnv = "HESPER_MCP_TOOL"
+
 // runCommand runs hesperctl argv as a child (stdin empty); cancelling
 // ctx interrupts it (SIGINT, then SIGKILL after 3 s).
 func (s *mcpServer) runCommand(ctx context.Context, argv []string) (mcpOutput, int, error) {
 	ctx, cancel := context.WithTimeout(ctx, mcpCallLimit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, s.exe, argv...)
-	cmd.Env = s.env
+	env := s.env
+	if env == nil {
+		env = os.Environ()
+	}
+	// mcpEnv tells a command it runs as a tool (transcript --follow).
+	cmd.Env = append(env[:len(env):len(env)], mcpEnv+"=1")
 	stdout := &limitedBuffer{n: mcpOutputLimit}
 	stderr := &limitedBuffer{n: 64 * 1024}
 	cmd.Stdout, cmd.Stderr = stdout, stderr

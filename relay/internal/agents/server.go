@@ -572,6 +572,46 @@ func (s *Server) call(method string, params json.RawMessage) (any, error) {
 		return struct{}{}, reg.SetBackground(p.ID, p.Background)
 	case "agents.screen":
 		return s.screen(params, forward) // screen.go
+	case "agents.transcript":
+		// No local stream: hesperctl transcript --follow pages instead.
+		var p wire.TranscriptParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		if p.ID == "" {
+			return nil, &badParams{errors.New("id is required")}
+		}
+		if ok, res, err := forward(p.ID); ok {
+			return res, err
+		}
+		if reg.opt.Sessions == nil {
+			// As the host answers (unavailable means this agent has none).
+			return nil, wire.Errorf("unsupported", "the shared history is not available")
+		}
+		a, err := reg.Get(p.ID)
+		if err != nil {
+			return nil, err
+		}
+		return reg.opt.Sessions.Transcript(context.Background(), a, p.Before, p.Limit)
+	case "agents.transcriptText":
+		var p wire.TranscriptTextParams
+		if err := decode(params, &p); err != nil {
+			return nil, err
+		}
+		if p.ID == "" {
+			return nil, &badParams{errors.New("id is required")}
+		}
+		if ok, res, err := forward(p.ID); ok {
+			return res, err
+		}
+		if reg.opt.Sessions == nil {
+			return nil, wire.Errorf("unsupported", "the shared history is not available")
+		}
+		a, err := reg.Get(p.ID)
+		if err != nil {
+			return nil, err
+		}
+		return reg.opt.Sessions.TranscriptText(context.Background(), a, p.Seq, p.Offset, p.Limit)
 	case "agents.checkpoint":
 		// move work (checkpoint.go)
 		var p wire.IDParams

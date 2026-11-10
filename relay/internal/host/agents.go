@@ -284,6 +284,12 @@ func (s *Service) agents(ctx context.Context, m protocol.Message) (json.RawMessa
 		return s.openPort(ctx, m) // forward.go
 	case "agents.screen":
 		return s.screen(ctx, m) // screen.go
+	case "agents.transcript":
+		return s.transcript(ctx, m) // transcript.go
+	case "agents.transcriptText":
+		return s.transcriptText(ctx, m) // transcript.go
+	case "agents.transcriptStream":
+		return s.transcriptStream(ctx, m) // transcript.go
 	case "projects.clone":
 		var p agents.CloneParams
 		if err := params(m.Params, &p); err != nil {

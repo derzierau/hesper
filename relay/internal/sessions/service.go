@@ -84,6 +84,9 @@ type Service struct {
 	notes    map[string]bool // keys waiting for sessions.changed
 	indexing wire.SessionIndexing
 	closed   bool
+	// transcriptfile.go: "kind:sid" → the line index of an agent's
+	// transcript, built at the first page.
+	transcripts map[string]*transcriptFile
 
 	ownedMu sync.Mutex
 	owned   map[string]bool // "kind:sid" started by hesperd
@@ -202,6 +205,14 @@ func (s *Service) Close() {
 	for w := range s.watchers {
 		w.close()
 	}
+	// Transcript indexes (transcriptfile.go): no IndexKeep timer outlives
+	// Close; a first pass stops at its next pause.
+	for _, f := range s.transcripts {
+		if f.idle != nil {
+			f.idle.Stop()
+		}
+	}
+	s.transcripts = nil
 	s.mu.Unlock()
 	s.watch.Stop()
 	// Every loop stops at its next check of stop: between transcripts and

@@ -70,10 +70,6 @@ func (t *Term) Attach(conn net.Conn, r *bufio.Reader, req wire.AttachRequest) {
 		return
 	}
 	if req.View != nil {
-		if rw {
-			reply(conn, wire.AttachReply{Error: wire.Errorf(wire.CodeInvalid, "a view attach must be read-only")})
-			return
-		}
 		t.attachView(conn, r, req)
 		return
 	}

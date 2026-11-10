@@ -221,10 +221,14 @@ type claudeMessage struct {
 }
 
 type contentBlock struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	ID        string          `json:"id"`
+	ToolUseID string          `json:"tool_use_id"`
+	Content   json.RawMessage `json:"content"`
+	IsError   bool            `json:"is_error"`
 }
 
 // claudeSkip are line types without anything the index keeps; they are
@@ -420,6 +424,16 @@ type codexMessage struct {
 	} `json:"content"`
 }
 
+// codexCall is a function_call's, custom_tool_call's or their outputs'
+// payload. Output is a string or an array of {type, text} blocks.
+type codexCall struct {
+	Name      string          `json:"name"`
+	Arguments string          `json:"arguments"`
+	Input     string          `json:"input"` // custom_tool_call
+	CallID    string          `json:"call_id"`
+	Output    json.RawMessage `json:"output"`
+}
+
 // payloadType finds `"payload":{"type":"X"` near a Codex line's start
 // (its keys come in the order timestamp, [ordinal,] type, payload).
 func payloadType(line []byte) (top, inner string) {
@@ -528,10 +542,7 @@ func (a *Accum) codexLineIn(line []byte) {
 				return
 			}
 			var l struct {
-				Payload struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"payload"`
+				Payload codexCall `json:"payload"`
 			}
 			if json.Unmarshal(line, &l) != nil || l.Payload.Name != "update_plan" {
 				return

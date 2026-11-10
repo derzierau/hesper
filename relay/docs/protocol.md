@@ -228,7 +228,7 @@ appends a line to `~/.local/state/hesper/audit.log`:
 
 | Right | Methods |
 | --- | --- |
-| `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.screen`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat` (and the unsigned `snapshot`, `ping`) |
+| `observe` | `agents.list`, `agents.link`, `agents.attach` with mode `ro`, `agents.plan`, `agents.probe`, `agents.screen`, `agents.transcript`, `agents.transcriptText`, `agents.transcriptStream`, `agents.export`, `download`, `job`, `projects.recent`, `profiles.list`, `fs.stat` (and the unsigned `snapshot`, `ping`) |
 | `answer` | `agents.answer` |
 | `type` | `agents.input`, `agents.attach` with mode `rw` |
 | `transfer` | `agents.spawn`, `agents.stop`, `agents.resume`, `agents.remove`, `agents.rename`, `agents.import`, `transfer`, `projects.clone`, `projects.promote`, `projects.scratch`, `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete` |
@@ -425,7 +425,7 @@ closures as `direct.closed`.
 ping goes unanswered for 2 s or the connection fails; a request that may
 have reached the host is resent through the relay only when idempotent
 (`snapshot`, `ping`, `agents.list`, `agents.plan`, `agents.probe`,
-`agents.screen`, `download`, `projects.recent`, `profiles.list`, `fs.stat`; identical inner request), anything else fails `connection_lost`. Controllers fetch a new
+`agents.screen`, `agents.transcript`, `agents.transcriptText`, `download`, `projects.recent`, `profiles.list`, `fs.stat`; identical inner request), anything else fails `connection_lost`. Controllers fetch a new
 offer through the relay every 10 minutes; the host closes direct
 connections of a device that has not done so for 30 minutes, or that it no
 longer approves.
@@ -452,7 +452,7 @@ renames to its own machine naming.
 | `agents.resume`, `agents.rename` | as locally (`agents.rename` may carry `by: "agent"`, set by the controller's hesperd from its verified caller, and `auto`; a host that refuses `by` as unknown gets the rename again without it) | `Agent` |
 | `agents.remove` | `{id}` | `{}` |
 | `agents.link` | `{}` | a terminal ticket: the [link](#links) |
-| `agents.attach` | `{link, ch, mode, request}`: `request` is the local attach request (every option of it, passed through), `mode` repeats its mode for the rights table | `{}`; the attach runs on channel `ch` of the caller's link |
+| `agents.attach` | `{link, ch, mode, request}`: `request` is the local attach request (every option of it, passed through), `mode` repeats its mode for the rights table | `{}`; the attach runs on channel `ch` of the caller's link. `rw` with `view` is a typing view: input accepted, rows as a view, never owner, never fit (right `type`) |
 | `ports.open` | `{link, ch, port}` | `{}`: a TCP connection to `port` on the host's loopback (`127.0.0.1`, else `::1`), bridged as a byte-stream channel `ch` of the caller's link (right `shell`; only with `--allow-forward` and a port in its list, at most 64 per link; `forbidden` otherwise, `unavailable` when nothing accepts the connection) |
 | `agents.plan` | `{id}` | `{project, home, commits, projectId?, remote?, remoteHead?, git?, processes?}` (a move's source: commits the target may have; its Git remote; processes the agent started) |
 | `agents.probe` | `{path, home, commits, projectId?, kind?}` | `{exists, has, path?, tool?}` (a move's target: where the project is there, whether it has the tool) |
@@ -460,6 +460,9 @@ renames to its own machine naming.
 | `agents.close` | `{id, reason?: "moved", to?}` | as locally (a move closes its source with reason `moved`) |
 | `checkpoints.restore` | `{key, ref, commit}` | `{path, branch}`: a worktree from a session's checkpoint (right `transfer`) |
 | `agents.screen` | `{id, rows?, scrollback?}` | `{text, rows, cols, cursor?, alt?}`: the terminal as plain text (right `observe`) |
+| `agents.transcript` | `{id, before?, limit?}` | `{items, more}`: up to `limit` transcript items (default 200, max 1000) before the item whose `seq` is `before` (default: the end), oldest first; `more` means older items exist (right `observe`; items: rebuild contract, "Transcript items"). Each user/assistant item has at most 4 KiB of UTF-8 preview text; `truncated` identifies a clipped message. A page stops before the next item would take its JSON past 384 KiB, with `more` true; `before` can split items from one source line. While a long transcript is read for the first time (more than 2 s): `busy`, ask again. A shell agent, or one without a transcript yet: `unavailable`; a host (or local daemon) without the shared history: `unsupported`. Also on the local socket (`hesperctl transcript`) |
+| `agents.transcriptText` | `{id, seq, offset?, limit?}` | `{text, next, more}`: the complete text of a user/assistant item at `seq`, at most `limit` UTF-8 bytes (default/max 64 KiB; explicit limits 1–3 are `invalid`) from byte `offset` (default 0), ending on a rune boundary. Continue at `next` while `more`; the item must still exist. Unknown/non-message `seq`: `not_found`; invalid offset: `invalid`. Right `observe`. Also on the local socket |
+| `agents.transcriptStream` | `{link, ch, id, after?, limit?}` | `{}`; items as newline-delimited JSON on channel `ch` of the caller's link (registered like `agents.attach`'s; a channel in use: `invalid_request`), oldest first. Backfill: without `after` the newest `limit` items (default 200, max 1000, at most 384 KiB as in a page), with `after` every item whose `seq` is above it, emitted in batches of at most 64 source lines and 384 KiB of item JSON (a batch may stop inside a source line); an `after` at or past the transcript's end (it was rewritten shorter) or more than 1000 source lines behind sends the `Transcript restarted` marker and the newest `limit` items instead (page back with `agents.transcript`); then live as the transcript grows (right `observe`). Long messages are bounded previews; fetch full text with `agents.transcriptText`. `X` from the controller ends it; the host closes the channel (`X`) when the link ends, the agent is removed, the agent's `sessionId` changes (`/clear`, a resume: another transcript; open a new stream) or the follow fails (the transcript cannot be read for more than 5 s; shorter gaps, such as a replace, are retried). Bytes the controller sends on the channel are ignored. A system item with a negative `seq` is a marker, not a line: today `{"seq":-1,"kind":"system","text":"Transcript restarted"}` when the transcript shrank (rewritten); the phone drops the items it holds and continues with what follows. A shell agent, or one without a transcript yet: `unavailable` (no channel is registered); a host without the shared history: `unsupported`. Not on the local socket |
 | `projects.clone` | `{url}` | `{path}` |
 | `projects.scratch` | `{name?, task?}` | `{id, path, state}`: a new scratch project on this host (its home) and the host's project state |
 | `projects.scratchArchive`, `projects.scratchRestore`, `projects.scratchDelete` | `{id}` | `{id, state}`: done on the scratch's home (this host); `busy` while agents run in it |
@@ -472,6 +475,10 @@ renames to its own machine naming.
 | `review.sendBack` | `{id, notes, message?}` | `{}`: typed into the agent as one instruction (right `type`) |
 | `review.evidence` | `{id}` | `ReviewEvidence`: what the agent ran, its freshness (right `observe`) |
 | `review.provenance` | `{id, path, line?}` | `ReviewProvenance`: the edit that wrote that line; `sessionId` in the host's naming, renamed by the controller (right `observe`) |
+
+The transcript index skips exceptionally large source lines (roughly
+256 MiB). Their items do not appear in pages or streams and have no
+`agents.transcriptText` result.
 
 ### Links
 
@@ -494,7 +501,8 @@ kind (1 byte) | channel (uint32 BE) | length (uint32 BE) | payload (≤ 1 MiB)
 The controller opens channel `ch` with a signed `agents.attach {link, ch,
 mode, request}` (or a byte-stream channel with `ports.open {link, ch,
 port}`, below); the host bridges it to the agent's PTY like a local
-attach (redraw first, the size owner rule, viewers that fall behind get
+attach (redraw first, the size owner rule (a typing view, `rw` with
+`view`, never owns and never fits), viewers that fall behind get
 SIZE and a fresh redraw, EXIT last). One link per pair keeps within the
 relay's four streams per host however many tiles show remote agents.
 A host keeps at most four links per device (the oldest goes) and 256
