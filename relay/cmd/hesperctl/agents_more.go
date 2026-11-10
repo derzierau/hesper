@@ -11,6 +11,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -891,8 +893,8 @@ func screenCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 	})
 }
 
-// transcriptFollowLimit is how many of the newest items transcript
-// --follow pages each second (those above the last printed are new).
+// transcriptFollowLimit is the page size transcript --follow pages back
+// with each second, to the last item it printed.
 const transcriptFollowLimit = 50
 
 func transcriptCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
@@ -928,9 +930,14 @@ func transcriptCommand(ctx context.Context, f *flag.FlagSet, args []string) erro
 			printTranscript(page.Items, false, -1)
 			return nil
 		}
-		// The local socket has no link channel: page from the end every
-		// second and print what is newer than the last printed item.
+		// The local socket has no link channel: page back from the end
+		// every second to the last printed item and print what is newer.
 		last := printTranscript(page.Items, *asJSON, -1)
+		fetch := func(before int64) (wire.TranscriptPage, error) {
+			var p wire.TranscriptPage
+			err := c.Call(ctx, "agents.transcript", wire.TranscriptParams{ID: id, Before: before, Limit: transcriptFollowLimit}, &p)
+			return p, err
+		}
 		tick := time.NewTicker(time.Second)
 		defer tick.Stop()
 		for {
@@ -939,16 +946,51 @@ func transcriptCommand(ctx context.Context, f *flag.FlagSet, args []string) erro
 				return nil
 			case <-tick.C:
 			}
-			var next wire.TranscriptPage
-			if err := c.Call(ctx, "agents.transcript", wire.TranscriptParams{ID: id, Limit: transcriptFollowLimit}, &next); err != nil {
+			items, restarted, gap, err := transcriptSince(fetch, last)
+			if err != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
 				return err
 			}
-			last = printTranscript(next.Items, *asJSON, last)
+			if restarted {
+				printTranscript([]wire.TranscriptItem{{Seq: -1, Kind: wire.ItemSystem, Text: "Transcript restarted"}}, *asJSON, -2)
+				last = -1
+			}
+			if gap {
+				fmt.Fprintf(os.Stderr, "hesperctl: more than %d new items; older ones skipped\n", wire.TranscriptMaxLimit)
+			}
+			last = printTranscript(items, *asJSON, last)
 		}
 	})
+}
+
+// transcriptSince is the items above last, oldest first, paged back from
+// the end with fetch (agents.transcript's before; 0 the end). restarted:
+// the newest item lies below last or the transcript is empty while last
+// is not (it was rewritten), and items is the newest page. gap: more
+// than wire.TranscriptMaxLimit items are new; items is the newest of
+// them.
+func transcriptSince(fetch func(before int64) (wire.TranscriptPage, error), last int64) (items []wire.TranscriptItem, restarted, gap bool, err error) {
+	var before int64
+	for first := true; ; first = false {
+		p, err := fetch(before)
+		if err != nil {
+			return nil, false, false, err
+		}
+		if first && last >= 0 && (len(p.Items) == 0 || p.Items[len(p.Items)-1].Seq < last) {
+			return p.Items, true, false, nil
+		}
+		k := sort.Search(len(p.Items), func(i int) bool { return p.Items[i].Seq > last })
+		items = append(slices.Clone(p.Items[k:]), items...)
+		if k > 0 || !p.More || len(p.Items) == 0 {
+			return items, false, false, nil
+		}
+		if len(items) >= wire.TranscriptMaxLimit {
+			return items, false, true, nil
+		}
+		before = p.Items[0].Seq
+	}
 }
 
 // printTranscript prints the items whose seq is above after (as JSON
