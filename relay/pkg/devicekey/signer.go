@@ -269,22 +269,39 @@ func ReadPrivateFile(path string) ([]byte, error) {
 }
 
 // OpenPrivateFile opens a file with ReadPrivateFile's checks but no size
-// limit.
+// limit. The checks run on the opened descriptor, so the file checked is
+// the file read: O_NOFOLLOW refuses a symlink, and O_NONBLOCK keeps a
+// FIFO from blocking the open (it has no effect on a regular file).
 func OpenPrivateFile(path string) (*os.File, error) {
-	info, err := os.Lstat(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return nil, fmt.Errorf("%s is not a regular file", path)
+		}
 		return nil, err
 	}
+	info, err := f.Stat()
+	if err == nil {
+		err = checkPrivate(path, info)
+	}
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+func checkPrivate(path string, info os.FileInfo) error {
 	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("%s is not a regular file", path)
+		return fmt.Errorf("%s is not a regular file", path)
 	}
 	if info.Mode().Perm()&0077 != 0 {
-		return nil, fmt.Errorf("%s is accessible to other users; expected mode 0600", path)
+		return fmt.Errorf("%s is accessible to other users; expected mode 0600", path)
 	}
 	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
-		return nil, fmt.Errorf("%s belongs to another user", path)
+		return fmt.Errorf("%s belongs to another user", path)
 	}
-	return os.Open(path)
+	return nil
 }
 
 // WriteNewPrivateFile stores data at path (mode 0600) only if nothing is
