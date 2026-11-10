@@ -69,14 +69,17 @@ public struct AttachDecoder: Sendable {
             buffer = Data(buffer[(nl + 1)...])
         }
         var frames: [AttachFrame] = []
-        while buffer.count >= 5 {
-            let b = [UInt8](buffer.prefix(5))
+        // Read on from an offset and drop the consumed bytes once: copying
+        // the rest after every frame is quadratic in a payload of many.
+        var at = buffer.startIndex
+        defer { buffer = Data(buffer[at...]) }
+        while buffer.endIndex - at >= 5 {
+            let b = [UInt8](buffer[at..<at + 5])
             let length = Int(b[1...4].reduce(UInt32(0)) { $0 << 8 | UInt32($1) })
             guard length <= Self.maxFrame else { throw RelayError(code: "integrity", message: "Attach frame too large") }
-            guard buffer.count >= 5 + length else { break }
-            let start = buffer.startIndex
-            let payload = Data(buffer[start + 5..<start + 5 + length])
-            buffer = Data(buffer[(start + 5 + length)...])
+            guard buffer.endIndex - at >= 5 + length else { break }
+            let payload = Data(buffer[at + 5..<at + 5 + length])
+            at += 5 + length
             if let f = try Self.frame(type: b[0], payload) { frames.append(f) }
         }
         return (reply, frames)
