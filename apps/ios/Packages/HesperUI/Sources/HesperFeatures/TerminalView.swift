@@ -200,8 +200,8 @@ final class TerminalWatch {
     @ObservationIgnored private var flinging: Task<Void, Never>?
     /// The surface has been fed: a new attach starts on a fresh one.
     @ObservationIgnored private var used = false
-    /// Counts `run` calls; only the newest run touches the shared state.
-    @ObservationIgnored private var runs = 0
+    /// Which run owns the shared state; only the newest writes it.
+    @ObservationIgnored private var runs = TerminalRuns()
     /// `release()` let go of the attach; the run stops instead of
     /// attaching again.
     @ObservationIgnored private var released = false
@@ -233,13 +233,15 @@ final class TerminalWatch {
     func run(_ agent: Agent, model: FleetModel) async {
         // `.task(id:)` does not wait for the run it cancels: an old run
         // still flushing must not clear state the new one owns.
-        runs += 1
-        let run = runs
+        let run = runs.begin()
+        // The new run starts detached: no keyboard, no input to an old
+        // stream, even if its first attach fails.
+        detach()
         released = false
         if used { replaceSurface() }
         phase = .loading
         var failures = 0
-        while !Task.isCancelled, run == runs, !released {
+        while !Task.isCancelled, runs.owns(run), !released {
             await waitForArea()
             let planned = model.plan(for: agent, area: viewport.view, cell: cell)
             let wanted = macTookBack ? AttachPlan.mirror(agent, typing: planned.typing) : planned
@@ -250,7 +252,8 @@ final class TerminalWatch {
                 stream = attached.stream
                 plan = attached.plan
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, runs.detached(run) else { return }
+                detach()
                 // A relay reconnect can outlast one attach's wait: keep
                 // trying. Only the Mac's refusals end the terminal.
                 guard AttachPlan.triesAgain(error) else {
@@ -265,6 +268,12 @@ final class TerminalWatch {
                 guard (try? await Task.sleep(for: delay)) != nil else { return }
                 continue
             }
+            // A run superseded while it attached closes its own stream and
+            // writes nothing the newer run owns.
+            guard !Task.isCancelled, runs.attached(run, typing: plan.typing) else {
+                stream.close()
+                return
+            }
             failures = 0
             used = true
             start(plan, device: model.device(on: agent.machine))
@@ -276,20 +285,18 @@ final class TerminalWatch {
             } else {
                 surface.onInput = nil
             }
-            canType = plan.typing
+            canType = runs.typing
             let exited = await withTaskCancellationHandler {
                 await consume(stream)
             } onCancel: {
                 stream.close()
             }
-            guard run == runs else {
+            guard runs.detached(run) else {
                 stream.close()
                 return
             }
-            surface.onInput = nil
-            canType = false
+            detach()
             blurKeyboard()
-            self.stream = nil
             pendingFit?.cancel()
             pendingFit = nil
             stream.close()
@@ -411,6 +418,14 @@ final class TerminalWatch {
         } else if canType {
             surface.focusKeyboard()
         }
+    }
+
+    /// Not attached: no input hook, no keyboard, no stream. Only the run
+    /// that owns the state calls it.
+    private func detach() {
+        surface.onInput = nil
+        canType = false
+        stream = nil
     }
 
     /// Closes the attach now (X to the Mac) and stops the run, without
