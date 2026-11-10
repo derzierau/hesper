@@ -237,3 +237,29 @@ func TestTranscriptStreamEndsOnNewSession(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// A closed registry (daemon shutdown) ends the stream's watcher, and
+// with it the follow, instead of leaving the watcher spinning.
+func TestTranscriptStreamEndsOnRegistryClose(t *testing.T) {
+	reg, project := testRegistry(t)
+	fake := &fakeTranscripts{ended: make(chan struct{}, 4)}
+	s := &Service{Agents: reg, Sessions: fake}
+	a, err := reg.Spawn(wire.SpawnParams{Project: project, Task: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	link := &hostLink{id: "L1", device: "dev", conn: agentlink.New(&frames{}), ctx: ctx, cancel: cancel, opened: time.Now(), chans: map[uint32]*hostChan{}}
+	s.links.add(link)
+	params, _ := json.Marshal(wire.TranscriptStreamParams{Link: "L1", Ch: 1, ID: a.ID})
+	if _, err := s.Execute(context.Background(), protocol.Message{Method: "agents.transcriptStream", Params: params, ControllerID: "dev", Deadline: time.Now().Add(time.Second).UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	reg.Close()
+	select {
+	case <-fake.ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the follow goes on after the registry closed")
+	}
+}

@@ -119,8 +119,11 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 		go func() {
 			defer close(ended)
 			for {
+				// No notes: the follow ended or the subscriber was
+				// closed (the registry's Close); Wait would return at
+				// once from then on.
 				notes := sub.Wait(follow.Done())
-				if len(notes) == 0 && follow.Err() != nil {
+				if len(notes) == 0 {
 					return
 				}
 				for _, n := range notes {
