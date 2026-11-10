@@ -56,6 +56,7 @@ func TestDevicesListsOnlyTheOwnersLiveDevices(t *testing.T) {
 	gone := device("gone", "a", identity.Host)
 	gone.Revoked = true
 	phone := device("phone", "a", identity.Controller)
+	phone.Push = &identity.Push{}
 	user := device("user", "a", identity.Controller)
 	other := device("other", "b", identity.Host)
 	all := []identity.Device{host, gone, phone, user, other}
@@ -79,7 +80,8 @@ func TestDevicesListsOnlyTheOwnersLiveDevices(t *testing.T) {
 	for _, d := range m.Devices {
 		got[d.ID] = d
 	}
-	if len(got) != 3 || !got["host"].Online || got["host"].Role != "host" || got["phone"].Online || !got["user"].Online || got["phone"].Role != "controller" || got["phone"].Name != "phone" {
+	if len(got) != 3 || !got["host"].Online || got["host"].Role != "host" || got["phone"].Online || !got["user"].Online || got["phone"].Role != "controller" || got["phone"].Name != "phone" ||
+		!got["phone"].Push || got["user"].Push || got["host"].Push {
 		t.Fatalf("wrong devices: %+v", m.Devices)
 	}
 }

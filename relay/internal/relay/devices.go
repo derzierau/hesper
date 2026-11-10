@@ -61,7 +61,7 @@ func (h *Hub) handleDevices(c *Connection, m protocol.Message) error {
 			if d.Owner != owner || d.Revoked {
 				continue
 			}
-			devices = append(devices, protocol.Device{ID: d.ID, Name: d.Name, Role: string(d.Role), Online: h.connections[d.ID] != nil})
+			devices = append(devices, protocol.Device{ID: d.ID, Name: d.Name, Role: string(d.Role), Online: h.connections[d.ID] != nil, Push: d.Push != nil})
 		}
 		h.mu.Unlock()
 		sort.Slice(devices, func(i, j int) bool { return devices[i].ID < devices[j].ID })
