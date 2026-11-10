@@ -106,6 +106,7 @@ func (s *Service) Snapshot(ctx context.Context) (session.Snapshot, error) {
 	state.Capabilities.Ping = true
 	state.Capabilities.Shell = s.AllowShell
 	state.Capabilities.Forward = s.Agents != nil && s.AllowForward.Any()
+	state.Capabilities.SizeOwner = s.Agents != nil
 	if s.Agents != nil {
 		state.Short = s.Agents.Machine()
 		for _, a := range s.Agents.List() {

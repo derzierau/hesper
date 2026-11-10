@@ -8,7 +8,13 @@ import "time"
 // one. The PTY takes the largest fit (the widest cols and the most rows
 // among them), never below MinFitCols x MinFitRows, debounced by
 // FitDebounce and only when a side changes by at least FitStep. An owner
-// always wins; when it detaches, the fit applies again.
+// always wins; when it detaches, the latest earlier owner still attached
+// owns the size again at its grid, and with none the fit applies. A remote owner
+// (Origin not this Mac) that detaches with no fit asking gives the PTY
+// back the size it had before the first remote take-over; a local owner
+// in between drops that size, since the Mac sized the PTY itself. When a
+// fit is waiting on its debounce, the old size remains available until
+// the fit applies or disappears.
 
 const (
 	// FitDebounce is how long the fit must stay unchanged before the PTY
@@ -61,10 +67,18 @@ func (t *Term) applyFit() {
 		return
 	}
 	cols, rows, ok := t.fitTarget()
-	if !ok || (abs(cols-t.cols) < FitStep && abs(rows-t.rows) < FitStep) {
+	if !ok {
+		cols, rows = t.restoreCols, t.restoreRows
+		if cols == 0 {
+			t.mu.Unlock()
+			return
+		}
+	} else if abs(cols-t.cols) < FitStep && abs(rows-t.rows) < FitStep {
+		t.restoreCols, t.restoreRows = 0, 0
 		t.mu.Unlock()
 		return
 	}
+	t.restoreCols, t.restoreRows = 0, 0
 	changed, _ := t.resizeLocked(cols, rows)
 	t.mu.Unlock()
 	if changed && t.cfg.OnResize != nil {

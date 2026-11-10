@@ -45,6 +45,10 @@ type Config struct {
 	OnResize func(cols, rows int)
 	// OnExit is told how the process ended, once all its output is in.
 	OnExit func(*wire.Exit)
+	// OnOwner is told that the size owner changed between nobody, this
+	// Mac and a remote origin (read Term.SizeOwner); it runs with the
+	// Term's lock released.
+	OnOwner func()
 	// FitDebounce: how long view fits must settle before they size the
 	// PTY (0: FitDebounce).
 	FitDebounce time.Duration
@@ -61,6 +65,15 @@ type Term struct {
 	viewers map[*viewer]struct{}
 	views   map[*view]struct{} // read-only window viewers (view.go)
 	owner   *viewer
+	// ownerSeq counts owner attaches (viewer.ownerSeq).
+	ownerSeq uint64
+	// ownerFrom is where owner attached from; set once per owner attach,
+	// cleared when that owner detaches.
+	ownerFrom Origin
+	// restoreCols, restoreRows is the size the PTY had before the first
+	// remote owner took it (0: none); it comes back when the remote
+	// owner detaches and no fit asks for a size (fit.go).
+	restoreCols, restoreRows int
 	// fitTimer debounces sizing the PTY to the views' fits (fit.go).
 	fitTimer *time.Timer
 	exit     *wire.Exit
@@ -73,6 +86,21 @@ type Term struct {
 	replies chan []byte
 	done    chan struct{}
 	stopped bool
+}
+
+// Origin is where a size owner attached from. The zero value is this Mac
+// (the admin socket: `hesperd attach --owner`, a Hesper.app tile); Device
+// is a remote controller's device id, Name its name in controllers.json.
+type Origin struct {
+	Device, Name string
+}
+
+// SizeOwner is the origin of the current size owner and whether there is
+// one: owned with the zero Origin is a local owner (this Mac).
+func (t *Term) SizeOwner() (o Origin, owned bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.ownerFrom, t.owner != nil
 }
 
 // Default size of a new PTY.

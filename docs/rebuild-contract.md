@@ -51,6 +51,9 @@ just carries another machine.
   "activity": "Bash: git push origin …", // what it does right now (the running tool); optional
   "sessionId": "…",            // claude/codex session id once known (for resume)
   "size": {"cols": 120, "rows": 40},     // the PTY's one size
+  "sizeOwner": "DEVICE_ID",    // the remote controller whose owner attach holds the size; optional (absent: this Mac or nobody)
+  "sizeOwnerName": "iPhone",   // that controller's name in controllers.json; optional
+  "sizeOwnerHost": true,       // an owner attach on this Mac holds the size; optional (never with sizeOwner)
   "created": "…", "pid": 12345, "exit": null
 }
 ```
@@ -159,6 +162,23 @@ the size stays (unless view attaches ask for a fit, below). Every other
 viewer receives bytes for that grid: the app renders tiles by choosing the
 font size that fits `cols × rows` into the tile (scaled live tiles), never by
 resizing the PTY.
+
+**As built — size owner** (additive): the daemon records where the owner
+attached from: this Mac (the local socket) or a remote controller
+(`agents.attach` on a link, its device id and its `controllers.json`
+name). While a remote controller owns the size, the agent's info carries
+`sizeOwner` and `sizeOwnerName` (an `agents.changed` note, and a link
+`changed` event, on every change), and the Mac's panes of that agent are
+fit views (`--fit`, bottom anchored), never owners, until a keystroke or
+click in one takes the size back (the latest owner wins; the fields
+clear and `sizeOwnerHost: true` says this Mac owns it, so the remote
+controller sees it lost the size). When the remote owner detaches, the fields clear and the PTY gets
+back the size it had before the first remote owner took it; fits asking
+for a size win over that, but the old size comes back if every fit
+disappears before its debounce. A local owner in between keeps its size;
+a fall-back from it to a remote owner still attached is a take-over too.
+Snapshots set `capabilities.sizeOwner: true`; the
+fields are not persisted.
 
 **View attaches** (added with the layout rework, see "As built — layout"): an
 `ro` attach may ask for a window onto the screen instead of the screen:

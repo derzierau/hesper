@@ -23,6 +23,7 @@ import (
 
 	"github.com/derzierau/hesper/relay/internal/identity"
 	"github.com/derzierau/hesper/relay/internal/perf"
+	"github.com/derzierau/hesper/relay/internal/ptyhost"
 	"github.com/derzierau/hesper/relay/pkg/agentlink"
 	"github.com/derzierau/hesper/relay/pkg/client"
 	"github.com/derzierau/hesper/relay/pkg/devicekey"
@@ -433,6 +434,13 @@ func (s *Service) attach(ctx context.Context, m protocol.Message) (json.RawMessa
 	if link == nil || link.device != m.ControllerID {
 		return nil, protocol.Err("not_found", "No such link")
 	}
+	// A size owner attached here is published as the authenticated caller
+	// (agent info sizeOwner, sizeOwnerName): it must be the routed
+	// controller.
+	caller, ok := CallerFrom(ctx)
+	if !ok || caller.Device != m.ControllerID {
+		return nil, protocol.Err("forbidden", "Caller is not the routed controller")
+	}
 	a, err := s.agent(ctx, req.Attach)
 	if err != nil {
 		return nil, err
@@ -461,7 +469,7 @@ func (s *Service) attach(ctx context.Context, m protocol.Message) (json.RawMessa
 	link.mu.Unlock()
 	req.Attach = a.ID
 	req.Owner = req.Owner && req.Mode == wire.ModeRW
-	go term.Attach(near, bufio.NewReader(near), req)
+	go term.AttachFrom(near, bufio.NewReader(near), req, ptyhost.Origin{Device: caller.Device, Name: caller.Name})
 	go func() {
 		// The agent's side to the controller.
 		buf := make([]byte, 32<<10)
