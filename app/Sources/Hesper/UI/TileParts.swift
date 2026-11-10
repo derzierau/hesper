@@ -80,7 +80,7 @@ struct TileHeader: View {
                     .foregroundStyle(Theme.color(.horizon))
                     .lineLimit(1)
                     .fixedSize()
-                    .help("\(on) sets this terminal's size; type or click here to take it back")
+                    .help("\(on) sets this terminal's size; type here to take it back")
                     .accessibilityIdentifier("tile.sizeOwner")
             }
             status.layoutPriority(1)

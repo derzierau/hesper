@@ -76,9 +76,13 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// new terminal in a window that is not key never attaches as a second
     /// owner (nil: keep `ownsSize`).
     static var ownershipResolver: ((AgentTerminal) -> Bool)?
-    /// Another device owns the size and this pane was typed or clicked in:
-    /// it owns again at once (SizeOwner); cleared when `sizeOwner` changes.
-    var takingSizeBack = false
+    /// Another device owns the size and this pane was typed in: it owns
+    /// again at once (SizeOwner); cleared when the owner changes or the
+    /// take-back runs out (`takingSizeBackSince`, uptime).
+    var takingSizeBack = false {
+        didSet { if takingSizeBack != oldValue { takingSizeBackSince = takingSizeBack ? ProcessInfo.processInfo.systemUptime : nil } }
+    }
+    private(set) var takingSizeBackSince: TimeInterval?
     /// The agent's size owner changed (the window layer re-decides).
     static var onSizeOwnerChanged: ((AgentTerminal) -> Void)?
     /// This Mac's machine id (an agent on it reads `sizeOwnerHost` as its

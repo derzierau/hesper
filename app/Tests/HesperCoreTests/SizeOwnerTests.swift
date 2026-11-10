@@ -96,8 +96,8 @@ import Testing
 
 /// Fit to iPhone (docs/rebuild-contract.md "Size rule with several
 /// windows"): while another device owns an agent's PTY size,
-/// every local pane of that agent is a view; a keystroke or a click in one
-/// takes the size back for that pane at once.
+/// every local pane of that agent is a view; a keystroke in one takes the
+/// size back for that pane at once.
 @Suite struct SizeOwnerRemote {
     typealias C = SizeOwner.Candidate
     func c(_ agent: String, _ window: Int?, focus: Bool = false, rw: Bool = false, remote: Bool = false, takingBack: Bool = false) -> C {
@@ -106,9 +106,30 @@ import Testing
 
     @Test func aKeyTakesBackOnlyTheTerminalItTargets() {
         let cs = [c("a", 1, focus: true, remote: true), c("b", 1, rw: true, remote: true)]
-        #expect(SizeOwner.keyTakeBackTarget(cs, targeted: [false, false]) == nil) // another control has focus
-        #expect(SizeOwner.keyTakeBackTarget(cs, targeted: [false, true]) == 1)
-        #expect(SizeOwner.keyTakeBackTarget(cs, targeted: [true, false]) == 0)
+        let idle = [false, false]
+        func key(_ targeted: [Bool], types: Bool = true) -> SizeOwner.KeyTakeBack {
+            SizeOwner.keyTakeBack(cs, targeted: targeted, swapping: idle, typesIntoAgent: types)
+        }
+        #expect(key([false, false]) == .pass) // another control has focus
+        #expect(key([false, true]) == .takeBack(1))
+        #expect(key([true, false]) == .takeBack(0))
+        // A key that would not type into the agent (a shortcut) leaves it.
+        #expect(key([true, false], types: false) == .pass)
+        // A plain tile or a pane whose size is this Mac's: nothing to take.
+        let none = [c("a", 1, remote: true), c("b", 1, rw: true)]
+        #expect(SizeOwner.keyTakeBack(none, targeted: [true, true], swapping: idle, typesIntoAgent: true) == .pass)
+    }
+
+    @Test func keysWaitWhileTheOwnerSurfaceSwapsIn() {
+        let cs = [c("a", 1, focus: true, remote: true, takingBack: true)]
+        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], swapping: [true], typesIntoAgent: true) == .hold(0))
+        // Swapped in: the key reaches the owner surface on its own.
+        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], swapping: [false], typesIntoAgent: true) == .pass)
+    }
+
+    @Test func aTakeBackRunsOutWithoutTheDaemon() {
+        #expect(!SizeOwner.takeBackExpired(since: 100, now: 100 + SizeOwner.takeBackTimeout - 0.1))
+        #expect(SizeOwner.takeBackExpired(since: 100, now: 100 + SizeOwner.takeBackTimeout))
     }
 
     @Test func aRemoteOwnerMakesKeyAndNonKeyPanesViews() {
@@ -125,8 +146,8 @@ import Testing
         }
     }
 
-    @Test func aKeystrokeOrClickTakesTheSizeBackForThatPane() {
-        // The tile was typed in (or clicked): it owns at once, the other
+    @Test func aKeystrokeTakesTheSizeBackForThatPane() {
+        // The tile was typed in: it owns at once, the other
         // panes of the agent stay views (latest owner wins).
         let cs = [
             c("a", 1, focus: true, remote: true),

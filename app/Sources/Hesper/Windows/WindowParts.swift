@@ -165,9 +165,10 @@ final class SizeOwnership {
     private var takeBackMonitor: Any?
 
     init() {
-        // Fit to iPhone: a keystroke or click in a pane whose agent's size
-        // another device owns takes the size back at once (takeBack).
-        takeBackMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] e in
+        // Fit to iPhone: a keystroke in a pane whose agent's size another
+        // device owns takes the size back at once (takeBack). A click only
+        // focuses.
+        takeBackMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] e in
             let consumed = MainActor.assumeIsolated { self?.takeBack(e) ?? false }
             return consumed ? nil : e
         }
@@ -232,50 +233,52 @@ final class SizeOwnership {
         if t.remoteOwned { apply() } else { schedule() }
     }
 
-    /// A key or click in one of our windows: the pane it goes to, if its
-    /// agent's size is another device's, takes the size back (owner at
-    /// once, latest owner wins). True: a key held for that pane's owner
-    /// surface (replayed once it swapped in), so it is not lost.
+    /// A key in one of our windows: the pane it goes to, if its agent's
+    /// size is another device's, takes the size back (owner at once,
+    /// latest owner wins; SizeOwner.keyTakeBack). True: the key is held for
+    /// that pane's owner surface (replayed once it swapped in).
     private func takeBack(_ e: NSEvent) -> Bool {
         guard let w = e.window, isOurs(w) else { return false }
         let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && $0.remoteOwned }
         guard !ts.isEmpty else { return false }
-        let target: AgentTerminal?
-        if e.type == .leftMouseDown {
-            target = ts.first { $0.host.bounds.contains($0.host.convert(e.locationInWindow, from: nil)) }
-        } else {
-            guard w.isKeyWindow,
-                  TerminalKeys.bytes(KeyChord(event: e), characters: e.characters) != nil else { return false }
-            let responder = w.firstResponder
-            let targeted = ts.map { t in
-                if responder === t.surface?.view { return true }
-                if let wall = responder as? WallView {
-                    return t.role == .tile && t.interactive && t.host.isDescendant(of: wall)
-                }
-                if let focus = responder as? FocusView {
-                    return t.role == .focus && t.host.isDescendant(of: focus)
-                }
-                return false
+        let responder = w.firstResponder
+        let targeted = ts.map { t in
+            if responder === t.surface?.view { return true }
+            if let wall = responder as? WallView {
+                return t.role == .tile && t.interactive && t.host.isDescendant(of: wall)
             }
-            let cs = ts.map { t in
-                SizeOwner.Candidate(agentID: t.agent.id, window: nil, focusRole: t.role == .focus,
-                                    readWrite: t.readWrite, remoteOwned: true, takingBack: t.takingSizeBack)
+            if let focus = responder as? FocusView {
+                return t.role == .focus && t.host.isDescendant(of: focus)
             }
-            target = SizeOwner.keyTakeBackTarget(cs, targeted: targeted).map { ts[$0] }
+            return false
         }
-        guard let t = target else { return false }
-        if t.takingSizeBack {
-            // Already taken back: keys while its owner surface swaps in
-            // wait for it; after that they go to it directly.
-            guard e.type == .keyDown, t.swapping else { return false }
+        let cs = ts.map { t in
+            SizeOwner.Candidate(agentID: t.agent.id, window: nil, focusRole: t.role == .focus,
+                                readWrite: t.readWrite, remoteOwned: t.remoteOwned, takingBack: t.takingSizeBack)
+        }
+        let types = w.isKeyWindow && TerminalKeys.bytes(KeyChord(event: e), characters: e.characters) != nil
+        switch SizeOwner.keyTakeBack(cs, targeted: targeted, swapping: ts.map(\.swapping), typesIntoAgent: types) {
+        case .pass:
+            return false
+        case .hold(let i):
+            ts[i].hold(e)
+            return true
+        case .takeBack(let i):
+            let t = ts[i]
+            t.takingSizeBack = true
+            apply()
+            // Held even if no owner surface started (no window, link down):
+            // passed on, the key would reach the view or FocusView and be
+            // lost. HeldInput drops it after its max age.
             t.hold(e)
+            DispatchQueue.main.asyncAfter(deadline: .now() + SizeOwner.takeBackTimeout) { [weak self, weak t] in
+                guard let self, let t, t.takingSizeBack, t.remoteOwned, let since = t.takingSizeBackSince,
+                      SizeOwner.takeBackExpired(since: since, now: ProcessInfo.processInfo.systemUptime) else { return }
+                t.takingSizeBack = false
+                self.apply()
+            }
             return true
         }
-        t.takingSizeBack = true
-        apply()
-        guard e.type == .keyDown, t.readWrite, t.swapping else { return false }
-        t.hold(e)
-        return true
     }
 
     func apply() {

@@ -27,7 +27,7 @@ public enum SizeOwner {
         public var readWrite: Bool
         /// Another device owns the agent's size (`remoteOwned(_:local:)`).
         public var remoteOwned: Bool
-        /// Typed or clicked in while `remoteOwned`: takes the size back.
+        /// Typed in while `remoteOwned`: takes the size back.
         public var takingBack: Bool
         public init(agentID: String, window: Int?, focusRole: Bool, readWrite: Bool, remoteOwned: Bool = false, takingBack: Bool = false) {
             self.agentID = agentID; self.window = window; self.focusRole = focusRole; self.readWrite = readWrite
@@ -39,8 +39,8 @@ public enum SizeOwner {
     /// the owner window (the app's key window among ours), and at most one
     /// per agent (a focus view before a tile, then the first listed). With
     /// no owner window nobody owns (the daemon follows the views' fit).
-    /// While another device owns an agent's size, only a pane typed or
-    /// clicked in (`takingBack`) owns, wherever it is; the rest are views.
+    /// While another device owns an agent's size, only a pane typed in
+    /// (`takingBack`) owns, wherever it is; the rest are views.
     public static func owners(_ cs: [Candidate], ownerWindow: Int?) -> [Bool] {
         var out = Array(repeating: false, count: cs.count)
         var best: [String: Int] = [:]
@@ -60,11 +60,39 @@ public enum SizeOwner {
         return out
     }
 
-    /// A key may take back size only for the read-write terminal it would
-    /// reach. A focused control outside the terminal has no target.
-    public static func keyTakeBackTarget(_ cs: [Candidate], targeted: [Bool]) -> Int? {
-        guard cs.count == targeted.count else { return nil }
-        return cs.indices.first { targeted[$0] && cs[$0].remoteOwned && cs[$0].readWrite }
+    /// What a key does to size ownership.
+    public enum KeyTakeBack: Equatable, Sendable {
+        /// Not a take-back: the key goes on as usual.
+        case pass
+        /// Candidate `i` takes the size back; the key is held for its
+        /// owner surface (dropped after HeldInput's max age if none comes).
+        case takeBack(Int)
+        /// Candidate `i` is taking the size back and its owner surface is
+        /// still swapping in: the key waits for it.
+        case hold(Int)
+    }
+
+    /// A key takes the size back only if it would type into the agent
+    /// (`typesIntoAgent`) and only for the read-write terminal it reaches
+    /// (`targeted`; a focused control outside the terminal has none). A
+    /// click never does: it only focuses (selecting text, activating the
+    /// window). Once taken back, keys wait while the owner surface swaps
+    /// in (`swapping`) and then go to it directly.
+    public static func keyTakeBack(_ cs: [Candidate], targeted: [Bool], swapping: [Bool], typesIntoAgent: Bool) -> KeyTakeBack {
+        guard typesIntoAgent, cs.count == targeted.count, cs.count == swapping.count,
+              let i = cs.indices.first(where: { targeted[$0] && cs[$0].remoteOwned && cs[$0].readWrite }) else { return .pass }
+        if cs[i].takingBack { return swapping[i] ? .hold(i) : .pass }
+        return .takeBack(i)
+    }
+
+    /// Seconds a take-back waits for the daemon to report the new owner;
+    /// after that (the owner attach failed, the link is down) the pane is a
+    /// view again.
+    public static let takeBackTimeout: TimeInterval = 5
+
+    /// Whether a take-back started at `since` (uptime) has run out.
+    public static func takeBackExpired(since: TimeInterval, now: TimeInterval) -> Bool {
+        now - since >= takeBackTimeout
     }
 
     /// How a terminal attaches.
