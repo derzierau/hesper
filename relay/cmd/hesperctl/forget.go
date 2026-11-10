@@ -36,9 +36,6 @@ func forgetCommand(ctx context.Context, f *flag.FlagSet, args []string) error {
 			return output(res)
 		}
 		fmt.Printf("Removed %s (%s): relay %s, approval %s, trust %s, names %s\n", d.Name, d.ID, res.Relay, res.Approval, res.Trust, res.Names)
-		if len(res.SignedOut) > 0 {
-			fmt.Printf("Also signed out its controller record %s\n", strings.Join(res.SignedOut, ", "))
-		}
 		return nil
 	})
 }

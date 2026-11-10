@@ -219,7 +219,7 @@ func TestRemoveNeedsTheRelayUnlessLocalOnly(t *testing.T) {
 }
 
 func sameRemoval(a, b wire.DeviceRemoval) bool {
-	return a.Relay == b.Relay && a.Approval == b.Approval && a.Trust == b.Trust && a.Names == b.Names && slices.Equal(a.SignedOut, b.SignedOut)
+	return a.Relay == b.Relay && a.Approval == b.Approval && a.Trust == b.Trust && a.Names == b.Names
 }
 
 func TestRemoveRunsEveryLocalStep(t *testing.T) {
@@ -254,21 +254,23 @@ func TestRemoveRunsEveryLocalStep(t *testing.T) {
 	}
 }
 
-func TestRemovingAHostAlsoSignsOutItsOfflineController(t *testing.T) {
+// Names are not unique ("MacBook Pro"), and nothing binds a host id to
+// a controller id: removing a host revokes that id and no other.
+func TestRemovingAHostRevokesOnlyThatHost(t *testing.T) {
 	e := newRemovalEnv(t)
 	res, err := e.svc.Remove(context.Background(), "host-w", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := wire.DeviceRemoval{Relay: wire.StepDone, Approval: wire.StepSkipped, Trust: wire.StepDone, Names: wire.StepDone, SignedOut: []string{"ctl-w"}}
+	want := wire.DeviceRemoval{Relay: wire.StepDone, Approval: wire.StepSkipped, Trust: wire.StepDone, Names: wire.StepDone}
 	if !sameRemoval(res, want) {
 		t.Fatalf("result %+v, want %+v", res, want)
 	}
-	// the online controller of the same name stays
-	if !slices.Equal(e.relay.revoked, []string{"host-w", "ctl-w"}) {
+	// the offline controller of the same name may be another Mac
+	if !slices.Equal(e.relay.revoked, []string{"host-w"}) {
 		t.Errorf("revoked %v", e.relay.revoked)
 	}
-	if a, _, _ := e.state(t); !slices.Equal(a, []string{"dev-x"}) {
+	if a, _, _ := e.state(t); !slices.Equal(a, []string{"ctl-w", "dev-x"}) {
 		t.Errorf("approved %v", a)
 	}
 }

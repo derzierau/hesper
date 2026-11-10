@@ -99,22 +99,9 @@ public struct RemoveOutcome: Codable, Equatable, Sendable {
     public var approval: String
     public var trust: String
     public var names: String
-    /// Offline controller records of the same name the removal also revoked.
-    public var signedOut: [String]
 
-    public init(relay: String, approval: String, trust: String, names: String, signedOut: [String] = []) {
-        self.relay = relay; self.approval = approval; self.trust = trust; self.names = names; self.signedOut = signedOut
-    }
-
-    enum CodingKeys: String, CodingKey { case relay, approval, trust, names, signedOut }
-
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        relay = try c.decode(String.self, forKey: .relay)
-        approval = try c.decode(String.self, forKey: .approval)
-        trust = try c.decode(String.self, forKey: .trust)
-        names = try c.decode(String.self, forKey: .names)
-        signedOut = try c.decodeIfPresent([String].self, forKey: .signedOut) ?? []
+    public init(relay: String, approval: String, trust: String, names: String) {
+        self.relay = relay; self.approval = approval; self.trust = trust; self.names = names
     }
 
     static func ok(_ step: String) -> Bool { step == "done" || step == "skipped" }
@@ -126,9 +113,6 @@ public struct RemoveOutcome: Codable, Equatable, Sendable {
                      ("this Mac's trusted hosts", trust), ("this Mac's machine names", names)]
         var line = "Removed"
         if let (what, err) = steps.first(where: { !Self.ok($0.1) }) { line = "Not removed from \(what): \(err)" }
-        if !signedOut.isEmpty {
-            line += signedOut.count == 1 ? ", also signed out its controller record" : ", also signed out its \(signedOut.count) controller records"
-        }
         return line
     }
 }

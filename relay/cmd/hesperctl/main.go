@@ -50,9 +50,9 @@ func init() {
 			Output: "{controllers, pending, enforcing}, with --revoke {revoked}"},
 		{Name: "forget", Destructive: true, Summary: "Remove a device from the relay and this Mac", Usage: "forget NAME|ID [--local-only] [--json]",
 			Help: "Revokes the device on the relay (it is signed out everywhere), then drops its approval on this host, its pinned key and its machines.json entry, through hesperd. " +
-				"Removing a Mac's host also signs out its offline controller record of the same name. This Mac itself is refused. " +
+				"A Mac's controller record is a device of its own and is removed separately. This Mac itself is refused. " +
 				"Without a reachable relay nothing changes; --local-only (for a relay too old to remove devices) forgets it here only.",
-			Output: "{relay, approval, trust, names, signedOut?}: each \"done\", \"skipped\" or the step's error"},
+			Output: "{relay, approval, trust, names}: each \"done\", \"skipped\" or the step's error"},
 		{Name: "login", NoMCP: true, Summary: "Enroll this device with the relay (GitHub sign-in)", Usage: "login --name NAME --out FILE [--role R] [--relay URL]",
 			Help: relayHelp, Output: "{deviceId, role, credentialsFile}"},
 		{Name: "pair", NoMCP: true, Summary: "Enroll with an invitation (development relays)", Usage: "pair [--relay URL] --name NAME --out FILE [--invitation-file F]",

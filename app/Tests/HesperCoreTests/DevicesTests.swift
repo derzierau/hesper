@@ -44,12 +44,9 @@ let devicesListJSON: JSONValue = ["devices": [
         #expect(t.summary == "Not removed from this Mac's trusted hosts: write trusted-hosts.json: denied")
     }
 
-    @Test func outcomeSignedOut() throws {
-        let o = try JSONValue.object(["relay": "done", "approval": "done", "trust": "done", "names": "done", "signedOut": ["ctl-old"]]).decode(RemoveOutcome.self)
-        #expect(o.signedOut == ["ctl-old"])
-        #expect(o.summary == "Removed, also signed out its controller record")
-        let none = try JSONValue.object(["relay": "done", "approval": "done", "trust": "done", "names": "done"]).decode(RemoveOutcome.self)
-        #expect(none.signedOut.isEmpty)
+    @Test func outcomeDecodes() throws {
+        let o = try JSONValue.object(["relay": "done", "approval": "done", "trust": "done", "names": "done"]).decode(RemoveOutcome.self)
+        #expect(o.summary == "Removed")
     }
 
     @Test func removeParams() {

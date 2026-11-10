@@ -227,7 +227,7 @@ private func collect(_ client: DaemonClient, until: @escaping ([DaemonEvent]) ->
         server.handler = { req, s, fd in
             switch req["method"]?.stringValue {
             case DevicesRPC.list: s.reply(fd, req, result: devicesListJSON)
-            case DevicesRPC.remove: s.reply(fd, req, result: ["relay": "done", "approval": "done", "trust": "skipped", "names": "done", "signedOut": ["ctl-old"]])
+            case DevicesRPC.remove: s.reply(fd, req, result: ["relay": "done", "approval": "done", "trust": "skipped", "names": "done"])
             default: standard(req, s, fd)
             }
         }
@@ -237,7 +237,7 @@ private func collect(_ client: DaemonClient, until: @escaping ([DaemonEvent]) ->
         let list = try await client.devices()
         #expect(list.map(\.id) == ["host-self", "ctl-self", "host-b", "ctl-old", "phone-a"])
         let out = try await client.removeDevice("host-b", localOnly: true)
-        #expect(out.summary == "Removed, also signed out its controller record")
+        #expect(out.summary == "Removed")
         let sent = server.received.last { $0["method"]?.stringValue == DevicesRPC.remove }
         #expect(sent?["params"] == ["deviceId": "host-b", "localOnly": true])
         client.stop()

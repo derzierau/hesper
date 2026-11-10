@@ -234,7 +234,7 @@ only (an agent gets `forbidden`):
 | Method | Params | Result | Errors |
 | --- | --- | --- | --- |
 | `devices.list` | – | `{devices:[{id, name, short?, role, kind, online, self, approvedHere, trustedHere, relay}]}` | – |
-| `devices.remove` | `{deviceId, localOnly?}` | `{relay, approval, trust, names, signedOut?}` | `invalid`, `forbidden`, `unavailable`, `unsupported`, `not_found`, a relay code |
+| `devices.remove` | `{deviceId, localOnly?}` | `{relay, approval, trust, names}` | `invalid`, `forbidden`, `unavailable`, `unsupported`, `not_found`, a relay code |
 
 `devices.list` is the union of the relay's `devices` (when the controller
 connection is up and `hello` lists `devices`; `relay: true`), this host's
@@ -248,9 +248,9 @@ Without the relay the list is this Mac's files, every entry offline.
 approval here, its pinned key and its `machines.json` entry. Each result
 field is `"done"`, `"skipped"` (nothing to do) or the step's error text.
 The relay is skipped for a device it does not list (already revoked, or
-known only here). Removing a host also revokes the offline controller
-records of the same name (a Mac's second identity), listed in
-`signedOut`; online ones stay. This Mac's own two ids are `forbidden`.
+known only here). Only the given id is revoked: a Mac's controller
+record is not bound to its host id and names are not unique, so it is
+removed as a device of its own. This Mac's own two ids are `forbidden`.
 Nothing changes here when the relay step cannot run: `unavailable` (no
 controller role, or the relay is unreachable), `unsupported` ("The relay
 needs an update to remove devices": its `hello` has no `devices`, and it

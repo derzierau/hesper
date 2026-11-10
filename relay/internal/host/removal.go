@@ -184,9 +184,9 @@ func MergeDevices(relay []protocol.Device, relayKnown bool, controllers []Contro
 // short name. The relay must take part: unreachable is unavailable, too
 // old is unsupported, and a refusal is returned as it is, each before
 // anything changes here. A device the relay does not list (already
-// revoked, or never known there) skips the relay step. Removing a host
-// also revokes the offline controller records of the same name (a Mac's
-// second identity), reported in SignedOut.
+// revoked, or never known there) skips the relay step. Only id is
+// revoked: a Mac's controller identity is not bound to its host id, and
+// names are not unique, so it is removed as a device of its own.
 func (s *DevicesService) Remove(ctx context.Context, id string, localOnly bool) (wire.DeviceRemoval, error) {
 	res := wire.DeviceRemoval{Relay: wire.StepSkipped, Approval: wire.StepSkipped, Trust: wire.StepSkipped, Names: wire.StepSkipped}
 	if !deviceID.MatchString(id) {
@@ -231,20 +231,6 @@ func (s *DevicesService) Remove(ctx context.Context, id string, localOnly bool) 
 			return res, relayError(err)
 		}
 		res.Relay = wire.StepDone
-		if target.Role == "host" {
-			for _, d := range listed {
-				if d.Role != "controller" || d.Online || !strings.EqualFold(d.Name, target.Name) || d.ID == s.SelfController {
-					continue
-				}
-				if err := s.Relay.Revoke(ctx, d.ID); err != nil && !relayCode(err, wire.CodeNotFound) {
-					continue // best effort: the host itself is gone
-				}
-				res.SignedOut = append(res.SignedOut, d.ID)
-				if approved(d.ID) {
-					s.Store.Revoke(d.ID)
-				}
-			}
-		}
 	}
 	if approved(id) {
 		_, err := s.Store.Revoke(id)
@@ -262,9 +248,6 @@ func (s *DevicesService) Remove(ctx context.Context, id string, localOnly bool) 
 	}
 	ok := !slices.ContainsFunc([]string{res.Approval, res.Trust, res.Names}, func(v string) bool { return v != wire.StepDone && v != wire.StepSkipped })
 	detail := fmt.Sprintf("relay %s, approval %s, trust %s, names %s", res.Relay, res.Approval, res.Trust, res.Names)
-	if len(res.SignedOut) > 0 {
-		detail += ", signed out " + strings.Join(res.SignedOut, " ")
-	}
 	s.Store.Audit("device.removed", map[string]any{"device": id, "name": name, "ok": ok, "detail": detail})
 	return res, nil
 }

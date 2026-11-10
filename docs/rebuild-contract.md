@@ -128,7 +128,7 @@ directory 0700. Peer credentials checked: same uid only.
 | `drafts.list` / `drafts.save` / `drafts.remove` | – / `{draft}` / `{id}` | `[Draft]` / `Draft` / `{}` (added, see "As built — drafts, overlays, …") |
 | `forwards.list` / `forwards.add` / `forwards.remove` | – / `{machine, port, local?}` / `{id}` (the local port, or `machine:port`) | `[Forward]` / `Forward` / `{}`: port forwards to other machines' loopback (added, see "As built — port forwarding"; a person only adds or removes) |
 | `devices.offer` / `devices.offerCancel` | `{rights?}` / `{id}` | `{payload, expires, id}` / `{}`: pairing offers of the host role, and the notification `devices.paired {offer, device, name, rights}` on `agents.subscribe` (added, see `relay/docs/protocol.md`, Pairing offers; a person only; `hesperctl phone`) |
-| `devices.list` / `devices.remove` | – / `{deviceId, localOnly?}` | `{devices:[Device]}` / `{relay, approval, trust, names, signedOut?}`: every device of the owner, and removing one from the relay and this Mac (added, see `relay/docs/protocol.md` "Devices"; a person only) |
+| `devices.list` / `devices.remove` | – / `{deviceId, localOnly?}` | `{devices:[Device]}` / `{relay, approval, trust, names}`: every device of the owner, and removing one from the relay and this Mac (added, see `relay/docs/protocol.md` "Devices"; a person only) |
 | `files.put` / `files.chunk` | `{agent \| machine?+draft, name, size, sha256}` / `{upload, offset, data, last}` | `{upload, chunk}` / `{received}`, last `{path, size}` (added, see "As built — drop to attach") |
 | `sessions.search` / `show` / `resume` / `fork` / `brief` / `continueAs` / `archive` / `delete` / `stats` | see "As built — shared history (data)" | the shared history of every Mac's Claude and Codex sessions (added) |
 | `app.register` / `app.state` / `app.open` / `app.wall.set` / `app.desk` | see "As built — app control" | Hesper.app's windows, walls and desks, forwarded to the app (added; local only) |
@@ -1367,8 +1367,7 @@ this Mac's); iPhones are their own list (name, online mark). A trailing
 Remove… shows on hover and asks `Remove “<name>”?` ("It can no longer
 reach this Mac, this Mac forgets it, and it is signed out of your
 relay. Pair it again to bring it back.", Remove / Cancel). The result
-line shows for 5 s: "Removed" (plus "also signed out its controller
-record" when `signedOut` is set) or the first step that failed. A relay
+line shows for 5 s: "Removed" or the first step that failed. A relay
 that is down changes nothing ("Not removed: the relay is unreachable.
 Try again later."); a relay too old to revoke asks `Remove here only?`
 and then runs `devices.remove` with `localOnly`. An older hesperd

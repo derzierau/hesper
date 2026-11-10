@@ -54,12 +54,10 @@ type DeviceRemoveParams struct {
 }
 
 // DeviceRemoval is the result of devices.remove: each step StepDone,
-// StepSkipped or its error. SignedOut are the offline controller records
-// of the same name that a host's removal also revoked.
+// StepSkipped or its error.
 type DeviceRemoval struct {
-	Relay     string   `json:"relay"`
-	Approval  string   `json:"approval"`
-	Trust     string   `json:"trust"`
-	Names     string   `json:"names"`
-	SignedOut []string `json:"signedOut,omitempty"`
+	Relay    string `json:"relay"`
+	Approval string `json:"approval"`
+	Trust    string `json:"trust"`
+	Names    string `json:"names"`
 }
