@@ -1,5 +1,13 @@
 # A writable terminal on the iPhone
 
+Status, 8 Nov 2026, transcript view: the agent view now shows the
+transcript as text above the agent's live screen; the libghostty
+terminal described below is the "Raw terminal" in the view's menu.
+Typing in the default view goes through a typing view attach (`view`,
+no `fit`, so the Mac's size is untouched; `rw` when the plan allows,
+`ro` once the Mac refuses) and the app's own key bar; the dock's Send
+presses Enter in whichever view is shown.
+
 Status, 8 Nov 2026: the Mirror attaches `rw` without `owner` when the
 phone has the `type` right, `ro` otherwise (a `forbidden` reply to `rw`
 retries `ro` once). Take over is built on the phone, automatic when the

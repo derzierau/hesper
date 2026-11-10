@@ -159,17 +159,48 @@ in the language it was said in.
 
 ### 4. Follow and steer
 
-The agent view is the agent's real terminal. Under it sits the dock:
+The agent view shows the agent as text, in the raw terminal's type: its
+transcript above (`›` and what you asked, the replies with inline
+markdown, each tool call one `⏺` line that a tap opens to its result),
+and under a hairline the agent's live screen as text rows, all of them
+while it works (a shell's always), the prompt's few once it is idle. The
+terminal's active cursor row stays below the scroll as its direct input,
+centered in a tall touch area above the keyboard;
+the other visible rows scroll with the transcript. The
+live rows are drawn at the agent's terminal size and follow it when the
+Mac resizes it. The history starts over when the agent's session
+changes or the Mac rewinds its transcript; queued items from the old
+session are discarded. When the link breaks it
+reconnects on its own. If the phone's 1024-item buffer fills during a
+backfill, it closes the stream and reopens at once after the last item
+held, without a status change. When the Mac cannot continue after what
+the phone holds (the transcript was rewritten, or the phone is more than
+1000 lines behind) it sends the restart marker and the newest page; the
+phone drops what it held. The phone keeps at most 5000 items: the oldest
+go as new ones arrive, and scrolling up pages them back. A transcript
+item above the wire limit stops the view with a newer-Hesper message
+instead of silently omitting the item. A Mac without transcripts
+("History needs a newer Hesper") also stops asking; a refusal of the
+phone's rights stops with the Mac's message. Links in agent output open
+only web pages, and a link whose text is not its address shows the
+address. Pasted or dictated text is sent as one bracketed paste with ESC
+removed. "Raw terminal" in the view's menu
+shows the agent's real terminal in its place, and stays chosen for that
+agent until the app quits. Long user messages and replies show a preview
+with **Show full text**. That opens a reader which fetches one 64 KiB
+part at a time; Next part and Previous part replace the visible text.
+A dock appears for decisions, exited agents, errors, and Raw Terminal's
+Send button:
 
 - **needs you**: the decision as native buttons (Allow · Always · Deny…,
   or the numbered choices). Deny… opens a field for "tell Claude what to do
   instead".
-- **working, done, idle**: one full-width **Send** that presses Enter;
-  typing goes into the terminal. A tap on the terminal brings up the
-  keyboard with a key bar (Esc, Tab, Ctrl, arrows); a second tap or a
-  swipe down puts it away. Every key goes straight to the agent, as on
-  the Mac, into Claude Code's own prompt. A fitted terminal shrinks to
-  the rows above the keyboard.
+- **working, done, idle**: in the text transcript, the terminal's own input
+  row stays above the Home indicator or keyboard. Tapping it opens the
+  keyboard; typed characters and Return go directly to the terminal, with
+  the key bar (Esc, Tab, Ctrl, arrows). There is no separate message draft
+  or Send button. In Raw Terminal, Send still presses Enter. A fitted raw
+  terminal shrinks to the rows above the keyboard.
 - **exited**: Resume and Close.
 - **error**: the error line, Open on Mac, Resume, Close.
 
