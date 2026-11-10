@@ -176,6 +176,27 @@ import Testing
         #expect(host.received.count == 2)
     }
 
+    @Test func typedBytesResizesAndCloseReachTheMacInOrder() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        let (link, updates) = try await Self.linked(host)
+        defer { withExtendedLifetime(updates) {} }
+        let stream = try await link.attach(agent: "M/a1", cols: 37, rows: 25, typing: true, owner: true)
+        let ch = try #require((stream as? AttachChannel)?.id)
+        var want: [LinkFrames.Frame] = []
+        for i in 0..<200 {
+            stream.write(Data([UInt8(i)]))
+            want.append(LinkFrames.Frame(kind: Self.d, channel: ch, payload: AttachDecoder.input(Data([UInt8(i)]))))
+            if i % 10 == 9 {
+                stream.resize(cols: 40 + i, rows: 20)
+                want.append(LinkFrames.Frame(kind: Self.d, channel: ch, payload: AttachDecoder.resize(cols: 40 + i, rows: 20)))
+            }
+        }
+        stream.close()
+        want.append(LinkFrames.Frame(kind: Self.x, channel: ch, payload: Data()))
+        for _ in 0..<300 where host.received.count < want.count { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(host.received == want)
+    }
+
     @Test func demuxRoutesByChannel() async throws {
         let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
         var (link, updates) = try await Self.linked(host)

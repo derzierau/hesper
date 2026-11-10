@@ -226,12 +226,19 @@ extension HostChannel {
         }
         lastChannel += 1
         let ch = lastChannel
-        let channel = AttachChannel(id: ch) { [weak self] id in
-            Task { await self?.closed(id, link: link.id) }
-        } onResize: { [weak self] id, cols, rows in
-            Task { await self?.resized(id, cols: cols, rows: rows, link: link.id) }
-        } onWrite: { [weak self] id, data in
-            Task { await self?.wrote(id, data, link: link.id) }
+        // One queue per attach, drained by one task: typed bytes, resizes
+        // and the close reach the Mac in the order the phone made them.
+        let (outbound, queue) = AsyncStream.makeStream(of: Outbound.self)
+        let channel = AttachChannel(id: ch) { _ in
+            queue.yield(.close)
+            queue.finish()
+        } onResize: { _, cols, rows in
+            queue.yield(.frame(AttachDecoder.resize(cols: cols, rows: rows)))
+        } onWrite: { _, data in
+            queue.yield(.frame(AttachDecoder.input(data)))
+        }
+        Task { [weak self] in
+            for await op in outbound { await self?.flush(op, on: ch, link: link.id) }
         }
         attaches[ch] = channel
         let params = try Self.attachParams(link: link.id, ch: ch, agent: agent, cols: cols, rows: rows, typing: typing, owner: owner)
@@ -247,16 +254,32 @@ extension HostChannel {
         } catch {
             if attaches[ch] === channel { attaches[ch] = nil }
             channel.end(error as? RelayError ?? RelayError(code: "closed"))
+            queue.finish()
             throw error
         }
         return channel
     }
 
-    /// The phone closed an attach: `X` on its channel, if its link is
-    /// still the open one.
-    private func closed(_ ch: UInt32, link: String) async {
-        guard attaches.removeValue(forKey: ch) != nil, openLink?.id == link else { return }
-        try? await send(frame: LinkFrames.Frame(kind: Self.kindClose, channel: ch, payload: Data()))
+    /// What an attach sends the Mac, in order.
+    enum Outbound: Sendable {
+        /// An inner frame (typed bytes or RESIZE) in a `D` frame.
+        case frame(Data)
+        /// `X`: the phone closed the attach.
+        case close
+    }
+
+    /// Sends one queued frame on an attach's channel, if the attach is
+    /// still open and its link is still the open one. `close` removes it
+    /// and sends `X`, unless the Mac closed the channel first.
+    private func flush(_ op: Outbound, on ch: UInt32, link: String) async {
+        switch op {
+        case .frame(let payload):
+            guard attaches[ch] != nil, openLink?.id == link else { return }
+            try? await send(frame: LinkFrames.Frame(kind: Self.kindData, channel: ch, payload: payload))
+        case .close:
+            guard attaches.removeValue(forKey: ch) != nil, openLink?.id == link else { return }
+            try? await send(frame: LinkFrames.Frame(kind: Self.kindClose, channel: ch, payload: Data()))
+        }
     }
 
     /// `agents.attach`'s params (relay/docs/protocol.md, "Links"): the
@@ -269,19 +292,6 @@ extension HostChannel {
         let request: [String: Any] = ["attach": agent, "mode": mode, "cols": cols, "rows": rows, "owner": owner, "history": true]
         return try JSONSerialization.data(
             withJSONObject: ["link": link, "ch": Int(ch), "mode": mode, "request": request] as [String: Any], options: .sortedKeys)
-    }
-
-    /// RESIZE on an attach's channel, if its link is still the open one.
-    private func resized(_ ch: UInt32, cols: Int, rows: Int, link: String) async {
-        guard attaches[ch] != nil, openLink?.id == link else { return }
-        try? await send(frame: LinkFrames.Frame(kind: Self.kindData, channel: ch, payload: AttachDecoder.resize(cols: cols, rows: rows)))
-    }
-
-    /// Typed bytes on an attach's channel (frame type 0), if its link is
-    /// still the open one.
-    private func wrote(_ ch: UInt32, _ data: Data, link: String) async {
-        guard attaches[ch] != nil, openLink?.id == link else { return }
-        try? await send(frame: LinkFrames.Frame(kind: Self.kindData, channel: ch, payload: AttachDecoder.input(data)))
     }
 
     /// Sends one frame on the open link: `X` to close a channel, RESIZE
