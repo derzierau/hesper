@@ -81,7 +81,7 @@ final class DevicesModel {
             var askLocalOnly = false
             do {
                 let o = try await client.removeDevice(d.id, localOnly: localOnly)
-                show(o.summary, isError: !o.isComplete)
+                show(o.summary, isError: o.hasFailedStep)
             } catch {
                 let f = DevicesFailure(error)
                 if f == .relayTooOld && !localOnly { askLocalOnly = true } else { show(f.text, isError: true) }

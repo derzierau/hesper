@@ -48,6 +48,19 @@ let devicesListJSON: JSONValue = ["devices": [
         #expect(RemoveOutcome(relay: "skipped", approval: "done", trust: "skipped", names: "done").isComplete)
     }
 
+    @Test func outcomeFailureIsSeparateFromCompleteness() {
+        let all = RemoveOutcome(relay: "done", approval: "done", trust: "done", names: "done")
+        #expect(all.isComplete && !all.hasFailedStep)
+        let local = RemoveOutcome(relay: "skipped", approval: "done", trust: "done", names: "done", localOnly: true)
+        #expect(!local.isComplete && !local.hasFailedStep)
+        let partial = RemoveOutcome(relay: "done", approval: "done", trust: "denied", names: "done")
+        #expect(!partial.isComplete && partial.hasFailedStep)
+        let unlisted = RemoveOutcome(relay: "skipped", approval: "done", trust: "skipped", names: "done")
+        #expect(unlisted.isComplete && !unlisted.hasFailedStep)
+        let relayFailed = RemoveOutcome(relay: "relay: timeout", approval: "skipped", trust: "skipped", names: "skipped")
+        #expect(!relayFailed.isComplete && relayFailed.hasFailedStep)
+    }
+
     @Test func outcomeLocalOnly() {
         let o = RemoveOutcome(relay: "skipped", approval: "done", trust: "done", names: "done", localOnly: true)
         #expect(!o.isComplete)

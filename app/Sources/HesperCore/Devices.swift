@@ -118,9 +118,14 @@ public struct RemoveOutcome: Codable, Equatable, Sendable {
 
     static func ok(_ step: String) -> Bool { step == "done" || step == "skipped" }
 
-    /// Removed from the relay and this Mac: every step done or skipped, and
-    /// the relay was asked.
-    public var isComplete: Bool { !localOnly && [relay, approval, trust, names].allSatisfy(Self.ok) }
+    /// Gone from the relay and this Mac: every step done or skipped, and
+    /// not a local-only removal (a relay step skipped because the relay
+    /// did not list the device counts as gone there).
+    public var isComplete: Bool { !localOnly && !hasFailedStep }
+
+    /// A step failed. A local-only removal whose steps all ran is not a
+    /// failure, though it is not complete.
+    public var hasFailedStep: Bool { ![relay, approval, trust, names].allSatisfy(Self.ok) }
 
     /// The one line Settings shows after a removal, true to each step: the
     /// relay sign-in already ended when a later local step failed, and a
