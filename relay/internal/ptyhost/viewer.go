@@ -179,8 +179,12 @@ func (t *Term) detach(v *viewer) {
 	}
 	if next != nil {
 		t.owner = next
+		// As at attach: a remote owner taking the size keeps the size to
+		// give back; the Mac sizes the PTY itself.
 		if next.origin == (Origin{}) {
 			t.restoreCols, t.restoreRows = 0, 0
+		} else if t.restoreCols == 0 {
+			t.restoreCols, t.restoreRows = t.cols, t.rows
 		}
 		if t.exit == nil && next.cols > 0 && next.rows > 0 {
 			resized, _ = t.resizeLocked(next.cols, next.rows)

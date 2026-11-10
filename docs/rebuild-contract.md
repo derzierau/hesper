@@ -175,7 +175,8 @@ clear and `sizeOwnerHost: true` says this Mac owns it, so the remote
 controller sees it lost the size). When the remote owner detaches, the fields clear and the PTY gets
 back the size it had before the first remote owner took it; fits asking
 for a size win over that, but the old size comes back if every fit
-disappears before its debounce. A local owner in between keeps its size.
+disappears before its debounce. A local owner in between keeps its size;
+a fall-back from it to a remote owner still attached is a take-over too.
 Snapshots set `capabilities.sizeOwner: true`; the
 fields are not persisted.
 

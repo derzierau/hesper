@@ -535,7 +535,9 @@ owner detaches, the PTY goes back to the size it had before the first
 remote owner took it, unless view attaches ask for a fit (then the fit
 applies, as before); if every fit disappears before its debounce, the
 pre-takeover size comes back instead. A local owner in between keeps its
-own size. A restarted host starts with none of them (`agents.json` may
+own size; when the size falls back from it to a remote owner still
+attached, that is a take-over too, and the local owner's size comes
+back when the remote one lets go. A restarted host starts with none of them (`agents.json` may
 still hold old values; they are ignored on load). A
 controlling hesperd omits `sizeOwner` and `sizeOwnerName` when
 `sizeOwner` is its own device id and passes `sizeOwnerHost` on

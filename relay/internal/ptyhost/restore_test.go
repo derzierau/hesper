@@ -60,6 +60,33 @@ func TestLocalOwnerAfterRemoteClearsRestore(t *testing.T) {
 	}
 }
 
+// The Mac's owner lets go first while the phone's earlier owner attach
+// is still open: the phone gets the size back (fall-back), and when it
+// lets go too, the Mac's size comes back, as after any remote take-over.
+// Before, the fall-back held no size to give back and the PTY stayed at
+// the phone's grid.
+func TestFallBackToRemoteOwnerRestoresSize(t *testing.T) {
+	tm := start(t, "lines", 120, 40)
+	waitFor(t, "prompt", func() bool { return screenHas(tm, "prompt>") })
+	phone := Origin{Device: "phone-1", Name: "iPhone"}
+
+	remote := attachFrom(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 37, Rows: 27}, phone)
+	waitFor(t, "the phone's size", sizeIs(tm, 37, 27))
+	_, local := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRW, Owner: true, Cols: 100, Rows: 30})
+	waitFor(t, "the Mac's size", sizeIs(tm, 100, 30))
+	local.Close()
+	waitFor(t, "the phone owns it again", func() bool { o, owned := tm.SizeOwner(); return owned && o == phone })
+	if c, r := tm.Size(); c != 37 || r != 27 {
+		t.Fatalf("size after the fall-back %dx%d, want the phone's 37x27", c, r)
+	}
+	remote.Close()
+	// The restore runs in the same locked step that clears the owner.
+	waitFor(t, "nobody owns it", func() bool { _, owned := tm.SizeOwner(); return !owned })
+	if c, r := tm.Size(); c != 100 || r != 30 {
+		t.Fatalf("size %dx%d, want the Mac's 100x30 back", c, r)
+	}
+}
+
 // A view that asks for a fit wins over the restore once the remote owner
 // lets go, as the fit always did.
 func TestRemoteOwnerDetachWithFitLetsFitWin(t *testing.T) {
