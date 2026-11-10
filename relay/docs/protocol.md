@@ -79,7 +79,7 @@ request ID. A missing `machines` field represents an empty inventory.
         "attention":"approval","attentionSince":1791036424,
         "columns":120,"rows":40,"exited":false
       }],
-      "capabilities":{"agents":true,"transfer":true,"spawn":true,"shell":false,"e2e":true,"direct":true,"ping":true},
+      "capabilities":{"agents":true,"transfer":true,"spawn":true,"shell":false,"e2e":true,"direct":true,"ping":true,"sizeOwner":true},
       "transferKey":"BASE64_X25519_PUBLIC_KEY",
       "e2eKey":"BASE64_X25519_PUBLIC_KEY",
       "machine":{"agents":4,"memoryUsed":0.62,"battery":0.18,"onBattery":true,"lidClosed":false}
@@ -93,7 +93,13 @@ attention texts, branches, paths or terminal output**: each agent is a
 terminal whose `terminalId` is its local id, `role` its kind, `state` its
 state, `attention` its attention kind (`approval`, `question`, `error`)
 with `attentionSince` (the Unix second it entered that state), and its PTY
-size. `short` is the host's own short name. Everything else about agents
+size. `short` is the host's own short name. `capabilities.sizeOwner: true`
+says the host publishes who owns each agent's terminal size (below,
+[Size owner](#size-owner)). Nothing enforces it: owner attaches work on
+every host, and a controller that offers an explicit take-over should
+offer it only on a host that sets it, since an older host never says
+who owns the size. A controlling hesperd does not yet pass it on to its
+own clients. Everything else about agents
 travels only inside the [end-to-end channel](#end-to-end-channel), as
 results of the [agents methods](#agents) and on [links](#links).
 
@@ -499,6 +505,48 @@ SIZE and a fresh redraw, EXIT last). One link per pair keeps within the
 relay's four streams per host however many tiles show remote agents.
 A host keeps at most four links per device (the oldest goes) and 256
 channels per link.
+
+#### Size owner
+
+The `Agent` objects in `agents.list`, the link's `E` events (`list`,
+`changed`) and the local socket's `agents.changed` notes carry three
+optional fields (omitted when empty):
+
+```json
+{"id":"M/a7f3k2", "size":{"cols":46,"rows":19}, "sizeOwner":"DEVICE_ID", "sizeOwnerName":"iPhone"}
+{"id":"M/a7f3k2", "size":{"cols":120,"rows":40}, "sizeOwnerHost":true}
+```
+
+`sizeOwner` is the controller device id whose `agents.attach` (`rw`,
+`owner: true`) owns the PTY's size; `sizeOwnerName` is that device's name
+in the host's `controllers.json` (absent while enforcement is off, so a
+client labels such an owner without assuming its kind). `sizeOwnerHost:
+true` says the size is owned on the host itself (a local `hesperd attach
+--owner`, a Hesper.app tile): a controller that owned the size learns
+from it that the host took the size back. All three absent: nobody owns
+the size. `sizeOwner` and `sizeOwnerHost` never appear together. The host sends
+a `changed` event (locally an `agents.changed` note) whenever they change:
+a remote owner attaches, it detaches (`X`) or a newer owner takes over
+(the latest owner wins, a local one included). When the current owner
+detaches while earlier owner attaches are still open, the latest of
+them owns the size again and the PTY takes its grid (its last size);
+the fields follow it. When the last remote
+owner detaches, the PTY goes back to the size it had before the first
+remote owner took it, unless view attaches ask for a fit (then the fit
+applies, as before); if every fit disappears before its debounce, the
+pre-takeover size comes back instead. A local owner in between keeps its
+own size; when the size falls back from it to a remote owner still
+attached, that is a take-over too, and the local owner's size comes
+back when the remote one lets go. A restarted host starts with none of them (`agents.json` may
+still hold old values; they are ignored on load). A
+controlling hesperd omits `sizeOwner` and `sizeOwnerName` when
+`sizeOwner` is its own device id and passes `sizeOwnerHost` on
+unchanged (there it means the agent's machine owns the size). So to a
+controlling hesperd's own clients all three absent means "neither
+another device nor the agent's machine owns the size": either nobody
+or this Mac. A client tells those apart by its own attach (it knows
+whether it holds an owner attach); hesperd does not say. Hosts that set `capabilities.sizeOwner` send
+`sizeOwnerHost`; older hosts send none of the three fields.
 
 A byte-stream channel (a port forward) carries raw bytes in `D` frames of
 at most 32 KiB and has flow control: each side may send 256 KiB, and the

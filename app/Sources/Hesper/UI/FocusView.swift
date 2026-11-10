@@ -36,6 +36,12 @@ final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
     static let slideFadeFrom: Float = 0.35
 
     override var isFlipped: Bool { true }
+    /// Holds keyboard focus only while its terminal cannot and size
+    /// take-back is in play for it (a read-only view until the owner swaps
+    /// in): otherwise, as without the feature, it never takes focus.
+    override var acceptsFirstResponder: Bool {
+        terminal.map { $0.focusHandOff && $0.surface?.acceptsInput != true } ?? false
+    }
 
     init(model: AppModel) {
         self.model = model
@@ -145,11 +151,11 @@ final class FocusView: NSView, TerminalDropTarget, TerminalMenuHost {
     func focusTerminal() {
         guard let t = terminal, let v = t.surface?.view else {
             DispatchQueue.main.async { [weak self] in
-                if let v = self?.terminal?.surface?.view { self?.window?.makeFirstResponder(v) }
+                if self?.terminal?.surface?.view != nil { self?.focusTerminal() }
             }
             return
         }
-        window?.makeFirstResponder(v)
+        if window?.makeFirstResponder(v) != true, t.focusHandOff { window?.makeFirstResponder(self) }
     }
 
     private var cardWidth: CGFloat { max(0, bounds.width - 2 * Self.margin) }

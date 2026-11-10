@@ -86,6 +86,9 @@ type Options struct {
 type Fleet struct {
 	opt     Options
 	control *controlsock.Server
+	// device is this Mac's controller device id: a host's sizeOwner
+	// equal to it is this Mac's own attach, local in this Mac's view.
+	device string
 
 	mu       sync.Mutex
 	c        *client.Controller
@@ -132,7 +135,7 @@ func New(opt Options) *Fleet {
 	}
 	f := &Fleet{opt: opt, machines: map[string]*machine{}, watchers: map[*watcher]struct{}{}, changed: make(chan struct{}), ready: make(chan struct{})}
 	if c, err := client.LoadCredentials(opt.Credentials); err == nil {
-		f.control = controlsock.New(c.DeviceID)
+		f.control, f.device = controlsock.New(c.DeviceID), c.DeviceID
 	}
 	return f
 }
@@ -436,10 +439,14 @@ func (f *Fleet) dropAgentsLocked(m *machine) {
 	}
 }
 
-// named is a host's agent in this Mac's naming.
-func (m *machine) named(a wire.Agent) wire.Agent {
+// named is a host's agent on m in this Mac's naming.
+func (f *Fleet) named(m *machine, a wire.Agent) wire.Agent {
 	a.ID = m.short + "/" + localID(a.ID)
 	a.Machine = m.short
+	if a.SizeOwner != "" && a.SizeOwner == f.device {
+		// The host's size owner is this Mac's own tile: local here.
+		a.SizeOwner, a.SizeOwnerName = "", ""
+	}
 	return a
 }
 
@@ -600,7 +607,7 @@ func (f *Fleet) Call(ctx context.Context, short, method string, params json.RawM
 		var a wire.Agent
 		if json.Unmarshal(raw, &a) == nil && a.ID != "" {
 			f.mu.Lock()
-			a = m.named(a)
+			a = f.named(m, a)
 			// Shown at once; the link's event confirms it.
 			m.agents[localID(a.ID)] = a
 			f.emitChangedLocked(a)

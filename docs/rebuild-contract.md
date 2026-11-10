@@ -51,6 +51,9 @@ just carries another machine.
   "activity": "Bash: git push origin …", // what it does right now (the running tool); optional
   "sessionId": "…",            // claude/codex session id once known (for resume)
   "size": {"cols": 120, "rows": 40},     // the PTY's one size
+  "sizeOwner": "DEVICE_ID",    // the remote controller whose owner attach holds the size; optional (absent: this Mac or nobody)
+  "sizeOwnerName": "iPhone",   // that controller's name in controllers.json; optional
+  "sizeOwnerHost": true,       // an owner attach on this Mac holds the size; optional (never with sizeOwner)
   "created": "…", "pid": 12345, "exit": null
 }
 ```
@@ -159,6 +162,23 @@ the size stays (unless view attaches ask for a fit, below). Every other
 viewer receives bytes for that grid: the app renders tiles by choosing the
 font size that fits `cols × rows` into the tile (scaled live tiles), never by
 resizing the PTY.
+
+**As built — size owner** (additive): the daemon records where the owner
+attached from: this Mac (the local socket) or a remote controller
+(`agents.attach` on a link, its device id and its `controllers.json`
+name). While a remote controller owns the size, the agent's info carries
+`sizeOwner` and `sizeOwnerName` (an `agents.changed` note, and a link
+`changed` event, on every change), and the Mac's panes of that agent are
+fit views (`--fit`, bottom anchored), never owners, until a keystroke or
+click in one takes the size back (the latest owner wins; the fields
+clear and `sizeOwnerHost: true` says this Mac owns it, so the remote
+controller sees it lost the size). When the remote owner detaches, the fields clear and the PTY gets
+back the size it had before the first remote owner took it; fits asking
+for a size win over that, but the old size comes back if every fit
+disappears before its debounce. A local owner in between keeps its size;
+a fall-back from it to a remote owner still attached is a take-over too.
+Snapshots set `capabilities.sizeOwner: true`; the
+fields are not persisted.
 
 **View attaches** (added with the layout rework, see "As built — layout"): an
 `ro` attach may ask for a window onto the screen instead of the screen:
@@ -1544,6 +1564,31 @@ ping-pong the PTY (test: 8 key flips in 400 ms → one size change, two
 re-attaches). Deviation: the app going to the background keeps the owner
 (otherwise every app switch would resize every open agent twice); only
 another Hesper window becoming key, or the owner closing, releases it.
+
+**Size owned by another device** (Fit to iPhone): while an agent's info
+carries `sizeOwner` (the controller device that owns the PTY size, an
+iPhone or another Mac; `sizeOwnerName` its name), or carries
+`sizeOwnerHost` for an agent on another Mac (that Mac's own pane took the
+size, perhaps from this one), every local pane of that agent is a view
+(`attach --fit`), in the key window too, and its tile header shows "On
+<sizeOwnerName>" ("On another device" without a name) or "On <the agent's
+Mac>". On the agent's own Mac `sizeOwnerHost` is its own owner and
+changes nothing. A keystroke that would type into the agent makes
+that pane the owner at once (latest owner wins) and puts it in an
+"awaiting owner" phase: every typing key aimed at it is held, in order,
+whatever hesperd reports meanwhile, until its owner surface takes input;
+then the held keys go to it, on the next turn of the main loop, and the
+phase ends. A view surface in between changes nothing. The phase also
+ends, dropping the held keys, after 5 s, when the owner surface can no
+longer come (window gone, too narrow, the agent not running: a key then
+goes on as usual) or when another device takes the size. While no owner
+surface can come, a key takes nothing back. A click only
+focuses (selecting text, activating the window) and leaves the size with
+the other device. Keys aimed at another control leave that control's input and
+size ownership alone. A read-only focus pane keeps keyboard focus on its
+focus view until the owner surface is ready. hesperd then clears
+`sizeOwner` and the rule above applies again (debounced). A daemon that
+omits the fields leaves the rule unchanged.
 
 **Walls and scopes.** Each wall has its own layout, card width and
 selection, and a scope (toolbar pill "All · 12" / "All · 8 of 12" /

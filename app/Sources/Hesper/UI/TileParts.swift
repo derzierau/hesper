@@ -73,6 +73,16 @@ struct TileHeader: View {
                 .help("Typing goes to the agent; \(CommandRegistry.cap(.exitFocus) ?? "") leaves")
                 .accessibilityIdentifier("tile.typing")
             }
+            if let on = SizeOwner.badge(agent, local: AgentTerminal.isLocal(agent), machine: machine) {
+                // Another device sets the size; this tile is a view.
+                Text(on)
+                    .font(.ds(.chrome, .medium))
+                    .foregroundStyle(Theme.color(.horizon))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .help("\(on) sets this terminal's size; type here to take it back")
+                    .accessibilityIdentifier("tile.sizeOwner")
+            }
             status.layoutPriority(1)
             Text(compact ? machine : "\(machine) · \(Theme.kindLabel(agent.kind))")
                 .font(.ds(.meta))

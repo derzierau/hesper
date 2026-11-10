@@ -76,6 +76,27 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// new terminal in a window that is not key never attaches as a second
     /// owner (nil: keep `ownsSize`).
     static var ownershipResolver: ((AgentTerminal) -> Bool)?
+    /// Another device owns the size and this pane was typed in: it owns
+    /// again at once (SizeOwner); over when the owner changes or the
+    /// take-back runs out (PaneInput).
+    var takingSizeBack: Bool { input.isAwaitingOwner }
+    /// An owner surface could come now (what swapMode and createSurface
+    /// need): otherwise a key starts no take-back.
+    var ownerCanCome: Bool { isAttachable && host.window != nil && host.bounds.width > 4 && host.bounds.height > 4 }
+    /// The agent's size owner changed (the window layer re-decides).
+    static var onSizeOwnerChanged: ((AgentTerminal) -> Void)?
+    /// This Mac's machine id from hesperd's hello (an agent on it reads
+    /// `sizeOwnerHost` as its own owner attach, SizeOwner.owner); nil
+    /// until the hello arrived.
+    static var localMachine: () -> String? = { nil }
+    /// Whether `a` runs on this Mac; nil while that is not known yet.
+    static func isLocal(_ a: Agent) -> Bool? { localMachine().map { a.machine == $0 } }
+    /// Another device owns this agent's size (SizeOwner.remoteOwned).
+    var remoteOwned: Bool { sizeOwner(agent) != nil }
+    private func sizeOwner(_ a: Agent) -> String? { SizeOwner.owner(a, local: Self.isLocal(a)) }
+    /// The focus changes of take-back apply (SizeOwner.focusHandOff); off
+    /// on a host that never sends an owner field.
+    var focusHandOff: Bool { SizeOwner.focusHandOff(remoteOwned: remoteOwned, takingBack: takingSizeBack) }
     private var resolvingOwnership = false
     /// The active wall tile: typing goes to the agent. Its surface is a
     /// read-write attach (size owner at the tile's own grid, which is the
@@ -86,13 +107,17 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     var interactive = false {
         didSet {
             guard oldValue != interactive, role == .tile else { return }
-            if !interactive { heldInput.clear() }
+            if !interactive {
+                input.clearClicks()
+                input.endTakeBack()
+            }
             swapMode()
         }
     }
     /// Clicks and the wheel for the active tile before its read-write
-    /// surface swapped in (`deliver`), replayed into it once it has.
-    private var heldInput = HeldInput<NSEvent>(capacity: 128, maxAge: 1.5)
+    /// surface swapped in (`deliver`), replayed into it once it has; and a
+    /// size take-back's phase and held keys (PaneInput).
+    private var input = PaneInput<NSEvent>()
     /// A surface prewarming underneath the shown one (the mode switch).
     private(set) var prewarm: (any TerminalSurface)?
     private var swapGeneration = 0
@@ -130,6 +155,11 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         } else if surface == nil || (surface?.processExited ?? false) {
             if connected && isAttachable { scheduleReattach() }
         }
+        let (oldOwner, newOwner) = (sizeOwner(old), sizeOwner(a))
+        if oldOwner != newOwner {
+            if SizeOwner.endsTakeBack(old: oldOwner, new: newOwner) { input.endTakeBack() }
+            Self.onSizeOwnerChanged?(self)
+        }
         // A changed PTY size needs nothing here: a tile's view follows the
         // screen, and the wall re-lays out (maybe with another font).
     }
@@ -140,6 +170,12 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     }
 
     func layout() {
+        if input.isAwaitingOwner && !ownerCanCome {
+            // Too narrow or out of its window now: the owner surface of the
+            // take-back cannot come, so it ends (the window layer re-decides).
+            input.endTakeBack()
+            Self.onSizeOwnerChanged?(self)
+        }
         guard let surface else {
             if isAttachable && host.bounds.width > 4 && host.bounds.height > 4 { createSurface() }
             return
@@ -157,7 +193,8 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     }
 
     func close() {
-        heldInput.clear()
+        input.clearClicks()
+        input.endTakeBack()
         prewarm?.close()
         prewarm = nil
         surface?.close()
@@ -210,11 +247,21 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         // takes typing too: as a view it could not be first responder.
         let takeFocus = surfaceIsInteractive || (role == .focus && p.acceptsInput && (hadFocus || host.window?.isKeyWindow == true))
         if takeFocus, let w = host.window { w.makeFirstResponder(p.view) }
+        if role == .focus, hadFocus, !p.acceptsInput, focusHandOff {
+            var ancestor = host.superview
+            while let view = ancestor, !(view is FocusView) { ancestor = view.superview }
+            if let focus = ancestor { host.window?.makeFirstResponder(focus) }
+        }
         surfaceMetricsDidChange(p)
+        let ownerForTakeBack = surfaceBecameCurrent(p)
         if surfaceIsInteractive {
-            for e in heldInput.drain(now: ProcessInfo.processInfo.systemUptime) { send(e, to: p.view) }
+            // Awaiting only: keys typed before a held click go first. Safe
+            // here: finishSwap runs from the swap's poll timer, never inside
+            // update() or a layout pass.
+            if ownerForTakeBack { flushHeldKeys(to: p) }
+            for e in input.drainClicks(now: ProcessInfo.processInfo.systemUptime) { send(e, to: p.view) }
         } else {
-            heldInput.clear()
+            input.clearClicks()
         }
     }
 
@@ -226,9 +273,13 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     @discardableResult
     func deliver(_ event: NSEvent) -> Bool {
         guard role == .tile, interactive else { return false }
-        if surfaceIsInteractive, let s = surface { send(event, to: s.view); return true }
+        if surfaceIsInteractive, let s = surface {
+            flushHeldKeys(to: s) // awaiting only; nothing to send in normal
+            send(event, to: s.view)
+            return true
+        }
         guard prewarm != nil, prewarmAttach == .owner else { return false }
-        heldInput.hold(event, at: event.timestamp)
+        input.holdClick(event, at: event.timestamp)
         return true
     }
 
@@ -238,9 +289,60 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         case .leftMouseUp: view.mouseUp(with: e)
         case .leftMouseDragged: view.mouseDragged(with: e)
         case .scrollWheel: view.scrollWheel(with: e)
+        case .keyDown:
+            // A paste held during a take-back (SizeOwner.keyRoute) is the
+            // Paste command, not a key the terminal reads.
+            if CommandRegistry.resolve(KeyChord(event: e), in: .everywhere) == .paste {
+                view.tryToPerform(#selector(NSText.paste(_:)), with: nil)
+            } else {
+                view.keyDown(with: e)
+            }
         default: break
         }
     }
+
+    /// Holds a key typed while this pane awaits its owner surface (beyond
+    /// PaneInput's capacity the newest is dropped).
+    func holdKey(_ e: NSEvent) { input.holdKey(e) }
+
+    /// Calls a pending take-back off at once, dropping its keys.
+    func endTakeBack() { input.endTakeBack() }
+
+    /// This Mac's machine id changed from `previous`: the agent's owner may
+    /// read differently now; another owner ends a take-back, as in update().
+    func localMachineChanged(from previous: String?) {
+        let old = SizeOwner.owner(agent, local: previous.map { agent.machine == $0 })
+        if SizeOwner.endsTakeBack(old: old, new: sizeOwner(agent)) { input.endTakeBack() }
+    }
+
+    /// Every surface that becomes current (finishSwap, createSurface): an
+    /// owner surface ends a pending take-back by getting its held keys, in
+    /// order, on the next main-loop turn (never inside update() or a layout
+    /// pass); keys typed until then still queue behind them (PaneInput).
+    /// True: an owner surface for a pending take-back.
+    @discardableResult
+    private func surfaceBecameCurrent(_ s: any TerminalSurface) -> Bool {
+        guard input.surfaceCurrent(acceptsInput: s.acceptsInput) else { return false }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let current = self.surface else { return }
+            self.flushHeldKeys(to: current)
+        }
+        return true
+    }
+
+    /// Sends a take-back's held keys to the owner surface `s` now, ending
+    /// the phase; nothing unless one is pending and its owner is current.
+    private func flushHeldKeys(to s: any TerminalSurface) {
+        for e in input.deliverHeldKeys() { send(e, to: s.view) }
+    }
+
+    /// Starts a size take-back; false when no owner surface can come.
+    func beginTakeBack() -> Bool {
+        input.beginTakeBack(at: ProcessInfo.processInfo.systemUptime, ownerCanCome: ownerCanCome)
+    }
+
+    /// Ends a take-back the daemon has not settled in time; true: ended.
+    func expireTakeBack() -> Bool { input.expireTakeBack(now: ProcessInfo.processInfo.systemUptime) }
 
     /// Focus the active tile's terminal (typing).
     func focusInput() {
@@ -262,7 +364,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         surfaceAttach = prewarmAttach
         surfaceIsInteractive = role == .tile && interactive && prewarmAttach == .owner
         if surfaceIsInteractive { host.window?.makeFirstResponder(s.view) }
-        _ = s
+        surfaceBecameCurrent(s)
     }
 
     /// How the last surface made attached.

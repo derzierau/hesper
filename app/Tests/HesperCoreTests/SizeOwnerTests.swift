@@ -93,3 +93,196 @@ import Testing
         }
     }
 }
+
+/// Fit to iPhone (docs/rebuild-contract.md "Size rule with several
+/// windows"): while another device owns an agent's PTY size,
+/// every local pane of that agent is a view; a keystroke in one takes the
+/// size back for that pane at once.
+@Suite struct SizeOwnerRemote {
+    typealias C = SizeOwner.Candidate
+    func c(_ agent: String, _ window: Int?, focus: Bool = false, rw: Bool = false, remote: Bool = false, takingBack: Bool = false) -> C {
+        C(agentID: agent, window: window, focusRole: focus, readWrite: focus || rw, remoteOwned: remote, takingBack: takingBack)
+    }
+
+    @Test func aKeyTakesBackOnlyTheTerminalItTargets() {
+        let cs = [c("a", 1, focus: true, remote: true), c("b", 1, rw: true, remote: true)]
+        func key(_ targeted: [Bool], types: Bool = true) -> SizeOwner.KeyRoute {
+            SizeOwner.keyRoute(cs, targeted: targeted, ownerCanCome: [true, true], typesIntoAgent: types)
+        }
+        #expect(key([false, false]) == .pass) // another control has focus
+        #expect(key([false, true]) == .takeBack(1))
+        #expect(key([true, false]) == .takeBack(0))
+        // A key that would not type into the agent (a shortcut) leaves it.
+        #expect(key([true, false], types: false) == .pass)
+        // A plain tile or a pane whose size is this Mac's: nothing to take.
+        let none = [c("a", 1, remote: true), c("b", 1, rw: true)]
+        #expect(SizeOwner.keyRoute(none, targeted: [true, true], ownerCanCome: [true, true], typesIntoAgent: true) == .pass)
+    }
+
+    @Test func focusHandOffOnlyWhileTheFeatureIsInPlay() {
+        // No owner field (an older host) and no take-back: focus as before.
+        #expect(!SizeOwner.focusHandOff(remoteOwned: false, takingBack: false))
+        #expect(SizeOwner.focusHandOff(remoteOwned: true, takingBack: false))
+        #expect(SizeOwner.focusHandOff(remoteOwned: false, takingBack: true))
+    }
+
+    @Test func onlyARealChangeOfThisMacsIdReReadsOwners() {
+        #expect(SizeOwner.localMachineChanged(old: nil, new: "M"))
+        #expect(SizeOwner.localMachineChanged(old: "M", new: "N"))
+        #expect(!SizeOwner.localMachineChanged(old: "M", new: "M")) // a reconnect
+        #expect(!SizeOwner.localMachineChanged(old: nil, new: nil))
+        #expect(!SizeOwner.localMachineChanged(old: "M", new: nil))
+    }
+
+    @Test func aRemoteOwnerMakesKeyAndNonKeyPanesViews() {
+        let cs = [
+            c("a", 1, focus: true, remote: true),  // a's focus view in the key window
+            c("a", 1, rw: true, remote: true),     // a's active tile in the key window
+            c("a", 2, focus: true, remote: true),  // a's agent window (not key)
+            c("b", 1, rw: true),                   // b: no remote owner
+        ]
+        #expect(SizeOwner.owners(cs, ownerWindow: 1) == [false, false, false, true])
+        #expect(SizeOwner.owners(cs, ownerWindow: 2) == [false, false, false, false])
+        for (cand, owns) in zip(cs, SizeOwner.owners(cs, ownerWindow: 1)) where cand.agentID == "a" {
+            #expect(SizeOwner.attach(readWrite: cand.readWrite, owns: owns) == .view)
+        }
+    }
+
+    @Test func aKeystrokeTakesTheSizeBackForThatPane() {
+        // The tile was typed in: it owns at once, the other
+        // panes of the agent stay views (latest owner wins).
+        let cs = [
+            c("a", 1, focus: true, remote: true),
+            c("a", 1, rw: true, remote: true, takingBack: true),
+            c("a", 2, focus: true, remote: true),
+        ]
+        #expect(SizeOwner.owners(cs, ownerWindow: 1) == [false, true, false])
+        // Even before the owner window caught up (the pane typed in owns).
+        #expect(SizeOwner.owners(cs, ownerWindow: 2) == [false, true, false])
+        #expect(SizeOwner.owners(cs, ownerWindow: nil) == [false, true, false])
+        // A pane that would not type (a plain tile) never owns.
+        #expect(SizeOwner.owners([c("a", 1, remote: true, takingBack: true)], ownerWindow: 1) == [false])
+        // Two panes taken back: one owner, the focus view first.
+        let two = [c("a", 1, rw: true, remote: true, takingBack: true), c("a", 1, focus: true, remote: true, takingBack: true)]
+        #expect(SizeOwner.owners(two, ownerWindow: 1) == [false, true])
+    }
+
+    @Test func clearedOwnerFallsBackToTheNormalRule() {
+        // The daemon cleared sizeOwner: the key window's pane owns again.
+        let cs = [c("a", 1, focus: true), c("a", 2, focus: true)]
+        #expect(SizeOwner.owners(cs, ownerWindow: 1) == [true, false])
+        var a = Agent(id: "L/a")
+        #expect(!SizeOwner.remoteOwned(a, local: true))
+        a.sizeOwner = ""
+        #expect(!SizeOwner.remoteOwned(a, local: true))
+        a.sizeOwner = "dev-1"
+        #expect(SizeOwner.remoteOwned(a, local: true))
+        #expect(SizeOwner.remoteOwned(a, local: false))
+    }
+
+    @Test func theAgentsOwnMacOwningIsRemoteOnlyOnAnotherMac() {
+        // Mac B's tile owned Mac A's agent; Mac A took the size back. Mac
+        // B's hesperd strips its own device id, so only sizeOwnerHost
+        // tells Mac B it lost the size: its panes must become views.
+        var a = Agent(id: "A/x")
+        a.sizeOwnerHost = true
+        #expect(SizeOwner.remoteOwned(a, local: false))
+        #expect(SizeOwner.owner(a, local: false) == SizeOwner.hostOwner)
+        // On Mac A it is its own owner attach: the normal rule.
+        #expect(!SizeOwner.remoteOwned(a, local: true))
+        // Before hesperd's hello this Mac's id is unknown: no guess, so a
+        // local agent's own owner attach never turns its panes into views.
+        #expect(!SizeOwner.remoteOwned(a, local: nil))
+        #expect(SizeOwner.badge(a, local: nil, machine: "mini") == nil)
+        a.sizeOwnerHost = false
+        a.sizeOwner = "dev-1"
+        #expect(SizeOwner.remoteOwned(a, local: nil)) // a device id needs no hello
+        a.sizeOwner = nil
+        a.sizeOwnerHost = true
+        // Mac B types: its owner attach clears the host owner, and Mac B's
+        // take-back gives way to the normal rule (it owns in its key window).
+        #expect(!SizeOwner.endsTakeBack(old: SizeOwner.owner(a, local: false), new: nil))
+    }
+
+    @Test func aTakeBackEndsOnlyWhenAnotherDeviceTakesOver() {
+        #expect(!SizeOwner.endsTakeBack(old: "dev-1", new: "dev-1"))
+        // Settled (the daemon saw this pane's owner attach): it still awaits
+        // its owner surface (PaneInput).
+        #expect(!SizeOwner.endsTakeBack(old: "dev-1", new: nil))
+        #expect(!SizeOwner.endsTakeBack(old: "dev-1", new: ""))
+        // Another device took over: the take-back is over.
+        #expect(SizeOwner.endsTakeBack(old: "dev-1", new: "dev-2"))
+        #expect(SizeOwner.endsTakeBack(old: nil, new: "dev-1"))
+        // The agent's other Mac took it (seen once the hello names this Mac).
+        #expect(SizeOwner.endsTakeBack(old: nil, new: SizeOwner.hostOwner))
+        #expect(SizeOwner.endsTakeBack(old: "dev-1", new: SizeOwner.hostOwner))
+    }
+
+    @Test func aSizeHandedBackToAnEarlierOwnerIsFollowed() {
+        // The current owner left while an earlier owner attach was open:
+        // hesperd hands the size back to it and the fields follow.
+        var a = Agent(id: "A/x")
+        a.sizeOwner = "dev-2"
+        let newer = SizeOwner.owner(a, local: false)
+        a.sizeOwner = "dev-1" // back to another still-attached device
+        let earlier = SizeOwner.owner(a, local: false)
+        #expect(newer != earlier) // a change: the window layer re-decides
+        #expect(SizeOwner.endsTakeBack(old: newer, new: earlier))
+        #expect(SizeOwner.remoteOwned(a, local: false)) // panes stay views
+        // Back to this Mac: behind a controller all fields are absent, on
+        // the agent's own Mac sizeOwnerHost names this Mac. Either way no
+        // other owner, so the normal key-window rule decides again.
+        a.sizeOwner = nil
+        #expect(SizeOwner.owner(a, local: false) == nil)
+        a.sizeOwnerHost = true
+        #expect(SizeOwner.owner(a, local: true) == nil)
+        #expect(!SizeOwner.endsTakeBack(old: earlier, new: nil))
+    }
+
+    @Test func aHostThatNeverSendsOwnerFieldsKeepsTheOldRule() {
+        // Older hosts (and any host: nothing enforces capabilities.sizeOwner)
+        // may send none of the fields: no view, no badge, no take-back.
+        let a = Agent(id: "A/x")
+        for local in [true, false, nil] as [Bool?] {
+            #expect(!SizeOwner.remoteOwned(a, local: local))
+            #expect(SizeOwner.badge(a, local: local, machine: "mini") == nil)
+        }
+        let cs = [c("a", 1, focus: true), c("a", 2, focus: true), c("b", 1, rw: true)]
+        #expect(SizeOwner.owners(cs, ownerWindow: 1) == [true, false, true])
+        #expect(SizeOwner.keyRoute(cs, targeted: [true, true, true], ownerCanCome: [true, true, true], typesIntoAgent: true) == .pass)
+    }
+
+    @Test func badgeNamesTheDevice() {
+        var a = Agent(id: "L/a")
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == nil)
+        a.sizeOwner = "dev-1"
+        // No name (enforcement off): no guess at the kind of device.
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == "On another device")
+        a.sizeOwnerName = "Work iPhone"
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == "On Work iPhone")
+        a.sizeOwner = nil
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == nil)
+        // The agent's own Mac owns it: named on another Mac, none at home.
+        a.sizeOwnerHost = true
+        #expect(SizeOwner.badge(a, local: false, machine: "mini") == "On mini")
+        #expect(SizeOwner.badge(a, local: true, machine: "mini") == nil)
+    }
+
+    @Test func decodesTheOwnerFieldsAndToleratesTheirAbsence() throws {
+        let old = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/1","state":"working"}"#.utf8))
+        #expect(old.sizeOwner == nil && old.sizeOwnerName == nil)
+        let json = #"{"id":"L/1","state":"working","sizeOwner":"c-7f","sizeOwnerName":"iPhone"}"#
+        let a = try JSONDecoder().decode(Agent.self, from: Data(json.utf8))
+        #expect(a.sizeOwner == "c-7f")
+        #expect(a.sizeOwnerName == "iPhone")
+        #expect(SizeOwner.remoteOwned(a, local: true))
+        #expect(!a.sizeOwnerHost)
+        let host = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/1","sizeOwnerHost":true}"#.utf8))
+        #expect(host.sizeOwnerHost && host.sizeOwner == nil)
+        #expect(try JSONDecoder().decode(Agent.self, from: try JSONEncoder().encode(host)) == host)
+        let empty = try JSONDecoder().decode(Agent.self, from: Data(#"{"id":"L/1","state":"working","sizeOwner":"","sizeOwnerName":""}"#.utf8))
+        #expect(empty.sizeOwner == nil && empty.sizeOwnerName == nil)
+        let round = try JSONDecoder().decode(Agent.self, from: try JSONEncoder().encode(a))
+        #expect(round == a)
+    }
+}

@@ -107,6 +107,15 @@ type Agent struct {
 	// by review.accept. Claude and Codex agents in Git folders only.
 	// Persisted.
 	ReviewBase string `json:"reviewBase,omitempty"`
+	// SizeOwner is the controller device id whose attach owns the PTY's
+	// size (a phone that took the terminal over); SizeOwnerName is its
+	// name in controllers.json (empty when the host does not verify
+	// devices). SizeOwnerHost is true while an attach on the agent's own
+	// Mac owns the size (it took the size back). All three empty: nobody
+	// owns it. A restart clears them.
+	SizeOwner     string `json:"sizeOwner,omitempty"`
+	SizeOwnerName string `json:"sizeOwnerName,omitempty"`
+	SizeOwnerHost bool   `json:"sizeOwnerHost,omitempty"`
 }
 
 // EndedKilled is Agent.Ended after agents.kill.

@@ -49,6 +49,8 @@ final class WindowManager: NSObject {
         // Every surface asks: a terminal in a window that isn't key never
         // attaches as a second owner (SizeOwner).
         AgentTerminal.ownershipResolver = { [weak self] t in self?.ownership.wouldOwn(t) ?? t.ownsSize }
+        AgentTerminal.onSizeOwnerChanged = { [weak self] t in self?.ownership.sizeOwnerChanged(t) }
+        AgentTerminal.localMachine = { [weak primary] in primary?.registry.hello?.machine }
         restorer.manager = self
         observeChanges { [weak self] in
             guard let self else { return }
@@ -144,6 +146,10 @@ final class WindowManager: NSObject {
         updateHome()
         updatePills()
         if case .reconciled = e { restorer.agentsKnown() }
+        switch e {
+        case .connected, .helloRefreshed: ownership.helloReceived(primary.registry.hello?.machine)
+        default: break
+        }
         eventTap?(e)
     }
 
