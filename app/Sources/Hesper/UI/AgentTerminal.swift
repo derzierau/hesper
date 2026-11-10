@@ -85,12 +85,15 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     private(set) var takingSizeBackSince: TimeInterval?
     /// The agent's size owner changed (the window layer re-decides).
     static var onSizeOwnerChanged: ((AgentTerminal) -> Void)?
-    /// This Mac's machine id (an agent on it reads `sizeOwnerHost` as its
-    /// own owner attach, SizeOwner.owner).
-    static var localMachine: () -> String = { "" }
+    /// This Mac's machine id from hesperd's hello (an agent on it reads
+    /// `sizeOwnerHost` as its own owner attach, SizeOwner.owner); nil
+    /// until the hello arrived.
+    static var localMachine: () -> String? = { nil }
+    /// Whether `a` runs on this Mac; nil while that is not known yet.
+    static func isLocal(_ a: Agent) -> Bool? { localMachine().map { a.machine == $0 } }
     /// Another device owns this agent's size (SizeOwner.remoteOwned).
     var remoteOwned: Bool { sizeOwner(agent) != nil }
-    private func sizeOwner(_ a: Agent) -> String? { SizeOwner.owner(a, local: a.machine == Self.localMachine()) }
+    private func sizeOwner(_ a: Agent) -> String? { SizeOwner.owner(a, local: Self.isLocal(a)) }
     /// A surface is swapping in (input is held for it).
     var swapping: Bool { prewarm != nil }
     private var resolvingOwnership = false

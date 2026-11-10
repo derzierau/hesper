@@ -188,6 +188,15 @@ import Testing
         #expect(SizeOwner.owner(a, local: false) == SizeOwner.hostOwner)
         // On Mac A it is its own owner attach: the normal rule.
         #expect(!SizeOwner.remoteOwned(a, local: true))
+        // Before hesperd's hello this Mac's id is unknown: no guess, so a
+        // local agent's own owner attach never turns its panes into views.
+        #expect(!SizeOwner.remoteOwned(a, local: nil))
+        #expect(SizeOwner.badge(a, local: nil, machine: "mini") == nil)
+        a.sizeOwnerHost = false
+        a.sizeOwner = "dev-1"
+        #expect(SizeOwner.remoteOwned(a, local: nil)) // a device id needs no hello
+        a.sizeOwner = nil
+        a.sizeOwnerHost = true
         // Mac B types: its owner attach clears the host owner, and Mac B's
         // take-back gives way to the normal rule (it owns in its key window).
         #expect(!SizeOwner.keepsTakeBack(old: SizeOwner.owner(a, local: false), new: nil))

@@ -118,14 +118,16 @@ public enum SizeOwner {
     /// does or this Mac does: the controller device id in `sizeOwner`, or
     /// `hostOwner` when `sizeOwnerHost` reaches this Mac for another Mac's
     /// agent (that Mac took the size; `local` is false). On the agent's own
-    /// Mac `sizeOwnerHost` is this Mac's own owner attach.
-    public static func owner(_ a: Agent, local: Bool) -> String? {
+    /// Mac `sizeOwnerHost` is this Mac's own owner attach. `local` nil: this
+    /// Mac's machine id is not known yet (before hesperd's hello), so
+    /// `sizeOwnerHost` decides nothing.
+    public static func owner(_ a: Agent, local: Bool?) -> String? {
         if let id = a.sizeOwner, !id.isEmpty { return id }
-        return a.sizeOwnerHost && !local ? hostOwner : nil
+        return a.sizeOwnerHost && local == false ? hostOwner : nil
     }
 
     /// Whether another device owns the agent's PTY size now.
-    public static func remoteOwned(_ a: Agent, local: Bool) -> Bool { owner(a, local: local) != nil }
+    public static func remoteOwned(_ a: Agent, local: Bool?) -> Bool { owner(a, local: local) != nil }
 
     /// Whether a pane's take-back still stands after the agent's owner
     /// (`owner(_:local:)`) went from `old` to `new`: only while the same
@@ -139,7 +141,7 @@ public enum SizeOwner {
     /// The tile's badge while another device owns the size: its name, the
     /// agent's Mac (`machine`) when that Mac owns it, and without a name
     /// (enforcement off) no guess at the device's kind.
-    public static func badge(_ a: Agent, local: Bool, machine: String) -> String? {
+    public static func badge(_ a: Agent, local: Bool?, machine: String) -> String? {
         switch owner(a, local: local) {
         case nil: return nil
         case hostOwner?: return "On \(machine)"
