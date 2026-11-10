@@ -203,7 +203,10 @@ Mac). `surface` fill, 3 pt accent top edge, 1 pt `line` sides, padding
      owner saw (`DecisionOptions.isStillCurrent`: same state, same
      `stateSince`, same attention). When the prompt changes while either is open, it closes
      unsent and the "Not sent" alert reads "This prompt changed. Look
-     again before answering." The deny sheet closes only once the deny
+     again before answering." The check runs on the phone only: the
+     answer carries just the agent id and hesperd checks only that the
+     agent waits for an approval, so a prompt that changes during the
+     round trip is still answered. The deny sheet closes only once the deny
      went out; on a failure it keeps its text.
    - Rows are disabled while `pending` or the Mac is unreachable, as
      today.

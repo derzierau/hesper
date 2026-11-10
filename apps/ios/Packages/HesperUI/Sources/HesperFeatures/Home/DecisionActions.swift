@@ -116,6 +116,10 @@ struct DecisionHandling: ViewModifier {
     private func send(_ agent: Agent, _ action: DecisionAction) {
         guard let command = DecisionOptions.command(agent, action) else { return }
         // The dialog kept a snapshot; answer only the prompt the owner saw.
+        // This narrows the window but does not close it: the command
+        // carries only the agent id, and hesperd's agents.answer checks
+        // only that the agent waits for an approval, so a new prompt that
+        // arrives during the round trip still gets this answer.
         if action != .stop, !DecisionOptions.isStillCurrent(agent, in: model.fleet) {
             confirm = nil
             model.failure = DecisionOptions.promptChanged
