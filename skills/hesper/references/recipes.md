@@ -18,6 +18,7 @@ Group by state when reporting: first `approval` / `question` / `error`
 ```sh
 hesperctl show ID --json      # every field; choices:[{n, title, decision?, keys?}] when it waits
 hesperctl screen ID --json    # {text, rows, cols, cursor}; --scrollback 200 for history above
+hesperctl transcript ID --json # {items:[{seq, kind, text?, tool?, summary?, …}], more}; --before SEQ pages back
 hesperctl result ID --json    # {id, state, message, summary, at}; message null when nothing yet (exit 0)
 ```
 
