@@ -168,7 +168,7 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 		case <-c.done:
 			// The controller closed it.
 		default:
-			link.closeChan(p.Ch, true)
+			link.closeChanOf(p.Ch, c, true)
 		}
 	}()
 	return protocol.JSON(struct{}{}), nil

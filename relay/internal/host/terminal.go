@@ -371,9 +371,21 @@ func (l *hostLink) input(ch uint32, p []byte) {
 
 // closeChan ends an attach channel; notify tells the controller.
 func (l *hostLink) closeChan(ch uint32, notify bool) {
+	l.closeChanOf(ch, nil, notify)
+}
+
+// closeChanOf is closeChan while ch is still own (nil: whatever it
+// holds), so a goroutine ending its own channel late never closes one
+// the controller opened on the same number since.
+func (l *hostLink) closeChanOf(ch uint32, own *hostChan, notify bool) {
 	l.mu.Lock()
 	c := l.chans[ch]
-	delete(l.chans, ch)
+	if own != nil && c != own {
+		c = nil
+	}
+	if c != nil {
+		delete(l.chans, ch)
+	}
 	l.mu.Unlock()
 	if c == nil {
 		return
