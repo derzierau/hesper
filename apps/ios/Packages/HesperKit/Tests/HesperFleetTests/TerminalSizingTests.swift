@@ -77,6 +77,15 @@ import Testing
             #expect(!AttachPlan.triesAgain(Coded(code: code)), "\(code)")
         }
         #expect(!AttachPlan.triesAgain(Other()))
+        // The Mac refused without saying why: not a link failure.
+        #expect(!AttachPlan.triesAgain(Coded(code: "refused")))
+    }
+
+    @Test func retriesBackOffToHalfAMinute() {
+        let delays: [Duration] = (0..<8).map { AttachPlan.retryDelay(attempt: $0) }
+        let want: [Duration] = [1, 2, 4, 8, 16, 30, 30, 30].map { .seconds($0) }
+        #expect(delays == want)
+        #expect(AttachPlan.retryDelay(attempt: 1000) == .seconds(30))
     }
 
     @Test func theGridIsWholeCellsAndNeverBelow20By5() {

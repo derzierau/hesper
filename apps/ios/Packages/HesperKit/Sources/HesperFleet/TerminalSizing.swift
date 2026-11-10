@@ -100,6 +100,13 @@ public struct AttachPlan: Equatable, Sendable {
         guard let e = error as? any CodedError else { return false }
         return ["unavailable", "timeout", "link_lost", "connection_lost"].contains(e.code)
     }
+
+    /// The pause before retry number `attempt` (from 0): doubling from 1 s
+    /// to at most 30 s, so a Mac that keeps answering `unavailable` is
+    /// asked rarely rather than every second.
+    public static func retryDelay(attempt: Int) -> Duration {
+        .seconds(min(1 << min(max(attempt, 0), 5), 30))
+    }
 }
 
 /// Whether a fitted attach still owns the size. The Mac takes it back on

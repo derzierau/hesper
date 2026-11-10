@@ -245,6 +245,16 @@ import Testing
         #expect(host.received.isEmpty)
     }
 
+    @Test func aRefusalWithoutAReasonIsNotALinkFailure() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        host.state.withLock { $0.attachReply = #"{"ok":false}"# }
+        let (link, updates) = try await Self.linked(host)
+        defer { withExtendedLifetime(updates) {} }
+        await #expect(throws: RelayError(code: "refused", message: "The Mac refused the terminal")) {
+            _ = try await link.attach(agent: "M/a1", cols: 80, rows: 24)
+        }
+    }
+
     @Test func demuxRoutesByChannel() async throws {
         let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
         var (link, updates) = try await Self.linked(host)

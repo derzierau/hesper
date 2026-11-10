@@ -256,7 +256,9 @@ extension HostChannel {
         do {
             _ = try await call("agents.attach", params: params)
             let reply = try await channel.reply()
-            guard reply.ok else { throw reply.error ?? RelayError(code: "unavailable", message: "The Mac refused the terminal") }
+            // A refusal without a reason gets its own code: `unavailable`
+            // means the link is down, and that is tried again.
+            guard reply.ok else { throw reply.error ?? RelayError(code: "refused", message: "The Mac refused the terminal") }
         } catch {
             channel.end(error as? RelayError ?? RelayError(code: "closed"))
             // The request may have reached the Mac, which then holds the

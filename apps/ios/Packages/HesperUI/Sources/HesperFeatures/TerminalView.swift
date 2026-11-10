@@ -238,6 +238,7 @@ final class TerminalWatch {
         released = false
         if used { replaceSurface() }
         phase = .loading
+        var failures = 0
         while !Task.isCancelled, run == runs, !released {
             await waitForArea()
             let planned = model.plan(for: agent, area: viewport.view, cell: cell)
@@ -257,9 +258,14 @@ final class TerminalWatch {
                     return
                 }
                 phase = .reconnecting
-                guard (try? await Task.sleep(for: Self.backoff)) != nil else { return }
+                // Backs off: hesperd also answers `unavailable` for an
+                // agent it cannot reach, which may last.
+                let delay = AttachPlan.retryDelay(attempt: failures)
+                failures += 1
+                guard (try? await Task.sleep(for: delay)) != nil else { return }
                 continue
             }
+            failures = 0
             used = true
             start(plan, device: model.device(on: agent.machine))
             self.stream = stream
