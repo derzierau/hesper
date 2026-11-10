@@ -86,7 +86,8 @@ struct DecisionHandling: ViewModifier {
 
     /// The open dialog or sheet answers a prompt the agent no longer
     /// shows. Stop is about the agent, not a prompt, so it stays; an agent
-    /// with an answer on its way is expected to change.
+    /// with an answer on its way is expected to change, so a prompt that
+    /// changes during the send is not caught here; `send` checks it once.
     private var isStale: Bool {
         if let confirm, confirm.action != .stop, !model.pending.contains(confirm.agent.id),
             !DecisionOptions.isStillCurrent(confirm.agent, in: model.fleet)

@@ -1,3 +1,4 @@
+import Foundation
 import HesperCore
 import HesperFixtures
 import HesperFleet
@@ -52,6 +53,18 @@ import Testing
         let confirmed = Samples.fleet.agents["studio/s1"]!
         var live = confirmed
         live.attention?.detail = "internal/relay/other.go"
+        var fleet = Samples.fleet
+        fleet.apply(.changed(live), from: live.machine)
+        #expect(!DecisionOptions.isStillCurrent(confirmed, in: fleet))
+    }
+
+    @Test func aRepeatedIdenticalPromptIsNotTheConfirmedOne() {
+        // Answered on the Mac, then the agent asks the same thing again:
+        // state and attention match, only stateSince tells them apart.
+        var confirmed = Samples.fleet.agents["studio/s1"]!
+        confirmed.stateSince = Date(timeIntervalSince1970: 1_000)
+        var live = confirmed
+        live.stateSince = Date(timeIntervalSince1970: 2_000)
         var fleet = Samples.fleet
         fleet.apply(.changed(live), from: live.machine)
         #expect(!DecisionOptions.isStillCurrent(confirmed, in: fleet))

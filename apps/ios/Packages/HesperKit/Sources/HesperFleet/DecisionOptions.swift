@@ -109,10 +109,13 @@ public enum DecisionOptions {
     /// Whether the prompt the owner confirmed is still the one the agent
     /// shows. A dialog or sheet keeps a snapshot and sends by id; if the
     /// prompt was answered elsewhere or a new one arrived, the answer would
-    /// land on a prompt the owner never saw.
+    /// land on a prompt the owner never saw. Same state, same `stateSince`
+    /// and same attention (docs/iphone/concept.md, flow 1): `stateSince`
+    /// tells a repeated identical prompt from the one answered before it.
     public static func isStillCurrent(_ confirmed: Agent, in fleet: Fleet) -> Bool {
         guard let live = fleet.agents[confirmed.id] else { return false }
-        return live.state == confirmed.state && live.attention == confirmed.attention
+        return live.state == confirmed.state && live.stateSince == confirmed.stateSince
+            && live.attention == confirmed.attention
     }
 
     /// The command a tap sends; nil for the deny sheet and for opening the

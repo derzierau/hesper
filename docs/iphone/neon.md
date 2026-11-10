@@ -201,7 +201,7 @@ Mac). `surface` fill, 3 pt accent top edge, 1 pt `line` sides, padding
      "Allow this without asking again?" (Allow / Cancel).
    - A confirmation dialog or the deny sheet answers only the prompt the
      owner saw (`DecisionOptions.isStillCurrent`: same state, same
-     attention). When the prompt changes while either is open, it closes
+     `stateSince`, same attention). When the prompt changes while either is open, it closes
      unsent and the "Not sent" alert reads "This prompt changed. Look
      again before answering." The deny sheet closes only once the deny
      went out; on a failure it keeps its text.
