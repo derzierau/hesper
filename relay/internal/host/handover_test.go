@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/derzierau/hesper/relay/pkg/client"
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 )
 
@@ -258,5 +259,36 @@ func TestHostServesRenewedConnectionWhileOldOneDrains(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A serve that is replaced (its context ends) hands a state change it took
+// but has not published on to the serve that replaces it, which publishes
+// at once instead of on the next poll.
+func TestReplacedServeHandsOnPendingChange(t *testing.T) {
+	fake := &handoverRelay{expiry: map[string]time.Time{"t": time.Now().Add(time.Hour)}}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	events := make(chan struct{}, 1)
+	runner := &Runner{Service: &Service{}, Events: events, PollInterval: time.Hour, Logger: slog.New(slog.NewTextHandler(&lockedBuffer{}, nil))}
+	runner.init()
+	link, err := client.Dial(context.Background(), protocol.Credentials{Relay: server.URL, DeviceID: "laptop", Role: "host", Token: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	terminals := &terminalManager{ctx: ctx, r: runner, slots: runner.termSlots}
+	go func() { done <- runner.serve(ctx, link, terminals) }()
+	waitFor(t, "the first snapshot", func() bool { return slices.Contains(fake.log(), "snapshot t") })
+	events <- struct{}{}
+	// The serve takes the change and waits out PublishGap before publishing.
+	waitFor(t, "the change to be taken", func() bool { return len(events) == 0 })
+	stop()
+	<-done
+	select {
+	case <-runner.changed:
+	default:
+		t.Fatal("a change taken by the replaced serve was lost")
 	}
 }

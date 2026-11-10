@@ -392,8 +392,16 @@ func (r *Runner) serve(parent context.Context, link *client.Link, terminals *ter
 	for {
 		select {
 		case <-ctx.Done():
+			if debounce != nil {
+				// A replaced serve hands a change it took on to the next.
+				r.republish()
+			}
 			return ctx.Err()
 		case <-r.Events:
+			if ctx.Err() != nil {
+				r.republish()
+				return ctx.Err()
+			}
 			// A change (a Hesper hook, a branch or presence read in the
 			// background) is published at once: after EventSettle, which
 			// gathers a burst, and no sooner than PublishGap after the last
@@ -405,6 +413,7 @@ func (r *Runner) serve(parent context.Context, link *client.Link, terminals *ter
 		case <-debounce:
 			debounce = nil
 			if err := publish(); err != nil {
+				r.republish()
 				return err
 			}
 		case <-poll.C:
@@ -489,7 +498,12 @@ func (r *Runner) serve(parent context.Context, link *client.Link, terminals *ter
 			}
 		case <-r.changed:
 			// A request on the direct path changed what snapshots show.
+			if ctx.Err() != nil {
+				r.republish()
+				return ctx.Err()
+			}
 			if err := publish(); err != nil {
+				r.republish()
 				return err
 			}
 		}
