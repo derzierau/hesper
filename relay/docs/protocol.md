@@ -95,8 +95,11 @@ state, `attention` its attention kind (`approval`, `question`, `error`)
 with `attentionSince` (the Unix second it entered that state), and its PTY
 size. `short` is the host's own short name. `capabilities.sizeOwner: true`
 says the host publishes who owns each agent's terminal size (below,
-[Size owner](#size-owner)); a controller takes a terminal over only on a
-host that sets it. Everything else about agents
+[Size owner](#size-owner)). Nothing enforces it: owner attaches work on
+every host, and a controller that offers an explicit take-over should
+offer it only on a host that sets it, since an older host never says
+who owns the size. A controlling hesperd does not yet pass it on to its
+own clients. Everything else about agents
 travels only inside the [end-to-end channel](#end-to-end-channel), as
 results of the [agents methods](#agents) and on [links](#links).
 
