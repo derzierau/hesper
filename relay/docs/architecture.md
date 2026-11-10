@@ -71,14 +71,15 @@ revoked and is not the caller. It does not know the per-host rights in
 `controllers.json`, and the message is not signed with the device key, so
 every controller identity of an owner that the relay accepts can revoke the
 owner's hosts and controllers on the relay, whether or not any host approved
-it. The not-self rule covers only the calling identity
+it. Whether to narrow this (for example to a signed request from a pinned
+device key, to controllers only, or to a fresh sign-in) is awaiting the
+owner's decision. The not-self rule covers only the calling identity
 (`relay/internal/relay/devices.go`, `m.DeviceID == c.device.ID`): a Mac's host
 and controller are separate enrollments that the relay does not link
 (`identity.Device` records no sibling), so a Mac's controller can revoke that
 Mac's own host on the relay. Only hesperd refuses that, locally
-(`DevicesService.Remove`, `SelfHost`). Whether to narrow this (for example to a signed request from a pinned
-device key, to controllers only, or to a fresh sign-in) is awaiting the
-owner's decision. Revocation is committed before the live
+(`DevicesService.Remove`, `SelfHost`); whether the relay should too is part
+of the same decision. Revocation is committed before the live
 connection is removed. Enrollment and revocation are synchronized so an in-flight
 pairing cannot restore a revoked identity in memory.
 
