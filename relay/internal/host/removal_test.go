@@ -3,6 +3,7 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,6 +20,7 @@ import (
 type fakeRelay struct {
 	connected, supports bool
 	devices             []protocol.Device
+	devicesErr          error
 	revokeErr           map[string]error
 	revoked             []string
 }
@@ -28,6 +30,9 @@ func (f *fakeRelay) Supports(feature string) bool {
 	return f.supports && feature == protocol.FeatureDevices
 }
 func (f *fakeRelay) Devices(context.Context) ([]protocol.Device, error) {
+	if f.devicesErr != nil {
+		return nil, f.devicesErr
+	}
 	return slices.Clone(f.devices), nil
 }
 func (f *fakeRelay) Revoke(_ context.Context, id string) error {
@@ -272,6 +277,52 @@ func TestRemovingAHostRevokesOnlyThatHost(t *testing.T) {
 	}
 	if a, _, _ := e.state(t); !slices.Equal(a, []string{"ctl-w", "dev-x"}) {
 		t.Errorf("approved %v", a)
+	}
+}
+
+// A relay that cannot be asked is said, not hidden behind this Mac's files.
+func TestDevicesListSaysWhenTheRelayCouldNotBeAsked(t *testing.T) {
+	e := newRemovalEnv(t)
+	list := func() wire.DevicesList {
+		t.Helper()
+		res, err := e.svc.Call(context.Background(), "devices.list", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.(wire.DevicesList)
+	}
+	if l := list(); l.RelayUnavailable != "" {
+		t.Errorf("relay answered: %q", l.RelayUnavailable)
+	}
+	e.relay.devicesErr = errors.New("timed out")
+	if l := list(); !strings.Contains(l.RelayUnavailable, "timed out") || len(l.Devices) == 0 {
+		t.Errorf("relay error: %+v", l)
+	}
+	e.relay.devicesErr, e.relay.connected = nil, false
+	if l := list(); l.RelayUnavailable == "" {
+		t.Errorf("disconnected: %+v", l)
+	}
+	e.relay.connected, e.relay.supports = true, false
+	if l := list(); l.RelayUnavailable == "" {
+		t.Errorf("old relay: %+v", l)
+	}
+	e.svc.Relay = nil // no controller role: no relay to ask
+	if l := list(); l.RelayUnavailable != "" {
+		t.Errorf("no relay: %+v", l)
+	}
+}
+
+// Removing a name keeps machines.json's mode.
+func TestDropMachineNameKeepsTheMode(t *testing.T) {
+	e := newRemovalEnv(t)
+	if err := os.Chmod(e.svc.MachinesPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Remove(context.Background(), "keep", true); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(e.svc.MachinesPath); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v %v", fi.Mode().Perm(), err)
 	}
 }
 

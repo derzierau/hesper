@@ -42,8 +42,12 @@ type Device struct {
 }
 
 // DevicesList is the result of devices.list.
+// RelayUnavailable says why this Mac's relay could not be asked (not
+// connected, too old, or its error); the list is then this Mac's files
+// alone. Empty when the relay answered or there is no relay to ask.
 type DevicesList struct {
-	Devices []Device `json:"devices"`
+	Devices          []Device `json:"devices"`
+	RelayUnavailable string   `json:"relayUnavailable,omitempty"`
 }
 
 // DeviceRemoveParams are devices.remove's params. LocalOnly skips the

@@ -247,6 +247,9 @@ and `machines.json` (`short`). `kind` is `iphone` exactly when the relay
 says `push`, else `mac`; `self` marks this Mac's own host and controller
 ids. Sorted: this Mac, then Macs by short name, then iPhones by name.
 Without the relay the list is this Mac's files, every entry offline.
+When this Mac has the controller role but the relay could not be asked
+(unreachable, too old, or its error), the result adds
+`relayUnavailable` with the reason; older clients ignore it.
 
 `devices.remove` revokes the device on the relay first, then removes its
 approval here, its pinned key and its `machines.json` entry. Each result

@@ -46,11 +46,11 @@ type DevicesService struct {
 func (s *DevicesService) Call(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "devices.list":
-		list, err := s.List(ctx)
+		list, why, err := s.List(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return wire.DevicesList{Devices: list}, nil
+		return wire.DevicesList{Devices: list, RelayUnavailable: why}, nil
 	case "devices.remove":
 		var p wire.DeviceRemoveParams
 		if len(params) > 0 && string(params) != "null" {
@@ -65,20 +65,29 @@ func (s *DevicesService) Call(ctx context.Context, method string, params json.Ra
 
 // List is every device the relay or this Mac knows. Without a relay
 // that answers (no controller role, offline, too old) it is this Mac's
-// files alone, every entry offline.
-func (s *DevicesService) List(ctx context.Context) ([]wire.Device, error) {
+// files alone, every entry offline, and relayUnavailable says why when
+// there is a relay that could not be asked.
+func (s *DevicesService) List(ctx context.Context) (list []wire.Device, relayUnavailable string, err error) {
 	controllers, trust, names, err := s.local()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	var relay []protocol.Device
 	known := false
-	if s.Relay != nil && s.Relay.Connected() && s.Relay.Supports(protocol.FeatureDevices) {
-		if list, err := s.Relay.Devices(ctx); err == nil {
-			relay, known = list, true
+	switch {
+	case s.Relay == nil:
+	case !s.Relay.Connected():
+		relayUnavailable = "the relay is unreachable"
+	case !s.Relay.Supports(protocol.FeatureDevices):
+		relayUnavailable = "the relay is too old to list devices"
+	default:
+		if l, err := s.Relay.Devices(ctx); err != nil {
+			relayUnavailable = "the relay did not answer: " + err.Error()
+		} else {
+			relay, known = l, true
 		}
 	}
-	return MergeDevices(relay, known, controllers, trust.Hosts, names, s.SelfHost, s.SelfController), nil
+	return MergeDevices(relay, known, controllers, trust.Hosts, names, s.SelfHost, s.SelfController), relayUnavailable, nil
 }
 
 // local reads this Mac's three files.
@@ -305,8 +314,14 @@ func loadMachineNames(path string) (map[string]string, error) {
 	return names, nil
 }
 
-// dropMachineName removes id from machines.json, keeping everything else.
+// dropMachineName removes id from machines.json, keeping everything else
+// and the file's mode. Unlocked, like hesperctl machines --save, its
+// other writer.
 func dropMachineName(path, id string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -328,5 +343,5 @@ func dropMachineName(path, id string) error {
 	if err := writeAtomic(path, append(out, '\n')); err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o644) // as hesperctl machines --save writes it
+	return os.Chmod(path, info.Mode().Perm()) // writeAtomic writes 0600
 }
