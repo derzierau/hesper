@@ -62,6 +62,19 @@ import Testing
         #expect(p.isAwaitingOwner && p.heldKeyCount == 1)
     }
 
+    @Test func aPasteIntoAnAwaitingPaneIsHeldButStartsNothing() {
+        func paste(_ c: C) -> SizeOwner.KeyRoute {
+            SizeOwner.keyRoute([c], targeted: [true], ownerCanCome: [true], typesIntoAgent: false, isPaste: true)
+        }
+        // Awaiting: held behind the typed keys, so it is not lost on the view.
+        #expect(paste(pane(awaiting: true)) == .hold(0))
+        #expect(paste(pane(remote: false, awaiting: true)) == .hold(0)) // after the settle
+        // Not awaiting: a paste takes nothing back (as before the feature).
+        #expect(paste(pane()) == .pass)
+        // Other shortcuts pass even while awaiting.
+        #expect(SizeOwner.keyRoute([pane(awaiting: true)], targeted: [true], ownerCanCome: [true], typesIntoAgent: false) == .pass)
+    }
+
     @Test func noTakeBackBeginsWhenNoOwnerSurfaceCanCome() {
         var p = PaneInput<String>()
         #expect(route(pane(), canCome: false) == .pass)

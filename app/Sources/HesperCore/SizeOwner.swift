@@ -82,12 +82,15 @@ public enum SizeOwner {
     /// longer come (`ownerCanCome`). Otherwise a terminal another device
     /// sized begins a take-back, but only if an owner surface can come.
     /// A click never takes the size back: it only focuses.
-    public static func keyRoute(_ cs: [Candidate], targeted: [Bool], ownerCanCome: [Bool], typesIntoAgent: Bool) -> KeyRoute {
-        guard typesIntoAgent, cs.count == targeted.count, cs.count == ownerCanCome.count,
+    /// A paste (`isPaste`, the Paste command's chord) into a terminal
+    /// awaiting its owner is held like a typed key, in order; it starts no
+    /// take-back. Other shortcuts always pass.
+    public static func keyRoute(_ cs: [Candidate], targeted: [Bool], ownerCanCome: [Bool], typesIntoAgent: Bool, isPaste: Bool = false) -> KeyRoute {
+        guard typesIntoAgent || isPaste, cs.count == targeted.count, cs.count == ownerCanCome.count,
               let i = cs.indices.first(where: { targeted[$0] && cs[$0].readWrite && (cs[$0].takingBack || cs[$0].remoteOwned) })
         else { return .pass }
         if cs[i].takingBack { return ownerCanCome[i] ? .hold(i) : .cancel(i) }
-        return ownerCanCome[i] ? .takeBack(i) : .pass
+        return ownerCanCome[i] && typesIntoAgent ? .takeBack(i) : .pass
     }
 
     /// Whether this Mac's machine id from hesperd's hello really changed

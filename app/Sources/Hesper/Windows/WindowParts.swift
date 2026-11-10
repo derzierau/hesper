@@ -321,7 +321,8 @@ final class SizeOwnership {
                                 readWrite: t.readWrite, remoteOwned: t.remoteOwned, takingBack: t.takingSizeBack)
         }
         let types = w.isKeyWindow && TerminalKeys.bytes(KeyChord(event: e), characters: e.characters) != nil
-        switch SizeOwner.keyRoute(cs, targeted: targeted, ownerCanCome: ts.map(\.ownerCanCome), typesIntoAgent: types) {
+        let paste = w.isKeyWindow && CommandRegistry.resolve(KeyChord(event: e), in: .everywhere) == .paste
+        switch SizeOwner.keyRoute(cs, targeted: targeted, ownerCanCome: ts.map(\.ownerCanCome), typesIntoAgent: types, isPaste: paste) {
         case .pass:
             return false
         case .hold(let i):

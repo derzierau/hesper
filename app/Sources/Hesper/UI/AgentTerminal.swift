@@ -281,7 +281,14 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         case .leftMouseUp: view.mouseUp(with: e)
         case .leftMouseDragged: view.mouseDragged(with: e)
         case .scrollWheel: view.scrollWheel(with: e)
-        case .keyDown: view.keyDown(with: e)
+        case .keyDown:
+            // A paste held during a take-back (SizeOwner.keyRoute) is the
+            // Paste command, not a key the terminal reads.
+            if CommandRegistry.resolve(KeyChord(event: e), in: .everywhere) == .paste {
+                view.tryToPerform(#selector(NSText.paste(_:)), with: nil)
+            } else {
+                view.keyDown(with: e)
+            }
         default: break
         }
     }
