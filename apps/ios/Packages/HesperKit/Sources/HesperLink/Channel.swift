@@ -196,6 +196,9 @@ extension HostChannel {
         }
     }
 
+    /// The channels of the attaches open now.
+    var openChannels: Set<UInt32> { Set(attaches.keys) }
+
     /// Whether the link stream is open now.
     var linked: Bool { openLink != nil }
 
@@ -236,6 +239,9 @@ extension HostChannel {
             queue.yield(.frame(AttachDecoder.resize(cols: cols, rows: rows)))
         } onWrite: { _, data in
             queue.yield(.frame(AttachDecoder.input(data)))
+        } onExit: { _ in
+            queue.yield(.forget)
+            queue.finish()
         }
         Task { [weak self] in
             for await op in outbound { await self?.flush(op, on: ch, link: link.id) }
@@ -268,6 +274,9 @@ extension HostChannel {
         case frame(Data)
         /// `X`: the phone closed the attach.
         case close
+        /// The agent exited: the Mac closes the channel, the phone only
+        /// drops it.
+        case forget
     }
 
     /// Sends one queued frame on an attach's channel, if the attach is
@@ -281,6 +290,8 @@ extension HostChannel {
         case .close:
             guard attaches.removeValue(forKey: ch) != nil, openLink?.id == link else { return }
             try? await send(frame: LinkFrames.Frame(kind: Self.kindClose, channel: ch, payload: Data()))
+        case .forget:
+            attaches[ch] = nil
         }
     }
 

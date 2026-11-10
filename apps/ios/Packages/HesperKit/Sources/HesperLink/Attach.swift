@@ -141,6 +141,7 @@ public final class AttachChannel: AttachStream {
     private let onClose: @Sendable (UInt32) -> Void
     private let onResize: @Sendable (UInt32, Int, Int) -> Void
     private let onWrite: @Sendable (UInt32, Data) -> Void
+    private let onExit: @Sendable (UInt32) -> Void
 
     private struct State {
         var decoder = AttachDecoder()
@@ -174,8 +175,10 @@ public final class AttachChannel: AttachStream {
     init(
         id: UInt32, onClose: @escaping @Sendable (UInt32) -> Void,
         onResize: @escaping @Sendable (UInt32, Int, Int) -> Void = { _, _, _ in },
-        onWrite: @escaping @Sendable (UInt32, Data) -> Void = { _, _ in }
+        onWrite: @escaping @Sendable (UInt32, Data) -> Void = { _, _ in },
+        onExit: @escaping @Sendable (UInt32) -> Void = { _ in }
     ) {
+        self.onExit = onExit
         self.id = id
         self.onClose = onClose
         self.onResize = onResize
@@ -219,7 +222,9 @@ public final class AttachChannel: AttachStream {
                     guard enqueue(f) else { return }
                 }
             }
-            if frames.contains(.exit) { end(RelayError(code: "closed", message: "The agent exited")) }
+            // The Mac closes the channel itself after EXIT: forget it here
+            // without sending X.
+            if frames.contains(.exit), end(RelayError(code: "closed", message: "The agent exited")) { onExit(id) }
         }
     }
 

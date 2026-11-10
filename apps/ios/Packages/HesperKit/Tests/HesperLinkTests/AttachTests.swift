@@ -225,6 +225,26 @@ import Testing
         #expect(host.received == [LinkFrames.Frame(kind: Self.x, channel: 1, payload: Data())])
     }
 
+    @Test func anExitedAttachLeavesTheChannelsWithoutAnX() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        let (link, updates) = try await Self.linked(host)
+        defer { withExtendedLifetime(updates) {} }
+        let stream = try await link.attach(agent: "M/a1", cols: 80, rows: 24, typing: true, owner: false)
+        let channel = try #require(link.channel(on: "M"))
+        // EXIT, and no X yet: hesperd sends its own X once the pipe closes
+        // (relay/internal/host/terminal.go), so the phone must not.
+        host.push(kind: Self.d, channel: 1, Self.inner(3, Data(#"{"code":0}"#.utf8)))
+        #expect(await Self.all(stream) == [.size(cols: 97, rows: 56), .data(Data("hi".utf8)), .exit])
+        for _ in 0..<300 where await !channel.openChannels.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(await channel.openChannels.isEmpty)
+        stream.close()
+        stream.write(Data("late".utf8))
+        // The Mac's X then finds nothing to end.
+        host.push(kind: Self.x, channel: 1, Data())
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(host.received.isEmpty)
+    }
+
     @Test func demuxRoutesByChannel() async throws {
         let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
         var (link, updates) = try await Self.linked(host)

@@ -143,6 +143,11 @@ public final class LiveLink: LinkClient {
 
     static func name(_ m: RelayMachine) -> String { m.short ?? m.name }
 
+    /// The channel to a machine by its short name, if connected.
+    func channel(on machine: String) -> HostChannel? {
+        state.withLock { s in s.ids[machine].flatMap { s.channels[$0] } }
+    }
+
     public func perform(_ command: LinkCommand) async throws {
         let (machine, method, params) = try Self.request(for: command)
         let channel = state.withLock { s in s.ids[machine].flatMap { s.channels[$0] } }
