@@ -255,6 +255,9 @@ The relay is skipped for a device it does not list (already revoked, or
 known only here). Only the given id is revoked: a Mac's controller
 record is not bound to its host id and names are not unique, so it is
 removed as a device of its own. This Mac's own two ids are `forbidden`.
+Only this Mac's files change: other Macs keep the device's approval in
+their `controllers.json`, and with it any open direct-path connection or
+link, until it is revoked there (`hesperctl devices-local --revoke`).
 Nothing changes here when the relay step cannot run: `unavailable` (no
 controller role, or the relay is unreachable), `unsupported` ("The relay
 needs an update to remove devices": its `hello` has no `devices`, and it

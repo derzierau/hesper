@@ -49,7 +49,8 @@ func init() {
 		{Name: "devices-local", Summary: "List or revoke the controllers this host approved", Usage: "devices-local [--revoke NAME] [--json]",
 			Output: "{controllers, pending, enforcing}, with --revoke {revoked}"},
 		{Name: "forget", Destructive: true, Summary: "Remove a device from the relay and this Mac", Usage: "forget NAME|ID [--local-only] [--json]",
-			Help: "Revokes the device on the relay (it is signed out everywhere), then drops its approval on this host, its pinned key and its machines.json entry, through hesperd. " +
+			Help: "Revokes the device on the relay (its relay sign-in ends), then drops its approval on this host, its pinned key and its machines.json entry, through hesperd. " +
+				"Other Macs keep their own approval and open direct connections; revoke it there with devices-local --revoke. " +
 				"A Mac's controller record is a device of its own and is removed separately. This Mac itself is refused. " +
 				"Without a reachable relay nothing changes; --local-only (for a relay too old to remove devices) forgets it here only.",
 			Output: "{relay, approval, trust, names}: each \"done\", \"skipped\" or the step's error"},
