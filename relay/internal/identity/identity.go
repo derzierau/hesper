@@ -35,6 +35,8 @@ type Repository interface {
 	Redeem(context.Context, string, string) (Device, string, error)
 	Authenticate(context.Context, string) (Device, error)
 	Devices(context.Context, string) ([]Device, error)
+	// Device reads one device record by ID, revoked or not.
+	Device(context.Context, string) (Device, error)
 	Revoke(context.Context, string) error
 }
 

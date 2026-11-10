@@ -97,13 +97,8 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 	}
 	var p *terminalPair
 	if d.Role == identity.Host {
-		devices, e := s.Repository.Devices(r.Context(), d.Owner)
-		valid := false
-		for _, v := range devices {
-			if v.ID == controller && v.Owner == d.Owner && v.Role == identity.Controller && !v.Revoked {
-				valid = true
-			}
-		}
+		v, e := s.Repository.Device(r.Context(), controller)
+		valid := v.ID == controller && v.Owner == d.Owner && v.Role == identity.Controller && !v.Revoked
 		count := 0
 		for _, v := range b.streams {
 			if v.host.ID == d.ID {
@@ -209,16 +204,8 @@ func (s *Server) terminal(w http.ResponseWriter, r *http.Request) {
 // active reports whether device d is still enrolled under its owner, in its
 // role and not revoked. A repository error counts as inactive.
 func (s *Server) active(ctx context.Context, d identity.Device) bool {
-	devices, err := s.Repository.Devices(ctx, d.Owner)
-	if err != nil {
-		return false
-	}
-	for _, v := range devices {
-		if v.ID == d.ID {
-			return v.Owner == d.Owner && v.Role == d.Role && !v.Revoked
-		}
-	}
-	return false
+	v, err := s.Repository.Device(ctx, d.ID)
+	return err == nil && v.ID == d.ID && v.Owner == d.Owner && v.Role == d.Role && !v.Revoked
 }
 func (s *Server) bridge(p *terminalPair) {
 	timer := time.NewTimer(15 * time.Second)

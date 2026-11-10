@@ -137,6 +137,20 @@ func (s *Bolt) Devices(ctx context.Context, owner string) ([]identity.Device, er
 	})
 	return result, err
 }
+func (s *Bolt) Device(ctx context.Context, id string) (identity.Device, error) {
+	var device identity.Device
+	if err := ctx.Err(); err != nil {
+		return device, err
+	}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		value := tx.Bucket(devices).Get([]byte(id))
+		if value == nil {
+			return protocol.Err("not_found", "Device not found")
+		}
+		return json.Unmarshal(value, &device)
+	})
+	return device, err
+}
 func (s *Bolt) Revoke(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return err
