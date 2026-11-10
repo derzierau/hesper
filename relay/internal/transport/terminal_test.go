@@ -17,8 +17,10 @@ import (
 	"github.com/derzierau/hesper/relay/pkg/protocol"
 )
 
-// terminalTTL is the access-token lifetime of both stream ends.
-const terminalTTL = 200 * time.Millisecond
+// terminalTTL is the access-token lifetime of both stream ends. It leaves
+// room for the enrollments and dials before the streams open on a loaded
+// runner under -race.
+const terminalTTL = time.Second
 
 // terminalWorld is a production-mode relay (allowlist policy, short-lived
 // access tokens) with one paired host and controller terminal stream.
