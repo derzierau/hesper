@@ -1,61 +1,108 @@
 import Foundation
 
-/// Input a terminal pane holds while a surface that takes input is on its
-/// way, and its size take-back (docs/rebuild-contract.md "Size owned by
-/// another device"). Pure, so the sequences are unit-tested; AgentTerminal
-/// drives it and only sends what it returns.
+/// Input a terminal pane holds for a surface that is on its way
+/// (docs/rebuild-contract.md "Size owned by another device"). Pure, so the
+/// sequences are unit-tested; AgentTerminal and SizeOwnership drive it and
+/// only send what it returns.
 ///
-/// Held events (an active tile's clicks, keys of a take-back) go to the
-/// next surface that takes input, oldest first, whichever way it becomes
-/// current (a mode swap, a new or re-created surface). Events older than
-/// `maxAge` when that happens are dropped, as are events beyond `capacity`.
+/// Two separate things:
+/// - The active tile's clicks and wheel (`holdClick`), exactly as before
+///   size take-back existed: a HeldInput with its age rule, drained or
+///   dropped where the mode swap finishes.
+/// - A size take-back's keys, in one explicit phase. `normal`: no
+///   take-back. `awaitingOwner`: a take-back began; every key aimed at the
+///   pane is held, in order, whatever the daemon reports meanwhile. The
+///   phase ends only when (a) an owner surface that takes input is current
+///   and the held keys were delivered to it, (b) the timeout ran out, or
+///   (c) no owner surface can come any more; (b) and (c) drop the keys.
+///   Held keys have no age limit (the timeout bounds them); past
+///   `keyCapacity` the newest are dropped, never reordered.
 public struct PaneInput<Event> {
-    private var held: HeldInput<Event>
-    /// When the take-back started (uptime); nil: none pending.
-    public private(set) var takeBackSince: Double?
+    public enum Phase: Equatable, Sendable { case normal, awaitingOwner }
 
-    public init(capacity: Int = 128, maxAge: Double = 1.5) {
-        held = HeldInput(capacity: capacity, maxAge: maxAge)
+    public private(set) var phase: Phase = .normal
+    /// When the take-back began (uptime); nil in `normal`.
+    public private(set) var takeBackSince: Double?
+    public let keyCapacity: Int
+    private var clicks: HeldInput<Event>
+    private var keys: [Event] = []
+    /// An owner surface that takes input is current (delivery may run).
+    private var ownerCurrent = false
+
+    public init(clickCapacity: Int = 128, clickMaxAge: Double = 1.5, keyCapacity: Int = 128) {
+        clicks = HeldInput(capacity: clickCapacity, maxAge: clickMaxAge)
+        self.keyCapacity = keyCapacity
     }
 
-    public var isTakingBack: Bool { takeBackSince != nil }
-    public var heldCount: Int { held.count }
+    public var isAwaitingOwner: Bool { phase == .awaitingOwner }
+    public var heldKeyCount: Int { keys.count }
 
-    /// Holds an event for the next surface that takes input.
-    public mutating func hold(_ e: Event, at time: Double) { held.hold(e, at: time) }
+    // MARK: Clicks (unchanged behaviour)
 
-    /// Starts a take-back at `now`; false (and nothing changes) when no
-    /// owner surface can come (no window, too narrow, not attachable): the
-    /// key then goes on as without the feature.
+    public mutating func holdClick(_ e: Event, at time: Double) { clicks.hold(e, at: time) }
+    public mutating func drainClicks(now: Double) -> [Event] { clicks.drain(now: now) }
+    public mutating func clearClicks() { clicks.clear() }
+
+    // MARK: Take-back
+
+    /// Begins a take-back at `now`: `awaitingOwner`. False (still
+    /// `normal`) when no owner surface can come; the key then goes on as
+    /// without the feature.
     public mutating func beginTakeBack(at now: Double, ownerCanCome: Bool) -> Bool {
         guard ownerCanCome else { return false }
-        if takeBackSince == nil { takeBackSince = now }
+        if phase == .normal {
+            phase = .awaitingOwner
+            takeBackSince = now
+            ownerCurrent = false
+        }
         return true
     }
 
-    /// A surface became current. One that takes input gets the held events
-    /// (in order, the stale ones dropped). One that does not: they are
-    /// dropped, unless a take-back is pending (its owner surface follows).
-    public mutating func surfaceCurrent(acceptsInput: Bool, now: Double) -> [Event] {
-        if acceptsInput { return held.drain(now: now) }
-        if !isTakingBack { held.clear() }
-        return []
+    /// Holds a key while `awaitingOwner`. False: not held (not awaiting, or
+    /// at capacity: the newest is dropped).
+    @discardableResult
+    public mutating func holdKey(_ e: Event) -> Bool {
+        guard phase == .awaitingOwner, keys.count < keyCapacity else { return false }
+        keys.append(e)
+        return true
     }
 
-    /// The daemon reported another owner (it saw this pane's owner attach,
-    /// or a new device took over): the take-back is over. Held keys stay
-    /// for the owner surface if it is still swapping in.
-    public mutating func takeBackSettled() { takeBackSince = nil }
+    /// The one entry point for every surface that becomes current. True:
+    /// an owner surface taking input is current while awaiting; run
+    /// `deliverHeldKeys()` on the next main-loop turn. A view surface
+    /// changes nothing but that an earlier owner no longer counts.
+    public mutating func surfaceCurrent(acceptsInput: Bool) -> Bool {
+        guard phase == .awaitingOwner else { return false }
+        ownerCurrent = acceptsInput
+        return acceptsInput
+    }
 
-    /// Ends a take-back the daemon has not settled within `timeout` (the
-    /// owner attach failed): its held keys are dropped. True: it ended.
+    /// The held keys, oldest first, for the owner surface that is current;
+    /// back to `normal`. Empty (still awaiting) if no such surface is
+    /// current any more, or (already `normal`) if nothing is pending.
+    public mutating func deliverHeldKeys() -> [Event] {
+        guard phase == .awaitingOwner, ownerCurrent else { return [] }
+        defer { end() }
+        return keys
+    }
+
+    /// The take-back is called off at once, its keys dropped: no owner
+    /// surface can come any more (window gone, too narrow, agent not
+    /// attachable), another device took the size over, or the pane closed.
+    public mutating func endTakeBack() { end() }
+
+    /// Ends a take-back older than `timeout` at `now`, dropping its keys.
+    /// True: it ended.
     public mutating func expireTakeBack(now: Double, timeout: Double = SizeOwner.takeBackTimeout) -> Bool {
         guard let since = takeBackSince, now - since >= timeout else { return false }
-        takeBackSince = nil
-        held.clear()
+        end()
         return true
     }
 
-    /// Drops everything held (the pane stopped taking input or closed).
-    public mutating func clear() { held.clear() }
+    private mutating func end() {
+        phase = .normal
+        takeBackSince = nil
+        ownerCurrent = false
+        keys.removeAll()
+    }
 }

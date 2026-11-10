@@ -2,89 +2,130 @@ import Foundation
 import Testing
 @testable import HesperCore
 
-/// PaneInput: held input and the size take-back of one terminal pane.
+/// PaneInput: the take-back phase of one terminal pane, and its clicks.
 @Suite struct PaneInputTests {
-    @Test func heldKeysGoFirstToANewOwnerSurfaceThenLaterKeysFollow() {
-        // A and B are held while the take-back waits; the owner surface
-        // arrives by re-creation (not a swap): it gets A, B before C.
-        var p = PaneInput<String>()
-        let r1 = p.beginTakeBack(at: 10, ownerCanCome: true)
-        #expect(r1)
-        p.hold("A", at: 10)
-        p.hold("B", at: 10.1)
-        let r2 = p.surfaceCurrent(acceptsInput: true, now: 10.2)
-        #expect(r2 == ["A", "B"])
-        // C: the owner takes input now, so it goes there directly.
-        let c = SizeOwner.Candidate(agentID: "a", window: 1, focusRole: true, readWrite: true, remoteOwned: true, takingBack: p.isTakingBack)
-        #expect(SizeOwner.keyTakeBack([c], targeted: [true], ownerReady: [true], ownerCanCome: [true], typesIntoAgent: true) == .pass)
-        #expect(p.heldCount == 0)
+    typealias C = SizeOwner.Candidate
+    /// A focus pane another device sized; `awaiting`: its take-back began.
+    func pane(remote: Bool = true, awaiting: Bool = false) -> C {
+        C(agentID: "a", window: 1, focusRole: true, readWrite: true, remoteOwned: remote, takingBack: awaiting)
+    }
+    func route(_ c: C, canCome: Bool = true) -> SizeOwner.KeyRoute {
+        SizeOwner.keyRoute([c], targeted: [true], ownerCanCome: [canCome], typesIntoAgent: true)
     }
 
-    @Test func noTakeBackWhenNoOwnerSurfaceCanCome() {
+    @Test func settleBeforeSwapKeepsEveryKeyInOrder() {
+        // A starts the take-back, B follows; the daemon then reports the
+        // owner attach (no remote owner any more) before the owner surface
+        // swapped in. C must queue behind A and B, not overtake them.
         var p = PaneInput<String>()
-        let r3 = p.beginTakeBack(at: 10, ownerCanCome: false)
-        #expect(!r3)
-        #expect(!p.isTakingBack)
-        // So the key decision passes the key on, as before the feature.
-        let c = SizeOwner.Candidate(agentID: "a", window: 1, focusRole: true, readWrite: true, remoteOwned: true)
-        #expect(SizeOwner.keyTakeBack([c], targeted: [true], ownerReady: [false], ownerCanCome: [false], typesIntoAgent: true) == .pass)
+        #expect(route(pane()) == .takeBack(0))
+        let began = p.beginTakeBack(at: 10, ownerCanCome: true)
+        #expect(began)
+        p.holdKey("A")
+        #expect(route(pane(awaiting: p.isAwaitingOwner)) == .hold(0))
+        p.holdKey("B")
+        // Settled: remoteOwned false. The phase alone routes the key.
+        #expect(route(pane(remote: false, awaiting: p.isAwaitingOwner)) == .hold(0))
+        p.holdKey("C")
+        let ready = p.surfaceCurrent(acceptsInput: true)
+        #expect(ready)
+        // Until the delivery has run, a key still queues behind.
+        #expect(route(pane(remote: false, awaiting: p.isAwaitingOwner)) == .hold(0))
+        p.holdKey("D")
+        let keys = p.deliverHeldKeys()
+        #expect(keys == ["A", "B", "C", "D"])
+        #expect(p.phase == .normal)
+        // Afterwards keys go to the owner surface directly.
+        #expect(route(pane(remote: false, awaiting: p.isAwaitingOwner)) == .pass)
     }
 
-    @Test func aViewSurfaceKeepsTheKeysOfAPendingTakeBack() {
-        var p = PaneInput<String>()
-        _ = p.beginTakeBack(at: 10, ownerCanCome: true)
-        p.hold("A", at: 10)
-        // A re-created view comes first (the owner swap follows).
-        let r4 = p.surfaceCurrent(acceptsInput: false, now: 10.1)
-        #expect(r4 == [])
-        let r5 = p.surfaceCurrent(acceptsInput: true, now: 10.3)
-        #expect(r5 == ["A"])
-    }
-
-    @Test func aViewSurfaceDropsHeldClicksWithoutATakeBack() {
-        // An active tile's clicks were held for a read-write surface that
-        // did not come: dropped, as before.
-        var p = PaneInput<String>()
-        p.hold("click", at: 10)
-        let r6 = p.surfaceCurrent(acceptsInput: false, now: 10.1)
-        #expect(r6 == [])
-        let r7 = p.surfaceCurrent(acceptsInput: true, now: 10.2)
-        #expect(r7 == [])
-    }
-
-    @Test func settledTakeBackStillDeliversToTheSwappingOwner() {
-        // The daemon saw the owner attach before the swap finished.
+    @Test func aViewSurfaceWhileAwaitingChangesNothing() {
         var p = PaneInput<String>()
         _ = p.beginTakeBack(at: 10, ownerCanCome: true)
-        p.hold("A", at: 10)
-        p.takeBackSettled()
-        #expect(!p.isTakingBack)
-        let r8 = p.surfaceCurrent(acceptsInput: true, now: 10.4)
-        #expect(r8 == ["A"])
+        p.holdKey("A")
+        let view = p.surfaceCurrent(acceptsInput: false) // a re-created view
+        #expect(!view)
+        #expect(p.isAwaitingOwner && p.heldKeyCount == 1)
+        _ = p.surfaceCurrent(acceptsInput: true)
+        let keys = p.deliverHeldKeys()
+        #expect(keys == ["A"])
     }
 
-    @Test func anUnsettledTakeBackRunsOutAndDropsItsKeys() {
+    @Test func anOwnerReplacedByAViewBeforeDeliveryKeepsTheKeys() {
+        var p = PaneInput<String>()
+        _ = p.beginTakeBack(at: 10, ownerCanCome: true)
+        p.holdKey("A")
+        _ = p.surfaceCurrent(acceptsInput: true)
+        _ = p.surfaceCurrent(acceptsInput: false)
+        let none = p.deliverHeldKeys()
+        #expect(none.isEmpty)
+        #expect(p.isAwaitingOwner && p.heldKeyCount == 1)
+    }
+
+    @Test func noTakeBackBeginsWhenNoOwnerSurfaceCanCome() {
+        var p = PaneInput<String>()
+        #expect(route(pane(), canCome: false) == .pass)
+        let began = p.beginTakeBack(at: 10, ownerCanCome: false)
+        #expect(!began)
+        #expect(p.phase == .normal)
+        let held = p.holdKey("A")
+        #expect(!held)
+    }
+
+    @Test func anOwnerThatCanNoLongerComeEndsTheTakeBackAndPassesTheKey() {
+        // The window went away mid-take-back: the next key ends it at once
+        // and goes on as before the feature; the held keys are dropped.
+        var p = PaneInput<String>()
+        _ = p.beginTakeBack(at: 10, ownerCanCome: true)
+        p.holdKey("A")
+        #expect(route(pane(awaiting: true), canCome: false) == .cancel(0))
+        p.endTakeBack()
+        #expect(p.phase == .normal && p.heldKeyCount == 0)
+        let none = p.deliverHeldKeys()
+        #expect(none.isEmpty)
+    }
+
+    @Test func theTimeoutEndsTheTakeBackAndDropsItsKeys() {
         var p = PaneInput<String>()
         _ = p.beginTakeBack(at: 100, ownerCanCome: true)
-        p.hold("A", at: 100)
-        let r9 = p.expireTakeBack(now: 100 + SizeOwner.takeBackTimeout - 0.1)
-        #expect(!r9)
-        #expect(p.isTakingBack)
-        let r10 = p.expireTakeBack(now: 100 + SizeOwner.takeBackTimeout)
-        #expect(r10)
-        #expect(!p.isTakingBack && p.heldCount == 0)
-        // A second expiry (an older timer) changes nothing.
-        let r11 = p.expireTakeBack(now: 200)
-        #expect(!r11)
+        p.holdKey("A")
+        let early = p.expireTakeBack(now: 100 + SizeOwner.takeBackTimeout - 0.1)
+        #expect(!early && p.isAwaitingOwner)
+        let due = p.expireTakeBack(now: 100 + SizeOwner.takeBackTimeout)
+        #expect(due && p.phase == .normal && p.heldKeyCount == 0)
+        let again = p.expireTakeBack(now: 200) // an older timer
+        #expect(!again)
     }
 
-    @Test func staleAndOverflowingEventsAreDropped() {
-        var p = PaneInput<String>(capacity: 2, maxAge: 1.5)
-        _ = p.beginTakeBack(at: 10, ownerCanCome: true)
-        p.hold("old", at: 10)
-        p.hold("new", at: 11.5)
-        p.hold("over", at: 11.6) // beyond capacity
-        let r12 = p.surfaceCurrent(acceptsInput: true, now: 12)
-        #expect(r12 == ["new"])
+    @Test func heldKeysHaveNoAgeLimitWithinTheTimeout() {
+        // A slow attach (over the clicks' 1.5 s) still delivers every key.
+        var p = PaneInput<String>()
+        _ = p.beginTakeBack(at: 0, ownerCanCome: true)
+        p.holdKey("A")
+        let notYet = p.expireTakeBack(now: 4)
+        #expect(!notYet)
+        _ = p.surfaceCurrent(acceptsInput: true)
+        let keys = p.deliverHeldKeys()
+        #expect(keys == ["A"])
+    }
+
+    @Test func pastCapacityTheNewestKeysAreDropped() {
+        var p = PaneInput<String>(keyCapacity: 2)
+        _ = p.beginTakeBack(at: 0, ownerCanCome: true)
+        let a = p.holdKey("A"), b = p.holdKey("B"), c = p.holdKey("C")
+        #expect(a && b && !c)
+        _ = p.surfaceCurrent(acceptsInput: true)
+        let keys = p.deliverHeldKeys()
+        #expect(keys == ["A", "B"])
+    }
+
+    @Test func clicksKeepTheirAgeRuleAndAreUntouchedByTakeBack() {
+        var p = PaneInput<String>()
+        p.holdClick("old", at: 10)
+        p.holdClick("new", at: 11.5)
+        let ready = p.surfaceCurrent(acceptsInput: true) // normal: no delivery
+        #expect(!ready)
+        let clicks = p.drainClicks(now: 12)
+        #expect(clicks == ["new"])
     }
 }

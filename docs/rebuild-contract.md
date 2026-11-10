@@ -1574,13 +1574,17 @@ size, perhaps from this one), every local pane of that agent is a view
 <sizeOwnerName>" ("On another device" without a name) or "On <the agent's
 Mac>". On the agent's own Mac `sizeOwnerHost` is its own owner and
 changes nothing. A keystroke that would type into the agent makes
-that pane the owner at once (latest owner wins; that key and any typed
-meanwhile are held, in order, for the owner surface however it becomes
-current). While no owner surface can come (no window, too narrow, the
-agent not running) a key takes nothing back and goes on as usual. A click only
+that pane the owner at once (latest owner wins) and puts it in an
+"awaiting owner" phase: every typing key aimed at it is held, in order,
+whatever hesperd reports meanwhile, until its owner surface takes input;
+then the held keys go to it, on the next turn of the main loop, and the
+phase ends. A view surface in between changes nothing. The phase also
+ends, dropping the held keys, after 5 s, when the owner surface can no
+longer come (window gone, too narrow, the agent not running: a key then
+goes on as usual) or when another device takes the size. While no owner
+surface can come, a key takes nothing back. A click only
 focuses (selecting text, activating the window) and leaves the size with
-the other device. If the daemon has not reported the new owner after
-5 s (the owner attach failed), the pane is a view again. Keys aimed at another control leave that control's input and
+the other device. Keys aimed at another control leave that control's input and
 size ownership alone. A read-only focus pane keeps keyboard focus on its
 focus view until the owner surface is ready. hesperd then clears
 `sizeOwner` and the rule above applies again (debounced). A daemon that

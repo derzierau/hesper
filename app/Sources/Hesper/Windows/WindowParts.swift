@@ -168,8 +168,12 @@ final class SizeOwnership {
     /// A closed agent's id may linger; it only costs that walk.
     private var remoteOwned: Set<String> = []
     private var applyQueued = false
-    /// This Mac's machine id as last re-read (localMachineChanged).
+    /// This Mac's machine id as last re-read (helloReceived).
     private var localMachine: String?
+    /// Terminals that began a take-back: the key monitor must reach them
+    /// while they await their owner surface, even once no agent is sized
+    /// elsewhere any more (the daemon settled it).
+    private let awaiting = NSHashTable<AgentTerminal>.weakObjects()
 
     init() {
         // Fit to iPhone: a keystroke in a pane whose agent's size another
@@ -262,18 +266,20 @@ final class SizeOwnership {
         }
     }
 
-    /// hesperd's hello named this Mac (`id`). Only when that id really
-    /// changed (SizeOwner.localMachineChanged) may an agent's
-    /// `sizeOwnerHost` read differently, with no agent change to say so:
-    /// every terminal is re-read once the event has been applied. A
-    /// reconnect with the same id does nothing.
-    func localMachineChanged(_ id: String?) {
-        guard SizeOwner.localMachineChanged(old: localMachine, new: id) else { return }
-        localMachine = id
+    /// hesperd's hello named this Mac (`id`), on every connect. An agent's
+    /// `sizeOwnerHost` may read differently with no agent change to say so
+    /// (AgentTerminal.update() compares old and new under the same id), so
+    /// every terminal is re-read once the event has been applied; ownership
+    /// is applied again only if the id really changed
+    /// (SizeOwner.localMachineChanged) or a terminal's reading did.
+    func helloReceived(_ id: String?) {
+        let idChanged = SizeOwner.localMachineChanged(old: localMachine, new: id)
+        if idChanged { localMachine = id }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            let before = self.remoteOwned
             for t in self.terminals() { self.noteRemoteOwned(t) }
-            self.apply()
+            if idChanged || self.remoteOwned != before { self.apply() }
         }
     }
 
@@ -286,13 +292,17 @@ final class SizeOwnership {
     /// latest owner wins; SizeOwner.keyTakeBack). True: the key is held for
     /// that pane's owner surface (replayed in order once it takes input).
     private func takeBack(_ e: NSEvent) -> Bool {
-        guard !remoteOwned.isEmpty, let w = e.window, isOurs(w) else { return false }
+        if remoteOwned.isEmpty {
+            for t in awaiting.allObjects where !t.takingSizeBack { awaiting.remove(t) }
+            guard awaiting.count > 0 else { return false }
+        }
+        guard let w = e.window, isOurs(w) else { return false }
         // An owner change still waiting for applySoon(): apply it now, so
         // the key is judged on panes that already follow it. Safe here: the
         // key monitor runs from the event loop, never inside the agent
         // fan-out that applySoon() keeps apply() out of.
         if applyQueued { applyQueued = false; apply() }
-        let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && $0.remoteOwned }
+        let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && ($0.remoteOwned || $0.takingSizeBack) }
         guard !ts.isEmpty else { return false }
         let responder = w.firstResponder
         let targeted = ts.map { t in
@@ -310,21 +320,26 @@ final class SizeOwnership {
                                 readWrite: t.readWrite, remoteOwned: t.remoteOwned, takingBack: t.takingSizeBack)
         }
         let types = w.isKeyWindow && TerminalKeys.bytes(KeyChord(event: e), characters: e.characters) != nil
-        switch SizeOwner.keyTakeBack(cs, targeted: targeted, ownerReady: ts.map(\.ownerReady), ownerCanCome: ts.map(\.ownerCanCome), typesIntoAgent: types) {
+        switch SizeOwner.keyRoute(cs, targeted: targeted, ownerCanCome: ts.map(\.ownerCanCome), typesIntoAgent: types) {
         case .pass:
             return false
         case .hold(let i):
-            ts[i].hold(e)
+            // Awaiting its owner surface: queued behind the earlier keys,
+            // whatever the daemon reports meanwhile (PaneInput).
+            ts[i].holdKey(e)
             return true
+        case .cancel(let i):
+            // Its owner surface can no longer come: called off, and the key
+            // goes on as without the feature.
+            ts[i].endTakeBack()
+            apply()
+            return false
         case .takeBack(let i):
             let t = ts[i]
             guard t.beginTakeBack() else { return false }
+            awaiting.add(t)
             apply()
-            // Held even if no owner surface started (no window, link down):
-            // passed on, the key would reach the view or FocusView and be
-            // lost. HeldInput drops it after its max age, as the later keys
-            // held behind it (.hold).
-            t.hold(e)
+            t.holdKey(e)
             DispatchQueue.main.asyncAfter(deadline: .now() + SizeOwner.takeBackTimeout) { [weak self, weak t] in
                 guard let self, let t, t.expireTakeBack() else { return }
                 self.apply()

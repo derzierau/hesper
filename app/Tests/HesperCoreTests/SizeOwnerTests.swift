@@ -106,9 +106,8 @@ import Testing
 
     @Test func aKeyTakesBackOnlyTheTerminalItTargets() {
         let cs = [c("a", 1, focus: true, remote: true), c("b", 1, rw: true, remote: true)]
-        let idle = [false, false]
-        func key(_ targeted: [Bool], types: Bool = true) -> SizeOwner.KeyTakeBack {
-            SizeOwner.keyTakeBack(cs, targeted: targeted, ownerReady: idle, ownerCanCome: idle.map { _ in true }, typesIntoAgent: types)
+        func key(_ targeted: [Bool], types: Bool = true) -> SizeOwner.KeyRoute {
+            SizeOwner.keyRoute(cs, targeted: targeted, ownerCanCome: [true, true], typesIntoAgent: types)
         }
         #expect(key([false, false]) == .pass) // another control has focus
         #expect(key([false, true]) == .takeBack(1))
@@ -117,32 +116,7 @@ import Testing
         #expect(key([true, false], types: false) == .pass)
         // A plain tile or a pane whose size is this Mac's: nothing to take.
         let none = [c("a", 1, remote: true), c("b", 1, rw: true)]
-        #expect(SizeOwner.keyTakeBack(none, targeted: [true, true], ownerReady: idle, ownerCanCome: idle.map { _ in true }, typesIntoAgent: true) == .pass)
-    }
-
-    @Test func keysWaitWhileTheOwnerSurfaceSwapsIn() {
-        let cs = [c("a", 1, focus: true, remote: true, takingBack: true)]
-        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [false], ownerCanCome: [true], typesIntoAgent: true) == .hold(0))
-        // Swapped in: the key reaches the owner surface on its own.
-        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [true], ownerCanCome: [true], typesIntoAgent: true) == .pass)
-    }
-
-    @Test func everyKeyOfAPendingTakeBackIsHeldInOrder() {
-        // The first key takes the size back and is held; the owner surface
-        // has not started (no window, too narrow, link down). Later keys
-        // must not slip past it to the read-only view: all are held, and
-        // replayed in order once the owner takes input.
-        var cs = [c("a", 1, focus: true, remote: true)]
-        var held: [Int] = []
-        for key in 1...3 {
-            switch SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [false], ownerCanCome: [true], typesIntoAgent: true) {
-            case .takeBack(let i): cs[i].takingBack = true; held.append(key)
-            case .hold: held.append(key)
-            case .pass: Issue.record("key \(key) passed to the view")
-            }
-        }
-        #expect(held == [1, 2, 3])
-        #expect(SizeOwner.keyTakeBack(cs, targeted: [true], ownerReady: [true], ownerCanCome: [true], typesIntoAgent: true) == .pass)
+        #expect(SizeOwner.keyRoute(none, targeted: [true, true], ownerCanCome: [true, true], typesIntoAgent: true) == .pass)
     }
 
     @Test func focusHandOffOnlyWhileTheFeatureIsInPlay() {
@@ -227,17 +201,18 @@ import Testing
         a.sizeOwnerHost = true
         // Mac B types: its owner attach clears the host owner, and Mac B's
         // take-back gives way to the normal rule (it owns in its key window).
-        #expect(!SizeOwner.keepsTakeBack(old: SizeOwner.owner(a, local: false), new: nil))
+        #expect(!SizeOwner.endsTakeBack(old: SizeOwner.owner(a, local: false), new: nil))
     }
 
-    @Test func aTakeBackLastsWhileTheSameRemoteOwnerIsShown() {
-        // Kept until the daemon reports a change (it clears sizeOwner once
-        // the Mac's owner attach lands); a new remote owner starts over.
-        #expect(SizeOwner.keepsTakeBack(old: "dev-1", new: "dev-1"))
-        #expect(!SizeOwner.keepsTakeBack(old: "dev-1", new: nil))
-        #expect(!SizeOwner.keepsTakeBack(old: "dev-1", new: ""))
-        #expect(!SizeOwner.keepsTakeBack(old: "dev-1", new: "dev-2"))
-        #expect(!SizeOwner.keepsTakeBack(old: nil, new: "dev-1"))
+    @Test func aTakeBackEndsOnlyWhenAnotherDeviceTakesOver() {
+        #expect(!SizeOwner.endsTakeBack(old: "dev-1", new: "dev-1"))
+        // Settled (the daemon saw this pane's owner attach): it still awaits
+        // its owner surface (PaneInput).
+        #expect(!SizeOwner.endsTakeBack(old: "dev-1", new: nil))
+        #expect(!SizeOwner.endsTakeBack(old: "dev-1", new: ""))
+        // Another device took over: the take-back is over.
+        #expect(SizeOwner.endsTakeBack(old: "dev-1", new: "dev-2"))
+        #expect(SizeOwner.endsTakeBack(old: nil, new: "dev-1"))
     }
 
     @Test func aSizeHandedBackToAnEarlierOwnerIsFollowed() {
@@ -249,7 +224,7 @@ import Testing
         a.sizeOwner = "dev-1" // back to another still-attached device
         let earlier = SizeOwner.owner(a, local: false)
         #expect(newer != earlier) // a change: the window layer re-decides
-        #expect(!SizeOwner.keepsTakeBack(old: newer, new: earlier))
+        #expect(SizeOwner.endsTakeBack(old: newer, new: earlier))
         #expect(SizeOwner.remoteOwned(a, local: false)) // panes stay views
         // Back to this Mac: behind a controller all fields are absent, on
         // the agent's own Mac sizeOwnerHost names this Mac. Either way no
@@ -258,7 +233,7 @@ import Testing
         #expect(SizeOwner.owner(a, local: false) == nil)
         a.sizeOwnerHost = true
         #expect(SizeOwner.owner(a, local: true) == nil)
-        #expect(!SizeOwner.keepsTakeBack(old: earlier, new: nil))
+        #expect(!SizeOwner.endsTakeBack(old: earlier, new: nil))
     }
 
     @Test func aHostThatNeverSendsOwnerFieldsKeepsTheOldRule() {
@@ -271,7 +246,7 @@ import Testing
         }
         let cs = [c("a", 1, focus: true), c("a", 2, focus: true), c("b", 1, rw: true)]
         #expect(SizeOwner.owners(cs, ownerWindow: 1) == [true, false, true])
-        #expect(SizeOwner.keyTakeBack(cs, targeted: [true, true, true], ownerReady: [false, false, false], ownerCanCome: [true, true, true], typesIntoAgent: true) == .pass)
+        #expect(SizeOwner.keyRoute(cs, targeted: [true, true, true], ownerCanCome: [true, true, true], typesIntoAgent: true) == .pass)
     }
 
     @Test func badgeNamesTheDevice() {

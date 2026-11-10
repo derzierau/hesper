@@ -60,32 +60,33 @@ public enum SizeOwner {
         return out
     }
 
-    /// What a key does to size ownership.
-    public enum KeyTakeBack: Equatable, Sendable {
-        /// Not a take-back: the key goes on as usual.
+    /// Where a key aimed at a terminal goes (SizeOwnership's key monitor).
+    public enum KeyRoute: Equatable, Sendable {
+        /// On as usual (no take-back involved).
         case pass
-        /// Candidate `i` takes the size back; the key is held for its
-        /// owner surface (dropped after HeldInput's max age if none comes).
+        /// Candidate `i` begins a take-back; the key is held for it.
         case takeBack(Int)
-        /// Candidate `i` is taking the size back and its owner surface does
-        /// not take input yet (swapping in, or not started): the key waits
-        /// for it behind the earlier ones, in order.
+        /// Candidate `i` awaits its owner surface: the key is held, behind
+        /// the earlier ones.
         case hold(Int)
+        /// Candidate `i` awaits an owner surface that can no longer come:
+        /// the take-back ends at once and the key goes on as usual.
+        case cancel(Int)
     }
 
-    /// A key takes the size back only if it would type into the agent
-    /// (`typesIntoAgent`) and only for the read-write terminal it reaches
-    /// (`targeted`; a focused control outside the terminal has none). A
-    /// click never does: it only focuses (selecting text, activating the
-    /// window). No take-back starts while no owner surface can come
-    /// (`ownerCanCome`: no window, too narrow, not attachable): the key goes
-    /// on as without the feature. Once taken back, every key waits until
-    /// the owner surface takes input (`ownerReady`) and then goes to it
-    /// directly, so none reaches the read-only view and the order stays.
-    public static func keyTakeBack(_ cs: [Candidate], targeted: [Bool], ownerReady: [Bool], ownerCanCome: [Bool], typesIntoAgent: Bool) -> KeyTakeBack {
-        guard typesIntoAgent, cs.count == targeted.count, cs.count == ownerReady.count, cs.count == ownerCanCome.count,
-              let i = cs.indices.first(where: { targeted[$0] && cs[$0].remoteOwned && cs[$0].readWrite }) else { return .pass }
-        if cs[i].takingBack { return ownerReady[i] ? .pass : .hold(i) }
+    /// Routes a key that would type into the agent (`typesIntoAgent`;
+    /// shortcuts always pass) to the read-write terminal it reaches
+    /// (`targeted`). A terminal awaiting its owner surface (`takingBack`,
+    /// PaneInput.Phase.awaitingOwner) holds every such key whatever the
+    /// daemon's owner fields say now, unless the owner surface can no
+    /// longer come (`ownerCanCome`). Otherwise a terminal another device
+    /// sized begins a take-back, but only if an owner surface can come.
+    /// A click never takes the size back: it only focuses.
+    public static func keyRoute(_ cs: [Candidate], targeted: [Bool], ownerCanCome: [Bool], typesIntoAgent: Bool) -> KeyRoute {
+        guard typesIntoAgent, cs.count == targeted.count, cs.count == ownerCanCome.count,
+              let i = cs.indices.first(where: { targeted[$0] && cs[$0].readWrite && (cs[$0].takingBack || cs[$0].remoteOwned) })
+        else { return .pass }
+        if cs[i].takingBack { return ownerCanCome[i] ? .hold(i) : .cancel(i) }
         return ownerCanCome[i] ? .takeBack(i) : .pass
     }
 
@@ -146,13 +147,13 @@ public enum SizeOwner {
     /// Whether another device owns the agent's PTY size now.
     public static func remoteOwned(_ a: Agent, local: Bool?) -> Bool { owner(a, local: local) != nil }
 
-    /// Whether a pane's take-back still stands after the agent's owner
-    /// (`owner(_:local:)`) went from `old` to `new`: only while the same
-    /// remote owner is shown. Cleared (the daemon saw the Mac's owner
-    /// attach) or a new remote owner: the normal rule again.
-    public static func keepsTakeBack(old: String?, new: String?) -> Bool {
+    /// Whether a pane's take-back ends because the agent's owner
+    /// (`owner(_:local:)`) went from `old` to `new`: only when another
+    /// remote owner took over. The daemon settling it (no other owner)
+    /// does not end it: the pane still awaits its owner surface.
+    public static func endsTakeBack(old: String?, new: String?) -> Bool {
         guard let new, !new.isEmpty else { return false }
-        return old == new
+        return old != new
     }
 
     /// The tile's badge while another device owns the size: its name, the

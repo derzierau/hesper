@@ -79,7 +79,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// Another device owns the size and this pane was typed in: it owns
     /// again at once (SizeOwner); over when the owner changes or the
     /// take-back runs out (PaneInput).
-    var takingSizeBack: Bool { input.isTakingBack }
+    var takingSizeBack: Bool { input.isAwaitingOwner }
     /// An owner surface could come now (what swapMode and createSurface
     /// need): otherwise a key starts no take-back.
     var ownerCanCome: Bool { isAttachable && host.window != nil && host.bounds.width > 4 && host.bounds.height > 4 }
@@ -94,9 +94,6 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     /// Another device owns this agent's size (SizeOwner.remoteOwned).
     var remoteOwned: Bool { sizeOwner(agent) != nil }
     private func sizeOwner(_ a: Agent) -> String? { SizeOwner.owner(a, local: Self.isLocal(a)) }
-    /// The shown surface is the owner and takes input (no swap pending):
-    /// a take-back's held keys can go to it directly.
-    var ownerReady: Bool { prewarm == nil && surface?.acceptsInput == true }
     /// The focus changes of take-back apply (SizeOwner.focusHandOff); off
     /// on a host that never sends an owner field.
     var focusHandOff: Bool { SizeOwner.focusHandOff(remoteOwned: remoteOwned, takingBack: takingSizeBack) }
@@ -110,15 +107,17 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     var interactive = false {
         didSet {
             guard oldValue != interactive, role == .tile else { return }
-            if !interactive { input.clear() }
+            if !interactive {
+                input.clearClicks()
+                input.endTakeBack()
+            }
             swapMode()
         }
     }
     /// Clicks and the wheel for the active tile before its read-write
-    /// surface swapped in (`deliver`), and keys of a size take-back,
-    /// replayed into the next surface that takes input; the take-back's
-    /// state (PaneInput).
-    private var input = PaneInput<NSEvent>(capacity: 128, maxAge: 1.5)
+    /// surface swapped in (`deliver`), replayed into it once it has; and a
+    /// size take-back's phase and held keys (PaneInput).
+    private var input = PaneInput<NSEvent>()
     /// A surface prewarming underneath the shown one (the mode switch).
     private(set) var prewarm: (any TerminalSurface)?
     private var swapGeneration = 0
@@ -158,7 +157,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         }
         let (oldOwner, newOwner) = (sizeOwner(old), sizeOwner(a))
         if oldOwner != newOwner {
-            if !SizeOwner.keepsTakeBack(old: oldOwner, new: newOwner) { input.takeBackSettled() }
+            if SizeOwner.endsTakeBack(old: oldOwner, new: newOwner) { input.endTakeBack() }
             Self.onSizeOwnerChanged?(self)
         }
         // A changed PTY size needs nothing here: a tile's view follows the
@@ -171,6 +170,12 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     }
 
     func layout() {
+        if input.isAwaitingOwner && !ownerCanCome {
+            // Too narrow or out of its window now: the owner surface of the
+            // take-back cannot come, so it ends (the window layer re-decides).
+            input.endTakeBack()
+            Self.onSizeOwnerChanged?(self)
+        }
         guard let surface else {
             if isAttachable && host.bounds.width > 4 && host.bounds.height > 4 { createSurface() }
             return
@@ -188,7 +193,8 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
     }
 
     func close() {
-        input.clear()
+        input.clearClicks()
+        input.endTakeBack()
         prewarm?.close()
         prewarm = nil
         surface?.close()
@@ -247,7 +253,12 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
             if let focus = ancestor { host.window?.makeFirstResponder(focus) }
         }
         surfaceMetricsDidChange(p)
-        for e in input.surfaceCurrent(acceptsInput: p.acceptsInput, now: ProcessInfo.processInfo.systemUptime) { send(e, to: p.view) }
+        if surfaceIsInteractive {
+            for e in input.drainClicks(now: ProcessInfo.processInfo.systemUptime) { send(e, to: p.view) }
+        } else {
+            input.clearClicks()
+        }
+        surfaceBecameCurrent(p)
     }
 
     /// A click or wheel event for the active tile's terminal: at once when
@@ -260,7 +271,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         guard role == .tile, interactive else { return false }
         if surfaceIsInteractive, let s = surface { send(event, to: s.view); return true }
         guard prewarm != nil, prewarmAttach == .owner else { return false }
-        input.hold(event, at: event.timestamp)
+        input.holdClick(event, at: event.timestamp)
         return true
     }
 
@@ -275,9 +286,24 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         }
     }
 
-    /// Holds a key typed while this pane takes the size back, replayed
-    /// into its owner surface once that is current.
-    func hold(_ e: NSEvent) { input.hold(e, at: e.timestamp) }
+    /// Holds a key typed while this pane awaits its owner surface (beyond
+    /// PaneInput's capacity the newest is dropped).
+    func holdKey(_ e: NSEvent) { input.holdKey(e) }
+
+    /// Calls a pending take-back off at once, dropping its keys.
+    func endTakeBack() { input.endTakeBack() }
+
+    /// Every surface that becomes current (finishSwap, createSurface): an
+    /// owner surface ends a pending take-back by getting its held keys, in
+    /// order, on the next main-loop turn (never inside update() or a layout
+    /// pass); keys typed until then still queue behind them (PaneInput).
+    private func surfaceBecameCurrent(_ s: any TerminalSurface) {
+        guard input.surfaceCurrent(acceptsInput: s.acceptsInput) else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let current = self.surface else { return }
+            for e in self.input.deliverHeldKeys() { self.send(e, to: current.view) }
+        }
+    }
 
     /// Starts a size take-back; false when no owner surface can come.
     func beginTakeBack() -> Bool {
@@ -307,11 +333,7 @@ final class AgentTerminal: NSObject, TerminalSurfaceDelegate {
         surfaceAttach = prewarmAttach
         surfaceIsInteractive = role == .tile && interactive && prewarmAttach == .owner
         if surfaceIsInteractive { host.window?.makeFirstResponder(s.view) }
-        // An owner surface made directly (re-created, laid out) gets what
-        // was held for it first, so a later key cannot overtake it.
-        if s.acceptsInput {
-            for e in input.surfaceCurrent(acceptsInput: true, now: ProcessInfo.processInfo.systemUptime) { send(e, to: s.view) }
-        }
+        surfaceBecameCurrent(s)
     }
 
     /// How the last surface made attached.
