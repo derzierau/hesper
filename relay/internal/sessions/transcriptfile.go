@@ -44,6 +44,9 @@ type transcriptFile struct {
 	// IndexKeep after the last. s.mu guards both.
 	refs int
 	idle *time.Timer
+	// dropped: IndexKeep passed with no user and the index was dropped;
+	// its first pass, if still running, stops (s.mu guards it).
+	dropped bool
 }
 
 // openTranscript indexes the transcript at path in one pass (tests).
@@ -349,6 +352,13 @@ var transcriptIndexHook func()
 func (s *Service) transcriptIndex(key, kind, path string) *transcriptFile {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		// Nothing is stored or started after Close: an index that is
+		// ready with the closed error, which no one else shares.
+		f := &transcriptFile{path: path, kind: kind, ready: make(chan struct{}), err: errClosed, refs: 1}
+		close(f.ready)
+		return f
+	}
 	f := s.transcripts[key]
 	if f == nil || f.path != path {
 		f = &transcriptFile{path: path, kind: kind, ready: make(chan struct{})}
@@ -378,14 +388,13 @@ func (s *Service) indexTranscript(key string, f *transcriptFile) {
 		transcriptIndexHook()
 	}
 	pause := func() error {
-		select {
-		case <-s.stop:
-			return errClosed
-		default:
-		}
+		// Both under s.mu, closed first: Close also drops the indexes.
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.transcripts[key] != f {
+		switch {
+		case s.closed:
+			return errClosed
+		case f.dropped:
 			return errIndexDropped
 		}
 		return nil
@@ -418,6 +427,7 @@ func (s *Service) releaseTranscript(key string, f *transcriptFile) {
 		defer s.mu.Unlock()
 		if f.idle == t && f.refs == 0 && s.transcripts[key] == f {
 			delete(s.transcripts, key)
+			f.dropped = true
 		}
 	})
 	f.idle = t

@@ -311,6 +311,57 @@ func TestTranscriptIndexStopsOnClose(t *testing.T) {
 	}
 }
 
+// An index replaced in the map (the transcript moved) still finishes its
+// first pass for the users waiting on it: only IndexKeep with no user
+// drops it.
+func TestTranscriptIndexReplacedKeepsPass(t *testing.T) {
+	texts := make([]string, 3000)
+	for i := range texts {
+		texts[i] = strings.Repeat("x", 1024)
+	}
+	s, a, path, _ := followEnv(t, texts...)
+	oldHook := transcriptIndexHook
+	t.Cleanup(func() { transcriptIndexHook = oldHook })
+	release := make(chan struct{})
+	transcriptIndexHook = func() { <-release }
+	key := a.Kind + ":" + a.SessionID
+	old := s.transcriptIndex(key, a.Kind, path)
+	defer s.releaseTranscript(key, old)
+	moved := s.transcriptIndex(key, a.Kind, path+".moved")
+	defer s.releaseTranscript(key, moved)
+	close(release)
+	select {
+	case <-old.ready:
+	case <-time.After(itemWait):
+		t.Fatal("first pass still running")
+	}
+	if old.err != nil {
+		t.Fatalf("replaced index's first pass: %v", old.err)
+	}
+}
+
+// After Close no index is made: the closed error, and nothing kept.
+func TestTranscriptAfterClose(t *testing.T) {
+	s, a, path, _ := followEnv(t, "one")
+	s.Close()
+	key := a.Kind + ":" + a.SessionID
+	f := s.transcriptIndex(key, a.Kind, path)
+	select {
+	case <-f.ready:
+	default:
+		t.Fatal("index after Close is not ready at once")
+	}
+	if !errors.Is(f.err, errClosed) {
+		t.Fatalf("index after Close: %v, want errClosed", f.err)
+	}
+	s.releaseTranscript(key, f)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.transcripts) != 0 {
+		t.Fatalf("%d indexes after Close", len(s.transcripts))
+	}
+}
+
 // The index outlives its last user by IndexKeep: a later page reuses
 // it; after IndexKeep it is gone.
 func TestTranscriptIndexKeep(t *testing.T) {
