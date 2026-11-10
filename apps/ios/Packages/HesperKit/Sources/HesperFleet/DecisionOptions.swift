@@ -66,7 +66,7 @@ public enum DecisionOptions {
         let labelled: [(String, Bool, DecisionAction)]
         switch a.state {
         case .approval:
-            labelled = [("Yes", false, .allow), ("No…", true, .denyWithMessage)]
+            labelled = [(needsConfirmation(a, .allow) ? "Yes…" : "Yes", false, .allow), ("No…", true, .denyWithMessage)]
         case .question:
             let choices = AgentCopy.choices(a)
             var list = choices.prefix(2).map { ($0.title, false, DecisionAction.choose($0.number)) }

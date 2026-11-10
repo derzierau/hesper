@@ -17,6 +17,8 @@ import Testing
         // HIG: an ellipsis promises more input; a plain Yes sends at once.
         #expect(DecisionOptions.rows(for: Samples.fleet.agents["mini/m1"]!).first?.label == "Yes…")
         #expect(DecisionOptions.rows(for: Samples.fleet.agents["studio/s1"]!).first?.label == "Yes")
+        #expect(DecisionOptions.gridActions(for: Samples.fleet.agents["mini/m1"]!).first?.label == "Yes…")
+        #expect(DecisionOptions.gridActions(for: Samples.fleet.agents["studio/s1"]!).first?.label == "Yes")
     }
 
     @Test func questionRowsAreItsChoicesNumbered() {
