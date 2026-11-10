@@ -297,12 +297,23 @@ import Testing
         var stalled = stream.frames.makeAsyncIterator()
         #expect(await stalled.next() == .size(cols: 80, rows: 24))
 
-        for i in 0..<17 {
-            stream.receive(Self.inner(0, Data([UInt8(i)])))
+        // A burst of many small frames is not an overflow: the bound is
+        // bytes, and one payload's data frames arrive as one.
+        for i in 0..<1000 {
+            stream.receive(Self.inner(0, Data([UInt8(i & 0xff)])) + Self.inner(0, Data([1])))
+        }
+        #expect(closed.withLock { $0.isEmpty })
+        // Past the byte bound the attach closes, holding no more than it.
+        let chunk = Data(repeating: 0x61, count: AttachChannel.maxQueuedDataFrame)
+        for _ in 0...(AttachChannel.maxQueuedBytes / chunk.count) {
+            stream.receive(Self.inner(0, chunk))
         }
         try #require(closed.withLock { $0 == [7] })
         let queued = await Self.all(stream)
-        #expect(queued == (0..<16).map { .data(Data([UInt8($0)])) })
+        let small: [AttachFrame] = (0..<1000).map { .data(Data([UInt8($0 & 0xff), 1])) }
+        #expect(Array(queued.prefix(1000)) == small)
+        let bytes = queued.reduce(0) { $0 + $1.queuedBytes }
+        #expect(bytes <= AttachChannel.maxQueuedBytes)
 
         let reopened = AttachChannel(id: 8) { id in closed.withLock { $0.append(id) } }
         reopened.receive(Data(#"{"ok":true,"cols":90,"rows":30}"#.utf8) + Data([10]) + Self.inner(0, Data("fresh".utf8)))
@@ -331,8 +342,10 @@ import Testing
         defer { withExtendedLifetime(updates) {} }
         let stream = try await link.attach(agent: "M/a1", cols: 80, rows: 24)
         let first = try #require((stream as? AttachChannel)?.id)
-        for i in 0..<17 {
-            host.push(kind: Self.d, channel: first, Self.inner(0, Data([UInt8(i)])))
+        // Link payloads hold at most 1 MiB: 17 full ones pass the bound.
+        let full = Data(repeating: 0x61, count: LinkFrames.maxPayload - 5)
+        for _ in 0..<17 {
+            host.push(kind: Self.d, channel: first, Self.inner(0, full))
         }
         let close = LinkFrames.Frame(kind: Self.x, channel: first, payload: Data())
         for _ in 0..<200 {
@@ -341,7 +354,6 @@ import Testing
         }
         try #require(host.received.contains(close))
         let queued = await Self.all(stream)
-        #expect(queued.count == 16)
         #expect(queued.prefix(2) == [.size(cols: 97, rows: 56), .data(Data("hi".utf8))])
 
         let again = try await link.attach(agent: "M/a1", cols: 80, rows: 24)

@@ -390,8 +390,10 @@ the app backgrounds. On return, the first frame is a full redraw, about
 costs well under 1% of a core. Rows update at most at the display rate,
 coalesced per agent.
 
-The phone buffers at most sixteen terminal frames of up to 256 KiB each
-while the renderer catches up. If it falls further behind, it closes only
+The phone buffers up to 16 MiB of terminal output while the renderer
+catches up, joining a payload's adjacent data frames into one, so a burst
+of small frames or a full history replay never counts as falling behind.
+If it falls further behind than that, it closes only
 that attach. The terminal shows Reconnecting, opens a new attach and takes
 the Mac's full redraw; it never continues drawing a stream with missing
 bytes. Other attaches and the Mac's link keep reading.

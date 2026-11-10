@@ -116,12 +116,22 @@ public struct AttachDecoder: Sendable {
     }
 }
 
+extension AttachFrame {
+    /// The bytes this frame holds in an attach's queue.
+    var queuedBytes: Int {
+        if case .data(let bytes) = self { return bytes.count }
+        return 0
+    }
+}
+
 /// One attach on a channel of a host's link. The link's reader feeds it;
 /// `resize` sends RESIZE, `write` typed bytes, `close()` sends `X` and
 /// ends the stream.
 public final class AttachChannel: AttachStream {
-    /// At most 4 MiB of terminal data waits for a slow renderer.
-    static let maxQueuedFrames = 16, maxQueuedDataFrame = 256 << 10
+    /// At most 16 MiB of terminal data waits for a slow renderer (a full
+    /// history replay is a few MiB), in chunks of at most 256 KiB. The
+    /// frame count bound only guards against a flood of tiny frames.
+    static let maxQueuedBytes = 16 << 20, maxQueuedFrames = 1 << 16, maxQueuedDataFrame = 256 << 10
     public let id: UInt32
     public let frames: AsyncStream<AttachFrame>
     private let continuation: AsyncStream<AttachFrame>.Continuation
@@ -136,6 +146,27 @@ public final class AttachChannel: AttachStream {
         var ended = false
     }
     private let state = Mutex(State())
+    private let queue: Queue
+
+    /// The reader's side of the unbounded inner stream, and what waits in
+    /// it: frames and data bytes yielded but not yet taken.
+    private final class Queue: @unchecked Sendable {
+        // Safe: `queued` is a Mutex. Only `frames`' unfolding closure
+        // touches `iterator`, and an AsyncStream calls it for one `next()`
+        // at a time.
+        var iterator: AsyncStream<AttachFrame>.Iterator
+        let queued = Mutex((frames: 0, bytes: 0))
+        init(_ stream: AsyncStream<AttachFrame>) { iterator = stream.makeAsyncIterator() }
+
+        func next() async -> AttachFrame? {
+            guard let f = await iterator.next() else { return nil }
+            queued.withLock { q in
+                q.frames -= 1
+                q.bytes -= f.queuedBytes
+            }
+            return f
+        }
+    }
 
     init(
         id: UInt32, onClose: @escaping @Sendable (UInt32) -> Void,
@@ -146,7 +177,11 @@ public final class AttachChannel: AttachStream {
         self.onClose = onClose
         self.onResize = onResize
         self.onWrite = onWrite
-        (frames, continuation) = AsyncStream.makeStream(of: AttachFrame.self, bufferingPolicy: .bufferingOldest(Self.maxQueuedFrames))
+        let (inner, continuation) = AsyncStream.makeStream(of: AttachFrame.self)
+        let queue = Queue(inner)
+        self.queue = queue
+        self.continuation = continuation
+        frames = AsyncStream { await queue.next() }
     }
 
     /// The payload of one `D` frame for this channel. A malformed stream
@@ -171,7 +206,7 @@ public final class AttachChannel: AttachStream {
                 }
                 resolve(.success(reply))
             }
-            for f in frames {
+            for f in Self.coalesced(frames) {
                 if case .data(let bytes) = f, bytes.count > Self.maxQueuedDataFrame {
                     for start in stride(from: 0, to: bytes.count, by: Self.maxQueuedDataFrame) {
                         let end = min(start + Self.maxQueuedDataFrame, bytes.count)
@@ -188,14 +223,35 @@ public final class AttachChannel: AttachStream {
     /// Dropping any part of a VT stream invalidates its screen. End this
     /// attach so the caller reopens it and receives the Mac's full redraw.
     private func enqueue(_ frame: AttachFrame) -> Bool {
-        switch continuation.yield(frame) {
-        case .enqueued: return true
-        case .dropped:
+        let fits = queue.queued.withLock { q in
+            guard q.frames < Self.maxQueuedFrames, q.bytes + frame.queuedBytes <= Self.maxQueuedBytes else { return false }
+            q.frames += 1
+            q.bytes += frame.queuedBytes
+            return true
+        }
+        guard fits else {
             close(RelayError(code: "overflow", message: "The terminal reader fell behind"))
             return false
-        case .terminated: return false
+        }
+        switch continuation.yield(frame) {
+        case .enqueued: return true
+        case .dropped, .terminated: return false
         @unknown default: return false
         }
+    }
+
+    /// Adjacent data frames of one payload joined into one, so a burst of
+    /// small writes costs the reader one wake-up.
+    static func coalesced(_ frames: [AttachFrame]) -> [AttachFrame] {
+        var out: [AttachFrame] = []
+        for f in frames {
+            if case .data(let more) = f, case .data(let bytes)? = out.last {
+                out[out.count - 1] = .data(bytes + more)
+            } else {
+                out.append(f)
+            }
+        }
+        return out
     }
 
     /// Waits for the reply line; fails when the channel ends first or the
