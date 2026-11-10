@@ -259,7 +259,7 @@ final class SizeOwnership {
         guard !applyQueued else { return }
         applyQueued = true
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.applyQueued else { return }
             self.applyQueued = false
             self.apply()
         }
@@ -290,6 +290,11 @@ final class SizeOwnership {
     /// that pane's owner surface (replayed in order once it takes input).
     private func takeBack(_ e: NSEvent) -> Bool {
         guard !remoteOwned.isEmpty, let w = e.window, isOurs(w) else { return false }
+        // An owner change still waiting for applySoon(): apply it now, so
+        // the key is judged on panes that already follow it. Safe here: the
+        // key monitor runs from the event loop, never inside the agent
+        // fan-out that applySoon() keeps apply() out of.
+        if applyQueued { applyQueued = false; apply() }
         let ts = terminals().filter { $0.host.window === w && !$0.host.isHiddenOrHasHiddenAncestor && $0.remoteOwned }
         guard !ts.isEmpty else { return false }
         let responder = w.firstResponder
