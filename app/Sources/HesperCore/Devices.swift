@@ -74,6 +74,13 @@ public struct Device: Codable, Equatable, Sendable, Identifiable {
 /// The result of devices.list.
 public struct DevicesList: Codable, Equatable, Sendable {
     public var devices: [Device]
+    /// Why the relay could not be asked; the list is then this Mac's files.
+    public var relayUnavailable: String?
+
+    /// The note Settings shows above the list, if any.
+    public var relayNote: String? {
+        relayUnavailable.map { "Showing this Mac's devices only: \($0)." }
+    }
 }
 
 /// devices.list split the way Settings shows it.
@@ -99,23 +106,38 @@ public struct RemoveOutcome: Codable, Equatable, Sendable {
     public var approval: String
     public var trust: String
     public var names: String
+    /// The call asked for this Mac's steps only; not on the wire (set by
+    /// DaemonClient.removeDevice).
+    public var localOnly = false
 
-    public init(relay: String, approval: String, trust: String, names: String) {
-        self.relay = relay; self.approval = approval; self.trust = trust; self.names = names
+    enum CodingKeys: String, CodingKey { case relay, approval, trust, names }
+
+    public init(relay: String, approval: String, trust: String, names: String, localOnly: Bool = false) {
+        self.relay = relay; self.approval = approval; self.trust = trust; self.names = names; self.localOnly = localOnly
     }
 
     static func ok(_ step: String) -> Bool { step == "done" || step == "skipped" }
 
-    /// Every step is done or skipped.
-    public var isComplete: Bool { [relay, approval, trust, names].allSatisfy(Self.ok) }
+    /// Removed from the relay and this Mac: every step done or skipped, and
+    /// the relay was asked.
+    public var isComplete: Bool { !localOnly && [relay, approval, trust, names].allSatisfy(Self.ok) }
 
-    /// The one line Settings shows after a removal: "Removed" when every
-    /// step is done or skipped, else the first step that failed in words.
+    /// The one line Settings shows after a removal, true to each step: the
+    /// relay sign-in already ended when a later local step failed, and a
+    /// local-only removal leaves the device signed in to the relay.
     public var summary: String {
-        let steps = [("the relay", relay), ("this Mac's approvals", approval),
-                     ("this Mac's trusted hosts", trust), ("this Mac's machine names", names)]
-        var line = "Removed"
-        if let (what, err) = steps.first(where: { !Self.ok($0.1) }) { line = "Not removed from \(what): \(err)" }
+        let local = [("this Mac's approvals", approval), ("this Mac's trusted hosts", trust),
+                     ("this Mac's machine names", names)]
+        var line: String
+        if !Self.ok(relay) {
+            line = "Not removed from the relay: \(relay)"
+        } else if let (what, err) = local.first(where: { !Self.ok($0.1) }) {
+            line = relay == "done" ? "Signed out of the relay, but not removed from \(what): \(err)"
+                                   : "Not removed from \(what): \(err)"
+        } else {
+            line = localOnly ? "Removed from this Mac" : "Removed"
+        }
+        if localOnly { line += "; still signed in to the relay" }
         return line
     }
 }

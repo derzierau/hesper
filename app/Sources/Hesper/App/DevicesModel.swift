@@ -27,6 +27,8 @@ final class DevicesModel {
     /// The last removal's result, cleared after `lineSeconds`.
     private(set) var line: Line?
     private(set) var busy: Set<String> = []
+    /// Set when hesperd could not ask the relay: the list is this Mac's.
+    private(set) var relayNote: String?
     private var lineTask: Task<Void, Never>?
     static let lineSeconds: UInt64 = 5
 
@@ -37,7 +39,9 @@ final class DevicesModel {
     func refresh() {
         Task { @MainActor in
             do {
-                state = .loaded(DeviceGroups(try await client.devices()))
+                let list = try await client.devicesList()
+                relayNote = list.relayNote
+                state = .loaded(DeviceGroups(list.devices))
             } catch {
                 let f = DevicesFailure(error)
                 state = f == .unsupportedDaemon ? .unsupported : .failed(f.listText)
@@ -50,7 +54,7 @@ final class DevicesModel {
         guard d.removable, !busy.contains(d.id) else { return }
         let a = NSAlert()
         a.messageText = "Remove “\(d.name)”?"
-        a.informativeText = "It can no longer reach this Mac, this Mac forgets it, and it is signed out of your relay. Pair it again to bring it back."
+        a.informativeText = "It can no longer reach this Mac, this Mac forgets it, and it is signed out of your relay. Other Macs keep their own approval until you remove it there. Pair it again to bring it back."
         a.alertStyle = .warning
         a.addButton(withTitle: "Remove")
         a.addButton(withTitle: "Cancel")

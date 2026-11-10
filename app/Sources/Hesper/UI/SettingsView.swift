@@ -173,6 +173,9 @@ struct SettingsView: View {
         let groups = devices?.groups
         SettingsSection("Machines", footer: groups == nil ? nil : "Remove… takes a Mac off your relay and this Mac in one step.") {
             if let groups {
+                if let note = devices?.relayNote {
+                    Text(note).font(DS.font(.chrome)).foregroundStyle(Theme.dim)
+                }
                 ForEach(groups.macs) { d in
                     let m = model.machines.first { $0.short == d.short }
                     let n = model.registry.agents.values.filter { $0.machine == d.short }.count

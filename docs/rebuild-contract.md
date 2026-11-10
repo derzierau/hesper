@@ -1366,8 +1366,13 @@ it), then "Other sign-ins" (a Mac's controller records that are not
 this Mac's); iPhones are their own list (name, online mark). A trailing
 Remove… shows on hover and asks `Remove “<name>”?` ("It can no longer
 reach this Mac, this Mac forgets it, and it is signed out of your
-relay. Pair it again to bring it back.", Remove / Cancel). The result
-line shows for 5 s: "Removed" or the first step that failed. A relay
+relay. Other Macs keep their own approval until you remove it there.
+Pair it again to bring it back.", Remove / Cancel). The result line
+shows for 5 s: "Removed", "Removed from this Mac; still signed in to
+the relay" after Remove here, or the first step that failed (prefixed
+"Signed out of the relay, but" when the relay step was done). A list
+whose relay could not be asked says "Showing this Mac's devices only:
+<reason>." A relay
 that is down changes nothing ("Not removed: the relay is unreachable.
 Try again later."); a relay too old to revoke asks `Remove here only?`
 and then runs `devices.remove` with `localOnly`. An older hesperd

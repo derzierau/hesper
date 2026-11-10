@@ -232,14 +232,20 @@ public final class DaemonClient: @unchecked Sendable {
 
     /// devices.list: every device of the owner. RPCError -32601 on an
     /// older hesperd (DevicesFailure.unsupportedDaemon).
-    public func devices() async throws -> [Device] {
-        try await call(DevicesRPC.list, nil, timeout: 20).decode(DevicesList.self).devices
+    public func devices() async throws -> [Device] { try await devicesList().devices }
+
+    /// devices.list with relayUnavailable.
+    public func devicesList() async throws -> DevicesList {
+        try await call(DevicesRPC.list, nil, timeout: 20).decode(DevicesList.self)
     }
 
     /// devices.remove: the relay first (unless `localOnly`), then this
-    /// Mac's files.
+    /// Mac's files. hesperd gives it 30 s; waiting longer keeps a removal
+    /// that finishes at its deadline from reading as failed.
     public func removeDevice(_ id: String, localOnly: Bool = false) async throws -> RemoveOutcome {
-        try await call(DevicesRPC.remove, DevicesRPC.removeParams(id, localOnly: localOnly), timeout: 30).decode(RemoveOutcome.self)
+        var o = try await call(DevicesRPC.remove, DevicesRPC.removeParams(id, localOnly: localOnly), timeout: 40).decode(RemoveOutcome.self)
+        o.localOnly = localOnly
+        return o
     }
 
     /// A spawn that brings its folder first waits like a move (transfer).

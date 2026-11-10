@@ -41,9 +41,25 @@ let devicesListJSON: JSONValue = ["devices": [
         let r = RemoveOutcome(relay: "relay: not_found", approval: "done", trust: "write trusted-hosts.json: denied", names: "done")
         #expect(r.summary == "Not removed from the relay: relay: not_found")
         let t = RemoveOutcome(relay: "done", approval: "done", trust: "write trusted-hosts.json: denied", names: "done")
-        #expect(t.summary == "Not removed from this Mac's trusted hosts: write trusted-hosts.json: denied")
+        #expect(t.summary == "Signed out of the relay, but not removed from this Mac's trusted hosts: write trusted-hosts.json: denied")
+        let u = RemoveOutcome(relay: "skipped", approval: "done", trust: "write trusted-hosts.json: denied", names: "done")
+        #expect(u.summary == "Not removed from this Mac's trusted hosts: write trusted-hosts.json: denied")
         #expect(!r.isComplete && !t.isComplete)
         #expect(RemoveOutcome(relay: "skipped", approval: "done", trust: "skipped", names: "done").isComplete)
+    }
+
+    @Test func outcomeLocalOnly() {
+        let o = RemoveOutcome(relay: "skipped", approval: "done", trust: "done", names: "done", localOnly: true)
+        #expect(!o.isComplete)
+        #expect(o.summary == "Removed from this Mac; still signed in to the relay")
+        let f = RemoveOutcome(relay: "skipped", approval: "denied", trust: "done", names: "done", localOnly: true)
+        #expect(f.summary == "Not removed from this Mac's approvals: denied; still signed in to the relay")
+    }
+
+    @Test func listRelayNote() throws {
+        let l = try JSONValue.object(["devices": .array([]), "relayUnavailable": "the relay is unreachable"]).decode(DevicesList.self)
+        #expect(l.relayNote == "Showing this Mac's devices only: the relay is unreachable.")
+        #expect(try JSONValue.object(["devices": .array([])]).decode(DevicesList.self).relayNote == nil)
     }
 
     @Test func listFailureText() {

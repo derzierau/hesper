@@ -237,7 +237,7 @@ private func collect(_ client: DaemonClient, until: @escaping ([DaemonEvent]) ->
         let list = try await client.devices()
         #expect(list.map(\.id) == ["host-self", "ctl-self", "host-b", "ctl-old", "phone-a"])
         let out = try await client.removeDevice("host-b", localOnly: true)
-        #expect(out.summary == "Removed")
+        #expect(out.summary == "Removed from this Mac; still signed in to the relay")
         let sent = server.received.last { $0["method"]?.stringValue == DevicesRPC.remove }
         #expect(sent?["params"] == ["deviceId": "host-b", "localOnly": true])
         client.stop()
