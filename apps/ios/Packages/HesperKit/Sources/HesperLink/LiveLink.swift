@@ -150,8 +150,7 @@ public final class LiveLink: LinkClient {
 
     public func perform(_ command: LinkCommand) async throws {
         let (machine, method, params) = try Self.request(for: command)
-        let channel = state.withLock { s in s.ids[machine].flatMap { s.channels[$0] } }
-        guard let channel else { throw RelayError(code: "unavailable", message: "\(machine) is not connected") }
+        guard let channel = channel(on: machine) else { throw RelayError(code: "unavailable", message: "\(machine) is not connected") }
         let strong: Bool
         if case .spawn(let r) = command { strong = r.kind == "shell" } else { strong = false }
         let result = try await channel.call(method, params: params, strong: strong)
