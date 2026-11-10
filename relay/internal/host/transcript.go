@@ -74,6 +74,16 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 	if link == nil || link.device != m.ControllerID {
 		return nil, protocol.Err("not_found", "No such link")
 	}
+	// Subscribed before the agent is read, so a new session id (/clear)
+	// or a removal after the read is seen; the goroutine below owns sub
+	// once the channel is registered.
+	sub := s.Agents.Subscribe()
+	owned := false
+	defer func() {
+		if !owned {
+			s.Agents.Unsubscribe(sub)
+		}
+	}()
 	a, err := s.agent(ctx, p.ID)
 	if err != nil {
 		return nil, err
@@ -99,9 +109,7 @@ func (s *Service) transcriptStream(ctx context.Context, m protocol.Message) (jso
 	link.chans[p.Ch] = c
 	link.mu.Unlock()
 	follow, stop := context.WithCancel(link.ctx)
-	// Subscribed before the goroutine runs, so a removal right after the
-	// reply is not missed.
-	sub := s.Agents.Subscribe()
+	owned = true
 	go func() {
 		// The channel's end: the controller's X, the agent's removal or
 		// new session.
