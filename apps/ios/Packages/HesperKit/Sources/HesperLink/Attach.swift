@@ -198,15 +198,20 @@ public final class AttachChannel: AttachStream {
         }
     }
 
-    /// Waits for the reply line; fails when the channel ends first.
+    /// Waits for the reply line; fails when the channel ends first or the
+    /// caller is cancelled (which ends the channel).
     func reply() async throws -> AttachReply {
-        try await withCheckedThrowingContinuation { c in
-            let ready = state.withLock { s -> Result<AttachReply, RelayError>? in
-                if let r = s.reply { return r }
-                s.waiter = c
-                return nil
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { c in
+                let ready = state.withLock { s -> Result<AttachReply, RelayError>? in
+                    if let r = s.reply { return r }
+                    s.waiter = c
+                    return nil
+                }
+                if let ready { c.resume(with: ready) }
             }
-            if let ready { c.resume(with: ready) }
+        } onCancel: {
+            end(RelayError(code: "cancelled", message: "The attach was cancelled"))
         }
     }
 

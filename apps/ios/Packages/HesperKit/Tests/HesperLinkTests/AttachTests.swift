@@ -197,6 +197,34 @@ import Testing
         #expect(host.received == want)
     }
 
+    @Test func aCancelledAttachClosesItsChannelOnTheMac() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        host.state.withLock { $0.silentAttach = true }
+        let (link, updates) = try await Self.linked(host)
+        defer { withExtendedLifetime(updates) {} }
+        let opening = Task { try await link.attach(agent: "M/a1", cols: 80, rows: 24, typing: false, owner: false) }
+        for _ in 0..<300 where host.params("agents.attach") == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let ch = try #require((host.params("agents.attach")?["ch"] as? NSNumber)?.uint32Value)
+        opening.cancel()
+        // The caller is let go at once, not after the 15 s reply timeout.
+        let start = ContinuousClock.now
+        await #expect(throws: (any Error).self) { _ = try await opening.value }
+        #expect(ContinuousClock.now - start < .seconds(5))
+        // The Mac accepted the attach: the phone closes it there.
+        for _ in 0..<300 where host.received.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(host.received == [LinkFrames.Frame(kind: Self.x, channel: ch, payload: Data())])
+    }
+
+    @Test func aRefusedAttachClosesItsChannelOnTheMac() async throws {
+        let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
+        host.state.withLock { $0.attachReply = #"{"ok":false,"error":{"code":"forbidden","message":"no type right"}}"# }
+        let (link, updates) = try await Self.linked(host)
+        defer { withExtendedLifetime(updates) {} }
+        await #expect(throws: RelayError.self) { _ = try await link.attach(agent: "M/a1", cols: 80, rows: 24) }
+        for _ in 0..<300 where host.received.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(host.received == [LinkFrames.Frame(kind: Self.x, channel: 1, payload: Data())])
+    }
+
     @Test func demuxRoutesByChannel() async throws {
         let host = FakeHost(id: "MACHINE_ID", short: "M", offer: FlowTests.secret)
         var (link, updates) = try await Self.linked(host)

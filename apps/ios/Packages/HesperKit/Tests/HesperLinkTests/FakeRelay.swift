@@ -75,6 +75,8 @@ final class FakeHost: Sendable {
         /// What `agents.attach` answers on the channel: this reply line,
         /// then (when ok) one data frame "hi".
         var attachReply = #"{"ok":true,"cols":97,"rows":56}"#
+        /// Accept `agents.attach` but send nothing on the channel.
+        var silentAttach = false
         /// The frames the phone sent on its links.
         var received: [LinkFrames.Frame] = []
     }
@@ -162,7 +164,8 @@ final class FakeHost: Sendable {
             else { return ["id": o["id"]!, "error": ["code": "not_found", "message": "No such link"]] }
             // As hesperd: the reply line and the first frames travel on
             // the channel, possibly before the call's answer.
-            let reply = state.withLock { $0.attachReply }
+            let (reply, silent) = state.withLock { ($0.attachReply, $0.silentAttach) }
+            if silent { return ["id": o["id"]!, "result": [String: Any]()] }
             var bytes = Data(reply.utf8) + Data([10])
             if reply.contains(#""ok":true"#) { bytes += AttachTests.inner(0, Data("hi".utf8)) }
             push(kind: UInt8(ascii: "D"), channel: ch, bytes, on: stream)

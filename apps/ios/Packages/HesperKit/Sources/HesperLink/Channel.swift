@@ -252,8 +252,10 @@ extension HostChannel {
             let reply = try await channel.reply()
             guard reply.ok else { throw reply.error ?? RelayError(code: "unavailable", message: "The Mac refused the terminal") }
         } catch {
-            if attaches[ch] === channel { attaches[ch] = nil }
             channel.end(error as? RelayError ?? RelayError(code: "closed"))
+            // The request may have reached the Mac, which then holds the
+            // viewer (and an owner's size) until the channel closes.
+            queue.yield(.close)
             queue.finish()
             throw error
         }
