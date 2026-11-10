@@ -396,7 +396,7 @@ final class TerminalWatch {
             case .exit:
                 await feeder.flush()
                 return true
-            case .scroll:
+            case .scroll(_):
                 break
             }
         }

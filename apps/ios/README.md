@@ -78,8 +78,9 @@ groups need a paid developer account.
 - `HesperDesign`: the Neon tokens (`docs/iphone/neon.md`), the square state
   mark, controls.
 - `HesperFeatures`: Home, Agents (with search and Later), Macs (with Add
-  Mac), Settings, the agent view with the live terminal, capture (the
-  Speak/Type console, dictation and the capture sheet) and onboarding.
+  Mac), Settings, the agent view (the transcript as text above the live
+  screen, the libghostty terminal as "Raw terminal" in its menu), capture
+  (the Speak/Type console, dictation and the capture sheet) and onboarding.
 
 `HesperTerminal`:
 

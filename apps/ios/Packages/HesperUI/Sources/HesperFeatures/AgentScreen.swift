@@ -1,11 +1,13 @@
 import HesperCore
 import HesperDesign
 import HesperFleet
+import HesperSurfaces
 import HesperTerminal
 import SwiftUI
 
-/// The agent view: the live terminal, and under it a dock that follows the
-/// state (concept, flow 4). In landscape the dock is a column on the right.
+/// The agent view: a scrolling transcript and live output above its fixed
+/// terminal input, or the raw terminal from the menu. Decision actions
+/// stay in a dock (a right column in landscape).
 struct AgentScreen: View {
     let id: String
     @Environment(FleetModel.self) private var model
@@ -13,14 +15,21 @@ struct AgentScreen: View {
     /// the area is wider than tall in portrait too, and the dock must
     /// not jump to the side then.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
-    /// The terminal, shared with the dock. Made on first use: a `@State`
-    /// initial value is built on every init of the view, and a terminal
-    /// allocates a libghostty surface.
+    /// The raw terminal, shared with the dock. Made on first use: a
+    /// `@State` initial value is built on every init of the view, and a
+    /// terminal allocates a libghostty surface.
     @State private var holder = WatchHolder()
     private var watch: TerminalWatch { holder.watch }
+    @State private var store = TranscriptStore()
+    /// The transcript view's live section.
+    @State private var screen = ScreenWatch()
 
     /// The dock's width as a column, in landscape.
     private static let dockColumn: CGFloat = 320
+
+    /// The menu's "Raw terminal": the libghostty terminal in place of the
+    /// transcript view, remembered per agent (`FleetModel.rawTerminal`).
+    private var raw: Bool { model.rawTerminal.contains(id) }
 
     var body: some View {
         if let agent = model.agent(id) {
@@ -30,25 +39,65 @@ struct AgentScreen: View {
                 // terminal (and its attach) instead of making a new one.
                 let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
                 layout {
-                    TerminalView(agent: agent, watch: watch)
-                    if wide {
-                        Dock(agent: agent, watch: watch)
-                            .frame(width: Self.dockColumn)
-                            .frame(maxHeight: .infinity, alignment: .bottom)
-                            .background(Theme.surface, ignoresSafeAreaEdges: .bottom)
-                            .overlay(alignment: .leading) { Rectangle().fill(Theme.line).frame(width: DS.Edge.line) }
+                    if raw {
+                        TerminalView(agent: agent, watch: watch)
                     } else {
-                        Dock(agent: agent, watch: watch)
+                        TranscriptView(agent: agent, store: store, screen: screen)
+                    }
+                    if raw || agent.state.needsAttention || agent.state == .exited {
+                        if wide {
+                            Dock(agent: agent, raw: raw, send: send, canSend: watch.canType)
+                                .frame(width: Self.dockColumn)
+                                .frame(maxHeight: .infinity, alignment: .bottom)
+                                .background(Theme.surface, ignoresSafeAreaEdges: .bottom)
+                                .overlay(alignment: .leading) { Rectangle().fill(Theme.line).frame(width: DS.Edge.line) }
+                        } else {
+                            Dock(agent: agent, raw: raw, send: send, canSend: watch.canType)
+                        }
                     }
                 }
             }
             .navigationTitle(agent.name)
             .navigationSubtitle(subtitle(agent))
             .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Toggle("Raw terminal", isOn: rawBinding)
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                    }
+                }
+            }
+            // One attach per agent on this phone: the raw terminal opens
+            // its own, so the transcript stream and the live section's
+            // attach close while it is shown and open again after.
+            .task(id: raw) {
+                guard !raw else { return }
+                await store.run(agent, model: model)
+            }
+            .task(id: raw) {
+                guard !raw else {
+                    screen.stop()
+                    return
+                }
+                await screen.run(agent, model: model)
+            }
         } else {
             ContentUnavailableView("Agent closed", systemImage: "xmark.square", description: Text("It is no longer on any Mac."))
         }
     }
+
+    private var rawBinding: Binding<Bool> {
+        Binding {
+            model.rawTerminal.contains(id)
+        } set: { on in
+            if on { model.rawTerminal.insert(id) } else { model.rawTerminal.remove(id) }
+        }
+    }
+
+    /// Raw Terminal's Send button presses Enter.
+    private func send() { watch.press(.enter) }
 
     private func subtitle(_ a: Agent) -> String {
         [model.fleet.macName(a.machine), a.project, a.branch].compactMap(\.self).joined(separator: " · ")
@@ -63,11 +112,14 @@ struct AgentScreen: View {
 
 /// The dock under the terminal, a Neon bar: the priority card's numbered
 /// options when the agent needs you (a risky Yes asks first, No… opens the
-/// deny sheet), Send while it works (Enter in the terminal: what is typed
-/// goes into the agent's own prompt), Resume once it exited.
+/// deny sheet), Send in Raw Terminal, and Resume once it exited.
 private struct Dock: View {
     let agent: Agent
-    let watch: TerminalWatch
+    let raw: Bool
+    /// Press Enter in Raw Terminal.
+    let send: () -> Void
+    /// The raw terminal's attach may type.
+    let canSend: Bool
     @Environment(FleetModel.self) private var model
 
     var body: some View {
@@ -88,21 +140,21 @@ private struct Dock: View {
                 }
             case .exited, .error:
                 HStack(spacing: DS.Spacing.s) {
-                    Button("Resume") { send(.resume(agent: agent.id)) }.primaryAction()
-                    Button("Close") { send(.close(agent: agent.id)) }.destructiveAction()
+                    Button("Resume") { perform(.resume(agent: agent.id)) }.primaryAction()
+                    Button("Close") { perform(.close(agent: agent.id)) }.destructiveAction()
                 }
                 .frame(maxWidth: .infinity)
             default:
-                // Enter, through the surface: it needs no keyboard up. The
-                // label is full width, so the button's fill is too.
-                Button {
-                    watch.press(.enter)
-                } label: {
-                    Label("Send", systemImage: "arrow.up").frame(maxWidth: .infinity)
+                if raw {
+                    Button {
+                        send()
+                    } label: {
+                        Label("Send", systemImage: "arrow.up").frame(maxWidth: .infinity)
+                    }
+                    .font(.body.weight(.semibold))
+                    .primaryAction()
+                    .disabled(!canSend)
                 }
-                .font(.body.weight(.semibold))
-                .primaryAction()
-                .disabled(!watch.canType)
             }
         }
         .controlSize(.large)
@@ -113,7 +165,7 @@ private struct Dock: View {
         .decisions()
     }
 
-    private func send(_ command: LinkCommand) {
+    private func perform(_ command: LinkCommand) {
         Task { await model.perform(command) }
     }
 }
