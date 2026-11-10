@@ -129,7 +129,7 @@ Three faces. All sizes scale with Dynamic Type
 
 Font files: `apps/ios/App/Fonts/SpaceGrotesk-Bold.ttf` and
 `JetBrainsMono-Regular.ttf`, registered with `UIAppFonts` in
-`project.yml`. Sources: github.com/floriankarsten/space-grotesk (OFL 1.1)
+`apps/ios/App/Info.plist`; their license ships as `App/Fonts/OFL.txt`. Sources: github.com/floriankarsten/space-grotesk (OFL 1.1)
 and github.com/JetBrains/JetBrainsMono (OFL 1.1). Both get a row and the
 licence text in `THIRD_PARTY_NOTICES.md` (JetBrains Mono already has one
 for the Mac app; add the iOS app to it).
@@ -273,9 +273,10 @@ layouts stay as Ole built them.
 
 ## Dark only
 
-`project.yml` sets `UIUserInterfaceStyle: Dark` for the app target and
-`RootView` applies `.preferredColorScheme(.dark)`. `Theme.Token` resolves
-to one colour; the `UIColor` provider stays so a light set can return.
+`project.yml` sets `UIUserInterfaceStyle: Dark` for the app target, and
+`HesperApp` and `RootView` apply `.preferredColorScheme(.dark)`. `Theme`
+holds one fixed dark colour per token; there is no light set. The
+widgets and the Live Activity use the same tokens and do not force dark.
 
 ## iPad
 
@@ -287,7 +288,7 @@ width; the `TabView` with "New task" goes, iPad also gets the console.
 HesperUI has no tests and `make -C apps/ios check` only compiles it, so
 every piece of logic lands in HesperKit with Swift Testing tests:
 
-- `Fleet.priority` (the hero) and `Fleet.needsYouRest`.
+- `Fleet.home(_:)` → `HomeSections` (the hero and the rest).
 - `HomeScope` (all / needsYou / working) → which sections and which
   agents, and the three counts.
 - `DecisionOptions.rows(for: agent)` → the numbered rows (label, detail,

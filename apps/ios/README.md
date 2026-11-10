@@ -74,10 +74,11 @@ groups need a paid developer account.
 
 `HesperUI`:
 
-- `HesperDesign`: the Mac's Dusk/Daylight tokens, the square state mark, controls.
+- `HesperDesign`: the Neon tokens (`docs/iphone/neon.md`), the square state
+  mark, controls.
 - `HesperFeatures`: Home, Agents (with search and Later), Macs (with Add
-  Mac), Settings, the agent view, capture (the mic circle, dictation and
-  the capture sheet) and onboarding.
+  Mac), Settings, the agent view, capture (the Speak/Type console,
+  dictation and the capture sheet) and onboarding.
 
 Wire models and design tokens come from the Mac app's `HesperCore`
 (`app/Package.swift` exports it), so the phone and the Mac decode the same
