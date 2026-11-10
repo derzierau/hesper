@@ -256,7 +256,7 @@ import Testing
     @Test func cellTable() {
         var t = FontFit.CellTable(scale: 2)
         let est = t.pixels(10)
-        #expect(est.width == 12 && est.height == 27)  // typical ratio, rounded
+        #expect(est.width == 12 && est.height == 29)  // typical ratio with adjust-cell-height, rounded
         let news = t.record(font: 10, widthPx: 13, heightPx: 29)
         let again = t.record(font: 10, widthPx: 13, heightPx: 29)
         #expect(news && !again)

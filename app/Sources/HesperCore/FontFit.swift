@@ -16,8 +16,11 @@ public enum FontFit {
                              heightPerPoint: Double(cellHeightPx) / (fontSize * scale))
         }
 
-        /// Typical monospace (JetBrains Mono at Ghostty defaults) before measuring.
-        public static let typical = CellRatio(widthPerPoint: 0.6, heightPerPoint: 1.34)
+        /// Typical monospace (JetBrains Mono at Ghostty defaults, 1.34 high)
+        /// before measuring, plus the app's extra line height.
+        public static let typical = CellRatio(
+            widthPerPoint: 0.6,
+            heightPerPoint: 1.34 * (1 + Double(TerminalConfigText.cellHeightPercent) / 100))
     }
 
     /// Cell sizes in engine pixels by font size: exact where the engine
