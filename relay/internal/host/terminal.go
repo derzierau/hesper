@@ -162,8 +162,12 @@ func (m *terminalManager) openLink(opCtx context.Context, req protocol.Message) 
 	if direct != nil {
 		arrival, err = m.r.Direct.expectStream(id, req.ControllerID)
 	} else {
-		c := m.r.Credentials
-		if m.r.CredentialsPath != "" {
+		// With a credentials file, Run replaces r.Credentials while an old
+		// connection's serve may still run here, so read the file only.
+		var c protocol.Credentials
+		if m.r.CredentialsPath == "" {
+			c = m.r.Credentials
+		} else {
 			c, err = client.FreshCredentials(ctx, m.r.CredentialsPath)
 			// A postponed renewal still leaves a usable access token until it expires.
 			if errors.Is(err, client.ErrRenewalPostponed) && time.Until(c.ExpiresAt) > 0 {

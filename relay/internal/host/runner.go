@@ -223,15 +223,20 @@ var errNoGain = errors.New("renewed access credential expires no later than the 
 // serveRenewing serves link and, renewAhead before its credential expires,
 // renews the credential and dials a new connection while the old one still
 // serves. The relay replaces the device's old connection with the new one
-// (relay.Hub.Connect), so the host never goes offline; the outcome of
+// (relay.Hub.Connect) and closes the old one, so the host never goes
+// offline. The new connection is served at once, while the old serve drains
+// (it may still be running an operation); the outcome of
 // requests in flight on the old connection is unknown, as for any
 // disconnect (protocol.md). It returns when a connection ends on its own,
 // closed.
 func (r *Runner) serveRenewing(ctx context.Context, link *client.Link, terminals *terminalManager) error {
+	var draining sync.WaitGroup
+	defer draining.Wait()
 	for {
 		serveCtx, stop := context.WithCancel(ctx)
 		done := make(chan error, 1)
-		go func() { done <- r.serve(serveCtx, link, terminals) }()
+		draining.Add(1)
+		go func() { defer draining.Done(); done <- r.serve(serveCtx, link, terminals) }()
 		var next *client.Link
 		var c protocol.Credentials
 		// Never renew without pause: a fresh credential can have renewAhead
@@ -272,9 +277,9 @@ func (r *Runner) serveRenewing(ctx context.Context, link *client.Link, terminals
 			}
 			delay = renewRetry
 		}
-		// The relay already serves next; the old connection only drains.
+		// The relay already serves next and closed the old connection; its
+		// serve ends on its own, without holding up next.
 		stop()
-		<-done
 		r.Credentials, link = c, next
 		r.Logger.Info("host connection renewed", "device", c.DeviceID)
 	}

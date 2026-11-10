@@ -44,6 +44,8 @@ func (b *lockedBuffer) String() string {
 type handoverRelay struct {
 	lifetime  time.Duration
 	familyEnd time.Time
+	// request, if set, is sent to the host on the first connection.
+	request   string
 	refreshes atomic.Int32
 	mu        sync.Mutex
 	expiry    map[string]time.Time
@@ -98,9 +100,17 @@ func (f *handoverRelay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mu.Unlock()
 		ctx, cancel := context.WithDeadline(r.Context(), expires)
 		defer cancel()
+		if f.request != "" && token == "access-1" {
+			c.Write(ctx, websocket.MessageText, protocol.JSON(protocol.Message{Version: protocol.Version, Type: "request", ID: "r1", Method: f.request}))
+		}
 		for ctx.Err() == nil {
-			if _, _, err := c.Read(ctx); err != nil {
+			_, data, err := c.Read(ctx)
+			if err != nil {
 				break
+			}
+			var m protocol.Message
+			if json.Unmarshal(data, &m) == nil && m.Type == "snapshot" {
+				f.record("snapshot " + token)
 			}
 		}
 		c.CloseNow()
@@ -204,5 +214,49 @@ func TestHostRenewalPacesShortTokens(t *testing.T) {
 				t.Fatalf("%d refreshes in about a second, want at most %d", n, tc.max)
 			}
 		})
+	}
+}
+
+// The renewed connection is served at once, even while an operation the
+// old connection started is still running: the relay expects the host to
+// answer on the new connection (pings, requests) from its first moment.
+func TestHostServesRenewedConnectionWhileOldOneDrains(t *testing.T) {
+	ahead, retry := renewAhead, renewRetry
+	renewAhead, renewRetry = 2*time.Second, 200*time.Millisecond
+	defer func() { renewAhead, renewRetry = ahead, retry }()
+	fake := &handoverRelay{lifetime: 3 * time.Second, request: "agents.list", expiry: map[string]time.Time{}}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	path, _ := expiringHostFile(t, server.URL)
+	runner := &Runner{Service: &Service{}, CredentialsPath: path, Credentials: protocol.Credentials{Role: "host"}, PollInterval: time.Hour, Logger: slog.New(slog.NewTextHandler(&lockedBuffer{}, nil))}
+	// A long operation (from the direct path, say) holds the operation lock,
+	// so the request sent on the first connection waits inside its serve.
+	runner.init()
+	runner.opMu.Lock()
+	locked := true
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runner.Run(ctx) }()
+	defer func() {
+		if locked {
+			runner.opMu.Unlock()
+			cancel()
+			<-done
+		}
+	}()
+
+	waitFor(t, "the renewed connection", func() bool { return slices.Contains(fake.log(), "open access-2") })
+	deadline := time.Now().Add(time.Second)
+	for !slices.Contains(fake.log(), "snapshot access-2") {
+		if time.Now().After(deadline) {
+			t.Fatalf("renewed connection not served while the old one drains: %v", fake.log())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	runner.opMu.Unlock()
+	locked = false
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
