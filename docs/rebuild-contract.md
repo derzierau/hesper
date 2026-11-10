@@ -671,7 +671,9 @@ tracking (mouse, focus, kitty keyboard flags, cursor shape), `Resize` and
   paste, mouse tracking and encoding, focus reports, kitty keyboard flags
   (stack included), cursor shape and visibility, pen, charsets and the
   cursor (a pending wrap included). No scrollback is sent (but see
-  "Scrollback" under "As built — drafts, overlays, …": `history`).
+  Scrollback under [As built — drafts, overlays, typing on the wall,
+  scrollback](#as-built--drafts-overlays-typing-on-the-wall-scrollback):
+  `history`).
 - A viewer that falls 4 MiB behind gets, in place of what it missed, a SIZE
   frame and a fresh redraw (then live output). A viewer that takes nothing
   for 30 s is dropped.
