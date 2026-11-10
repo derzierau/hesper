@@ -167,7 +167,10 @@ func TestReadOnlyAttachGetsTheScrollbackWhenAsked(t *testing.T) {
 	// history: false stays without it.
 	no := false
 	r2, c2 := attach(t, tm, wire.AttachRequest{Mode: wire.ModeRO, History: &no})
-	if _, p2 := readFrame(t, r2, c2); strings.Contains(string(p2), "line 01") {
-		t.Fatal("ro attach with history: false got the scrollback")
+	_, p2 := readFrame(t, r2, c2)
+	term2 := vt.New(80, 24)
+	term2.Write(p2)
+	if term2.HistoryLen() != 0 {
+		t.Fatalf("ro attach with history: false got %d lines of scrollback", term2.HistoryLen())
 	}
 }
