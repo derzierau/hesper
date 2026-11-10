@@ -40,11 +40,7 @@ final class DevicesModel {
                 state = .loaded(DeviceGroups(try await client.devices()))
             } catch {
                 let f = DevicesFailure(error)
-                switch f {
-                case .unsupportedDaemon: state = .unsupported
-                case .failed(let why): state = .failed(why)
-                default: state = .failed(f.text)
-                }
+                state = f == .unsupportedDaemon ? .unsupported : .failed(f.listText)
             }
         }
     }
@@ -81,7 +77,7 @@ final class DevicesModel {
             var askLocalOnly = false
             do {
                 let o = try await client.removeDevice(d.id, localOnly: localOnly)
-                show(o.summary, isError: !o.summary.hasPrefix("Removed"))
+                show(o.summary, isError: !o.isComplete)
             } catch {
                 let f = DevicesFailure(error)
                 if f == .relayTooOld && !localOnly { askLocalOnly = true } else { show(f.text, isError: true) }

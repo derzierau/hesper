@@ -106,6 +106,9 @@ public struct RemoveOutcome: Codable, Equatable, Sendable {
 
     static func ok(_ step: String) -> Bool { step == "done" || step == "skipped" }
 
+    /// Every step is done or skipped.
+    public var isComplete: Bool { [relay, approval, trust, names].allSatisfy(Self.ok) }
+
     /// The one line Settings shows after a removal: "Removed" when every
     /// step is done or skipped, else the first step that failed in words.
     public var summary: String {
@@ -149,6 +152,16 @@ public enum DevicesFailure: Equatable, Sendable {
         case .relayUnreachable: return "Not removed: the relay is unreachable. Try again later."
         case .relayTooOld: return "Your relay is too old to remove devices."
         case .failed(let why): return "Not removed: \(why)"
+        }
+    }
+
+    /// The text when devices.list fails: nothing was being removed.
+    public var listText: String {
+        switch self {
+        case .unsupportedDaemon: return text
+        case .relayUnreachable: return "Devices could not be listed: the relay is unreachable."
+        case .relayTooOld: return "Devices could not be listed: the relay is too old."
+        case .failed(let why): return "Devices could not be listed: \(why)"
         }
     }
 }

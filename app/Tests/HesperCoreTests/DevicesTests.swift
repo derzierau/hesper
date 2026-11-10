@@ -42,6 +42,13 @@ let devicesListJSON: JSONValue = ["devices": [
         #expect(r.summary == "Not removed from the relay: relay: not_found")
         let t = RemoveOutcome(relay: "done", approval: "done", trust: "write trusted-hosts.json: denied", names: "done")
         #expect(t.summary == "Not removed from this Mac's trusted hosts: write trusted-hosts.json: denied")
+        #expect(!r.isComplete && !t.isComplete)
+        #expect(RemoveOutcome(relay: "skipped", approval: "done", trust: "skipped", names: "done").isComplete)
+    }
+
+    @Test func listFailureText() {
+        #expect(DevicesFailure.failed("socket closed").listText == "Devices could not be listed: socket closed")
+        #expect(DevicesFailure.relayUnreachable.listText == "Devices could not be listed: the relay is unreachable.")
     }
 
     @Test func outcomeDecodes() throws {
