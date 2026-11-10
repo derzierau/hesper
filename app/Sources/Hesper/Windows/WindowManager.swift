@@ -146,6 +146,10 @@ final class WindowManager: NSObject {
         updateHome()
         updatePills()
         if case .reconciled = e { restorer.agentsKnown() }
+        switch e {
+        case .connected, .helloRefreshed: ownership.localMachineChanged()
+        default: break
+        }
         eventTap?(e)
     }
 

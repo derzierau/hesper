@@ -256,6 +256,18 @@ final class SizeOwnership {
         }
     }
 
+    /// This Mac's machine id may have become known (hesperd's hello): an
+    /// agent's `sizeOwnerHost` may read differently now (SizeOwner.owner),
+    /// with no agent change to say so. Re-reads every terminal once the
+    /// event has been applied.
+    func localMachineChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for t in self.terminals() { self.noteRemoteOwned(t) }
+            self.apply()
+        }
+    }
+
     private func noteRemoteOwned(_ t: AgentTerminal) {
         if t.remoteOwned { remoteOwned.insert(t.agent.id) } else { remoteOwned.remove(t.agent.id) }
     }
