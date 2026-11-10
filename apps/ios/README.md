@@ -46,10 +46,12 @@ groups need a paid developer account.
 | `project.yml` | Targets and settings (XcodeGen) |
 | `Config/` | `Base.xcconfig` and its Debug/Release layers; your `Local.xcconfig` |
 | `App/` | The app target: `HesperApp.swift`, icon, privacy manifest |
+| `App/Fonts/` | Space Grotesk Bold and JetBrains Mono Regular (OFL) |
 | `Widgets/` | Lock-screen widget and the one fleet Live Activity |
 | `NotificationService/` | Writes a push's text before it shows |
 | `Packages/HesperKit/` | Logic, no views; `swift test` runs it on a Mac |
 | `Packages/HesperUI/` | The screens (iOS only) |
+| `Packages/HesperUI/Sources/HesperFeatures/Home/` | Home: scope bar, priority card, task grids, the Speak / Type console |
 
 `HesperKit`:
 
@@ -72,10 +74,11 @@ groups need a paid developer account.
 
 `HesperUI`:
 
-- `HesperDesign`: the Mac's Dusk/Daylight tokens, the square state mark, controls.
-- `HesperFeatures`: Inbox, Agents (with search and Later), Macs (with Add
-  Mac), Settings, the agent view, capture (the mic circle, dictation and
-  the capture sheet) and onboarding.
+- `HesperDesign`: the Neon tokens (`docs/iphone/neon.md`), the square state
+  mark, controls.
+- `HesperFeatures`: Home, Agents (with search and Later), Macs (with Add
+  Mac), Settings, the agent view, capture (the Speak/Type console,
+  dictation and the capture sheet) and onboarding.
 
 Wire models and design tokens come from the Mac app's `HesperCore`
 (`app/Package.swift` exports it), so the phone and the Mac decode the same
@@ -90,6 +93,14 @@ failure with `-HesperPairingFixture <name>` (`notAllowed`, `unreachable`,
 `cancelled`, `pending`, `offline`, `denied`, `unsupported`, `keyChanged`).
 For a headless simulator: `xcrun simctl launch <device> <bundle id>
 -HesperOnboardingDemo connected`, then `xcrun simctl io <device> screenshot`.
+`-HesperOnboardingDemo samples` lands on Home with the sample Macs; the
+environment variable `HESPER_HOME_SCOPE` (`all`, `needsYou`, `working`;
+pass it as `SIMCTL_CHILD_HESPER_HOME_SCOPE=working xcrun simctl launch …`)
+opens Home on that scope. `HESPER_CAPTURE` (`listening`, `typing`) opens
+the capture sheet at launch, `listening` with a sample transcript and no
+microphone, since nobody can press Speak on a headless simulator.
+`HESPER_OPEN` (`agent:<id>`, `agents`, `macs`, `settings`) pushes that
+screen over Home at launch, for example `agent:studio/s1`.
 
 ## Choices
 
@@ -104,9 +115,9 @@ For a headless simulator: `xcrun simctl launch <device> <bundle id>
 - **Swift Testing**, `swift format` from the toolchain, no third-party
   packages.
 - **Plain SwiftUI**: `@Observable` model in the environment, one
-  `NavigationStack` per tab, `#Preview` on fixtures. One exception: on
-  iPhone the tab bar is drawn by the app (`CaptureBar`), because the system
-  bar has no slot for the mic circle.
+  `NavigationStack`, `#Preview` on fixtures. Home's Speak / Type console
+  (`Console`) is the app's own bar, not a system tab bar: Speak carries a
+  push-to-talk gesture no system control has.
 - **On-device dictation**: `SpeechTranscriber` for capture; nothing leaves
   the phone but the text the owner sends.
 - **No background sockets**: the model follows the Macs only while the app

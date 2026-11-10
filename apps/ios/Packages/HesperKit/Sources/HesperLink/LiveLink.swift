@@ -162,8 +162,10 @@ public final class LiveLink: LinkClient {
         func on(_ agent: String) -> String { String(agent.split(separator: "/").first ?? "") }
         let encode = { (value: JSONValue) in try JSONEncoder().encode(value) }
         switch command {
-        case .answer(let id, let decision):
-            return (on(id), "agents.answer", try encode(["id": .string(id), "decision": .string(decision.rawValue)]))
+        case .answer(let id, let decision, let message):
+            var params: [String: JSONValue] = ["id": .string(id), "decision": .string(decision.rawValue)]
+            if let message, !message.isEmpty { params["message"] = .string(message) }
+            return (on(id), "agents.answer", try encode(.object(params)))
         case .choose(let id, let option):
             // The option's number, typed: no paste, no Enter (as `hesperctl choose`).
             return (on(id), "agents.input", try encode(["id": .string(id), "text": .string(String(option))]))

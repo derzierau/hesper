@@ -25,7 +25,7 @@ struct AddMacSection: View {
                 Text(message).font(.footnote).foregroundStyle(Theme.dim).themedRow()
             }
         } header: {
-            if !model.unpaired.isEmpty { Text("On your relay · not paired") }
+            if !model.unpaired.isEmpty { Text("On your relay · not paired").listHeading() }
         }
         Section {
             Button("Scan a code", systemImage: "qrcode.viewfinder") { scanning = true }.themedRow()
@@ -82,27 +82,31 @@ private struct ScanCodeSheet: View {
     @State private var notice: String?
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: DS.Spacing.l) {
-                Text("On the Mac, open **Hesper › Settings › iPhone**, or run `hesperctl phone`.")
-                    .foregroundStyle(Theme.text2)
-                CodeScanner(notice: notice) { text in
-                    guard text.hasPrefix(PairingPayload.prefix) else { return false }
-                    Task { await scanned(text) }
-                    return true
-                }
-                Spacer()
+        VStack(alignment: .leading, spacing: DS.Spacing.l) {
+            // A square Neon Close in the body, like the capture sheet,
+            // not the toolbar's glass circle.
+            HStack(spacing: DS.Spacing.m) {
+                Text("Scan a code")
+                    .font(Typeface.heading())
+                    .foregroundStyle(Theme.text)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Button("Close", systemImage: "xmark", role: .cancel) { dismiss() }
+                    .labelStyle(.iconOnly)
+                    .font(.body.weight(.semibold))
+                    .secondaryAction(square: true)
             }
-            .padding(DS.Spacing.xl)
-            .background(Theme.background)
-            .navigationTitle("Scan a code")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", systemImage: "xmark", role: .cancel) { dismiss() }
-                }
+            Text("On the Mac, open **Hesper › Settings › iPhone**, or run `hesperctl phone`.")
+                .foregroundStyle(Theme.text2)
+            CodeScanner(notice: notice) { text in
+                guard text.hasPrefix(PairingPayload.prefix) else { return false }
+                Task { await scanned(text) }
+                return true
             }
+            Spacer()
         }
+        .padding(DS.Spacing.xl)
+        .background(Theme.background)
     }
 
     private func scanned(_ text: String) async {

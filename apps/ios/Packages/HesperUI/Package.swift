@@ -4,8 +4,8 @@ import PackageDescription
 // The iPhone app's screens (iOS only; built and previewed in Xcode). The
 // logic they show is in ../HesperKit.
 //
-//   HesperDesign    colours, state marks and controls from the Mac's
-//                   design system (docs/design-system.md)
+//   HesperDesign    the Neon console's colours, type, state marks and
+//                   controls (docs/iphone/neon.md)
 //   HesperFeatures  the tabs, the agent view, New agent and the root view
 
 // UI code is main-actor by default (SE-0466), with the same upcoming
@@ -33,7 +33,10 @@ let package = Package(
     targets: [
         .target(
             name: "HesperDesign",
-            dependencies: [.product(name: "HesperCore", package: "app")],
+            dependencies: [
+                .product(name: "HesperCore", package: "app"),
+                .product(name: "HesperSurfaces", package: "HesperKit"),
+            ],
             swiftSettings: settings
         ),
         .target(

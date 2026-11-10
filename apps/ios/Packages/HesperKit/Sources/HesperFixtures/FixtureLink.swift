@@ -48,7 +48,7 @@ public final class FixtureLink: LinkClient {
         let update: LinkUpdate? = state.withLock { s in
             s.sent.append(command)
             switch command {
-            case .answer(let id, _), .choose(let id, _), .reply(let id, _), .resume(let id):
+            case .answer(let id, _, _), .choose(let id, _), .reply(let id, _), .resume(let id):
                 return Self.change(&s, id) {
                     $0.state = .working
                     $0.attention = nil

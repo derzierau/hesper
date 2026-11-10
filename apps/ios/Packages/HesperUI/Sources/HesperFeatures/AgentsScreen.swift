@@ -9,27 +9,34 @@ import SwiftUI
 /// sessions join with `sessions.search`, concept Core work 5); Later lists
 /// the tasks kept on every Mac.
 struct AgentsScreen: View {
+    /// Opened from Home's menu as Search: the field takes the focus.
+    var focusSearch = false
     @Environment(FleetModel.self) private var model
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         let groups = model.fleet.groups(matching: query)
         let later = query.isEmpty ? model.fleet.later : []
         List {
             ForEach(groups) { group in
-                Section(group.project ?? "Scratch") {
+                Section {
                     ForEach(group.agents) { agent in
                         NavigationLink(value: AgentRoute(id: agent.id)) { AgentRow(agent: agent) }
                             .agentSwipeActions(agent)
                             .themedRow()
                     }
+                } header: {
+                    Text(group.project ?? "Scratch").listHeading()
                 }
             }
             if !later.isEmpty {
-                Section("Later · \(later.count)") {
+                Section {
                     ForEach(later) { kept in
                         KeptRow(kept: kept).themedRow()
                     }
+                } header: {
+                    Text("Later · \(later.count)").listHeading()
                 }
             }
         }
@@ -40,8 +47,16 @@ struct AgentsScreen: View {
                 ContentUnavailableView("No agents", systemImage: "square.grid.2x2", description: Text("Tap the mic to start one."))
             }
         }
-        .searchable(text: $query, prompt: "Agents and projects")
         .themedList()
+        // A Neon field on top, not `searchable`'s glass capsule.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            NeonSearchField(text: $query, prompt: "Agents and projects")
+                .focused($searchFocused)
+                .padding(.horizontal, DS.Spacing.xl)
+                .padding(.vertical, DS.Spacing.m)
+                .background(Theme.background)
+        }
+        .task { if focusSearch { searchFocused = true } }
         .navigationTitle("Agents")
     }
 }
@@ -69,7 +84,7 @@ private struct KeptRow: View {
                 .controlSize(.small)
         }
         .swipeActions(edge: .trailing) {
-            Button("Discard", systemImage: "trash", role: .destructive) { Task { await model.discard(kept) } }
+            Button("Discard", systemImage: "trash", role: .destructive) { Task { await model.discard(kept) } }.tint(Theme.signal)
         }
     }
 }
@@ -90,9 +105,9 @@ private struct AgentSwipeActions: ViewModifier {
         content
             .swipeActions(edge: .trailing) {
                 if agent.isRunning {
-                    Button("Stop", systemImage: "stop.fill") { confirmStop = true }.tint(Theme.error)
+                    Button("Stop", systemImage: "stop.fill") { confirmStop = true }.tint(Theme.signal)
                 } else {
-                    Button("Close", systemImage: "xmark") { send(.close(agent: agent.id)) }
+                    Button("Close", systemImage: "xmark") { send(.close(agent: agent.id)) }.tint(Theme.signal)
                 }
             }
             .swipeActions(edge: .leading) {

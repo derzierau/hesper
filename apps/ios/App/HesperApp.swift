@@ -1,3 +1,4 @@
+import HesperDesign
 import HesperFeatures
 import HesperFixtures
 import HesperFleet
@@ -24,6 +25,13 @@ struct HesperApp: App {
         _addMac = State(initialValue: AddMacModel(pairing: services.pairing))
         _live = State(initialValue: FleetModel(link: services.link))
         try? Tips.configure()
+        #if DEBUG
+            // A wrong name falls back to San Francisco without a word.
+            precondition(
+                UIFont(name: Typeface.groteskBold, size: 12) != nil && UIFont(name: Typeface.monoRegular, size: 12) != nil,
+                "Neon fonts are not registered"
+            )
+        #endif
     }
 
     /// The model the screens show: the sample Macs, or the owner's.
@@ -38,6 +46,8 @@ struct HesperApp: App {
                     OnboardingView()
                 }
             }
+            // Dark only for now (docs/iphone/neon.md).
+            .preferredColorScheme(.dark)
             .environment(model)
             .environment(onboarding)
             .environment(addMac)
