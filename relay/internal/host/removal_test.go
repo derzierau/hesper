@@ -321,8 +321,12 @@ func TestDropMachineNameKeepsTheMode(t *testing.T) {
 	if _, err := e.svc.Remove(context.Background(), "keep", true); err != nil {
 		t.Fatal(err)
 	}
-	if fi, err := os.Stat(e.svc.MachinesPath); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf("mode %v %v", fi.Mode().Perm(), err)
+	fi, err := os.Stat(e.svc.MachinesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v", fi.Mode().Perm())
 	}
 }
 
