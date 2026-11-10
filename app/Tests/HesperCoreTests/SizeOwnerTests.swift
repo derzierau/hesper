@@ -212,6 +212,40 @@ import Testing
         #expect(!SizeOwner.keepsTakeBack(old: nil, new: "dev-1"))
     }
 
+    @Test func aSizeHandedBackToAnEarlierOwnerIsFollowed() {
+        // The current owner left while an earlier owner attach was open:
+        // hesperd hands the size back to it and the fields follow.
+        var a = Agent(id: "A/x")
+        a.sizeOwner = "dev-2"
+        let newer = SizeOwner.owner(a, local: false)
+        a.sizeOwner = "dev-1" // back to another still-attached device
+        let earlier = SizeOwner.owner(a, local: false)
+        #expect(newer != earlier) // a change: the window layer re-decides
+        #expect(!SizeOwner.keepsTakeBack(old: newer, new: earlier))
+        #expect(SizeOwner.remoteOwned(a, local: false)) // panes stay views
+        // Back to this Mac: behind a controller all fields are absent, on
+        // the agent's own Mac sizeOwnerHost names this Mac. Either way no
+        // other owner, so the normal key-window rule decides again.
+        a.sizeOwner = nil
+        #expect(SizeOwner.owner(a, local: false) == nil)
+        a.sizeOwnerHost = true
+        #expect(SizeOwner.owner(a, local: true) == nil)
+        #expect(!SizeOwner.keepsTakeBack(old: earlier, new: nil))
+    }
+
+    @Test func aHostThatNeverSendsOwnerFieldsKeepsTheOldRule() {
+        // Older hosts (and any host: nothing enforces capabilities.sizeOwner)
+        // may send none of the fields: no view, no badge, no take-back.
+        let a = Agent(id: "A/x")
+        for local in [true, false, nil] as [Bool?] {
+            #expect(!SizeOwner.remoteOwned(a, local: local))
+            #expect(SizeOwner.badge(a, local: local, machine: "mini") == nil)
+        }
+        let cs = [c("a", 1, focus: true), c("a", 2, focus: true), c("b", 1, rw: true)]
+        #expect(SizeOwner.owners(cs, ownerWindow: 1) == [true, false, true])
+        #expect(SizeOwner.keyTakeBack(cs, targeted: [true, true, true], swapping: [false, false, false], typesIntoAgent: true) == .pass)
+    }
+
     @Test func badgeNamesTheDevice() {
         var a = Agent(id: "L/a")
         #expect(SizeOwner.badge(a, local: true, machine: "mini") == nil)
