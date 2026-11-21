@@ -10,7 +10,7 @@ require (
 require (
 	github.com/creack/pty v1.1.24
 	github.com/flynn/noise v1.1.0
-	github.com/klauspost/compress v1.18.5
+	github.com/klauspost/compress v1.18.7
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.44.0
 	modernc.org/sqlite v1.56.0
