@@ -33,9 +33,10 @@ that needs you.
 
 ## Release availability
 
-**The current release is [v0.4.1](https://github.com/derzierau/hesper/releases/tag/v0.4.1),
+**The current release is [v0.4.2](https://github.com/derzierau/hesper/releases/tag/v0.4.2),
 signed and notarized for macOS 14+ and installed with [Homebrew](#homebrew).**
-Every feature this README describes is in it. v0.4.1 keeps the daemon's
+Every feature this README describes is in it. v0.4.2 keeps a host
+reachable from other Macs after weeks of use; v0.4.1 keeps the daemon's
 flags across upgrades and reports its version; v0.4.0 forwards ports
 between machines (`hesperctl forwards add dev:3000`); v0.3.4 lets agents name
 their own tiles after what they work on; v0.3.3 shows project bands
@@ -51,7 +52,7 @@ Code's `/voice` inside Hesper. New since v0.2.0:
 - VoiceOver and Full Keyboard Access support
 - `hesperctl open review` and `hesperctl open palette`
 
-See the [v0.4.1](docs/release-notes-v0.4.1.md), [v0.4.0](docs/release-notes-v0.4.0.md), [v0.3.4](docs/release-notes-v0.3.4.md), [v0.3.3](docs/release-notes-v0.3.3.md), [v0.3.2](docs/release-notes-v0.3.2.md), [v0.3.1](docs/release-notes-v0.3.1.md)
+See the [v0.4.2](docs/release-notes-v0.4.2.md), [v0.4.1](docs/release-notes-v0.4.1.md), [v0.4.0](docs/release-notes-v0.4.0.md), [v0.3.4](docs/release-notes-v0.3.4.md), [v0.3.3](docs/release-notes-v0.3.3.md), [v0.3.2](docs/release-notes-v0.3.2.md), [v0.3.1](docs/release-notes-v0.3.1.md)
 and [v0.3.0 release notes](docs/release-notes-v0.3.0.md) for the full list,
 including the six shortcuts that moved.
 
@@ -509,7 +510,7 @@ security issues privately as described in [SECURITY.md](SECURITY.md).
 ## Status
 
 Hesper is young and used daily by its author. Signed releases are
-available through Homebrew and GitHub Releases; the current one is v0.4.1.
+available through Homebrew and GitHub Releases; the current one is v0.4.2.
 
 Supported agents are Claude Code, Codex and a plain shell.
 
