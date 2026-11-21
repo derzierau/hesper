@@ -126,13 +126,14 @@ func liveTop(s *vt.Screen, rows int) int {
 	return min(max(bottom-rows+1, 0), h-rows)
 }
 
-// The most of the scrollback a read-write attach gets.
+// The most of the scrollback an attach gets (relay/docs/protocol.md
+// states these for clients).
 var (
 	HistoryPreambleLines = 5000
 	HistoryPreambleBytes = 1 << 20
 )
 
-// HistoryPreamble is what a read-write attach gets before its redraw: the
+// HistoryPreamble is what an attach with history gets before its redraw: the
 // scrollback printed from the top of a cleared screen, then, from the last
 // row, one newline per line still on the screen, so every line ends up in
 // the viewer's own scrollback in order (and nothing else does); the redraw

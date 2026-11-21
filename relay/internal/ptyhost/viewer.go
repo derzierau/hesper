@@ -89,10 +89,11 @@ func (t *Term) Attach(conn net.Conn, r *bufio.Reader, req wire.AttachRequest) {
 	}
 	line, _ := json.Marshal(wire.AttachReply{OK: true, Cols: t.cols, Rows: t.rows})
 	var first []byte
-	if rw && (req.History == nil || *req.History) {
+	if (req.History != nil && *req.History) || (rw && req.History == nil) {
 		// A read-write attach (focus, the active tile) gets the
 		// scrollback first, so its own terminal scrolls back like any
-		// terminal (scroll.go).
+		// terminal (scroll.go). A read-only one only when it asks
+		// (history: true; observe already shows the whole screen).
 		first = HistoryPreamble(t.screen, append(first, "\x1b[?2026h"...))
 	}
 	v.queue = []item{{typ: replyItem, data: append(line, '\n')}, {typ: wire.FrameData, data: t.screen.Redraw(first)}}
