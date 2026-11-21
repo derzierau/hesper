@@ -335,6 +335,7 @@ func (d *Daemon) startHost(ctx context.Context, cfg Config, logf func(string, ..
 	}
 	d.Runner = &host.Runner{Events: changes, Credentials: hc, CredentialsPath: cfg.HostCredentials, Auth: auth, E2E: channel, Direct: direct,
 		Service: d.Service, PollInterval: poll, Logger: cfg.Logger}
+	d.Server.SetRelaySession(d.Runner.RelaySession)
 	// Every agent change republishes the relay-visible snapshot (push).
 	sub := reg.Subscribe()
 	d.wg.Add(1)

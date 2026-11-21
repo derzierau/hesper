@@ -173,7 +173,10 @@ host refused the request's device signature or rights; see
 [Device keys](#device-keys)), the channel's `e2e_session`, `e2e_binding`,
 `e2e_required`, `integrity` and `duplicate_request` and `key_changed` (see
 [End-to-end channel](#end-to-end-channel)), hesperd's own codes for agents
-(`not_found`, `invalid`, `exists`), and for moves `too_large`, `integrity`,
+(`not_found`, `invalid`, `exists`), `too_large` for an answer the host
+does not send because it would come within 4 KiB of `MaxMessageBytes`
+(the relay closes a connection for a message over it, and forwards a
+result under the controller's own, longer request ID), and for moves `too_large`, `integrity`,
 `handoff_failed` and the codes of `internal/handoff` (`branch_diverged`,
 `dirty_target`, `missing_project`, …). Protocol violations may close the
 connection. Treat all timeout/disconnection outcomes for mutations as

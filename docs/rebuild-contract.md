@@ -107,7 +107,7 @@ directory 0700. Peer credentials checked: same uid only.
 
 | Method | Params | Result |
 |---|---|---|
-| `hello` | `{client, version}` | `{daemon, version, machine, machines:[{short,name,online,rttMs,route}]}` |
+| `hello` | `{client, version}` | `{daemon, version, machine, machines:[{short,name,online,rttMs,route}], relaySession?:{drops5m,lastReason,lastAt}}` |
 | `agents.list` | – | `[Agent]` |
 | `agents.subscribe` | – | result `{}` then notifications `agents.changed {agent}` / `agents.removed {id}` (first an `agents.changed` for every agent) |
 | `agents.spawn` | `{machine?, profile?, kind?, project, task, name?, worktree?: true\|path, branch?, letParentAnswer?}` | `Agent` (inside an agent: its child, see "As built — agent tree") |
@@ -237,7 +237,7 @@ one like any command.
 | `drafts ls` / `rm ID` | `drafts.list` / `drafts.remove` |
 | `drafts save [TASK…\|-] [--id D] [--project P] [--machine M] [--kind K] [--profile P] [--worktree] [--branch B]` | `drafts.save`: a project (id or name) sets `band` and the project's folder on the machine (its default machine, else the first with a folder) and its default profile, as the app's "New Agent in …"; a folder sets `project`; `--machine` sets `machineExplicit` (this Mac's name is stored as none); `--kind` picks the kind's default profile; `--id` changes only what is given |
 | `profiles` | `profiles.list` |
-| `status` | `hello`: daemon, version, machine, machines with online, RTT and route |
+| `status` | `hello`: daemon, version, machine, machines with online, RTT and route; after a dropped relay session `relay session: dropped N× in 5 min, last: REASON at HH:MM:SS` (none in the last 5 min: `relay session: last dropped: REASON at HH:MM:SS`; control and format characters, such as bidi overrides, in REASON are left out) |
 
 Projects are addressed by id, unique name (exact, else ignoring case; a
 real project wins a tie with scratch folders) or folder; groups by id or
@@ -2704,7 +2704,12 @@ unreachable machine's agents stay listed for 60 s, then `agents.removed`.
 **hello.** `machines` lists this Mac (`route: "local"`), then every other
 machine of the owner: `online` (relay presence while connected), `route`
 (`direct`/`relay` while online, `""` offline), `rttMs` (median of the last
-five pings on that route, 0 until measured).
+five pings on that route, 0 until measured). `relaySession` (host role,
+after its first dropped relay session): `drops5m` (sessions that ended
+without hesperd stopping in the last five minutes: a sliding window of fixed length), `lastReason` (why the
+last one ended, e.g. `relay closed the connection: …` with the relay's
+close status, the same text as the log's `host disconnected; reconnecting
+error=`) and `lastAt`.
 
 **agents.move `{id, to}`**, between any two machines (this one included):
 stop the agent on the source and wait for its exit; source's plan (project,
@@ -3222,9 +3227,11 @@ node; equal stamps compare values, so merges converge in any order.
 `sessions.pull {since, epoch, from}` (host method, signed, right
 `observe`) answers the entries changed after `since` (a per-database
 sequence number; a new database = new epoch = from 0), skipping entries
-whose every stamp is the requester's (no echo), ≤ 400 entries and ≤ 600
-KiB of zstd-compressed JSON per answer, `{node, short, epoch, next, more,
-data}`. The puller asks again while `more`, one request at a time per
+whose every stamp is the requester's (no echo), ≤ 400 entries and ≤ 384
+KiB of zstd-compressed JSON per answer (base64 twice, sealed, it stays
+well inside the relay's 1 MiB message; an entry over the budget alone is
+skipped, not sent, and stays out of sync until it changes and fits; only
+the host logs it), `{node, short, epoch, next, more, data}`. The puller asks again while `more`, one request at a time per
 Mac, pausing 20 ms + 1 s per 8 MiB received (rate limit), and stores the
 cursor (`peers`), so an interrupted sync resumes. Pulls start when a
 link opens and when the host's **hint** arrives on its link
