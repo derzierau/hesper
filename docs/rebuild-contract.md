@@ -497,7 +497,9 @@ tracking (mouse, focus, kitty keyboard flags, cursor shape), `Resize` and
   `["trust", "exit"]`, see "First-run screens") and `"skip" | "update"`
   for Codex's update screen; other decisions are `invalid` there.
 - Profiles take the placeholders `{name}` (the `--remote-control` name: the
-  task's first line, controls blanked, ≤ 60 chars), `{loginShell}`,
+  task's first line, else the agent's name, else `agent`; either is
+  cleaned the same way: controls blanked, leading dashes dropped so it
+  is never taken for an option, ≤ 60 chars), `{loginShell}`,
   `{project}`, `{dir}`, `{id}`. A profile in `profiles.json` with an empty
   `argv` removes a built-in one.
 - `profiles.list` → `{profiles: {name: {kind, argv}}, defaults: {kind,
