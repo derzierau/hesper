@@ -33,7 +33,7 @@ This file ships inside `Hesper.app/Contents/Resources/THIRD_PARTY_NOTICES.md`.
 | github.com/dustin/go-humanize | v1.0.1 | MIT | hesperd |
 | github.com/flynn/noise | v1.1.0 | BSD-3-Clause | hesperd, hesperctl, hesper-relay |
 | github.com/google/uuid | v1.6.0 | BSD-3-Clause | hesperd |
-| github.com/klauspost/compress | v1.18.5 | BSD-3-Clause (and others, see text) | hesperd |
+| github.com/klauspost/compress | v1.18.7 | BSD-3-Clause (and others, see text) | hesperd |
 | github.com/mattn/go-isatty | v0.0.24 | MIT | hesperd |
 | github.com/ncruces/go-strftime | v1.0.0 | MIT | hesperd |
 | github.com/remyoudompheng/bigfft | v0.0.0-20230129092748-24d4a6f8daec | BSD-3-Clause | hesperd |
@@ -361,7 +361,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/klauspost/compress
 
-- Version: v1.18.5
+- Version: v1.18.7
 - URL: https://github.com/klauspost/compress
 - License: BSD-3-Clause; some subdirectories under Apache-2.0 or MIT, as
   stated in the text below. Hesper links the `zstd`, `fse`, `huff0` and
