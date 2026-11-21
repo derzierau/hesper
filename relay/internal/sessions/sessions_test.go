@@ -644,8 +644,9 @@ func TestResumeRecreatesMissingWorktree(t *testing.T) {
 	run(repo, "branch", "fix/flaky-badge")
 	wt := filepath.Join(e.home, "worktrees", "repo", "flaky")
 	e.install("claude.jsonl", wt) // the worktree is gone
-	s := e.open(Options{})
-	s.SetProjects(&pathProjects{repo: repo})
+	// Projects from the start, as hesperd opens it: a scan before a later
+	// SetProjects indexed the session without its project.
+	s := e.open(Options{Projects: &pathProjects{repo: repo}})
 	reg := e.registry()
 	s.SetRegistry(reg)
 	waitFor(t, "indexed", func() bool { return len(e.search(wire.SessionSearchParams{})) == 1 })
